@@ -67,6 +67,7 @@ describe('preview comment persistence', () => {
         'anchored_version',
         'author_member_id',
         'last_good_position_json',
+        'review_source_json',
       ]),
     );
   });
@@ -89,6 +90,34 @@ describe('preview comment persistence', () => {
     const [listed] = listPreviewComments(db, 'project-1', 'conversation-1');
     expect(listed?.anchoredVersion).toBe(7);
     expect(listed?.authorMemberId).toBe('member-42');
+  });
+
+  it('round-trips self-hosted review provenance without exposing it as an author identity', () => {
+    const db = seededDb();
+    const reviewSource = {
+      kind: 'collaboration-review' as const,
+      remoteProjectId: 'remote-project-1',
+      remoteVersionId: 'version-2',
+      remoteVersionNumber: 2,
+      remoteCommentId: 'comment-1',
+      remoteCommentRevision: 3,
+      authorUserId: 'reviewer-1',
+      source: 'agent' as const,
+      agent: { name: 'Reviewer Bot', model: 'review-model' },
+      status: 'open' as const,
+      targetSelectionKind: 'visual' as const,
+      targetPosition: { x: 0.25, y: 0.4, width: 0, height: 0 },
+    };
+    const saved = upsertPreviewComment(db, 'project-1', 'conversation-1', {
+      id: 'review-stable-id',
+      target: target({ elementId: 'review-point' }),
+      note: 'Increase contrast',
+      reviewSource,
+    });
+
+    expect(saved?.reviewSource).toEqual(reviewSource);
+    expect(saved?.authorMemberId).toBeUndefined();
+    expect(listPreviewComments(db, 'project-1', 'conversation-1')[0]?.reviewSource).toEqual(reviewSource);
   });
 
   it('writes back resolved anchor state and keeps last-good position on a lost resolve', () => {
@@ -693,6 +722,43 @@ describe('preview comment agent payload', () => {
     // The agent is told there is no screenshot and to locate the region from
     // the structured fields instead.
     expect(hint).toContain('no screenshot');
+  });
+
+  it('keeps a normalized point from an immutable collaboration Review Version', () => {
+    const normalized = normalizeCommentAttachments([
+      commentAttachment({
+        id: 'remote-review-1',
+        elementId: 'review-point-1',
+        selector: '',
+        comment: 'Increase contrast',
+        selectionKind: 'visual',
+        pagePosition: { x: 0.25, y: 0.4, width: 0, height: 0 },
+        reviewSource: {
+          kind: 'collaboration-review',
+          remoteProjectId: 'remote-project-1',
+          remoteVersionId: 'version-2',
+          remoteVersionNumber: 2,
+          remoteCommentId: 'comment-9',
+          remoteCommentRevision: 3,
+          authorUserId: 'reviewer-1',
+          source: 'agent',
+          agent: { name: 'Reviewer Bot', model: 'review-model' },
+          status: 'open',
+          targetSelectionKind: 'visual',
+          targetPosition: { x: 0.25, y: 0.4, width: 0, height: 0 },
+        },
+      }),
+    ]);
+
+    expect(normalized).toHaveLength(1);
+    expect(normalized[0]).toMatchObject({
+      pagePosition: { x: 0.25, y: 0.4, width: 0, height: 0 },
+      reviewSource: { remoteCommentId: 'comment-9', source: 'agent' },
+    });
+    const hint = renderCommentAttachmentHint(normalized);
+    expect(hint).toContain('reviewSource: collaboration-agent');
+    expect(hint).toContain('reviewVersion: v2 (version-2)');
+    expect(hint).toContain('coordinateSpace: normalized-to-published-preview');
   });
 
   it('still drops visual annotations that carry no location data at all', () => {

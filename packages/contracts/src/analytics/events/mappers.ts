@@ -338,6 +338,8 @@ export function settingsSectionToTracking(
       return 'memory';
     case 'privacy':
       return 'privacy';
+    case 'collaboration':
+      return 'collaboration';
     case 'labs':
       return 'labs';
     case 'notifications':
@@ -556,4 +558,3 @@ export function harnessAnalyticsFromRolloutDecision(
       : {}),
   };
 }
-

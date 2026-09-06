@@ -17,6 +17,7 @@ describe('settingsSectionToTracking', () => {
       'memory',
       'media',
       'privacy',
+      'collaboration',
       'about',
       'labs',
     ] as const;

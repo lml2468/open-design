@@ -2414,6 +2414,961 @@ button.agent-group-rescan-btn:hover:not(:disabled) {
   border-radius: var(--radius-sm);
   background: var(--bg-panel);
 }
+
+.collaboration-settings {
+  gap: 14px;
+}
+
+.collaboration-settings__card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.collaboration-settings__head {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.collaboration-settings__head h3 {
+  margin: 0 0 4px;
+}
+
+.collaboration-settings__head .hint {
+  margin: 0;
+  max-width: 620px;
+}
+
+.collaboration-settings__status,
+.collaboration-settings__role {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.collaboration-settings__status.is-connected {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.collaboration-settings__field-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.collaboration-settings__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.collaboration-settings__meta span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.collaboration-settings__login-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.collaboration-settings__device {
+  min-width: 0;
+}
+
+.collaboration-settings__login-grid > button {
+  justify-self: end;
+}
+
+.collaboration-settings__account {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.collaboration-settings__account > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.collaboration-settings__account span:last-child {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.collaboration-settings__avatar,
+.collaboration-settings__project-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.collaboration-settings__projects {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collaboration-settings__projects li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.collaboration-settings__projects li > button {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.collaboration-settings__projects li:first-child {
+  border-top: 0;
+}
+
+.collaboration-settings__projects li > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.collaboration-settings__projects li > div span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.collaboration-settings__project-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.collaboration-settings__empty,
+.collaboration-settings__loading {
+  padding: 22px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.collaboration-settings__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.collaboration-settings__error {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--red-bg);
+  color: var(--red);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .collaboration-settings__login-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .collaboration-settings__login-grid > button {
+    justify-self: stretch;
+  }
+
+  .collaboration-settings__field-action {
+    grid-template-columns: 1fr;
+  }
+
+  .collaboration-settings__meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.project-collaboration-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.project-collaboration-trigger:hover,
+.project-collaboration-trigger:focus-visible {
+  border-color: var(--border);
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.project-collaboration-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.project-collaboration-modal {
+  position: fixed;
+  z-index: 1300;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 10, 14, 0.52);
+  backdrop-filter: blur(5px);
+}
+
+.project-collaboration-dialog {
+  display: flex;
+  width: min(620px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  flex-direction: column;
+  gap: 18px;
+  overflow: hidden;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg-panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  text-align: left;
+}
+
+.project-collaboration-dialog__header,
+.project-collaboration-dialog__binding,
+.project-collaboration-dialog__candidate-summary,
+.project-collaboration-dialog__actions,
+.project-collaboration-dialog__footer {
+  display: flex;
+  align-items: center;
+}
+
+.project-collaboration-dialog__header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.project-collaboration-dialog__header h2,
+.project-collaboration-dialog__empty h3 {
+  margin: 2px 0 0;
+}
+
+.project-collaboration-dialog__eyebrow {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-collaboration-dialog__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.project-collaboration-dialog__close:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.project-collaboration-dialog__error,
+.project-collaboration-dialog__success {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.project-collaboration-dialog__error {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.project-collaboration-dialog__success {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.project-collaboration-dialog__success > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.project-collaboration-dialog__success a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.project-collaboration-dialog__loading,
+.project-collaboration-dialog__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 180px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.project-collaboration-dialog__empty p,
+.project-collaboration-dialog__prepare p {
+  max-width: 460px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.project-collaboration-dialog__symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.project-collaboration-dialog__actions {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.project-collaboration-dialog__binding {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 0.7fr));
+  gap: 8px;
+}
+
+.project-collaboration-dialog__binding > div,
+.project-collaboration-dialog__candidate-summary > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.project-collaboration-dialog__binding > div {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-subtle);
+}
+
+.project-collaboration-dialog__binding span,
+.project-collaboration-dialog__candidate-summary span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.project-collaboration-dialog__binding strong,
+.project-collaboration-dialog__candidate-summary strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-collaboration-dialog__feedback {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+}
+
+.project-collaboration-dialog__feedback-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-collaboration-dialog__feedback-head > div,
+.project-collaboration-dialog__feedback-list label span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.project-collaboration-dialog__feedback-head span,
+.project-collaboration-dialog__feedback-list > span,
+.project-collaboration-dialog__feedback-attached {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.project-collaboration-dialog__feedback-list {
+  display: flex;
+  max-height: 190px;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+}
+
+.project-collaboration-dialog__feedback-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px;
+  border-radius: 9px;
+  background: var(--bg-subtle);
+  cursor: pointer;
+}
+
+.project-collaboration-dialog__feedback-list label strong {
+  font-size: 11px;
+}
+
+.project-collaboration-dialog__feedback-list label span {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.project-collaboration-dialog__prepare {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+}
+
+.project-collaboration-dialog__candidate {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.project-collaboration-dialog__candidate-summary {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-collaboration-dialog__files {
+  min-height: 80px;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+}
+
+.project-collaboration-dialog__file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+
+.project-collaboration-dialog__file:first-child {
+  border-top: 0;
+}
+
+.project-collaboration-dialog__file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-collaboration-dialog__file small {
+  color: var(--text-muted);
+}
+
+.project-collaboration-dialog__confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.project-collaboration-dialog__confirm input {
+  margin-top: 2px;
+}
+
+.project-collaboration-dialog__footer {
+  min-height: 26px;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.project-collaboration-dialog__footer > button:not([class]) {
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .project-collaboration-modal {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .project-collaboration-dialog {
+    max-height: calc(100vh - 24px);
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .project-collaboration-dialog__binding {
+    grid-template-columns: 1fr;
+  }
+
+  .project-collaboration-dialog__prepare {
+    flex-direction: column;
+  }
+}
+
+.collaboration-review-modal {
+  position: fixed;
+  z-index: 1400;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(8, 10, 14, 0.58);
+  backdrop-filter: blur(6px);
+}
+
+.collaboration-review-dialog {
+  display: flex;
+  width: min(1240px, 100%);
+  height: min(840px, calc(100vh - 40px));
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg-panel);
+  box-shadow: 0 28px 100px rgba(0, 0, 0, 0.34);
+  color: var(--text);
+}
+
+.collaboration-review-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.collaboration-review-dialog__header > div:first-child {
+  min-width: 0;
+}
+
+.collaboration-review-dialog__header span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.collaboration-review-dialog__header h2 {
+  overflow: hidden;
+  margin: 2px 0 0;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collaboration-review-dialog__header-actions,
+.collaboration-review-dialog__header-actions label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.collaboration-review-dialog__header-actions select {
+  min-width: 150px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.collaboration-review-dialog__header-actions > button,
+.collaboration-review-dialog__comments-head > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.collaboration-review-dialog__header-actions > button:hover,
+.collaboration-review-dialog__comments-head > button:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.collaboration-review-dialog__error {
+  padding: 9px 18px;
+  background: var(--red-bg);
+  color: var(--red);
+  font-size: 12px;
+}
+
+.collaboration-review-dialog__body {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+
+.collaboration-review-dialog__canvas-column {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--bg-subtle) 70%, #000 4%);
+}
+
+.collaboration-review-dialog__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.collaboration-review-dialog__toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.collaboration-review-dialog__canvas {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  margin: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.12);
+}
+
+.collaboration-review-dialog__canvas iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.collaboration-review-dialog__markers,
+.collaboration-review-dialog__placement {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+}
+
+.collaboration-review-dialog__markers {
+  pointer-events: none;
+}
+
+.collaboration-review-dialog__placement {
+  z-index: 3;
+  cursor: crosshair;
+  background: rgba(75, 105, 255, 0.04);
+}
+
+.collaboration-review-dialog__marker {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 8px;
+  background: var(--accent);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.24);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.collaboration-review-dialog__marker.is-addressed,
+.collaboration-review-dialog__marker.is-resolved {
+  background: var(--green);
+}
+
+.collaboration-review-dialog__marker.is-draft {
+  background: #4b69ff;
+}
+
+.collaboration-review-dialog__loading {
+  display: grid;
+  height: 100%;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.collaboration-review-dialog__comments {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-left: 1px solid var(--border-soft);
+}
+
+.collaboration-review-dialog__comments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.collaboration-review-dialog__comments-head h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.collaboration-review-dialog__comments-head span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.collaboration-review-dialog__composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.collaboration-review-dialog__composer p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.collaboration-review-dialog__composer textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.collaboration-review-dialog__composer button {
+  align-self: flex-end;
+}
+
+.collaboration-review-dialog__comment-list {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.collaboration-review-dialog__comment {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.collaboration-review-dialog__comment-meta {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.collaboration-review-dialog__comment-meta > span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.collaboration-review-dialog__comment-meta strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collaboration-review-dialog__comment-meta small,
+.collaboration-review-dialog__comment > small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.collaboration-review-dialog__comment > p {
+  margin: 9px 0 0 31px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.collaboration-review-dialog__comment > small {
+  display: block;
+  margin: 5px 0 0 31px;
+}
+
+.collaboration-review-dialog__comment-actions {
+  display: flex;
+  gap: 8px;
+  margin: 9px 0 0 31px;
+}
+
+.collaboration-review-dialog__comment-actions button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.collaboration-review-dialog__empty {
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  padding: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .collaboration-settings__projects li {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .collaboration-settings__projects li > button {
+    grid-column: 2 / -1;
+  }
+
+  .collaboration-review-modal {
+    align-items: end;
+    padding: 8px;
+  }
+
+  .collaboration-review-dialog {
+    height: calc(100vh - 16px);
+    border-radius: 15px;
+  }
+
+  .collaboration-review-dialog__header {
+    align-items: flex-start;
+  }
+
+  .collaboration-review-dialog__header-actions label > span {
+    display: none;
+  }
+
+  .collaboration-review-dialog__header-actions select {
+    min-width: 112px;
+  }
+
+  .collaboration-review-dialog__body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(280px, 52%) minmax(0, 48%);
+  }
+
+  .collaboration-review-dialog__canvas {
+    margin: 8px;
+  }
+
+  .collaboration-review-dialog__comments {
+    border-top: 1px solid var(--border-soft);
+    border-left: 0;
+  }
+}
 .settings-section-byok .section-head {
   align-items: center;
 }

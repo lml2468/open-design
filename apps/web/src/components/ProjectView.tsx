@@ -259,6 +259,7 @@ import { useWorkspaceTabsDockRef } from './workspaceTabsDock';
 import { localizePluginTitle } from './plugins-home/localization';
 import { DesignSystemPicker } from './DesignSystemPicker';
 import { PresenceBar } from '../collab/PresenceBar';
+import { ProjectCollaborationPublish } from './collaboration/ProjectCollaborationPublish';
 import { useProjectCollab } from '../collab/useProjectCollab';
 import {
   currentUserDirectoryEntry,
@@ -5208,6 +5209,18 @@ export function ProjectView({
   const detachPreviewComment = useCallback((commentId: string) => {
     setAttachedComments((current) => removeAttachedComment(current, commentId));
   }, []);
+
+  const attachCollaborationReviewComments = useCallback((comments: PreviewComment[]) => {
+    if (comments.length === 0) return;
+    commitPreviewComments((current) => comments.reduce(
+      (next, comment) => mergeSavedPreviewComment(next, comment),
+      current,
+    ));
+    setAttachedComments((current) => comments.reduce(
+      (next, comment) => mergeAttachedComments(next, comment),
+      current,
+    ));
+  }, [commitPreviewComments]);
 
   const patchAttachedStatuses = useCallback(
     async (attachments: ChatCommentAttachment[], status: PreviewComment['status']) => {
@@ -11759,6 +11772,13 @@ export function ProjectView({
                   {projectTypeLabel ? (
                     <span className="meta" data-testid="project-meta">{projectTypeLabel}</span>
                   ) : null}
+                  <ProjectCollaborationPublish
+                    projectId={project.id}
+                    conversationId={activeConversationId}
+                    disabled={projectMutationReadOnly}
+                    onOpenSettings={() => onOpenSettings('collaboration')}
+                    onAttachReviewComments={attachCollaborationReviewComments}
+                  />
                 </span>
               )}
               designSystemPicker={(

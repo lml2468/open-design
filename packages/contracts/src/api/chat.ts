@@ -4,6 +4,7 @@ import type {
   PreviewCommentAttachment,
   PreviewCommentMember,
   PreviewCommentPosition,
+  PreviewCommentReviewSource,
   PreviewCommentSelectionKind,
   PreviewAnnotationStyle,
   PreviewVisualMarkKind,
@@ -859,6 +860,8 @@ export interface ChatCommentAttachment {
   markKind?: PreviewVisualMarkKind;
   intent?: string;
   imageAttachments?: PreviewCommentAttachment[];
+  /** Immutable self-hosted review provenance copied from the projected comment. */
+  reviewSource?: PreviewCommentReviewSource;
   /** `'query'` means `comment` was promoted to the message text; keep target data as context only. */
   commentContext?: 'context' | 'query';
   source?: 'saved-comment' | 'board-batch';

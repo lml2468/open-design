@@ -450,6 +450,41 @@ describe('preview comment attachment helpers', () => {
     expect(content).toContain('ask the user before proceeding');
   });
 
+  it('preserves self-hosted review provenance and normalized coordinates in Agent context', () => {
+    const attachments = commentsToAttachments([
+      comment({
+        id: 'review-local-1',
+        note: 'Increase contrast',
+        reviewSource: {
+          kind: 'collaboration-review',
+          remoteProjectId: 'remote-project-1',
+          remoteVersionId: 'version-2',
+          remoteVersionNumber: 2,
+          remoteCommentId: 'comment-9',
+          remoteCommentRevision: 3,
+          authorUserId: 'reviewer-1',
+          source: 'agent',
+          agent: { name: 'Reviewer Bot', model: 'review-model' },
+          status: 'open',
+          targetSelectionKind: 'visual',
+          targetPosition: { x: 0.25, y: 0.4, width: 0, height: 0 },
+        },
+      }),
+    ]);
+
+    expect(attachments[0]).toMatchObject({
+      selectionKind: 'visual',
+      pagePosition: { x: 0.25, y: 0.4, width: 0, height: 0 },
+      reviewSource: { remoteCommentId: 'comment-9', source: 'agent' },
+    });
+    const content = messageContentWithCommentAttachments('', attachments);
+    expect(content).toContain('reviewSource: collaboration-agent');
+    expect(content).toContain('reviewVersion: v2 (version-2)');
+    expect(content).toContain('reviewCommentId: comment-9');
+    expect(content).toContain('reviewAgent: Reviewer Bot');
+    expect(content).toContain('coordinateSpace: normalized-to-published-preview');
+  });
+
   it('adds hidden comment context only to the current user message sent to API providers', () => {
     const attachments = commentsToAttachments([
       comment({ id: 'c1', elementId: 'hero-title', note: 'Make it bolder' }),

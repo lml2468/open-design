@@ -234,6 +234,17 @@ const COLLAB_STRING_FLAGS = new Set([
   'workspace', 'workspace-member',
 ]);
 const COLLAB_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
+const COLLABORATION_STRING_FLAGS = new Set([
+  'daemon-url', 'email', 'device-name',
+]);
+const COLLABORATION_BOOLEAN_FLAGS = new Set([
+  'help', 'h', 'json', 'password-stdin',
+]);
+const REVIEW_STRING_FLAGS = new Set([
+  'daemon-url', 'version', 'path', 'input', 'status', 'expected-revision',
+  'addressed-in-version',
+]);
+const REVIEW_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const MESSAGE_CENTER_STRING_FLAGS = new Set([
   'daemon-url',
   'locale',
@@ -249,14 +260,15 @@ const PROJECT_STRING_FLAGS = new Set([
   'client-request-id',
   'agent', 'model', 'service-tier', 'snapshot-id', 'inputs', 'grant-caps', 'editor',
   'title', 'label', 'against', 'seed-from', 'fork-after', 'mode',
-  'source',
+  'source', 'remote-project', 'entrypoint',
+  'input', 'version',
 ]);
 const PROJECT_RESOURCE_STRING_FLAGS = new Set([
   ...PROJECT_STRING_FLAGS,
   'workspace',
   'workspace-member',
 ]);
-const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow']);
+const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow', 'confirm']);
 const WORKSPACE_STRING_FLAGS = new Set([
   'daemon-url', 'workspace', 'view', 'visibility', 'owner', 'project',
   'member', 'role', 'email', 'app-user', 'lifecycle-state',
@@ -391,6 +403,8 @@ const SUBCOMMAND_MAP = {
   mcp: runMcp,
   amr: runAmr,
   collab: runCollab,
+  collaboration: runCollaboration,
+  review: runReview,
   'message-center': runMessageCenter,
   research: runResearch,
   plugin: runPlugin,
@@ -1190,6 +1204,352 @@ Options:
 // ---------------------------------------------------------------------------
 // Subcommand: od collab …  (team-edition collaboration)
 // ---------------------------------------------------------------------------
+
+function printCollaborationHelp() {
+  console.log(`Usage:
+  od collaboration server status [--json] [--daemon-url <url>]
+  od collaboration server set <origin> [--json] [--daemon-url <url>]
+  od collaboration login --email <email> --password-stdin [--device-name <name>] [--json] [--daemon-url <url>]
+  od collaboration logout [--json] [--daemon-url <url>]
+  od collaboration projects [--json] [--daemon-url <url>]
+
+Configure and use a self-hosted OpenDesign Collaboration Server through the
+local daemon. Credentials remain in daemon-owned storage and are never returned
+to this CLI or the Desktop renderer.
+
+Options:
+  --email <email>        Account email for local server authentication.
+  --password-stdin       Read the password from stdin. Password argv flags are
+                         intentionally unsupported.
+  --device-name <name>  Session label (default: OpenDesign CLI).
+  --json                Emit the daemon response as JSON.
+  --daemon-url <url>    Override the local OpenDesign daemon HTTP base.
+
+Examples:
+  od collaboration server set https://design.example.com
+  printf '%s\\n' "$PASSWORD" | od collaboration login --email me@example.com --password-stdin
+  od collaboration projects --json`);
+}
+
+async function collaborationDaemonRequest(base, method, path, body) {
+  let response;
+  try {
+    response = await fetch(`${base}${path}`, {
+      method,
+      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  } catch (error) {
+    surfaceFetchError(error, base);
+    process.exit(3);
+  }
+  if (!response.ok) return structuredHttpFailure(response);
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+function printCollaborationState(state) {
+  if (!state?.profile) {
+    console.log('Server\tNot configured');
+    console.log('Session\tSigned out');
+    return;
+  }
+  console.log(`Server\t${state.profile.origin}`);
+  console.log(`API\t${state.profile.capabilities.apiVersion}`);
+  console.log(`Checked\t${state.profile.checkedAt}`);
+  if (state.session) {
+    console.log(`Session\t${state.session.user.displayName} <${state.session.user.email}>`);
+  } else {
+    console.log('Session\tSigned out');
+  }
+}
+
+async function runCollaboration(args) {
+  if (args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
+    printCollaborationHelp();
+    process.exit(0);
+  }
+
+  let flags;
+  try {
+    flags = parseFlags(args, {
+      string: COLLABORATION_STRING_FLAGS,
+      boolean: COLLABORATION_BOOLEAN_FLAGS,
+    });
+  } catch (error) {
+    console.error(error.message);
+    process.exit(2);
+  }
+
+  const positionals = positionalArgs(args, COLLABORATION_STRING_FLAGS);
+  const [subcommand, action, value, ...extraPositionals] = positionals;
+  if (!subcommand) {
+    printCollaborationHelp();
+    process.exit(2);
+  }
+  const base = await cliDaemonBaseUrl(flags);
+  const emit = (payload, plain) => {
+    if (flags.json) {
+      process.stdout.write(`${JSON.stringify(payload ?? { ok: true }, null, 2)}\n`);
+    } else {
+      plain();
+    }
+  };
+
+  if (subcommand === 'server') {
+    if (action === 'status' && value === undefined) {
+      const state = await collaborationDaemonRequest(base, 'GET', '/api/collaboration/server');
+      return emit(state, () => printCollaborationState(state));
+    }
+    if (action === 'set' && value && extraPositionals.length === 0) {
+      const state = await collaborationDaemonRequest(
+        base,
+        'PUT',
+        '/api/collaboration/server',
+        { origin: value },
+      );
+      return emit(state, () => printCollaborationState(state));
+    }
+    console.error('usage: od collaboration server <status | set <origin>>');
+    process.exit(2);
+  }
+
+  if (action !== undefined) {
+    console.error(`unexpected argument: ${action}`);
+    process.exit(2);
+  }
+
+  if (subcommand === 'login') {
+    if (!flags.email) {
+      console.error('missing --email <email>');
+      process.exit(2);
+    }
+    if (!flags['password-stdin']) {
+      console.error('missing --password-stdin (password argv flags are intentionally unsupported)');
+      process.exit(2);
+    }
+    let password;
+    try {
+      password = readFileSync(0, 'utf8').replace(/[\r\n]+$/, '');
+    } catch (error) {
+      console.error(`failed to read password from stdin: ${error.message ?? error}`);
+      process.exit(2);
+    }
+    if (!password) {
+      console.error('password read from stdin is empty');
+      process.exit(2);
+    }
+    const state = await collaborationDaemonRequest(
+      base,
+      'POST',
+      '/api/collaboration/login',
+      {
+        email: flags.email,
+        password,
+        deviceName: flags['device-name'] || 'OpenDesign CLI',
+      },
+    );
+    return emit(state, () => printCollaborationState(state));
+  }
+
+  if (subcommand === 'logout') {
+    await collaborationDaemonRequest(base, 'DELETE', '/api/collaboration/session');
+    return emit({ ok: true }, () => console.log('Signed out'));
+  }
+
+  if (subcommand === 'projects') {
+    const result = await collaborationDaemonRequest(base, 'GET', '/api/collaboration/projects');
+    return emit(result, () => {
+      if (!Array.isArray(result?.projects) || result.projects.length === 0) {
+        console.log('No collaboration projects');
+        return;
+      }
+      for (const project of result.projects) {
+        console.log(`${project.id}\t${project.name}\t${project.callerRole}\t${project.status}`);
+      }
+    });
+  }
+
+  console.error(`unknown subcommand: od collaboration ${subcommand}`);
+  process.exit(2);
+}
+
+function printReviewHelp() {
+  console.log(`Usage:
+  od review versions <remoteProjectId> [--json]
+  od review snapshot <remoteProjectId> [--version <id>] [--json]
+  od review manifest <remoteProjectId> [--version <id>] [--json]
+  od review read-file <remoteProjectId> --version <id> --path <bundle-path>
+  od review comments <remoteProjectId> [--version <id>] [--json]
+  od review submit-comments <remoteProjectId> --input <path|-> [--json]
+  od review comment-status <remoteProjectId> <commentId>
+            --status <addressed|resolved|reopened> --expected-revision <n>
+            [--addressed-in-version <id>] [--json]
+
+Review immutable Collaboration Server versions through the local daemon. The
+CLI never receives the Server token. submit-comments accepts either a JSON
+array or {"comments": [...]} and preserves human/Agent provenance declared by
+each comment.
+
+Options:
+  --version <id>              Fixed Review Version; defaults to published head.
+  --path <bundle-path>        Manifest-declared preview/source path.
+  --input <path|->            JSON file, or - for stdin.
+  --json                      Emit JSON.
+  --daemon-url <url>          Override the local OpenDesign daemon HTTP base.`);
+}
+
+async function runReview(args) {
+  if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
+    printReviewHelp();
+    process.exit(args.length === 0 ? 2 : 0);
+  }
+  let flags;
+  try {
+    flags = parseFlags(args, { string: REVIEW_STRING_FLAGS, boolean: REVIEW_BOOLEAN_FLAGS });
+  } catch (error) {
+    console.error(error.message);
+    process.exit(2);
+  }
+  const [subcommand, remoteProjectId, commentId, ...extra] = positionalArgs(
+    args,
+    REVIEW_STRING_FLAGS,
+  );
+  if (!subcommand || !remoteProjectId || extra.length > 0) {
+    printReviewHelp();
+    process.exit(2);
+  }
+  const base = await cliDaemonBaseUrl(flags);
+  const projectRoute = `/api/collaboration/projects/${encodeURIComponent(remoteProjectId)}`;
+  const emit = (payload, plain) => {
+    if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else plain();
+  };
+
+  if (subcommand === 'versions' && !commentId) {
+    const result = await collaborationDaemonRequest(base, 'GET', `${projectRoute}/versions`);
+    return emit(result, () => {
+      for (const version of result.versions ?? []) {
+        console.log(`${version.id}\tv${version.number}\t${version.createdAt}\t${version.mode}`);
+      }
+    });
+  }
+
+  if ((subcommand === 'snapshot' || subcommand === 'manifest') && !commentId) {
+    const snapshot = await collaborationDaemonRequest(
+      base,
+      'POST',
+      `${projectRoute}/review-snapshot`,
+      typeof flags.version === 'string' ? { versionId: flags.version } : {},
+    );
+    if (subcommand === 'manifest') {
+      return emit(snapshot.manifest, () => {
+        console.log(`Version\t${snapshot.version.id} (v${snapshot.version.number})`);
+        console.log(`Entrypoint\t${snapshot.manifest.entrypoint}`);
+        for (const file of snapshot.manifest.files) {
+          console.log(`${file.path}\t${file.size}\t${file.sha256}`);
+        }
+      });
+    }
+    return emit(snapshot, () => {
+      console.log(`Project\t${snapshot.project.name}`);
+      console.log(`Version\t${snapshot.version.id} (v${snapshot.version.number})`);
+      console.log(`Snapshot\t${snapshot.snapshotId}`);
+      console.log(`Entrypoint\t${snapshot.manifest.entrypoint}`);
+    });
+  }
+
+  if (subcommand === 'read-file' && !commentId) {
+    if (typeof flags.version !== 'string' || typeof flags.path !== 'string') {
+      console.error('read-file requires --version <id> and --path <bundle-path>');
+      process.exit(2);
+    }
+    const snapshot = await collaborationDaemonRequest(
+      base,
+      'POST',
+      `${projectRoute}/review-snapshot`,
+      { versionId: flags.version },
+    );
+    const encodedPath = flags.path.split('/').map(encodeURIComponent).join('/');
+    const response = await fetch(
+      `${base}/api/collaboration/review-snapshots/${snapshot.snapshotId}/files/${encodedPath}`,
+    ).catch((error) => {
+      surfaceFetchError(error, base);
+      process.exit(3);
+    });
+    if (!response.ok) return structuredHttpFailure(response);
+    process.stdout.write(Buffer.from(await response.arrayBuffer()));
+    return;
+  }
+
+  if (subcommand === 'comments' && !commentId) {
+    const query = typeof flags.version === 'string'
+      ? `?${new URLSearchParams({ versionId: flags.version })}`
+      : '';
+    const result = await collaborationDaemonRequest(
+      base,
+      'GET',
+      `${projectRoute}/review-comments${query}`,
+    );
+    return emit(result, () => {
+      for (const comment of result.comments ?? []) {
+        console.log(`${comment.id}\t${comment.status}\t${comment.source}\t${comment.note}`);
+      }
+    });
+  }
+
+  if (subcommand === 'submit-comments' && !commentId) {
+    if (typeof flags.input !== 'string') {
+      console.error('submit-comments requires --input <path|->');
+      process.exit(2);
+    }
+    let payload;
+    try {
+      const raw = flags.input === '-' ? readFileSync(0, 'utf8') : readFileSync(flags.input, 'utf8');
+      const parsed = JSON.parse(raw);
+      payload = Array.isArray(parsed) ? { comments: parsed } : parsed;
+    } catch (error) {
+      console.error(`failed to read review comments JSON: ${error.message ?? error}`);
+      process.exit(2);
+    }
+    const result = await collaborationDaemonRequest(
+      base,
+      'POST',
+      `${projectRoute}/review-comments/batch`,
+      payload,
+    );
+    return emit(result, () => console.log(`Submitted\t${result.comments?.length ?? 0} comments`));
+  }
+
+  if (subcommand === 'comment-status' && commentId) {
+    const expectedRevision = Number(flags['expected-revision']);
+    if (
+      typeof flags.status !== 'string'
+      || !['addressed', 'resolved', 'reopened'].includes(flags.status)
+      || !Number.isSafeInteger(expectedRevision)
+      || expectedRevision <= 0
+    ) {
+      console.error('comment-status requires --status and --expected-revision <positive integer>');
+      process.exit(2);
+    }
+    const result = await collaborationDaemonRequest(
+      base,
+      'POST',
+      `${projectRoute}/review-comments/${encodeURIComponent(commentId)}/status`,
+      {
+        status: flags.status,
+        expectedRevision,
+        ...(typeof flags['addressed-in-version'] === 'string'
+          ? { addressedInVersionId: flags['addressed-in-version'] }
+          : {}),
+      },
+    );
+    return emit(result, () => console.log(`${result.id}\t${result.status}\trevision ${result.revision}`));
+  }
+
+  console.error(`unknown or invalid review command: ${subcommand}`);
+  process.exit(2);
+}
 
 function workspaceHeadersFromExplicitFlags(flags, required = false) {
   const workspaceId =
@@ -6998,6 +7358,16 @@ async function runProject(args) {
                     [--design-system <id>] [--json]
   od project list                         List projects.
   od project info <id>                    Print one project.
+  od project collaboration status <id> [--json]
+  od project collaboration create <id> [--remote-project <id>] [--json]
+  od project collaboration preview <id> [--entrypoint <file>] [--json]
+  od project collaboration publish <id> --confirm [--entrypoint <file>] [--json]
+  od project collaboration comments <id> [--version <id>] [--json]
+  od project collaboration attach-comments <id> --conversation <id>
+                    --version <id> --input <path|-> [--json]
+  od project collaboration unbind <id> --confirm [--json]
+                                          Bind and explicitly Publish a local
+                                          preview-only review Bundle.
   od project restore-automatic-scenario <id> [--json]
                                           Restore the daemon-selected default
                                           scenario with a snapshot CAS guard.
@@ -7042,6 +7412,137 @@ Common options:
   const explicitWorkspaceHeaders = workspaceHeadersFromExplicitFlags(flags);
   const workspaceHeaders = explicitWorkspaceHeaders ?? {};
   switch (sub) {
+    case 'collaboration': {
+      const [action, id, ...extra] = positionalArgs(rest, PROJECT_RESOURCE_STRING_FLAGS);
+      if (!action || !id || extra.length > 0) {
+        console.error('Usage: od project collaboration <status|create|preview|publish|comments|attach-comments|unbind> <id>');
+        process.exit(2);
+      }
+      const route = `/api/projects/${encodeURIComponent(id)}/collaboration`;
+      if (action === 'status') {
+        const resp = await fetch(`${base}${route}`, { headers: workspaceHeaders });
+        if (!resp.ok) return structuredHttpFailure(resp);
+        const data = await resp.json();
+        if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+        if (!data.binding) {
+          console.log(`Project\t${id}`);
+          console.log('Collaboration\tNot bound');
+          return;
+        }
+        console.log(`Project\t${id}`);
+        console.log(`Server\t${data.binding.serverOrigin}`);
+        console.log(`Remote Project\t${data.binding.remoteProjectId}`);
+        console.log(`Remote revision\t${data.binding.remoteRevision}`);
+        console.log(`Published version\t${data.binding.lastPublishedVersionNumber ?? '-'}`);
+        return;
+      }
+      if (action === 'create') {
+        const body = typeof flags['remote-project'] === 'string'
+          ? { mode: 'existing', remoteProjectId: flags['remote-project'] }
+          : { mode: 'create' };
+        const data = await postJsonToDaemon(base, route, body, workspaceHeaders);
+        if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+        console.log(`[project] collaboration bound ${id} -> ${data.binding.remoteProjectId}`);
+        return;
+      }
+      if (action === 'preview' || action === 'publish') {
+        const candidate = await postJsonToDaemon(
+          base,
+          `${route}/publish-candidate`,
+          typeof flags.entrypoint === 'string' ? { entrypoint: flags.entrypoint } : {},
+          workspaceHeaders,
+        );
+        if (action === 'preview') {
+          if (flags.json) return process.stdout.write(`${JSON.stringify(candidate, null, 2)}\n`);
+          console.log(`Entrypoint\t${candidate.entrypoint}`);
+          console.log(`Files\t${candidate.files.length}`);
+          console.log(`Bytes\t${candidate.totalBytes}`);
+          for (const file of candidate.files) console.log(`${file.path}\t${file.size}\t${file.mimeType}`);
+          return;
+        }
+        if (!flags.confirm) {
+          console.error('Publish requires --confirm after reviewing `od project collaboration preview <id>`.');
+          process.exit(2);
+        }
+        const data = await postJsonToDaemon(
+          base,
+          `${route}/publish`,
+          {
+            candidateFingerprint: candidate.fingerprint,
+            confirmedPaths: candidate.files.map((file) => file.path),
+            ...(typeof flags.entrypoint === 'string' ? { entrypoint: flags.entrypoint } : {}),
+          },
+          workspaceHeaders,
+        );
+        if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+        console.log(`[project] published version ${data.version.number}`);
+        console.log(`Review\t${data.desktopDeepLink}`);
+        return;
+      }
+      if (action === 'comments') {
+        const query = typeof flags.version === 'string'
+          ? `?${new URLSearchParams({ versionId: flags.version })}`
+          : '';
+        const resp = await fetch(`${base}${route}/review-comments${query}`, { headers: workspaceHeaders });
+        if (!resp.ok) return structuredHttpFailure(resp);
+        const data = await resp.json();
+        if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+        console.log(`Version\t${data.version?.number ?? '-'} (${data.version?.id ?? '-'})`);
+        console.log(`Comments\t${data.comments?.length ?? 0}`);
+        for (const comment of data.comments ?? []) {
+          console.log(`${comment.id}\t${comment.status}\t${comment.source}\t${comment.note}`);
+        }
+        return;
+      }
+      if (action === 'attach-comments') {
+        if (typeof flags.conversation !== 'string' || typeof flags.version !== 'string' || typeof flags.input !== 'string') {
+          console.error('attach-comments requires --conversation <id> --version <id> --input <path|->');
+          process.exit(2);
+        }
+        let parsedInput;
+        try {
+          const raw = flags.input === '-' ? readFileSync(0, 'utf8') : readFileSync(flags.input, 'utf8');
+          parsedInput = JSON.parse(raw);
+        } catch (error) {
+          console.error(`Could not read comment ids: ${error instanceof Error ? error.message : String(error)}`);
+          process.exit(2);
+        }
+        const commentIds = Array.isArray(parsedInput) ? parsedInput : parsedInput?.commentIds;
+        if (!Array.isArray(commentIds) || commentIds.some((value) => typeof value !== 'string')) {
+          console.error('attach-comments input must be a JSON string array or {"commentIds":[...]}');
+          process.exit(2);
+        }
+        const data = await postJsonToDaemon(
+          base,
+          `${route}/preview-comments`,
+          {
+            conversationId: flags.conversation,
+            versionId: flags.version,
+            commentIds,
+          },
+          workspaceHeaders,
+        );
+        if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+        console.log(`[project] attached ${data.comments?.length ?? 0} review comments to conversation ${flags.conversation}`);
+        return;
+      }
+      if (action === 'unbind') {
+        if (!flags.confirm) {
+          console.error('Unbind requires --confirm. The remote Project is not deleted.');
+          process.exit(2);
+        }
+        const resp = await fetch(`${base}${route}`, {
+          method: 'DELETE',
+          headers: workspaceHeaders,
+        });
+        if (!resp.ok) return structuredHttpFailure(resp);
+        if (flags.json) return process.stdout.write(`${JSON.stringify({ ok: true }, null, 2)}\n`);
+        console.log(`[project] collaboration binding removed for ${id}`);
+        return;
+      }
+      console.error(`unknown collaboration action: ${action}`);
+      process.exit(2);
+    }
     case 'list': {
       // After 0.18.0's workspace isolation, GET /api/projects is the NO-SCOPE
       // catalog: it only returns projects that were never adopted into a

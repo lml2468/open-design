@@ -280,6 +280,7 @@ function migrate(db: SqliteDb): void {
       anchored_version INTEGER,
       author_member_id TEXT,
       last_good_position_json TEXT,
+      review_source_json TEXT,
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
     );
@@ -495,6 +496,10 @@ function migrate(db: SqliteDb): void {
   // Multiple comments per element: edit by explicit id; creating another note
   // on the same element inserts a new row.
   migratePreviewCommentsAllowMultiplePerElement(db);
+  const previewCommentReviewCols = db.prepare(`PRAGMA table_info(preview_comments)`).all() as DbRow[];
+  if (!previewCommentReviewCols.some((c: DbRow) => c.name === 'review_source_json')) {
+    db.exec(`ALTER TABLE preview_comments ADD COLUMN review_source_json TEXT`);
+  }
   // Stable canvas pin numbering + persisted sidebar order (recvq5BVsolIxi).
   // Added after the multi-per-element rebuild so a legacy table rebuild can
   // never drop them (same reasoning as the anchor columns above).
@@ -3227,6 +3232,7 @@ export function listPreviewComments(db: SqliteDb, projectId: string, conversatio
               slide_index AS slideIndex,
               anchor_state AS anchorState, anchored_version AS anchoredVersion,
               author_member_id AS authorMemberId, last_good_position_json AS lastGoodPositionJson,
+              review_source_json AS reviewSourceJson,
               pin_seq AS pinSeq, sort_key AS sortKey,
               note, status, created_at AS createdAt, updated_at AS updatedAt
          FROM preview_comments
@@ -3254,6 +3260,7 @@ export function listProjectPreviewComments(db: SqliteDb, projectId: string) {
               slide_index AS slideIndex,
               anchor_state AS anchorState, anchored_version AS anchoredVersion,
               author_member_id AS authorMemberId, last_good_position_json AS lastGoodPositionJson,
+              review_source_json AS reviewSourceJson,
               pin_seq AS pinSeq, sort_key AS sortKey,
               note, status, created_at AS createdAt, updated_at AS updatedAt
          FROM preview_comments
@@ -3315,6 +3322,7 @@ export function upsertPreviewComment(
     typeof input?.authorMemberId === 'string' && input.authorMemberId.trim()
       ? input.authorMemberId.trim()
       : null;
+  const reviewSource = normalizePreviewCommentReviewSource(input?.reviewSource);
   const requestedId =
     typeof input?.id === 'string' && input.id.trim()
       ? input.id.trim()
@@ -3371,8 +3379,8 @@ export function upsertPreviewComment(
        (id, project_id, conversation_id, file_path, element_id, selector, label,
         text, position_json, html_hint, selection_kind, member_count, pod_members_json,
         style_json, attachments_json, slide_index, slide_key, note, status, created_at, updated_at,
-        anchored_version, author_member_id, pin_seq, pin_seq_confirmed, sort_key)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        anchored_version, author_member_id, review_source_json, pin_seq, pin_seq_confirmed, sort_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        selector = excluded.selector,
        label = excluded.label,
@@ -3389,6 +3397,7 @@ export function upsertPreviewComment(
        status = 'open',
        anchored_version = excluded.anchored_version,
        author_member_id = excluded.author_member_id,
+       review_source_json = excluded.review_source_json,
        updated_at = excluded.updated_at
      WHERE preview_comments.project_id = excluded.project_id
        AND preview_comments.conversation_id = excluded.conversation_id`,
@@ -3416,6 +3425,7 @@ export function upsertPreviewComment(
     now,
     anchoredVersion,
     authorMemberId,
+    reviewSource ? JSON.stringify(reviewSource) : null,
     pinSeq,
     pinSeqConfirmed,
     sortKey,
@@ -3946,6 +3956,7 @@ export function getPreviewComment(db: SqliteDb, projectId: string, conversationI
               slide_index AS slideIndex,
               anchor_state AS anchorState, anchored_version AS anchoredVersion,
               author_member_id AS authorMemberId, last_good_position_json AS lastGoodPositionJson,
+              review_source_json AS reviewSourceJson,
               pin_seq AS pinSeq, sort_key AS sortKey,
               note, status, created_at AS createdAt, updated_at AS updatedAt
          FROM preview_comments
@@ -3968,6 +3979,7 @@ export function getProjectPreviewComment(db: SqliteDb, projectId: string, id: st
               slide_index AS slideIndex,
               anchor_state AS anchorState, anchored_version AS anchoredVersion,
               author_member_id AS authorMemberId, last_good_position_json AS lastGoodPositionJson,
+              review_source_json AS reviewSourceJson,
               pin_seq AS pinSeq, sort_key AS sortKey,
               note, status, created_at AS createdAt, updated_at AS updatedAt
          FROM preview_comments
@@ -4009,6 +4021,7 @@ function normalizePreviewComment(row: DbRow) {
     anchorState: typeof row.anchorState === 'string' ? row.anchorState : undefined,
     anchoredVersion: Number.isFinite(row.anchoredVersion) ? row.anchoredVersion : undefined,
     authorMemberId: typeof row.authorMemberId === 'string' ? row.authorMemberId : undefined,
+    reviewSource: normalizePreviewCommentReviewSource(parseJsonOrUndef(row.reviewSourceJson)),
     lastGoodPosition: parseJsonOrUndef(row.lastGoodPositionJson),
     pinSeq: Number.isFinite(row.pinSeq) ? row.pinSeq : undefined,
     sortKey: Number.isFinite(row.sortKey) ? row.sortKey : undefined,
@@ -4027,6 +4040,64 @@ function normalizePreviewCommentAttachments(input: unknown) {
     })
     .filter(Boolean)
     .slice(0, 20);
+}
+
+function normalizePreviewCommentReviewSource(input: unknown) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined;
+  const source = input as DbRow;
+  if (
+    source.kind !== 'collaboration-review'
+    || typeof source.remoteProjectId !== 'string'
+    || typeof source.remoteVersionId !== 'string'
+    || !Number.isFinite(source.remoteVersionNumber)
+    || typeof source.remoteCommentId !== 'string'
+    || !Number.isFinite(source.remoteCommentRevision)
+    || typeof source.authorUserId !== 'string'
+    || (source.source !== 'human' && source.source !== 'agent')
+    || !['open', 'addressed', 'resolved', 'reopened'].includes(String(source.status))
+    || !['element', 'pod', 'visual'].includes(String(source.targetSelectionKind))
+  ) return undefined;
+  const agent = source.agent && typeof source.agent === 'object' && !Array.isArray(source.agent)
+    ? source.agent as DbRow
+    : null;
+  return {
+    kind: 'collaboration-review' as const,
+    remoteProjectId: source.remoteProjectId,
+    remoteVersionId: source.remoteVersionId,
+    remoteVersionNumber: Math.max(1, Math.round(source.remoteVersionNumber as number)),
+    remoteCommentId: source.remoteCommentId,
+    remoteCommentRevision: Math.max(1, Math.round(source.remoteCommentRevision as number)),
+    authorUserId: source.authorUserId,
+    source: source.source as 'human' | 'agent',
+    ...(source.source === 'agent' && typeof agent?.name === 'string' && agent.name.trim()
+      ? {
+          agent: {
+            name: agent.name.trim(),
+            ...(typeof agent.model === 'string' && agent.model.trim() ? { model: agent.model.trim() } : {}),
+            ...(typeof agent.reviewRunId === 'string' && agent.reviewRunId.trim()
+              ? { reviewRunId: agent.reviewRunId.trim() }
+              : {}),
+          },
+        }
+      : {}),
+    status: source.status as 'open' | 'addressed' | 'resolved' | 'reopened',
+    targetSelectionKind: source.targetSelectionKind as 'element' | 'pod' | 'visual',
+    targetPosition: normalizeFractionalPosition(source.targetPosition),
+  };
+}
+
+function normalizeFractionalPosition(input: unknown) {
+  const value: DbRow = input && typeof input === 'object' ? input as DbRow : {};
+  const fraction = (candidate: unknown) =>
+    typeof candidate === 'number' && Number.isFinite(candidate)
+      ? Math.max(0, Math.min(1, candidate))
+      : 0;
+  return {
+    x: fraction(value.x),
+    y: fraction(value.y),
+    width: fraction(value.width),
+    height: fraction(value.height),
+  };
 }
 
 function cleanRequiredString(value: unknown, name: string): string {

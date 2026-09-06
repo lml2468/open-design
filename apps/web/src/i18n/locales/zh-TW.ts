@@ -1,6 +1,8 @@
 import type { Dict } from "../types";
+import { collaborationFallback } from "../collaboration-content";
 
 export const zhTW: Dict = {
+  ...collaborationFallback,
   'invite.header.eyebrow': "團隊邀請",
   'invite.loading': "正在載入邀請…",
   'invite.landing.title': "加入團隊",

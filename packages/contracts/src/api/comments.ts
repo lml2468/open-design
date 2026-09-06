@@ -60,6 +60,26 @@ export interface PreviewCommentAttachment {
   name: string;
 }
 
+/** Provenance retained when a Server review comment is projected locally. */
+export interface PreviewCommentReviewSource {
+  kind: 'collaboration-review';
+  remoteProjectId: string;
+  remoteVersionId: string;
+  remoteVersionNumber: number;
+  remoteCommentId: string;
+  remoteCommentRevision: number;
+  authorUserId: string;
+  source: 'human' | 'agent';
+  agent?: {
+    name: string;
+    model?: string;
+    reviewRunId?: string;
+  };
+  status: 'open' | 'addressed' | 'resolved' | 'reopened';
+  targetSelectionKind: 'element' | 'pod' | 'visual';
+  targetPosition: PreviewCommentPosition;
+}
+
 export interface PreviewCommentMember {
   elementId: string;
   selector: string;
@@ -111,6 +131,7 @@ export interface PreviewComment {
   slideIndex?: number;
   note: string;
   attachments?: PreviewCommentAttachment[];
+  reviewSource?: PreviewCommentReviewSource;
   status: PreviewCommentStatus;
   createdAt: number;
   updatedAt: number;

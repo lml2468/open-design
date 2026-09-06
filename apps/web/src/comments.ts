@@ -388,6 +388,9 @@ export function commentToAttachment(
 ): ChatCommentAttachment {
   const podMembers = normalizeMembers(comment.podMembers);
   const imageAttachments = mergePreviewCommentAttachments(undefined, comment.attachments);
+  const reviewSource = comment.reviewSource;
+  const selectionKind = reviewSource?.targetSelectionKind
+    ?? (comment.selectionKind === 'pod' ? 'pod' : 'element');
   return {
     id: comment.id,
     order,
@@ -397,10 +400,10 @@ export function commentToAttachment(
     label: comment.label,
     comment: comment.note.trim() || imageOnlyCommentFallback(imageAttachments.length),
     currentText: trimContextText(comment.text),
-    pagePosition: normalizePosition(comment.position),
+    pagePosition: reviewSource?.targetPosition ?? normalizePosition(comment.position),
     htmlHint: trimHtmlHint(comment.htmlHint),
     style: normalizeStyle(comment.style),
-    selectionKind: comment.selectionKind === 'pod' ? 'pod' : 'element',
+    selectionKind,
     memberCount:
       comment.selectionKind === 'pod'
         ? (podMembers.length > 0
@@ -410,8 +413,15 @@ export function commentToAttachment(
               : 0)
         : undefined,
     podMembers: podMembers.length > 0 ? podMembers : undefined,
+    ...(selectionKind === 'visual'
+      ? {
+          markKind: 'click' as const,
+          intent: 'Use the normalized point from the immutable published Review Version to locate the requested region in the local Project.',
+        }
+      : {}),
     ...(typeof comment.slideIndex === 'number' ? { slideIndex: comment.slideIndex } : {}),
     imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined,
+    ...(reviewSource ? { reviewSource } : {}),
     source: 'saved-comment',
   };
 }
@@ -632,6 +642,23 @@ function renderCommentAttachmentContext(commentAttachments: ChatCommentAttachmen
     );
     if (item.comment && item.commentContext !== 'query') {
       lines.push(`comment: ${item.comment}`);
+    }
+    if (item.reviewSource) {
+      lines.push(
+        `reviewSource: collaboration-${item.reviewSource.source}`,
+        `reviewVersion: v${item.reviewSource.remoteVersionNumber} (${item.reviewSource.remoteVersionId})`,
+        `reviewCommentId: ${item.reviewSource.remoteCommentId}`,
+        `reviewAuthorUserId: ${item.reviewSource.authorUserId}`,
+        'coordinateSpace: normalized-to-published-preview',
+      );
+      if (item.reviewSource.agent) {
+        lines.push(
+          `reviewAgent: ${item.reviewSource.agent.name}`,
+          ...(item.reviewSource.agent.model
+            ? [`reviewAgentModel: ${item.reviewSource.agent.model}`]
+            : []),
+        );
+      }
     }
     if (selectionKind === 'visual') {
       if (item.screenshotPath) {

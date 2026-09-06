@@ -838,6 +838,8 @@ import { registerActiveContextRoutes } from './routes/active-context.js';
 import { registerAutomationRoutes } from './routes/automation.js';
 import { registerAttributionRoutes } from './routes/attribution.js';
 import { registerDaemonRoutes } from './routes/daemon.js';
+import { registerCollaborationServerRoutes } from './routes/collaboration-server.js';
+import { projectCollaborationReviewComment } from './collaboration/comment-projection.js';
 import { registerGenuiRoutes } from './routes/genui.js';
 import { registerDesignSystemRoutes } from './routes/design-systems.js';
 import { registerHostToolsRoutes } from './routes/host-tools.js';
@@ -7933,6 +7935,37 @@ export async function startServer({
     isProjectUnmaterializedPlaceholder: (_db, projectId) =>
       projectIsUnmaterializedSharedPlaceholder(projectId),
     sendApiError,
+  });
+  registerCollaborationServerRoutes(app, {
+    runtimeDataDir: RUNTIME_DATA_DIR,
+    requireLocalDaemonRequest,
+    sendApiError,
+    getProject: (projectId) => getProject(db, projectId),
+    listProjectFiles: (projectId, metadata) => listFiles(PROJECTS_DIR, projectId, { metadata }),
+    authorizeProjectRequest,
+    projectReviewComments: ({
+      localProjectId,
+      conversationId,
+      serverOrigin,
+      remoteProjectId,
+      version,
+      comments,
+    }) => {
+      const conversation = getConversation(db, conversationId);
+      if (conversation?.projectId !== localProjectId) return null;
+      return db.transaction(() => comments.map((comment) => upsertPreviewComment(
+        db,
+        localProjectId,
+        conversationId,
+        projectCollaborationReviewComment({
+          serverOrigin,
+          remoteProjectId,
+          conversationId,
+          version,
+          comment,
+        }),
+      )))();
+    },
   });
   // Legacy registrars still receive the historical bound mutation-gate shape,
   // but production delegates it to the same central authorizer as newer route

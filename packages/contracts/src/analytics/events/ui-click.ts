@@ -1521,6 +1521,7 @@ export type TrackingSettingsArea =
   | 'design_systems'
   | 'project_locations'
   | 'privacy'
+  | 'collaboration'
   | 'labs'
   | 'about';
 

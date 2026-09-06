@@ -1,6 +1,8 @@
 import type { Dict } from '../types';
+import { collaborationFallback } from '../collaboration-content';
 
 export const fr: Dict = {
+  ...collaborationFallback,
   'invite.header.eyebrow': "Invitation d'équipe",
   'invite.loading': "Chargement de l'invitation…",
   'invite.landing.title': "Rejoindre l'équipe",

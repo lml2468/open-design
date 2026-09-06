@@ -66,6 +66,7 @@ type CommentAttachmentInput = {
   htmlHint?: InputValue;
   style?: InputValue;
   source?: InputValue;
+  reviewSource?: InputValue;
 };
 
 export function composeLiveInstructionPrompt({
@@ -496,6 +497,7 @@ export function normalizeCommentAttachments(input: readonly CommentAttachmentInp
         : cleanString(record.comment) || intent || imageOnlyCommentFallback(imageAttachments.length);
       const selectionKind =
         record.selectionKind === 'visual' ? 'visual' : record.selectionKind === 'pod' ? 'pod' : 'element';
+      const reviewSource = normalizeReviewSource(record.reviewSource);
       if (!filePath || !elementId) return null;
       if (selectionKind !== 'visual' && !selector) return null;
       // Visual marks are kept even without a screenshot (#4084): when the
@@ -503,7 +505,7 @@ export function normalizeCommentAttachments(input: readonly CommentAttachmentInp
       // pagePosition, markKind, currentText — is the only anchor the agent
       // gets, so dropping the attachment here would silently strip the
       // user's targeting from the prompt.
-      const pagePosition = normalizeAttachmentPosition(record.pagePosition);
+      const pagePosition = reviewSource?.targetPosition ?? normalizeAttachmentPosition(record.pagePosition);
       if (selectionKind === 'visual' && !screenshotPath) {
         // A screenshot-less visual mark is only actionable when it carries a
         // concrete anchor: a positive-size pagePosition or a DOM selector.
@@ -513,7 +515,7 @@ export function normalizeCommentAttachments(input: readonly CommentAttachmentInp
         // would hard-scope the agent onto fields that point nowhere and steer
         // it to edit an arbitrary part of the file, so drop it instead.
         const hasUsablePosition = pagePosition.width > 0 && pagePosition.height > 0;
-        if (!hasUsablePosition && !selector) return null;
+        if (!hasUsablePosition && !selector && !reviewSource) return null;
       }
       const podMembers = selectionKind === 'pod' ? normalizeAttachmentPodMembers(record.podMembers) : [];
       const memberCount =
@@ -547,6 +549,7 @@ export function normalizeCommentAttachments(input: readonly CommentAttachmentInp
           ? intent || (screenshotPath ? visualAnnotationIntent(markKind) : visualAnnotationIntentWithoutScreenshot())
           : undefined,
         imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined,
+        reviewSource,
         commentContext,
         source: record.source === 'board-batch' ? 'board-batch' : 'saved-comment',
       };
@@ -581,6 +584,23 @@ export function renderCommentAttachmentHint(
     );
     if (item.comment && item.commentContext !== 'query') {
       lines.push(`comment: ${item.comment}`);
+    }
+    if (item.reviewSource) {
+      lines.push(
+        `reviewSource: collaboration-${item.reviewSource.source}`,
+        `reviewVersion: v${item.reviewSource.remoteVersionNumber} (${item.reviewSource.remoteVersionId})`,
+        `reviewCommentId: ${item.reviewSource.remoteCommentId}`,
+        `reviewAuthorUserId: ${item.reviewSource.authorUserId}`,
+        'coordinateSpace: normalized-to-published-preview',
+      );
+      if (item.reviewSource.agent) {
+        lines.push(
+          `reviewAgent: ${item.reviewSource.agent.name}`,
+          ...(item.reviewSource.agent.model
+            ? [`reviewAgentModel: ${item.reviewSource.agent.model}`]
+            : []),
+        );
+      }
     }
     if (targetKind === 'visual') {
       if (item.screenshotPath) {
@@ -644,6 +664,56 @@ function normalizePreviewCommentImageAttachments(
     if (out.length >= 20) break;
   }
   return out;
+}
+
+function normalizeReviewSource(input: InputValue) {
+  if (!isInputRecord(input)) return undefined;
+  if (
+    input.kind !== 'collaboration-review'
+    || typeof input.remoteProjectId !== 'string'
+    || typeof input.remoteVersionId !== 'string'
+    || !isFiniteNumber(input.remoteVersionNumber)
+    || typeof input.remoteCommentId !== 'string'
+    || !isFiniteNumber(input.remoteCommentRevision)
+    || typeof input.authorUserId !== 'string'
+    || (input.source !== 'human' && input.source !== 'agent')
+    || !['open', 'addressed', 'resolved', 'reopened'].includes(String(input.status))
+    || !['element', 'pod', 'visual'].includes(String(input.targetSelectionKind))
+    || !isInputRecord(input.targetPosition)
+  ) return undefined;
+  const agent = isInputRecord(input.agent) && typeof input.agent.name === 'string'
+    ? {
+        name: input.agent.name.trim().slice(0, 120),
+        ...(typeof input.agent.model === 'string' && input.agent.model.trim()
+          ? { model: input.agent.model.trim().slice(0, 160) }
+          : {}),
+        ...(typeof input.agent.reviewRunId === 'string' && input.agent.reviewRunId.trim()
+          ? { reviewRunId: input.agent.reviewRunId.trim().slice(0, 160) }
+          : {}),
+      }
+    : undefined;
+  const fraction = (value: InputValue) => isFiniteNumber(value)
+    ? Math.max(0, Math.min(1, value))
+    : 0;
+  return {
+    kind: 'collaboration-review' as const,
+    remoteProjectId: input.remoteProjectId.trim().slice(0, 200),
+    remoteVersionId: input.remoteVersionId.trim().slice(0, 128),
+    remoteVersionNumber: Math.max(1, Math.round(input.remoteVersionNumber)),
+    remoteCommentId: input.remoteCommentId.trim().slice(0, 200),
+    remoteCommentRevision: Math.max(1, Math.round(input.remoteCommentRevision)),
+    authorUserId: input.authorUserId.trim().slice(0, 200),
+    source: input.source,
+    ...(input.source === 'agent' && agent?.name ? { agent } : {}),
+    status: input.status as 'open' | 'addressed' | 'resolved' | 'reopened',
+    targetSelectionKind: input.targetSelectionKind as 'element' | 'pod' | 'visual',
+    targetPosition: {
+      x: fraction(input.targetPosition.x),
+      y: fraction(input.targetPosition.y),
+      width: fraction(input.targetPosition.width),
+      height: fraction(input.targetPosition.height),
+    },
+  };
 }
 
 function imageOnlyCommentFallback(count: number) {

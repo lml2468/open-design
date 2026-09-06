@@ -186,6 +186,7 @@ import { ByokKeyField } from './byok/ByokKeyField';
 import { ByokModelField } from './byok/ByokModelField';
 import { ByokProviderBaseUrl } from './byok/ByokProviderBaseUrl';
 import { ByokProviderPicker } from './byok/ByokProviderPicker';
+import { CollaborationServerSettings } from './collaboration/CollaborationServerSettings';
 import { byokPreflightBlockReason } from './byok/preflight';
 import {
   blockingByokDraftFields,
@@ -241,6 +242,7 @@ export type SettingsSection =
   | 'projectLocations'
   | 'memory'
   | 'privacy'
+  | 'collaboration'
   // 'library' is consumed by the EntryShell library route — App opens it
   // via this same openSettings entry point, so SettingsSection must
   // accept the token even though SettingsDialog itself has no Library
@@ -3916,6 +3918,10 @@ export function SettingsDialog({
     },
     notifications: { title: t('settings.notifications'), subtitle: t('settings.notificationsHint') },
     privacy: { title: t('settings.privacy'), subtitle: t('settings.privacyHint') },
+    collaboration: {
+      title: t('settings.collaboration'),
+      subtitle: t('settings.collaborationHint'),
+    },
     pet: { title: t('pet.title'), subtitle: t('pet.subtitle') },
     designSystems: {
       title: t('settings.designSystems'),
@@ -4434,6 +4440,18 @@ export function SettingsDialog({
               <span>
                 <strong>{t('settings.mcpServerTitle')}</strong>
                 <small>{t('settings.mcpServerHint')}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`settings-nav-item${activeSection === 'collaboration' ? ' active' : ''}`}
+              onClick={() => setActiveSection('collaboration')}
+              data-testid="settings-nav-collaboration"
+            >
+              <Icon name="users" size={18} />
+              <span>
+                <strong>{t('settings.collaboration')}</strong>
+                <small>{t('settings.collaborationHint')}</small>
               </span>
             </button>
             <button
@@ -5890,6 +5908,8 @@ export function SettingsDialog({
             />
           ) : null}
           {activeSection === 'integrations' ? <IntegrationsSection /> : null}
+
+          {activeSection === 'collaboration' ? <CollaborationServerSettings /> : null}
 
           {activeSection === 'mcpClient' ? <McpClientSection surface="settings" /> : null}
 
