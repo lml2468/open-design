@@ -1298,7 +1298,6 @@ export interface Dict extends CollaborationSettingsDict {
   'handoff.frameworkPrompt.solid': string;
   'handoff.frameworkPrompt.next': string;
   'handoff.frameworkPrompt.vanilla': string;
-  'handoff.amrWebsite': string;
   'handoff.copyPrompt': string;
   'handoff.copyPromptForTarget': string;
   'handoff.copied': string;
@@ -2577,8 +2576,6 @@ export interface Dict extends CollaborationSettingsDict {
   'avatar.useApi': string;
   'avatar.codeAgent': string;
   'avatar.rescan': string;
-  'avatar.amrConsole': string;
-  'avatar.amrConsoleMeta': string;
   'avatar.settings': string;
   'avatar.backToProjects': string;
   'avatar.metaActive': string;
@@ -2658,14 +2655,6 @@ export interface Dict extends CollaborationSettingsDict {
   'project.missing': string;
   'project.resizeChatPanel': string;
   'chat.tabChat': string;
-  'chat.amrCard.switchTitle': string;
-  'chat.amrCard.switchBody': string;
-  'chat.amrCard.chipOfficial': string;
-  'chat.amrCard.chipNoKey': string;
-  'chat.amrCard.chipAutoRetry': string;
-  'chat.amrCard.switchCta': string;
-  'chat.amrBalanceGate.title': string;
-  'chat.amrBalanceGate.plansCta': string;
   'chat.antigravityError.launchTerminalCta': string;
   'chat.antigravityError.launchSwitchModelCta': string;
   'chat.connectionDropped': string;
@@ -2691,7 +2680,6 @@ export interface Dict extends CollaborationSettingsDict {
   'chat.runError.title.strategyTaskHalted': string;
   'chat.runError.title.generic': string;
   'chat.runError.title.artifactMissing': string;
-  'chat.runError.signInMessage.amr': string;
   'chat.runError.signInMessage.other': string;
   'chat.runError.cliMissingMessage': string;
   'chat.runError.promptTooLargeMessage': string;

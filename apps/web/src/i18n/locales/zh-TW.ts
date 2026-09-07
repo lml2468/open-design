@@ -41,15 +41,6 @@ export const zhTW: Dict = {
   'invite.error.invite_unavailable': "此邀請已不可用。",
   'invite.error.generic': "發生錯誤，請重試。",
   'invite.error.retry': "重試",
-  "chat.amrCard.switchTitle": "模型呼叫失敗，目前任務已暫停",
-  "chat.amrCard.switchBody":
-    "可切換到 OpenDesign Cloud 官方模型服務，無需設定 API Key。完成登入、授權與儲值後，將自動重試目前任務。",
-  "chat.amrCard.chipOfficial": "官方代管",
-  "chat.amrCard.chipNoKey": "無需 API Key",
-  "chat.amrCard.chipAutoRetry": "授權後自動重試",
-  "chat.amrCard.switchCta": "切換到 OpenDesign Cloud 並重試",
-  "chat.amrBalanceGate.title": "升級方案，繼續創作",
-  "chat.amrBalanceGate.plansCta": "升級方案",
   "chat.antigravityError.launchTerminalCta": "透過終端機登入",
   "chat.antigravityError.launchSwitchModelCta": "在終端機中切換模型",
   "chat.connectionDropped":
@@ -62,8 +53,6 @@ export const zhTW: Dict = {
   "chat.runError.title.strategyTaskHalted": "任務已被品質門攔下",
   "chat.runError.title.generic": "任務執行失敗",
   "chat.runError.title.artifactMissing": "未產生檔案產物",
-  "chat.runError.signInMessage.amr":
-    "OpenDesign Cloud 智慧體尚未登入，前往登入即可正常使用",
   "chat.runError.signInMessage.other":
     "{agent}尚未登入，請在本機檢查登入狀態。推薦使用 OpenDesign Cloud 智慧體，更穩定划算",
   "chat.runError.agentFallback": "智慧體",
@@ -889,7 +878,6 @@ export const zhTW: Dict = {
   "handoff.frameworkPrompt.solid": "SolidJS",
   "handoff.frameworkPrompt.next": "Next.js / React",
   "handoff.frameworkPrompt.vanilla": "原生 JavaScript、HTML 和 CSS",
-  "handoff.amrWebsite": "開啟 OpenDesign Cloud 官網",
   "handoff.copyPrompt": "複製提示詞",
   "handoff.copyPromptForTarget": "複製給 {target} 的提示詞",
   "handoff.copied": "已複製",
@@ -1924,8 +1912,6 @@ export const zhTW: Dict = {
   "avatar.useApi": "使用 API · BYOK",
   "avatar.codeAgent": "程式碼代理",
   "avatar.rescan": "重新掃描 PATH",
-  "avatar.amrConsole": "OpenDesign Cloud 帳戶",
-  "avatar.amrConsoleMeta": "餘額與儲值",
   "avatar.settings": "設定",
   "avatar.backToProjects": "返回專案列表",
   "avatar.metaActive": "使用中",

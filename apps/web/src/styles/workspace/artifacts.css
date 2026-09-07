@@ -1871,52 +1871,6 @@ button.agent-group-rescan-btn:hover:not(:disabled) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Device-authorization fallback shown while signing in to AMR. Surfaced from
-   vela login's stdout so the user can finish even when the browser did not
-   auto-open. Unscoped so it renders consistently in Settings, onboarding, and
-   the chat auth surfaces; takes a full row inside the wrapping flex pill. */
-/* The pill's base layout is a single non-wrapping flex row; let it wrap so the
-   full-width activation block drops onto its own line below the status. Scoped
-   by :has so only the signing-in-with-activation case is affected. */
-.amr-login-activation {
-  flex: 1 1 100%;
-  max-width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
-  border-radius: var(--radius-large, 8px);
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-  text-align: left;
-}
-.amr-login-activation__hint {
-  font-size: 12px;
-  line-height: 1.35;
-  color: var(--text-muted, #6b7280);
-}
-.amr-login-activation__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.amr-login-activation__open {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-contrast, #fff);
-  font-size: 12px;
-  font-weight: 700;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.amr-login-activation__open:hover {
-  background: var(--accent-strong, var(--accent));
-}
 .agent-model-row-head {
   font-size: 12px;
   color: var(--text);
