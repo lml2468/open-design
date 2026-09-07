@@ -95,7 +95,6 @@ import {
   RUNS_CHANGED_EVENT,
   listProjectRuns,
 } from './providers/daemon';
-import { CollabDemoView } from './collab/CollabDemoView';
 import { useWorkspaceInvalidation } from './collab/workspace-events';
 import { useWorkspaceSnapshotActivation } from './collab/workspace-snapshot-activation';
 import {
@@ -233,7 +232,7 @@ const AGENT_FOCUS_REFRESH_THROTTLE_MS = 10_000;
  * in the app: they have never completed onboarding (on either the local or the
  * daemon copy — `mergeDaemonConfig` ratchets the two before this runs), and
  * they did not arrive through an explicit deep link that onboarding must not
- * hijack (the collab demo and the community gallery are shareable URLs).
+ * hijack (the community gallery is a shareable URL).
  *
  * Deliberately a pure predicate over a resolved config: the redirect belongs to
  * the one-shot boot pass, and expressing it as a function of "who the user is"
@@ -246,7 +245,6 @@ export function shouldRouteToFirstRunOnboarding(
   if (config.onboardingCompleted === true) return false;
   if (
     pathname.startsWith('/projects/')
-    || pathname.startsWith('/collab-demo')
     || pathname.startsWith('/community')
   ) {
     return false;
@@ -3811,8 +3809,6 @@ function AppInner() {
         workspaceContextState={workspaceContextState}
       />
     );
-  } else if (route.kind === 'collab-demo') {
-    appMain = <CollabDemoView projectId={route.projectId} />;
   } else if (route.kind === 'community') {
     appMain = (
       <CommunityView

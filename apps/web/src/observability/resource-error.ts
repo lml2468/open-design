@@ -392,9 +392,6 @@ function safeCurrentUrl(): string {
   if (segments[0] === 'design-systems' && segments[1] && segments[1] !== 'create') {
     return `${origin}/design-systems/:design_system_id`;
   }
-  if (segments[0] === 'collab-demo' && segments[1]) {
-    return `${origin}/collab-demo/:project_id`;
-  }
   return origin;
 }
 
