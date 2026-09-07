@@ -25,7 +25,6 @@ import {
   GENERIC_DAEMON_DISCONNECT_MESSAGE,
   listActiveChatRuns,
   listProjectRuns,
-  publishDaemonRunFinishedEvent,
   reattachDaemonRun,
   reportChatRunFeedback,
   streamViaDaemon,
@@ -5752,11 +5751,6 @@ export function ProjectView({
           reattachTextBuffersRef.current.delete(textBuffer);
         };
 
-        const shouldPublishRunFinishedEvent =
-          isActiveRunStatus(message.runStatus)
-          || isActiveRunStatus(status.status)
-          || spuriouslyFailedPending
-          || recoverableGenericDisconnectFailed;
         void reattachDaemonRun({
           agentId: message.agentId,
           runId: reattachRunId,
@@ -5767,7 +5761,6 @@ export function ProjectView({
           cancelSignal: cancelController.signal,
           initialLastEventId:
             needsFullReplay || taskRunAdvanced ? null : message.lastRunEventId ?? null,
-          publishRunFinishedEvent: shouldPublishRunFinishedEvent,
           onArtifactPaths: (paths) => {
             authoritativeReattachArtifactPaths = paths;
           },
@@ -6096,21 +6089,6 @@ export function ProjectView({
                     const producedArtifactToOpen = selectAutoOpenProducedArtifact(produced, autoOpenArtifactOptions);
                     if (producedArtifactToOpen) requestOpenFile(producedArtifactToOpen);
                     if (latestRunStatus?.status === 'succeeded') setError(null);
-                    if (
-                      shouldPublishRunFinishedEvent
-                      && latestRunStatus?.status === 'succeeded'
-                      && latestRunStatus.agentId === 'amr'
-                      && typeof latestRunStatus.artifactCount === 'number'
-                    ) {
-                      publishDaemonRunFinishedEvent({
-                        agentId: latestRunStatus.agentId,
-                        runId,
-                        projectId: project.id,
-                        conversationId: reattachConversationId,
-                        result: 'success',
-                        artifactCount: latestRunStatus.artifactCount,
-                      });
-                    }
                     // Unlike the recoverArtifacts sibling below, this row's
                     // endedAt was already stamped synchronously above (~4041)
                     // at disconnect time — `prev.endedAt` is never null here,
@@ -6192,20 +6170,6 @@ export function ProjectView({
                     // unrelated state change.
                     shouldRefreshConversationAfterCleanup = false;
                   } else if (latestRunStatus.status === 'succeeded') {
-                    if (
-                      shouldPublishRunFinishedEvent
-                      && latestRunStatus.agentId === 'amr'
-                      && typeof latestRunStatus.artifactCount === 'number'
-                    ) {
-                      publishDaemonRunFinishedEvent({
-                        agentId: latestRunStatus.agentId,
-                        runId,
-                        projectId: project.id,
-                        conversationId: reattachConversationId,
-                        result: 'success',
-                        artifactCount: latestRunStatus.artifactCount,
-                      });
-                    }
                     clearProjectTimeout(backoffTimer);
                     setError(null);
                     // If the resumed stream already replayed some content/events
@@ -7771,19 +7735,6 @@ export function ProjectView({
                 }
                 if (!latestRunStatus || isActiveRunStatus(latestRunStatus.status)) {
                 } else if (latestRunStatus.status === 'succeeded') {
-                  if (
-                    latestRunStatus.agentId === 'amr'
-                    && typeof latestRunStatus.artifactCount === 'number'
-                  ) {
-                    publishDaemonRunFinishedEvent({
-                      agentId: latestRunStatus.agentId,
-                      runId: runIdForGenericDisconnect,
-                      projectId: project.id,
-                      conversationId: runConversationId,
-                      result: 'success',
-                      artifactCount: latestRunStatus.artifactCount,
-                    });
-                  }
                   clearProjectTimeout(backoffTimer);
                   // Advance the outer endedAt so updateConversationLatestRun()
                   // below adopts this same authoritative terminal timestamp,
