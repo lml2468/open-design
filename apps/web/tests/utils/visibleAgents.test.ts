@@ -24,7 +24,7 @@ describe('availableVisibleAgentCount', () => {
   // could see — "3 available" sitting above a two-row list.
   it('excludes agents that are hidden from the picker', () => {
     const agents = [
-      agent({ id: 'amr', available: true }),
+      agent({ id: 'claude', available: true }),
       agent({ id: 'deepseek', available: true }),
       agent({ id: 'byok-opencode', available: true }),
     ];
@@ -35,7 +35,7 @@ describe('availableVisibleAgentCount', () => {
 
   it('ignores unavailable agents', () => {
     const agents = [
-      agent({ id: 'amr', available: true }),
+      agent({ id: 'claude', available: true }),
       agent({ id: 'codex', available: false }),
     ];
 

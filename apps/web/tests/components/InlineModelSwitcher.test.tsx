@@ -67,17 +67,6 @@ const codexAgent: AgentInfo = {
   ],
 };
 
-// Kept only as a removal-boundary fixture: legacy daemon payloads must not
-// make the retired runtime visible again.
-const retiredAmrAgent: AgentInfo = {
-  id: 'amr',
-  name: 'AMR (vela)',
-  bin: 'amr',
-  available: true,
-  version: '1.0.0',
-  models: [{ id: 'amr-cloud-latest', label: 'AMR Cloud Latest' }],
-};
-
 function optionNames(container: HTMLElement): string[] {
   return within(container).getAllByRole('option').map((option) => {
     const labelledBy = option.getAttribute('aria-labelledby');
@@ -125,23 +114,6 @@ afterEach(() => {
 });
 
 describe('InlineModelSwitcher', () => {
-  it('never exposes the retired AMR runtime from a legacy daemon payload', () => {
-    const { onAgentChange } = renderSwitcher(
-      { agentId: 'amr' },
-      [retiredAmrAgent, codexAgent],
-    );
-
-    expect(screen.getByTestId('inline-model-switcher-chip')).not.toHaveTextContent(
-      /AMR|vela|AMR Cloud Latest/i,
-    );
-    fireEvent.click(screen.getByTestId('inline-model-switcher-chip'));
-
-    expect(screen.queryByTestId('inline-model-switcher-agent-amr')).toBeNull();
-    expect(screen.queryByText(/AMR|vela|AMR Cloud Latest/i)).toBeNull();
-    fireEvent.click(screen.getByTestId('inline-model-switcher-agent-codex'));
-    expect(onAgentChange).toHaveBeenCalledWith('codex');
-  });
-
   it('keeps an accessible name on the compact chip', () => {
     renderSwitcher(
       { agentModels: { codex: { model: 'gpt-5.1' } } },
@@ -370,7 +342,7 @@ describe('InlineModelSwitcher', () => {
           apiKey: 'sk-test',
           model: 'gpt-4o',
         }}
-        agents={[codexAgent, retiredAmrAgent]}
+        agents={[codexAgent]}
         compact
         daemonLive
         providerModelsCache={{
@@ -395,7 +367,7 @@ describe('InlineModelSwitcher', () => {
 
     fireEvent.click(screen.getByTestId('inline-model-switcher-chip'));
     const popover = screen.getByTestId('inline-model-switcher-popover');
-    expect(within(popover).queryByText(/gpt-5\.2|AMR Cloud Latest/i)).toBeNull();
+    expect(within(popover).queryByText(/gpt-5\.2/i)).toBeNull();
 
     fireEvent.click(within(popover).getByTestId('inline-model-switcher-api-model'));
     const modelPopover = screen.getByTestId(

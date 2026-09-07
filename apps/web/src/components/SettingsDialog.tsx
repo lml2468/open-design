@@ -481,7 +481,7 @@ export interface AgentRefreshOptions {
 }
 
 function isVisibleSettingsAgent(agent: Pick<AgentInfo, 'id'>): boolean {
-  return agent.id !== 'amr' && isVisibleLocalCliAgent(agent);
+  return isVisibleLocalCliAgent(agent);
 }
 
 function codexPathStrings(locale: Locale) {

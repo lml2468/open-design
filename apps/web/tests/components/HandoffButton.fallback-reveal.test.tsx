@@ -92,12 +92,6 @@ describe('HandoffButton zero-editors fallback', () => {
     copyToClipboard.mockResolvedValue(true);
     const agents: AgentInfo[] = [
       {
-        id: 'amr',
-        name: 'OpenDesign Cloud',
-        bin: 'vela',
-        available: true,
-      },
-      {
         id: 'claude',
         name: 'Claude Code',
         bin: 'claude',
@@ -127,7 +121,6 @@ describe('HandoffButton zero-editors fallback', () => {
 
     fireEvent.click(await screen.findByTestId('handoff-caret'));
     fireEvent.click(await screen.findByRole('tab', { name: '复制给 CLI' }));
-    expect(screen.queryByTestId('handoff-cli-item-amr')).toBeNull();
     fireEvent.click(await screen.findByRole('button', { name: 'Vue.js' }));
     fireEvent.click(await screen.findByTestId('handoff-cli-item-claude'));
 

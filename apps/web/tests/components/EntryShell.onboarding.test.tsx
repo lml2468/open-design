@@ -48,17 +48,6 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function amrAgent(overrides: Partial<AgentInfo> = {}): AgentInfo {
-  return {
-    id: 'amr',
-    name: 'AMR',
-    bin: 'amr',
-    available: true,
-    models: [{ id: 'amr-model', label: 'AMR Model' }],
-    ...overrides,
-  };
-}
-
 function cliAgent(overrides: Partial<AgentInfo> = {}): AgentInfo {
   return {
     id: 'claude-code',
@@ -121,7 +110,7 @@ function renderOnboarding(
     connectors: [],
     connectorsLoading: false,
     config: baseConfig(),
-    agents: [amrAgent(), cliAgent()],
+    agents: [cliAgent()],
     daemonLive: true,
     onModeChange: vi.fn(),
     onAgentChange: vi.fn(),
@@ -129,7 +118,7 @@ function renderOnboarding(
     onApiProtocolChange: vi.fn(),
     onApiModelChange: vi.fn(),
     onConfigPersist: vi.fn(),
-    onRefreshAgents: vi.fn(() => [amrAgent(), cliAgent()]),
+    onRefreshAgents: vi.fn(() => [cliAgent()]),
     onCreateProject: vi.fn(),
     onCreatePluginShareProject: vi.fn(),
     onImportClaudeDesign: vi.fn(),
@@ -1172,8 +1161,8 @@ describe('EntryShell onboarding model sources', () => {
     // Only the setup-required entry is installed, so the scan has no available
     // agent to fall back to and the saved selection stays on it.
     renderOnboarding({
-      agents: [amrAgent(), dshSetupRequiredAgent()],
-      onRefreshAgents: vi.fn(() => [amrAgent(), dshSetupRequiredAgent()]),
+      agents: [dshSetupRequiredAgent()],
+      onRefreshAgents: vi.fn(() => [dshSetupRequiredAgent()]),
       config: baseConfig({ agentId: 'deepseek-harness' }),
     });
 
@@ -1189,24 +1178,6 @@ describe('EntryShell onboarding model sources', () => {
     expect(
       screen.getByRole('button', { name: /^Continue$/i }).getAttribute('aria-disabled'),
     ).toBe('true');
-  });
-
-  it('excludes AMR from the Local CLI agent list', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      jsonResponse({
-        loggedIn: true,
-        profile: 'prod',
-        user: { id: 'u', email: 'user@example.com' },
-        configPath: '/x',
-      }),
-    ) as typeof fetch;
-    renderOnboarding();
-
-    await openLocalRuntimeSetup();
-
-    const localPanel = screen.getByText('Local CLI').closest('.onboarding-view__setup-panel');
-    expect(localPanel?.textContent).toContain('Claude Code');
-    expect(localPanel?.textContent).not.toContain('AMR');
   });
 
   it('tests the selected Local CLI agent from onboarding', async () => {
@@ -1231,8 +1202,8 @@ describe('EntryShell onboarding model sources', () => {
         agentCliEnv: { 'claude-code': { OPEN_DESIGN_TEST: '1' } },
         agentModels: { 'claude-code': { model: 'sonnet', reasoning: 'high' } },
       }),
-      agents: [amrAgent(), cliAgent()],
-      onRefreshAgents: vi.fn(() => [amrAgent(), cliAgent()]),
+      agents: [cliAgent()],
+      onRefreshAgents: vi.fn(() => [cliAgent()]),
     });
 
     await openLocalRuntimeSetup();
@@ -1270,8 +1241,8 @@ describe('EntryShell onboarding model sources', () => {
     globalThis.fetch = fetchMock as typeof fetch;
     renderOnboarding({
       config: baseConfig({ agentId: 'claude-code' }),
-      agents: [amrAgent(), cliAgent()],
-      onRefreshAgents: vi.fn(() => [amrAgent(), cliAgent()]),
+      agents: [cliAgent()],
+      onRefreshAgents: vi.fn(() => [cliAgent()]),
     });
 
     await openLocalRuntimeSetup();

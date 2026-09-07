@@ -261,7 +261,6 @@ export function InlineModelSwitcher({
     () =>
       agents.filter(
         (agent) =>
-          agent.id !== 'amr' &&
           agent.available &&
           isVisibleLocalCliAgent(agent),
       ),

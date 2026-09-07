@@ -172,9 +172,6 @@ function mergeCliTargets(agents: AgentInfo[] | undefined): CliTarget[] {
     byId.set(target.id, target);
   }
   for (const agent of agents ?? []) {
-    // Old daemons can still report the retired hosted runtime while the
-    // backend removal rolls out. Never expose it as a handoff target.
-    if (agent.id === 'amr') continue;
     byId.set(agent.id, {
       id: agent.id,
       name: cliDisplayName(agent),

@@ -148,16 +148,6 @@ const availableAgents: AgentInfo[] = [
   },
 ];
 
-const amrAgent: AgentInfo = {
-  id: 'amr',
-  name: 'AMR (vela)',
-  bin: 'amr',
-  available: true,
-  version: '1.0.0',
-  models: [{ id: 'default', label: 'Default' }],
-  supportsCustomModel: false,
-};
-
 function workspaceDirectoryResponse(
   context: WorkspaceCollabContext | null,
 ): Response {
@@ -2674,50 +2664,6 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
-  });
-
-  it('omits the retired AMR runtime from the installed CLI list', () => {
-    const claudeAgent: AgentInfo = {
-      id: 'claude',
-      name: 'Claude Code',
-      bin: 'claude',
-      available: true,
-      version: '2.1.196',
-      models: [{ id: 'default', label: 'Default' }],
-    };
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-      if (url === '/api/memory') {
-        return new Response(
-          JSON.stringify({ enabled: true, memories: [], extraction: null }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        );
-      }
-      return new Response('{}', { status: 200 });
-    }));
-
-    renderSettingsDialog(
-      { mode: 'daemon', agentId: 'codex' },
-      { agents: [availableAgents[0]!, claudeAgent, amrAgent] },
-    );
-
-    fireEvent.click(screen.getByRole('tab', { name: /Local CLI.*2 installed/i }));
-
-    expect(
-      screen
-        .getAllByTestId(/^settings-agent-card-/)
-        .map((card) => card.getAttribute('data-testid')),
-    ).toEqual([
-      'settings-agent-card-codex',
-      'settings-agent-card-claude',
-    ]);
-    expect(screen.queryByTestId('settings-agent-card-amr')).toBeNull();
   });
 
   it('lets users switch to Local CLI, select an installed agent, and autosave', async () => {
