@@ -652,7 +652,6 @@ interface Props {
   onApiModelChange?: (model: string) => void;
   onRefreshAgents: () => void;
   onOpenSettings: (section?: SettingsSection) => void;
-  onOpenAmrSettings?: () => void;
   onOpenMcpSettings?: () => void;
   onBrowsePlugins?: () => void;
   onOpenConnectors?: () => void;
@@ -1814,7 +1813,6 @@ export function ProjectView({
   onApiModelChange,
   onRefreshAgents,
   onOpenSettings,
-  onOpenAmrSettings,
   onOpenMcpSettings,
   onBrowsePlugins,
   onOpenConnectors,
@@ -8673,20 +8671,6 @@ export function ProjectView({
     [currentConversationActionDisabled, handleSend, messages],
   );
 
-  const handleSwitchToAmrAndRetry = useCallback(
-    () => {
-      if (currentConversationActionDisabled) return;
-      onModeChange('daemon');
-      onAgentChange('amr');
-      onOpenAmrSettings?.();
-    },
-    [
-      currentConversationActionDisabled,
-      onAgentChange,
-      onModeChange,
-      onOpenAmrSettings,
-    ],
-  );
   // PR #3157: Antigravity's `agy -p` cannot complete OAuth on its own,
   // so the auth banner offers a one-click "Sign in via terminal"
   // button that POSTs to the daemon. The daemon opens a system
@@ -11330,8 +11314,6 @@ export function ProjectView({
                 setError(null);
                 onModeChange('daemon');
               }}
-              onOpenAmrSettings={onOpenAmrSettings}
-              onSwitchToAmrAndRetry={handleSwitchToAmrAndRetry}
               onLaunchAntigravityOauth={handleLaunchAntigravityOauth}
               onOpenMcpSettings={onOpenMcpSettings}
               onBrowsePlugins={onBrowsePlugins}
@@ -11581,7 +11563,6 @@ export function ProjectView({
           messages={messages}
           artifactHtml={artifact?.html}
           conversationError={error}
-          onAuthorizeAndRetry={handleSwitchToAmrAndRetry}
           onLaunchTerminalAuth={handleLaunchAntigravityOauth}
           conversationId={activeConversationId}
         />

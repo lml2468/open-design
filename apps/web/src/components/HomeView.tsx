@@ -63,7 +63,7 @@ import { useI18n, useT } from '../i18n';
 import {
   formatModelWindowRetryAt,
   modelWindowLimitCopy,
-} from '../runtime/amr-guidance';
+} from '../runtime/run-failure-guidance';
 import {
   localizeSkillName,
   localizeSkillPrompt,

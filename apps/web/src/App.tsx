@@ -4230,10 +4230,6 @@ function AppInner() {
     navigate({ kind: 'home', view: 'settings' });
   }, [identityScopeKey]);
 
-  const openAmrSettings = useCallback(() => {
-    openSettings('execution');
-  }, [openSettings]);
-
   const openPetSettings = useCallback(() => {
     const currentRoute = routeRef.current;
     settingsReturnTargetRef.current =
@@ -4762,7 +4758,6 @@ function AppInner() {
           onApiModelChange={handleApiModelChange}
           onRefreshAgents={refreshAgents}
           onOpenSettings={openSettings}
-          onOpenAmrSettings={openAmrSettings}
           onOpenMcpSettings={openMcpSettings}
           onBrowsePlugins={openPluginRegistry}
           onOpenConnectors={openConnectorIntegrations}

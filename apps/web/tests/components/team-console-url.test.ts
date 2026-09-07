@@ -1,18 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { teamConsoleUrl, workspaceUpgradeUrl } from '../../src/components/EntryNavRail';
-import {
-  OPEN_DESIGN_PRICING_URL,
-  setRuntimeAmrConsoleOrigin,
-} from '../../src/runtime/amr-guidance';
 import type { WorkspaceBillingSummary, WorkspaceCollabContext } from '@open-design/contracts';
 
-// Stand-in for an internal deployment's console origin — the real hostnames are
-// injected at build time and reported by the daemon, never literals in source.
-const RUNTIME_CONSOLE_ORIGIN = 'https://vela.example.invalid';
-
-afterEach(() => {
-  setRuntimeAmrConsoleOrigin(null);
-});
+const OPEN_DESIGN_PRICING_URL = 'https://open-design.ai/pricing/';
 
 // The context's settings URL carries B's ?workspaceId deep-link param; section
 // derivation must land on B's REAL console routes (members live at /team, the
@@ -59,7 +49,7 @@ describe('teamConsoleUrl', () => {
 // for a PERSONAL workspace too, so "console URL present" must never be the
 // team/personal axis — `workspaceType` is. One helper decides for all five
 // upgrade entry points (EntryNavRail credits chip + invite dialog,
-// RecentProjectsStrip invite dialog, SettingsDialog AMR cards), so the three
+// RecentProjectsStrip invite dialog and SettingsDialog workspace cards), so the three
 // states cannot drift apart per entry point.
 describe('workspaceUpgradeUrl', () => {
   const settingsUrl = 'https://web.example/settings?workspaceId=ws-1';
@@ -135,11 +125,6 @@ describe('workspaceUpgradeUrl', () => {
       };
 
       expect(workspaceUpgradeUrl(context, billingSummary('team_pro'))).toBeNull();
-      expect(
-        workspaceUpgradeUrl(context, billingSummary('team_pro'), {
-          fallbackProfile: 'feature-test',
-        }),
-      ).toBeNull();
     },
   );
 
@@ -148,12 +133,5 @@ describe('workspaceUpgradeUrl', () => {
     delete context.workspaceSettingsUrl;
     expect(workspaceUpgradeUrl(context, null)).toBe(OPEN_DESIGN_PRICING_URL);
     expect(workspaceUpgradeUrl(null, null)).toBeNull();
-  });
-
-  it('falls back to Pricing for CTA callers that must always link somewhere', () => {
-    setRuntimeAmrConsoleOrigin(RUNTIME_CONSOLE_ORIGIN);
-    expect(workspaceUpgradeUrl(null, null, { fallbackProfile: 'feature-test' })).toBe(
-      OPEN_DESIGN_PRICING_URL,
-    );
   });
 });

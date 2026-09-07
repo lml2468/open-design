@@ -288,7 +288,6 @@ vi.mock('../../src/components/FileWorkspace', () => ({
   FileWorkspace: ({
     streaming,
     messages,
-    onAuthorizeAndRetry,
     onLaunchTerminalAuth,
     onSendBoardCommentAttachments,
     onCommentModeChange,
@@ -296,7 +295,6 @@ vi.mock('../../src/components/FileWorkspace', () => ({
   }: {
     streaming: boolean;
     messages?: ChatMessage[];
-    onAuthorizeAndRetry?: (message: ChatMessage) => void;
     onLaunchTerminalAuth?: () => void;
     onSendBoardCommentAttachments: (attachments: unknown[]) => void;
     onCommentModeChange?: (active: boolean) => void;
@@ -319,14 +317,9 @@ vi.mock('../../src/components/FileWorkspace', () => ({
       .map((event) => (event as { code?: string }).code ?? null)
       .filter(Boolean)
       .at(-1) ?? null;
-    const showAuthorizeAction = failedAssistant?.agentId === 'amr' && errorCode === 'AMR_AUTH_REQUIRED';
     const showLaunchTerminalAction =
       failedAssistant?.agentId === 'antigravity'
       && (errorCode === 'AGENT_AUTH_REQUIRED' || errorCode === 'RATE_LIMITED');
-    const showSwitchToAmrPromotion =
-      failedAssistant?.agentId !== 'amr'
-      && failedAssistant?.agentId !== 'antigravity'
-      && (errorCode === 'AGENT_AUTH_REQUIRED' || errorCode === 'UNAUTHORIZED' || errorCode === 'RATE_LIMITED');
     return (
       <>
       <output data-testid="workspace-streaming-state">{streaming ? 'streaming' : 'idle'}</output>
@@ -351,28 +344,6 @@ vi.mock('../../src/components/FileWorkspace', () => ({
       >
         workspace send
       </button>
-      {showAuthorizeAction && onAuthorizeAndRetry ? (
-        <button
-          type="button"
-          data-testid="workspace-authorize"
-          onClick={() => {
-            if (failedAssistant) onAuthorizeAndRetry(failedAssistant);
-          }}
-        >
-          authorize
-        </button>
-      ) : null}
-      {showSwitchToAmrPromotion && onAuthorizeAndRetry ? (
-        <button
-          type="button"
-          data-testid="workspace-switch-amr"
-          onClick={() => {
-            if (failedAssistant) onAuthorizeAndRetry(failedAssistant);
-          }}
-        >
-          switch to amr
-        </button>
-      ) : null}
       {showLaunchTerminalAction && onLaunchTerminalAuth ? (
         <button
           type="button"
@@ -3065,7 +3036,7 @@ describe('ProjectView conversation run isolation', () => {
     expect(streamViaDaemon).not.toHaveBeenCalled();
   });
 
-  it('converges a daemon chat back to idle when the first AMR run fails authentication', async () => {
+  it('converges a daemon chat back to idle when the first run fails authentication', async () => {
     conversationAMessages = [];
     fetchChatRunStatus.mockResolvedValue(null);
     streamViaDaemon.mockImplementation(
@@ -3101,7 +3072,7 @@ describe('ProjectView conversation run isolation', () => {
     await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(2));
   });
 
-  it('keeps Chat retry available after a structured AMR insufficient-balance error', async () => {
+  it('keeps Chat retry available after a transient rate-limit error', async () => {
     conversationAMessages = [];
     fetchChatRunStatus.mockResolvedValue(null);
     streamViaDaemon.mockImplementation(
@@ -3110,15 +3081,13 @@ describe('ProjectView conversation run isolation', () => {
         handlers: { onError: (error: Error) => void };
       }) => {
         if (streamViaDaemon.mock.calls.length > 1) return;
-        options.onRunCreated?.('run-amr-balance');
+        options.onRunCreated?.('run-rate-limited');
         const error = new Error(
-          'AMR Cloud reported insufficient balance for this model. Top up your AMR balance at https://open-design.ai/amr/dashboard, then retry this run.',
+          'The model provider is temporarily rate limited. Please retry shortly.',
         ) as Error & { code: string; details: unknown };
-        error.code = 'AMR_INSUFFICIENT_BALANCE';
+        error.code = 'RATE_LIMITED';
         error.details = {
-          kind: 'amr_account',
-          action: 'recharge',
-          actionUrl: 'https://open-design.ai/amr/dashboard',
+          failureDetail: 'transient_rate_limit',
         };
         options.handlers.onError(error);
       },
@@ -3239,68 +3208,6 @@ describe('ProjectView conversation run isolation', () => {
     },
   );
 
-  it('routes workspace authorize recovery through AMR settings without arming an automatic retry', async () => {
-    conversationAMessages = [];
-    fetchChatRunStatus.mockResolvedValue(null);
-    const onModeChange = vi.fn();
-    const onAgentChange = vi.fn();
-    const onOpenAmrSettings = vi.fn();
-    streamViaDaemon.mockImplementation(
-      async (options: {
-        onRunCreated?: (runId: string) => void;
-        handlers: { onError: (error: Error) => void };
-      }) => {
-        options.onRunCreated?.('run-amr-auth');
-        const error = new Error(
-          'AMR sign-in is required. Sign in to AMR Cloud again, then retry this run.',
-        ) as Error & { code: string; details: unknown };
-        error.code = 'AMR_AUTH_REQUIRED';
-        error.details = {
-          kind: 'amr_account',
-          action: 'relogin',
-        };
-        options.handlers.onError(error);
-      },
-    );
-
-    renderProjectView(
-      {
-        ...config,
-        agentId: 'amr',
-      },
-      project,
-      [
-        {
-          id: 'amr',
-          name: 'AMR',
-          bin: 'amr',
-          available: true,
-          models: [{ id: 'glm-5', label: 'GLM 5' }],
-        },
-      ],
-      {
-        onModeChange,
-        onAgentChange,
-        onOpenAmrSettings,
-      },
-    );
-
-    await waitFor(() => expect(screen.getByTestId('active-conversation').textContent).toBe('conv-a'));
-    await waitFor(() => expect(screen.getByTestId('send-message')).toHaveProperty('disabled', false));
-
-    fireEvent.click(screen.getByTestId('send-message'));
-
-    await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByTestId('workspace-authorize')).toBeTruthy());
-
-    fireEvent.click(screen.getByTestId('workspace-authorize'));
-
-    expect(onModeChange).toHaveBeenCalledWith('daemon');
-    expect(onAgentChange).toHaveBeenCalledWith('amr');
-    expect(onOpenAmrSettings).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('streaming-state').textContent).toBe('idle');
-  });
-
   it('routes Chat retry and terminal launch recovery for antigravity auth failures', async () => {
     conversationAMessages = [];
     fetchChatRunStatus.mockResolvedValue(null);
@@ -3403,7 +3310,7 @@ describe('ProjectView conversation run isolation', () => {
     await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(2));
   });
 
-  it('does not promote switching to AMR for upstream outages', async () => {
+  it('keeps upstream outages on generic retry without terminal recovery', async () => {
     conversationAMessages = [];
     fetchChatRunStatus.mockResolvedValue(null);
     streamViaDaemon.mockImplementation(
@@ -3445,8 +3352,6 @@ describe('ProjectView conversation run isolation', () => {
 
     await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByTestId('chat-retry')).toBeTruthy());
-    expect(screen.queryByTestId('workspace-switch-amr')).toBeNull();
-    expect(screen.queryByTestId('workspace-authorize')).toBeNull();
     expect(screen.queryByTestId('workspace-launch-terminal')).toBeNull();
   });
 });
@@ -3462,7 +3367,6 @@ function renderProjectView(
     onModeChange?: (mode: 'daemon' | 'api') => void;
     onAgentChange?: (agentId: string) => void;
     onOpenSettings?: (section?: SettingsSection) => void;
-    onOpenAmrSettings?: () => void;
   } = {},
 ) {
   return render(projectViewElement(renderConfig, renderProject, renderAgents, handlers));
@@ -3479,7 +3383,6 @@ function projectViewElement(
     onModeChange?: (mode: 'daemon' | 'api') => void;
     onAgentChange?: (agentId: string) => void;
     onOpenSettings?: (section?: SettingsSection) => void;
-    onOpenAmrSettings?: () => void;
   } = {},
 ) {
   return (
@@ -3497,7 +3400,6 @@ function projectViewElement(
       onAgentModelChange={() => {}}
       onRefreshAgents={() => {}}
       onOpenSettings={handlers.onOpenSettings ?? (() => {})}
-      onOpenAmrSettings={handlers.onOpenAmrSettings}
       onBack={() => {}}
       onClearPendingPrompt={() => {}}
       onTouchProject={() => {}}

@@ -1,9 +1,7 @@
-import type { AmrEntryAttribution } from '@open-design/contracts/analytics';
 import {
   readOnboardingProfile,
   type OnboardingProfile,
 } from '../state/onboarding-profile';
-import { readAmrAttribution } from './amr-attribution';
 import { setAnalyticsPersonProperties } from './client';
 
 const ATTRIBUTION_COOKIE = 'od_attr';
@@ -34,7 +32,6 @@ export function bindSignedInUserAttributionPersonProperties(
   const cleanUserId = cleanValue(userId);
   if (!cleanUserId) return;
   const profile = readOnboardingProfile();
-  const amrAttribution = readAmrAttribution(now);
   const landingAttribution = readLandingAttributionCookie();
   const profileProps = profile ? onboardingPersonProperties(profile, now) : null;
   const landingProps = landingAttribution
@@ -46,7 +43,6 @@ export function bindSignedInUserAttributionPersonProperties(
     od_source_bound_at: now.toISOString(),
     ...(profileProps ?? {}),
     ...(landingProps ?? {}),
-    ...(amrAttribution ? amrEntryPersonProperties(amrAttribution) : {}),
     ...(source
       ? {
           od_source_resolved: source.value,
@@ -90,16 +86,6 @@ function onboardingCompletedAt(profile: OnboardingProfile, fallback: Date): stri
     if (Number.isFinite(completedAt)) return new Date(completedAt).toISOString();
   }
   return fallback.toISOString();
-}
-
-function amrEntryPersonProperties(
-  attribution: AmrEntryAttribution,
-): Record<string, unknown> {
-  return {
-    od_amr_entry_id: attribution.entryId,
-    od_amr_entry_source: attribution.sourceDetail,
-    od_amr_entry_at: attribution.occurredAt,
-  };
 }
 
 function landingAttributionPersonProperties(

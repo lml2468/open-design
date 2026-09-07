@@ -70,7 +70,6 @@ import {
 } from '../collab/useWorkspaceContext';
 import { canUpgradeFromPlanTier, resolvePlanLabelTier } from '../collab/team-plan';
 import { shouldShowCreditsBalance } from './entry-rail-account-state';
-import { amrPlansUrlForProfile } from '../runtime/amr-guidance';
 import { useWorkspaceInvalidation } from '../collab/workspace-events';
 import type { EntryHomeView } from '../router';
 import type {
@@ -98,6 +97,7 @@ const GITHUB_FEATURE_URL = `${REPO_URL}/pulls`;
 const DISCORD_URL = 'https://discord.gg/mHAjSMV6gz';
 const X_URL = 'https://x.com/OpenDesignHQ';
 const CONTACT_EMAIL_URL = 'mailto:support@open-design.ai';
+const OPEN_DESIGN_PRICING_URL = 'https://open-design.ai/pricing/';
 const externalLinkProps = { target: '_blank', rel: 'noreferrer noopener' } as const;
 
 function formatBalanceUsd(raw?: string | null): string | null {
@@ -598,22 +598,15 @@ export function teamConsoleUrl(
 export function workspaceUpgradeUrl(
   context: WorkspaceCollabContext | null | undefined,
   billing: WorkspaceBillingSummary | null | undefined,
-  options: { fallbackProfile: string | null | undefined },
-): string | null;
-export function workspaceUpgradeUrl(
-  context: WorkspaceCollabContext | null | undefined,
-  billing: WorkspaceBillingSummary | null | undefined,
 ): string | null;
 export function workspaceUpgradeUrl(
   context: WorkspaceCollabContext | null | undefined,
   _billing: WorkspaceBillingSummary | null | undefined,
-  options?: { fallbackProfile: string | null | undefined },
 ): string | null {
-  // Billing is owner-only. Missing context can use the caller's fallback
-  // profile because there is no workspace identity to authorize yet.
+  // Billing is owner-only and requires an authoritative workspace identity.
   if (context && context.permissions?.canManageBilling !== true) return null;
-  if (!context && !options) return null;
-  return amrPlansUrlForProfile(options?.fallbackProfile);
+  if (!context) return null;
+  return OPEN_DESIGN_PRICING_URL;
 }
 
 export type WorkspaceInviteTarget =
