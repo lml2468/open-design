@@ -112,7 +112,7 @@ export interface AnalyticsConfigureGlobals {
   // without the cascade undercounting BYOK whenever a CLI is also present.
   //
   // `cli_runnable` is intentionally the same signal as
-  // `has_available_configure_cli` (an installed, available non-AMR CLI); it is
+  // `has_available_configure_cli` (an installed, available CLI); it is
   // restated here only to give the runnable-trio a symmetric shape.
   //
   // Caveat for dashboards: these flag a *runnable state*, not an active

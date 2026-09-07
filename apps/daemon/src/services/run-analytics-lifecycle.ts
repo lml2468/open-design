@@ -959,9 +959,6 @@ export function createRunAnalyticsLifecycle(
               ...(terminalLifecycle
                 ? {
                     run_attempt: terminalLifecycle.runAttempt,
-                    ...(terminalLifecycle.runtimeGenerationId
-                      ? { runtime_generation_id: terminalLifecycle.runtimeGenerationId }
-                      : {}),
                     termination_origin: terminalLifecycle.terminationOrigin,
                     terminal_persistence_status:
                       terminalLifecycle.terminalPersistence.status,

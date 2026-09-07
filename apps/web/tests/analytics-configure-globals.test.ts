@@ -98,21 +98,6 @@ describe('deriveConfigureGlobals', () => {
       byok_runnable: true,
     });
   });
-
-  it('does not count a legacy AMR daemon row as a local CLI', () => {
-    expect(deriveConfigureGlobals({
-      mode: 'daemon',
-      agentId: 'amr',
-      agents: [{ id: 'amr', available: true }],
-    })).toEqual({
-      has_available_configure_cli: false,
-      configure_type: 'none',
-      configure_availability: 'unavailable',
-      runtime_type: 'none',
-      cli_runnable: false,
-      byok_runnable: false,
-    });
-  });
 });
 
 describe('setConfigureGlobals', () => {

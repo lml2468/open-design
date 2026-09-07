@@ -341,7 +341,7 @@ describe('durable run terminal reconciliation', () => {
       projectId: 'p1',
       conversationId: 'c1',
       assistantMessageId: null,
-      agentId: 'amr',
+      agentId: 'claude',
       status: 'failed',
       createdAt: 1_000,
       updatedAt: 2_000,
@@ -414,7 +414,6 @@ describe('durable run terminal reconciliation', () => {
       terminalLifecycle: {
         version: 1,
         runAttempt: 0,
-        runtimeGenerationId: null,
         terminationOrigin: 'unknown',
         terminalIntegrity: 'canonical',
         terminalPersistence: {

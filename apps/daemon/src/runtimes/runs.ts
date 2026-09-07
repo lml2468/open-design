@@ -1028,7 +1028,6 @@ export function createChatRunService({
     run.terminalLifecycle = terminalLifecycleSnapshot({
       cumulativeRetryAttemptCount: run.cumulativeRetryAttemptCount,
       retryAttemptCount: run.retryAttemptCount,
-      runtimeGenerationId: run.runtimeGenerationId,
       cancelOrigin: run.cancelOrigin ?? null,
       terminalTrigger: run.terminalTrigger ?? null,
       terminalIntegrity:
@@ -1044,7 +1043,6 @@ export function createChatRunService({
       run.terminalLifecycle = terminalLifecycleSnapshot({
         cumulativeRetryAttemptCount: run.cumulativeRetryAttemptCount,
         retryAttemptCount: run.retryAttemptCount,
-        runtimeGenerationId: run.runtimeGenerationId,
         cancelOrigin: run.cancelOrigin ?? null,
         terminalTrigger: run.terminalTrigger ?? null,
         terminalIntegrity:
@@ -1428,7 +1426,6 @@ export function createChatRunService({
         lifecycle: terminalLifecycleSnapshot({
           cumulativeRetryAttemptCount: run.cumulativeRetryAttemptCount,
           retryAttemptCount: run.retryAttemptCount,
-          runtimeGenerationId: run.runtimeGenerationId,
           cancelOrigin: run.cancelOrigin ?? null,
           terminalTrigger: run.terminalTrigger ?? null,
           terminalIntegrity: run.terminalIntegrity ?? 'canonical',

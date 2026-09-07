@@ -1389,7 +1389,6 @@ describe('run event log persistence', () => {
     expect(state.terminalLifecycle).toEqual({
       version: 1,
       runAttempt: 1,
-      runtimeGenerationId: null,
       terminationOrigin: 'watchdog_cleanup',
       terminalIntegrity: 'canonical',
       terminalPersistence: {

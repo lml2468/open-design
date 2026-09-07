@@ -143,8 +143,7 @@ export type TrackingByokProviderId =
   | 'aihubmix';
 
 // v2 CLI provider catalogue (CSV row 63 + image 59). Adds `qoder_cli` and
-// `kilo` over v1, plus `amr` (the vela CLI runtime) so AMR runs no longer
-// fold into the `other` catch-all bucket.
+// `kilo` over v1.
 // Every agent the daemon can detect needs its own id here. An agent that falls
 // through to `other` is invisible to any breakdown or alert that asks *which*
 // CLI failed — which is the only question worth asking when an install someone
@@ -177,7 +176,6 @@ export type TrackingCliProviderId =
   | 'atomcode'
   | 'deepseek'
   | 'deepseek_harness'
-  | 'amr'
   | 'other';
 
 export type TrackingFeedbackProviderId =
@@ -505,33 +503,6 @@ export type TrackingRunCloseReason =
   | 'fatal_rpc_error'
   | 'empty_output'
   | 'unknown';
-export type TrackingAmrOpenCodeErrorPhase =
-  | 'timeout'
-  | 'event_stream_start'
-  | 'event_stream'
-  | 'prompt_async'
-  | 'other';
-export type TrackingAmrOpenCodeLastEventType =
-  | 'tool_call'
-  | 'tool_call_update'
-  | 'agent_message_chunk'
-  | 'agent_thought_chunk'
-  | 'done'
-  | 'other';
-export type TrackingAmrOpenCodeLastToolStatus =
-  | 'pending'
-  | 'in_progress'
-  | 'completed'
-  | 'failed'
-  | 'other';
-export type TrackingAmrOpenCodeLastToolKind =
-  | 'read'
-  | 'write'
-  | 'edit'
-  | 'search'
-  | 'execute'
-  | 'fetch'
-  | 'other';
 export type TrackingLangfuseDeliveryStatus =
   | 'not_expected'
   | 'queued'

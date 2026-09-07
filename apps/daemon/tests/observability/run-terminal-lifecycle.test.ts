@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   beginPosthogTerminalDelivery,
-  boundedRuntimeGenerationId,
   classifyMatureUnfinishedRun,
   deriveRunTerminationOrigin,
   finalizePosthogTerminalDelivery,
@@ -32,14 +31,6 @@ describe('run terminal lifecycle observability', () => {
     [{}, 'unknown'],
   ])('derives only evidence-backed termination origin from %j', (input, expected) => {
     expect(deriveRunTerminationOrigin(input)).toBe(expected);
-  });
-
-  it('accepts only an anonymous Vela-owned UUID runtime generation', () => {
-    expect(boundedRuntimeGenerationId('0F2D4D9E-F034-4ED5-8330-314BD1D525CC'))
-      .toBe('0f2d4d9e-f034-4ed5-8330-314bd1d525cc');
-    expect(boundedRuntimeGenerationId('pid=1234')).toBeNull();
-    expect(boundedRuntimeGenerationId('/local/path')).toBeNull();
-    expect(boundedRuntimeGenerationId('not-a-uuid')).toBeNull();
   });
 
   it.each([

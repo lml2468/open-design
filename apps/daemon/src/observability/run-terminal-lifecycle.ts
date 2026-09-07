@@ -34,15 +34,6 @@ export function runAttemptForTerminalLifecycle(input: {
     + normalizedAttemptCount(input.retryAttemptCount);
 }
 
-export function boundedRuntimeGenerationId(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
-    .test(normalized)
-    ? normalized.toLowerCase()
-    : null;
-}
-
 export function deriveRunTerminationOrigin(input: {
   cancelOrigin?: TrackingRunCancelOrigin | null;
   terminalTrigger?: TrackingRunTerminalTrigger | null;
@@ -79,7 +70,6 @@ export function terminalPersistenceErrorType(
 export function terminalLifecycleSnapshot(input: {
   cumulativeRetryAttemptCount?: unknown;
   retryAttemptCount?: unknown;
-  runtimeGenerationId?: unknown;
   cancelOrigin?: TrackingRunCancelOrigin | null;
   terminalTrigger?: TrackingRunTerminalTrigger | null;
   terminalIntegrity?: TrackingRunTerminalIntegrity | null;
@@ -91,7 +81,6 @@ export function terminalLifecycleSnapshot(input: {
   const snapshot: RunTerminalLifecycleV1 = {
     version: RUN_TERMINAL_LIFECYCLE_VERSION,
     runAttempt: runAttemptForTerminalLifecycle(input),
-    runtimeGenerationId: boundedRuntimeGenerationId(input.runtimeGenerationId),
     terminationOrigin: deriveRunTerminationOrigin(input),
     terminalIntegrity: input.terminalIntegrity ?? 'canonical',
     terminalPersistence: input.terminalPersistence,

@@ -126,7 +126,6 @@ interface DurableRunState extends RestartRecoverableDurableRunState {
   telemetryDelivery?: RunTelemetryDeliveryStateV1;
   cumulativeRetryAttemptCount?: number;
   retryAttemptCount?: number;
-  runtimeGenerationId?: string | null;
   terminalLifecycle?: RunTerminalLifecycleV1;
 }
 
@@ -481,7 +480,6 @@ export async function reconcileDurableRunTerminals(
           state.terminalLifecycle ?? terminalLifecycleSnapshot({
             cumulativeRetryAttemptCount: state.cumulativeRetryAttemptCount,
             retryAttemptCount: state.retryAttemptCount,
-            runtimeGenerationId: state.runtimeGenerationId,
             cancelOrigin: state.cancelOrigin ?? null,
             terminalTrigger: state.terminalTrigger ?? null,
             terminalIntegrity: recoveredTerminalIntegrity(
@@ -532,9 +530,6 @@ export async function reconcileDurableRunTerminals(
         terminal_integrity: terminalLifecycleForCapture.terminalIntegrity,
         terminal_recovery_reason: recoveryReason,
         run_attempt: terminalLifecycleForCapture.runAttempt,
-        ...(terminalLifecycleForCapture.runtimeGenerationId
-          ? { runtime_generation_id: terminalLifecycleForCapture.runtimeGenerationId }
-          : {}),
         termination_origin: terminalLifecycleForCapture.terminationOrigin,
         terminal_persistence_status:
           terminalLifecycleForCapture.terminalPersistence.status,

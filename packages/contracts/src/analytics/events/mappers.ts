@@ -237,8 +237,6 @@ export function agentIdToTracking(agentId: string | null | undefined): TrackingC
       return 'deepseek';
     case 'deepseek-harness':
       return 'deepseek_harness';
-    case 'amr':
-      return 'amr';
     default:
       return 'other';
   }
@@ -431,13 +429,9 @@ export function deriveConfigureGlobals(
   input: DeriveConfigureGlobalsInput,
 ): AnalyticsConfigureGlobals {
   const agents = input.agents ?? [];
-  // Transitional compatibility: older daemons can still report the removed
-  // bundled AMR agent. Ignore that row so it cannot reappear as a configured
-  // local CLI while daemon/runtime removal is completed.
-  const cliAgents = agents.filter((a) => a.id !== 'amr');
-  const hasAvailableCli = cliAgents.some((a) => a.available === true);
+  const hasAvailableCli = agents.some((a) => a.available === true);
   const selectedAgent = input.agentId
-    ? cliAgents.find((a) => a.id === input.agentId)
+    ? agents.find((a) => a.id === input.agentId)
     : undefined;
   const selectedAgentAvailable = selectedAgent?.available === true;
   const byokConfigured = input.byokConfigured === true;

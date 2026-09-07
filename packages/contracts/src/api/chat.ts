@@ -52,7 +52,6 @@ export type RunTerminalTrigger = TrackingRunTerminalTrigger;
 export interface RunTerminalLifecycleStatus {
   version: 1;
   runAttempt: number;
-  runtimeGenerationId: string | null;
   terminationOrigin: TrackingRunTerminationOrigin;
   terminalIntegrity: TrackingRunTerminalIntegrity;
   terminalPersistence: {

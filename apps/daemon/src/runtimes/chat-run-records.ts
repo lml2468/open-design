@@ -145,7 +145,6 @@ export interface ChatRun {
   cancelOrigin?: ChatRunStatusResponse['cancelOrigin'];
   terminalTrigger?: ChatRunStatusResponse['terminalTrigger'];
   terminalLifecycle?: RunTerminalLifecycleV1;
-  runtimeGenerationId?: string | null;
   exitCode?: number | null;
   signal?: string | null;
   error?: string | null;

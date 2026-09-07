@@ -15,7 +15,7 @@ import type { ArtifactOriginEntrySurface, ArtifactOriginStatus } from '../../api
 import type { AgentDiagnosticReason, AgentDiagnosticSeverity } from '../../api/registry.js';
 import type { TrackingDesignSystemEditSurface, TrackingDesignSystemKind, TrackingDesignSystemLengthBucket, TrackingDesignSystemOrigin, TrackingDesignSystemRunEntryFrom } from './design-systems.js';
 import type { TrackingSettingsPage } from './event-names.js';
-import type { TrackingAmrOpenCodeErrorPhase, TrackingAmrOpenCodeLastEventType, TrackingAmrOpenCodeLastToolKind, TrackingAmrOpenCodeLastToolStatus, TrackingArtifactKind, TrackingArtifactWriteSource, TrackingArtifactWriteStatus, TrackingByokPreflightBlockReason, TrackingByokProviderId, TrackingCliProviderId, TrackingDesignSystemSource, TrackingExecutionMode, TrackingExportFormat, TrackingExportResult, TrackingFeedbackAction, TrackingFeedbackProviderId, TrackingFeedbackRating, TrackingFeedbackRatingWithNone, TrackingFeedbackReasonCode, TrackingFidelity, TrackingFileSizeBucket, TrackingFileType, TrackingFirstModelEventType, TrackingHarness, TrackingLabsItemId, TrackingLabsOptOutReason, TrackingLabsSystemReason, TrackingLabsToggleSource, TrackingLangfuseDeliveryStatus, TrackingLangfuseDropReason, TrackingLangfuseReportResult, TrackingLangfuseReportSkipReason, TrackingProjectKind, TrackingProjectSource, TrackingPublishErrorCode, TrackingResult, TrackingRunAdmissionPhase, TrackingRunPolicyReason, TrackingRunAdmissionStatus, TrackingRunCancelOrigin, TrackingRunCloseReason, TrackingRunDiagnosticSource, TrackingRunEvidenceLevel, TrackingRunFailureCategory, TrackingRunFailureDetail, TrackingRunFailureDomain, TrackingRunFailureMechanism, TrackingRunFailureStage, TrackingRunFailureUserAction, TrackingRunLifecyclePhase, TrackingRunMatureUnfinishedState, TrackingRunPhaseTimingStatus, TrackingRunPosthogAcknowledgement, TrackingRunPosthogDeliveryStatus, TrackingRunPosthogErrorType, TrackingRunReconciliationIntegrity, TrackingRunRepairOwner, TrackingRunResult, TrackingRunRetryFinalResult, TrackingRunRetryStrategy, TrackingRunRetrySuppressedReason, TrackingRunTerminalIntegrity, TrackingRunTerminalPersistenceErrorType, TrackingRunTerminalPersistenceStatus, TrackingRunTerminalTrigger, TrackingRunTerminationOrigin, TrackingStderrLineCountBucket, TrackingTestResult, TrackingTokenCountSource } from './shared-enums.js';
+import type { TrackingArtifactKind, TrackingArtifactWriteSource, TrackingArtifactWriteStatus, TrackingByokPreflightBlockReason, TrackingByokProviderId, TrackingCliProviderId, TrackingDesignSystemSource, TrackingExecutionMode, TrackingExportFormat, TrackingExportResult, TrackingFeedbackAction, TrackingFeedbackProviderId, TrackingFeedbackRating, TrackingFeedbackRatingWithNone, TrackingFeedbackReasonCode, TrackingFidelity, TrackingFileSizeBucket, TrackingFileType, TrackingFirstModelEventType, TrackingHarness, TrackingLabsItemId, TrackingLabsOptOutReason, TrackingLabsSystemReason, TrackingLabsToggleSource, TrackingLangfuseDeliveryStatus, TrackingLangfuseDropReason, TrackingLangfuseReportResult, TrackingLangfuseReportSkipReason, TrackingProjectKind, TrackingProjectSource, TrackingPublishErrorCode, TrackingResult, TrackingRunAdmissionPhase, TrackingRunPolicyReason, TrackingRunAdmissionStatus, TrackingRunCancelOrigin, TrackingRunCloseReason, TrackingRunDiagnosticSource, TrackingRunEvidenceLevel, TrackingRunFailureCategory, TrackingRunFailureDetail, TrackingRunFailureDomain, TrackingRunFailureMechanism, TrackingRunFailureStage, TrackingRunFailureUserAction, TrackingRunLifecyclePhase, TrackingRunMatureUnfinishedState, TrackingRunPhaseTimingStatus, TrackingRunPosthogAcknowledgement, TrackingRunPosthogDeliveryStatus, TrackingRunPosthogErrorType, TrackingRunReconciliationIntegrity, TrackingRunRepairOwner, TrackingRunResult, TrackingRunRetryFinalResult, TrackingRunRetryStrategy, TrackingRunRetrySuppressedReason, TrackingRunTerminalIntegrity, TrackingRunTerminalPersistenceErrorType, TrackingRunTerminalPersistenceStatus, TrackingRunTerminalTrigger, TrackingRunTerminationOrigin, TrackingStderrLineCountBucket, TrackingTestResult, TrackingTokenCountSource } from './shared-enums.js';
 import type { ConversationForkAnalyticsContext, TrackingFileVersionSource, TrackingPluginImportSource, TrackingSessionMode, TrackingSettingsArea } from './ui-click.js';
 // ---- Result events -------------------------------------------------------
 
@@ -488,8 +488,6 @@ export interface RunFinishedProps extends Omit<RunCreatedProps, 'area'> {
   terminal_integrity?: TrackingRunTerminalIntegrity;
   /** Current physical attempt within this Open Design Run. */
   run_attempt?: number;
-  /** Vela-owned runtime generation UUID when explicitly reported back. */
-  runtime_generation_id?: string;
   termination_origin?: TrackingRunTerminationOrigin;
   terminal_persistence_status?: TrackingRunTerminalPersistenceStatus;
   terminal_persistence_error_type?: TrackingRunTerminalPersistenceErrorType | null;
@@ -652,15 +650,6 @@ export interface RunFinishedProps extends Omit<RunCreatedProps, 'area'> {
   stdin_backpressure?: boolean;
   tool_result_sent?: boolean;
   last_progress_age_ms?: number;
-  // Vela's OpenCode bridge attaches this context to `error.data` when an AMR
-  // prompt fails. Keep only fixed enums in analytics: session/tool call ids,
-  // paths, titles, inputs, and outputs are deliberately not copied.
-  // Together these fields distinguish "tool still pending/running" from
-  // "tool completed, but the agent stream never reached done".
-  amr_opencode_error_phase?: TrackingAmrOpenCodeErrorPhase;
-  amr_opencode_last_event_type?: TrackingAmrOpenCodeLastEventType;
-  amr_opencode_last_tool_status?: TrackingAmrOpenCodeLastToolStatus;
-  amr_opencode_last_tool_kind?: TrackingAmrOpenCodeLastToolKind;
   attempt_index?: number;
   attempt_duration_ms?: number;
   attempt_time_to_first_token_ms?: number;

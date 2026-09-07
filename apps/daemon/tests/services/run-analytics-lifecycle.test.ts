@@ -176,7 +176,6 @@ describe('run analytics lifecycle', () => {
         terminalLifecycle: {
           version: 1,
           runAttempt: 2,
-          runtimeGenerationId: '0f2d4d9e-f034-4ed5-8330-314bd1d525cc',
           terminationOrigin: 'watchdog_cleanup',
           terminalIntegrity: 'late',
           terminalPersistence: { status: 'acknowledged', errorType: null },
@@ -202,7 +201,6 @@ describe('run analytics lifecycle', () => {
     expect(finished.properties).toMatchObject({
       terminal_integrity: 'late',
       run_attempt: 2,
-      runtime_generation_id: '0f2d4d9e-f034-4ed5-8330-314bd1d525cc',
       termination_origin: 'watchdog_cleanup',
       terminal_persistence_status: 'acknowledged',
       terminal_persistence_error_type: null,
