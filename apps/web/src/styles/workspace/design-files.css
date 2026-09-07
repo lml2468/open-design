@@ -813,20 +813,6 @@
   letter-spacing: -0.005em;
   line-height: 1.3;
 }
-/* A shared project whose local mirror hasn't caught up yet: a small row
-   pairing the downloading badge with a "syncing" sentence, instead of the
-   illustrated empty state + create CTAs (which don't apply — content is on
-   its way, not absent). See DesignFilesPanel's `downloadPending` prop. */
-.df-empty-syncing .df-empty-pill {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-}
-.df-empty-syncing .df-empty-title {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--text-muted);
-}
 .df-empty-actions {
   display: flex;
   flex-wrap: wrap;

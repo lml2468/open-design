@@ -40,18 +40,7 @@ function collabValue(): CollabContextValue {
     projectResourceAuthority: 'workspace',
     enabled: false,
     publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'pending',
     isOwner: false,
-    isEffectiveOwner: false,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    checkStatusNow: () => {},
   };
 }
 

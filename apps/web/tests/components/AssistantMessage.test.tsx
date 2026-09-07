@@ -75,15 +75,7 @@ function projectCollabValue(workspaceContext = PROJECT_A_CONTEXT) {
     workspaceContextLoading: false,
     enabled: false,
     publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
     isOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    checkStatusNow: vi.fn(),
   };
 }
 

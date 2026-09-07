@@ -82,18 +82,7 @@ function renderProjectFileViewer(
     workspaceContextLoading: false,
     enabled: true,
     publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed',
     isOwner: true,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    checkStatusNow: () => {},
   };
   const tree = (next: ComponentProps<typeof FileViewer>) => (
     <CollabProvider value={collab}>

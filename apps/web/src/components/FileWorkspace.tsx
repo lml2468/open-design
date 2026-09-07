@@ -127,7 +127,6 @@ import { APP_CHROME_FILE_ACTIONS_ID } from './AppChromeHeader';
 import { FileViewer, LiveArtifactViewer } from './FileViewer';
 import { useIframeKeepAlivePool } from './IframeKeepAlivePool';
 import { Icon, type IconName } from './Icon';
-import { FileSyncBadge, type FileSyncBadgeState } from '../collab/FileSyncBadge';
 import { Toast } from './Toast';
 import { TabLauncherMenu } from './workspace/TabLauncherMenu';
 import { buildLauncherActions, type LauncherContext } from './workspace/tab-launcher';
@@ -348,24 +347,8 @@ interface Props {
    * true, edit affordances are withheld and a notice explains why.
    */
   viewerOnly?: boolean;
-  /** First-open placeholder: do not mount cached/write-capable workspace tabs. */
-  materializationPending?: boolean;
   /** Optional override for the read-only notice text. */
   readonlyNotice?: string;
-  /**
-   * Team-share file-sync state for the project. It is rendered on the Design
-   * Files root tab and open design-file tabs (never terminal / side-chat /
-   * browser tabs). `downloading` — a non-owner member's local copy has not
-   * caught up to the published head. `uploading` — the owner's local edits
-   * have not yet been published. Null once caught up / not a shared project.
-   */
-  fileSyncBadge?: FileSyncBadgeState | null;
-}
-
-function noop(): void {}
-
-function rejectRenameWhileMaterializing(): null {
-  return null;
 }
 
 interface SketchState {
@@ -1360,9 +1343,7 @@ export function FileWorkspace({
   fileActionsBefore,
   headerActions,
   viewerOnly = false,
-  materializationPending = false,
   readonlyNotice,
-  fileSyncBadge = null,
 }: Props) {
   const refreshFilesWithoutResult = useCallback(async () => {
     await onRefreshFiles();
@@ -1398,30 +1379,10 @@ export function FileWorkspace({
   const [activeTab, setActiveTab] = useState<string>(
     tabsState.active ?? defaultRootTab,
   );
-  // `materializationPending` can briefly become true again while the router
-  // commits a file-tab URL. Once this project has rendered real workspace
-  // content, that transient revalidation must not tear down retained viewers:
-  // doing so destroys iframe browsing contexts, edit sessions, and toolbar
-  // portals for a single frame. A genuinely new project still gets the
-  // first-materialization loading surface because its id has not been marked
-  // ready in this component instance.
-  const materializedProjectRef = useRef<string | null>(
-    materializationPending ? null : projectId,
-  );
-  if (!materializationPending) materializedProjectRef.current = projectId;
-  const initialMaterializationPending =
-    materializationPending && materializedProjectRef.current !== projectId;
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
-  const fileSyncBadgeLabel = fileSyncBadge
-    ? fileSyncBadge === 'downloading'
-      ? t('workspace.fileSyncDownloading')
-      : t('workspace.fileSyncUploading')
-    : null;
   const designFilesTabLabel = t('workspace.designFiles');
-  const designFilesTabTitle = fileSyncBadgeLabel
-    ? `${designFilesTabLabel} · ${fileSyncBadgeLabel}`
-    : designFilesTabLabel;
+  const designFilesTabTitle = designFilesTabLabel;
 
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -3843,7 +3804,7 @@ export function FileWorkspace({
             clearTabDragState();
           }}
         >
-          {!initialMaterializationPending && designSystemProject ? (
+          {designSystemProject ? (
             <button
               type="button"
               className={`ws-tab design-system-tab ${activeTab === DESIGN_SYSTEM_TAB ? 'active' : ''}`}
@@ -3862,9 +3823,9 @@ export function FileWorkspace({
           ) : null}
           <button
             type="button"
-            className={`ws-tab design-files-tab ${initialMaterializationPending || designFilesTabActive ? 'active' : ''}`}
+            className={`ws-tab design-files-tab ${designFilesTabActive ? 'active' : ''}`}
             role="tab"
-            aria-selected={initialMaterializationPending || designFilesTabActive}
+            aria-selected={designFilesTabActive}
             aria-label={designFilesTabTitle}
             tabIndex={0}
             data-testid="design-files-tab"
@@ -3872,15 +3833,11 @@ export function FileWorkspace({
             title={designFilesTabTitle}
           >
             <span className="tab-icon" aria-hidden>
-              {fileSyncBadge ? (
-                <FileSyncBadge state={fileSyncBadge} size={14} />
-              ) : (
-                <Icon name="grid" size={14} />
-              )}
+              <Icon name="grid" size={14} />
             </span>
             <span className="ws-tab-label">{designFilesTabLabel}</span>
           </button>
-          {!initialMaterializationPending ? visibleOrderedWorkspaceTabs.map((entry) => {
+          {visibleOrderedWorkspaceTabs.map((entry) => {
             if (entry.kind === 'browser') {
               const browserTab = entry.browserTab;
               const browserUrl = browserTab.url?.trim() ?? '';
@@ -3933,20 +3890,11 @@ export function FileWorkspace({
                 ? 'comment'
                 : undefined;
             const handlers = tabHandlersFor(name);
-            // The sync badge only makes sense on a real design-file tab: a
-            // terminal / side-chat tab has no on-disk content to sync, and a
-            // live artifact is baked output, not the source file being pulled
-            // or published.
-            const tabSyncBadge =
-              fileSyncBadge && !isTerminal && !isSideChat && !liveArtifact
-                ? fileSyncBadge
-                : null;
             return (
               <Tab
                 key={name}
                 label={label}
                 iconNameOverride={iconNameOverride}
-                syncBadge={tabSyncBadge}
                 active={activeTab === name}
                 onActivate={handlers.onActivate}
                 onClose={handlers.onClose}
@@ -3966,9 +3914,9 @@ export function FileWorkspace({
                 onDragEnd={handlers.onDragEnd}
               />
             );
-          }) : null}
+          })}
         </div>
-        {!initialMaterializationPending ? <div className="ws-add-tab">
+        <div className="ws-add-tab">
           <button
             ref={launcherBtnRef}
             type="button"
@@ -3984,11 +3932,11 @@ export function FileWorkspace({
           >
             <Icon name="plus" size={15} />
           </button>
-        </div> : null}
+        </div>
         {/* Pinned to the right for project/file actions; the tab launcher sits
             next to the file tabs so its spatial relationship stays clear. */}
         <div className="ws-tabs-actions">
-          {!initialMaterializationPending && fileActionsBefore ? (
+          {fileActionsBefore ? (
             <div className="ws-tabs-file-actions-before">{fileActionsBefore}</div>
           ) : null}
           {/* Pure portal host. Whatever file is open owns these actions and
@@ -4002,12 +3950,12 @@ export function FileWorkspace({
             data-app-chrome-file-actions="true"
             hidden={!viewerFileActive}
           />
-          {!initialMaterializationPending && headerActions ? (
+          {headerActions ? (
             <div className="ws-tabs-project-actions">{headerActions}</div>
           ) : null}
         </div>
       </div>
-      {!initialMaterializationPending && launcherOpen ? (
+      {launcherOpen ? (
         <TabLauncherMenu
           anchor={launcherBtnRef.current}
           files={visibleFiles}
@@ -4057,7 +4005,7 @@ export function FileWorkspace({
           />
         </div>
       ) : null}
-      {viewerOnly && !initialMaterializationPending ? (
+      {viewerOnly ? (
         <div className="workspace-readonly-notice" role="status">
           <Icon name="lock" size={14} />
           <span>{readonlyNotice ?? t('workspace.readonlyNotice')}</span>
@@ -4083,7 +4031,7 @@ export function FileWorkspace({
             </button>
           </div>
         ) : null}
-        {!initialMaterializationPending ? browserTabs.filter((browserTab) => mountedBrowserTabIds.has(browserTab.id)).map((browserTab) => (
+        {browserTabs.filter((browserTab) => mountedBrowserTabIds.has(browserTab.id)).map((browserTab) => (
           <div
             key={`${projectId}:${browserTab.id}`}
             className={`ws-browser-panel ${activeTab === browserTab.id ? 'active' : ''}`}
@@ -4120,28 +4068,8 @@ export function FileWorkspace({
               }}
             />
           </div>
-        )) : null}
-        {initialMaterializationPending ? (
-          <DesignFilesPanel
-            projectId={projectId}
-            projectKind={projectKind}
-            viewerOnly
-            downloadPending
-            files={[]}
-            folders={[]}
-            liveArtifacts={[]}
-            onRefreshFiles={noop}
-            onOpenFile={noop}
-            onOpenLiveArtifact={noop}
-            onRenameFile={rejectRenameWhileMaterializing}
-            onDeleteFile={noop}
-            onDeleteFiles={noop}
-            onUpload={noop}
-            onUploadFiles={noop}
-            onPaste={noop}
-            onNewSketch={noop}
-          />
-        ) : activeTab === DESIGN_SYSTEM_TAB && designSystemProject ? (
+        ))}
+        {activeTab === DESIGN_SYSTEM_TAB && designSystemProject ? (
           <DesignSystemProjectPanel
             projectId={projectId}
             system={designSystemProject}
@@ -4173,7 +4101,6 @@ export function FileWorkspace({
             projectKind={projectKind}
             filesRefreshKey={filesRefreshKey}
             viewerOnly={viewerOnly}
-            downloadPending={fileSyncBadge === 'downloading'}
             rootDirName={rootDirName}
             reloading={reloading}
             running={Boolean(streaming)}
@@ -4392,7 +4319,7 @@ export function FileWorkspace({
             .
           </div>
         )}
-        {!initialMaterializationPending ? mountedHtmlViewerFiles.map((file) => {
+        {mountedHtmlViewerFiles.map((file) => {
           const workspaceActive = activeHtmlViewerFile?.name === file.name;
           return (
             <div
@@ -4416,8 +4343,8 @@ export function FileWorkspace({
               {renderFileViewer(file, workspaceActive)}
             </div>
           );
-        }) : null}
-        {!initialMaterializationPending && viewerFile ? (
+        })}
+        {viewerFile ? (
           <div
             ref={(element) => {
               syncInertAttribute(element, !viewerFileActive);
@@ -4438,7 +4365,7 @@ export function FileWorkspace({
           </div>
         ) : null}
       </div>
-      {!initialMaterializationPending ? <PageCreatorDialog
+      <PageCreatorDialog
         open={pageCreatorOpen}
         t={t}
         locale={locale}
@@ -4454,17 +4381,17 @@ export function FileWorkspace({
         onClose={() => {
           if (!pageCreating) setPageCreatorOpen(false);
         }}
-      /> : null}
-      {!initialMaterializationPending ? <input
+      />
+      <input
         ref={fileInputRef}
         type="file"
         multiple
         data-testid="design-files-upload-input"
         style={{ display: 'none' }}
         onChange={handleFilePicked}
-      /> : null}
+      />
       <AnimatePresence>
-        {!initialMaterializationPending && showLibraryPicker ? (
+        {showLibraryPicker ? (
           <LibraryPicker
             onClose={() => setShowLibraryPicker(false)}
             onConfirm={async (assets) => {
@@ -4494,7 +4421,7 @@ export function FileWorkspace({
         ) : null}
       </AnimatePresence>
       <AnimatePresence>
-        {!initialMaterializationPending && quickSwitcherOpen ? (
+        {quickSwitcherOpen ? (
           <QuickSwitcher
             projectId={projectId}
             files={visibleFiles}
@@ -8251,7 +8178,6 @@ const Tab = memo(function Tab({
   closable = true,
   kind,
   iconNameOverride,
-  syncBadge,
   liveArtifact,
   draggable = false,
   dragging = false,
@@ -8272,9 +8198,6 @@ const Tab = memo(function Tab({
   kind?: ProjectFile['kind'] | 'live-artifact' | 'browser';
   /** Force a specific icon (e.g. non-file tabs like terminal:<id> / chat:<id>). */
   iconNameOverride?: IconName;
-  /** Team-share sync state for this tab's file. Replaces the file-type icon
-   *  with an animated downloading/uploading badge while set. */
-  syncBadge?: FileSyncBadgeState | null;
   liveArtifact?: LiveArtifactWorkspaceEntry;
   draggable?: boolean;
   dragging?: boolean;
@@ -8287,13 +8210,7 @@ const Tab = memo(function Tab({
 }) {
   const t = useT();
   const iconName = iconNameOverride ?? kindIconName(kind);
-  const syncBadgeLabel = syncBadge
-    ? syncBadge === 'downloading'
-      ? t('workspace.fileSyncDownloading')
-      : t('workspace.fileSyncUploading')
-    : null;
   const tabTitle = title ?? (meta ? `${label} ${meta}` : label);
-  const tabTooltip = syncBadgeLabel ? `${tabTitle} · ${syncBadgeLabel}` : tabTitle;
   return (
     <div
       className={[
@@ -8317,8 +8234,8 @@ const Tab = memo(function Tab({
       role="tab"
       aria-selected={active}
       tabIndex={0}
-      title={tabTooltip}
-      data-tooltip={tabTooltip}
+      title={tabTitle}
+      data-tooltip={tabTitle}
       data-tooltip-placement="bottom"
       draggable={draggable}
       onDragStart={draggable ? onDragStart : undefined}
@@ -8327,11 +8244,7 @@ const Tab = memo(function Tab({
       onDrop={draggable ? onDrop : undefined}
       onDragEnd={draggable ? onDragEnd : undefined}
     >
-      {syncBadge ? (
-        <span className="tab-icon">
-          <FileSyncBadge state={syncBadge} size={13} />
-        </span>
-      ) : iconName ? (
+      {iconName ? (
         <span className="tab-icon" aria-hidden>
           <Icon name={iconName} size={13} />
         </span>

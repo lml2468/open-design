@@ -168,18 +168,7 @@ function projectWorkspaceCollabValue(
     workspaceContextLoading: false,
     enabled: false,
     publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed',
     isOwner: false,
-    isEffectiveOwner: false,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    checkStatusNow: () => {},
   };
 }
 
@@ -11407,18 +11396,7 @@ describe('FileViewer tweaks toolbar', () => {
       workspaceContextLoading: false,
       enabled: true,
       publishedVersion: 1,
-      syncState: 'synced',
-      viewerOnly: true,
-      writerAuthority: 'denied',
       isOwner: false,
-      isEffectiveOwner: false,
-      isSharedNonOwner: true,
-      ownerDisplayName: 'Owner',
-      ownerRole: 'owner',
-      downloadPending: false,
-      reportChange: () => {},
-      requestPublish: () => {},
-      checkStatusNow: () => {},
     };
 
     render(

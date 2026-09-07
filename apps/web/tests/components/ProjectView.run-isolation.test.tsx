@@ -6,10 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ProjectView,
-  listConversationsWithRetry,
   mergeSavedPreviewComment,
 } from '../../src/components/ProjectView';
-import { ProjectConversationsHttpError } from '../../src/state/projects';
 import type { SettingsSection } from '../../src/components/SettingsDialog';
 import type { ProjectWorkspaceScopeState } from '../../src/collab/useProjectWorkspaceScope';
 import type { WorkspaceCollabContext } from '@open-design/contracts';
@@ -98,14 +96,6 @@ const workspaceScopeMocks = vi.hoisted(() => {
   };
 });
 
-const projectCollabMocks = vi.hoisted(() => ({
-  enabled: false,
-  syncState: 'local_only' as 'local_only' | 'synced' | null,
-  viewerOnly: false,
-  isOwner: false,
-  writerAuthority: 'allowed' as 'allowed' | 'denied' | 'pending',
-}));
-
 vi.mock('../../src/analytics/provider', () => ({
   useAnalytics: () => ({
     track: analyticsTrackMock,
@@ -149,23 +139,6 @@ vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
 vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
   useProjectWorkspaceScope: () => workspaceScopeMocks.projectScope,
-}));
-
-vi.mock('../../src/collab/useProjectCollab', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectCollab')>()),
-  useProjectCollab: () => ({
-    enabled: projectCollabMocks.enabled,
-    publishedVersion: null,
-    syncState: projectCollabMocks.syncState,
-    viewerOnly: projectCollabMocks.viewerOnly,
-    isOwner: projectCollabMocks.isOwner,
-    writerAuthority: projectCollabMocks.writerAuthority,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    checkStatusNow: vi.fn(),
-    applyContentTransferState: vi.fn(),
-  }),
 }));
 
 vi.mock('../../src/providers/daemon', () => ({
@@ -728,54 +701,6 @@ describe('mergeSavedPreviewComment', () => {
   });
 });
 
-describe('listConversationsWithRetry', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    listConversations.mockReset();
-  });
-
-  it('fails permanent authorization errors immediately', async () => {
-    listConversations.mockRejectedValueOnce(
-      new ProjectConversationsHttpError(403),
-    );
-
-    await expect(listConversationsWithRetry('project-1')).rejects.toMatchObject({
-      status: 403,
-    });
-    expect(listConversations).toHaveBeenCalledTimes(1);
-  });
-
-  it('retries a transient materialization 404 on the bounded schedule', async () => {
-    vi.useFakeTimers();
-    const teamContext = teamWorkspaceContext('workspace-team', 'member-team');
-    listConversations
-      .mockRejectedValueOnce(new ProjectConversationsHttpError(404))
-      .mockResolvedValueOnce(conversations);
-
-    const result = listConversationsWithRetry('project-1', teamContext);
-    await Promise.resolve();
-    expect(listConversations).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(119);
-    expect(listConversations).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1);
-
-    await expect(result).resolves.toEqual(conversations);
-    expect(listConversations).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not retry a missing Personal project', async () => {
-    listConversations.mockRejectedValueOnce(
-      new ProjectConversationsHttpError(404),
-    );
-
-    await expect(listConversationsWithRetry('project-1')).rejects.toMatchObject({
-      status: 404,
-    });
-    expect(listConversations).toHaveBeenCalledTimes(1);
-  });
-});
-
 describe('ProjectView conversation run isolation', () => {
   let resolveConversationBMessages: ((messages: ChatMessage[]) => void) | null = null;
   let conversationAMessages: ChatMessage[] = [runningAssistant];
@@ -795,11 +720,6 @@ describe('ProjectView conversation run isolation', () => {
         context: workspaceScopeMocks.personalContext(),
       },
     };
-    projectCollabMocks.enabled = false;
-    projectCollabMocks.syncState = 'local_only';
-    projectCollabMocks.viewerOnly = false;
-    projectCollabMocks.isOwner = false;
-    projectCollabMocks.writerAuthority = 'allowed';
     resolveConversationBMessages = null;
     conversationAMessages = [runningAssistant];
     questionFormSubmitOutcomes.length = 0;
@@ -1047,41 +967,8 @@ describe('ProjectView conversation run isolation', () => {
     expect(createConversation).toHaveBeenCalledTimes(1);
   });
 
-  it('does not create a conversation for a read-only member of a shared project', async () => {
-    const teamContext = teamWorkspaceContext('workspace-team', 'member-team');
-    workspaceScopeMocks.ambientContext = teamContext;
-    workspaceScopeMocks.projectScope = {
-      loading: false,
-      scope: {
-        kind: 'team',
-        projectId: project.id,
-        workspaceId: teamContext.workspaceId,
-        visibility: 'team',
-        context: teamContext,
-      },
-    };
+  it('seeds an empty explicitly Personal project', async () => {
     listConversations.mockResolvedValue([]);
-    projectCollabMocks.enabled = true;
-    projectCollabMocks.syncState = 'synced';
-    projectCollabMocks.viewerOnly = true;
-    projectCollabMocks.isOwner = false;
-    projectCollabMocks.writerAuthority = 'denied';
-
-    renderProjectView(config, { ...project, workspaceId: teamContext.workspaceId });
-
-    await waitFor(() => expect(listConversations).toHaveBeenCalledTimes(1));
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(createConversation).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('chat-pane-loading')).toBeNull();
-    expect(screen.getByTestId('active-conversation').textContent).toBe('');
-  });
-
-  it('seeds an empty explicitly Personal project without Team ownership status', async () => {
-    listConversations.mockResolvedValue([]);
-    projectCollabMocks.writerAuthority = 'pending';
 
     renderProjectView();
 
@@ -1095,7 +982,7 @@ describe('ProjectView conversation run isolation', () => {
     );
   });
 
-  it('seeds an empty Team project after positive writer authority settles', async () => {
+  it('seeds an empty bound project from its exact workspace context', async () => {
     const teamContext = teamWorkspaceContext('workspace-team', 'owner-member');
     workspaceScopeMocks.ambientContext = teamContext;
     workspaceScopeMocks.projectScope = {
@@ -1109,11 +996,6 @@ describe('ProjectView conversation run isolation', () => {
       },
     };
     listConversations.mockResolvedValue([]);
-    projectCollabMocks.enabled = true;
-    projectCollabMocks.syncState = 'synced';
-    projectCollabMocks.viewerOnly = false;
-    projectCollabMocks.isOwner = true;
-    projectCollabMocks.writerAuthority = 'allowed';
 
     renderProjectView(config, { ...project, workspaceId: teamContext.workspaceId });
 
@@ -1123,90 +1005,6 @@ describe('ProjectView conversation run isolation', () => {
       undefined,
       expect.objectContaining({ workspaceContext: teamContext }),
     );
-  });
-
-  it('does not seed during unknown ownership even when provisional viewerOnly is false', async () => {
-    const teamContext = teamWorkspaceContext('workspace-team', 'member-team');
-    workspaceScopeMocks.ambientContext = teamContext;
-    workspaceScopeMocks.projectScope = {
-      loading: false,
-      scope: {
-        kind: 'team',
-        projectId: project.id,
-        workspaceId: teamContext.workspaceId,
-        visibility: 'team',
-        context: teamContext,
-      },
-    };
-    listConversations.mockResolvedValue([]);
-    projectCollabMocks.enabled = true;
-    projectCollabMocks.syncState = null;
-    projectCollabMocks.viewerOnly = false;
-    projectCollabMocks.isOwner = false;
-    projectCollabMocks.writerAuthority = 'pending';
-
-    const teamProject = { ...project, workspaceId: teamContext.workspaceId };
-    const view = renderProjectView(config, teamProject);
-
-    await waitFor(() => expect(listConversations).toHaveBeenCalledTimes(1));
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(createConversation).not.toHaveBeenCalled();
-
-    projectCollabMocks.syncState = 'synced';
-    projectCollabMocks.viewerOnly = true;
-    projectCollabMocks.writerAuthority = 'denied';
-    view.rerender(projectViewElement(config, teamProject));
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(createConversation).not.toHaveBeenCalled();
-    expect(screen.queryByText('Could not create a conversation for this project.')).toBeNull();
-  });
-
-  it('does not seed after explicit other-owner status revokes provisional writer authority', async () => {
-    const teamContext = teamWorkspaceContext('workspace-team', 'member-team');
-    workspaceScopeMocks.ambientContext = teamContext;
-    workspaceScopeMocks.projectScope = {
-      loading: false,
-      scope: {
-        kind: 'team',
-        projectId: project.id,
-        workspaceId: teamContext.workspaceId,
-        visibility: 'team',
-        context: teamContext,
-      },
-    };
-    let resolveConversations!: (value: Conversation[]) => void;
-    listConversations.mockImplementationOnce(
-      () => new Promise<Conversation[]>((resolve) => {
-        resolveConversations = resolve;
-      }),
-    );
-    projectCollabMocks.enabled = true;
-    projectCollabMocks.syncState = null;
-    projectCollabMocks.viewerOnly = false;
-    projectCollabMocks.isOwner = false;
-    projectCollabMocks.writerAuthority = 'allowed';
-    const teamProject = { ...project, workspaceId: teamContext.workspaceId };
-    const view = renderProjectView(config, teamProject);
-
-    await waitFor(() => expect(listConversations).toHaveBeenCalledTimes(1));
-    projectCollabMocks.syncState = 'synced';
-    projectCollabMocks.viewerOnly = true;
-    projectCollabMocks.writerAuthority = 'denied';
-    view.rerender(projectViewElement(config, teamProject));
-
-    await act(async () => {
-      resolveConversations([]);
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(createConversation).not.toHaveBeenCalled();
   });
 
   it('blocks duplicate new conversations while creation is in flight', async () => {

@@ -1,15 +1,15 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { WorkspaceCollabContext } from '@open-design/contracts';
 import type { AnchorWriteBack } from '../comments';
-import type { ProjectCollab } from './useProjectCollab';
 
-// Shares the project's collab state (from useProjectCollab in ProjectView) down
-// to deep descendants (FileViewer's comment overlay) without prop-threading
-// through the big intermediate components, and without a second collab client.
+// Shares project-scoped resource authority and local comment ownership with
+// deep descendants without prop-threading through the large project view.
+// Remote Collaboration snapshots use their dedicated review surface; this
+// context always describes the owner's local project tree.
 
 export type ProjectResourceAuthority = 'pending' | 'denied' | 'local' | 'workspace';
 
-export interface CollabContextValue extends ProjectCollab {
+export interface CollabContextValue {
   /** Exact persisted scope of the project being rendered. Never shell navigation state. */
   workspaceContext: WorkspaceCollabContext | null;
   workspaceContextLoading: boolean;
@@ -19,6 +19,11 @@ export interface CollabContextValue extends ProjectCollab {
   /** Persist a drifted-to-`lost` comment's last-good position (needs the active
    * conversation id, which only ProjectView has). Absent when unavailable. */
   onLostAnchors?: (writeBacks: AnchorWriteBack[]) => void;
+  /** Legacy PreviewComment synchronization is disabled for local projects. */
+  enabled: boolean;
+  publishedVersion: number | null;
+  /** The local project owner may manage projected review comments. */
+  isOwner: boolean;
 }
 
 const DISABLED: CollabContextValue = {
@@ -27,19 +32,7 @@ const DISABLED: CollabContextValue = {
   projectResourceAuthority: 'local',
   enabled: false,
   publishedVersion: null,
-  syncState: null,
-  viewerOnly: false,
-  writerAuthority: 'pending',
-  isOwner: false,
-  isEffectiveOwner: false,
-  isSharedNonOwner: false,
-  ownerDisplayName: null,
-  ownerRole: null,
-  downloadPending: false,
-  materializationPending: false,
-  reportChange: () => {},
-  requestPublish: () => {},
-  checkStatusNow: () => {},
+  isOwner: true,
 };
 
 const CollabContext = createContext<CollabContextValue>(DISABLED);

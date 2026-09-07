@@ -64,18 +64,7 @@ function renderTeamViewer(ui: ReactElement) {
     workspaceContextLoading: false,
     enabled: false,
     publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed',
     isOwner: false,
-    isEffectiveOwner: false,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    checkStatusNow: () => {},
   };
   return render(<CollabProvider value={value}>{ui}</CollabProvider>);
 }

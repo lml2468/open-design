@@ -9,7 +9,6 @@
 import { coalescedGet, evictCoalescedGet } from '../lib/coalesced-get';
 import { isDaemonProxyConnectionFailure } from '../runtime/daemon-proxy-failure';
 import { BackoffController, type BackoffOptions } from '../lib/backoff';
-import { markProjectCreatedByViewer } from '../collab/useProjectCollab';
 import { API_ERROR_CODES, type ApiErrorCode } from '@open-design/contracts';
 import type {
   AppliedPluginSnapshot,
@@ -513,11 +512,6 @@ export async function createProject(
           conversationId: string;
           appliedPluginSnapshotId?: string;
         };
-        // Preserve the exact Workspace authority used by this create request.
-        // `useProjectCollab` may use this only to skip the initial status-unknown
-        // read-only window; another Workspace with the same project id must not
-        // inherit the signal.
-        markProjectCreatedByViewer(created.project.id, input.workspaceContext ?? null);
         return created;
       }
       if (await isDaemonProxyConnectionFailure(resp)) {
@@ -619,7 +613,6 @@ export async function duplicateProject(
       throw new Error(message);
     }
     const created = (await resp.json()) as DuplicateProjectResponse;
-    markProjectCreatedByViewer(created.project.id, workspaceContext ?? null);
     return created;
   } catch (err) {
     throw err instanceof Error ? err : new Error('Could not duplicate project');
@@ -1745,7 +1738,6 @@ export async function duplicatePluginAsProject(
   if (!json?.ok || !json.projectId) {
     throw new Error('Could not duplicate this template.');
   }
-  markProjectCreatedByViewer(json.projectId, workspaceContext ?? null);
   return json;
 }
 

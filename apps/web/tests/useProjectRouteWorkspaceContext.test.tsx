@@ -26,7 +26,6 @@ import {
 const PROJECT_ID = 'project-deep-link';
 const PROJECT_ENDPOINTS = [
   `/api/projects/${PROJECT_ID}/folders`,
-  `/api/projects/${PROJECT_ID}/collab/status`,
   `/api/projects/${PROJECT_ID}/workspace-scope`,
   `/api/projects/${PROJECT_ID}`,
   `/api/projects/${PROJECT_ID}/files`,

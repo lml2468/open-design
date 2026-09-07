@@ -78,18 +78,7 @@ function renderWithWorkspace(ui: React.ReactElement, workspaceContext: Workspace
     workspaceContextLoading: false,
     enabled: true,
     publishedVersion: null,
-    syncState: 'synced',
-    viewerOnly: false,
-    writerAuthority: 'allowed',
     isOwner: true,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: 'owner',
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    checkStatusNow: () => {},
   };
   return render(<CollabProvider value={collab}>{ui}</CollabProvider>);
 }

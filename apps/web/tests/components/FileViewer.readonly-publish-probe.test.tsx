@@ -72,18 +72,7 @@ function renderProjectFileViewer(
     workspaceContextLoading: false,
     enabled: true,
     publishedVersion: null,
-    syncState: null,
-    viewerOnly: props.viewerOnly === true,
-    writerAuthority: props.viewerOnly === true ? 'denied' : 'allowed',
     isOwner: props.viewerOnly !== true,
-    isEffectiveOwner: props.viewerOnly !== true,
-    isSharedNonOwner: props.viewerOnly === true,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    checkStatusNow: () => {},
   };
   return render(
     <CollabProvider value={collab}>

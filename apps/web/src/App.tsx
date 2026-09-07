@@ -3307,7 +3307,6 @@ function AppInner() {
     workspaceScope?: ProjectWorkspaceScope;
     resolvedDir?: string | null;
     workspaceContext?: WorkspaceCollabContext;
-    awaitingFirstMaterialization?: boolean;
   } | null>(null);
   const [, setRouteProjectSnapshotRevision] = useState(0);
   const activeAccountGeneration = currentWorkspaceAccountGeneration();
@@ -3342,10 +3341,6 @@ function AppInner() {
           : exactOpeningContext
             ? { workspaceContext: exactOpeningContext }
             : {}),
-        ...((preservesBootstrapWitness && previous.awaitingFirstMaterialization)
-          || listedProject.metadata?.sharedProjectPlaceholderAt != null
-          ? { awaitingFirstMaterialization: true }
-          : {}),
       };
       if (exactOpeningContext) projectOpenWorkspaceWitnessRef.current = null;
     } else if (
@@ -3448,8 +3443,6 @@ function AppInner() {
           accountGeneration,
           capturedAfterListGeneration: latestAppliedProjectListGenerationRef.current,
           resolvedDir: bootstrap.resolvedDir,
-          awaitingFirstMaterialization:
-            bootstrap.project.metadata?.sharedProjectPlaceholderAt != null,
         };
         setRouteProjectSnapshotRevision((current) => current + 1);
         return;
@@ -4044,12 +4037,6 @@ function AppInner() {
                   project: routeProjectSnapshotRef.current.project,
                   resolvedDir: routeProjectSnapshotRef.current.resolvedDir,
                 }
-              : undefined
-          }
-          initialMaterializationPending={
-            routeProjectSnapshotRef.current?.project.id === activeProject.id
-              ? routeProjectSnapshotRef.current.awaitingFirstMaterialization
-                ?? (activeProject.metadata?.sharedProjectPlaceholderAt != null)
               : undefined
           }
           projectAuthorizationKey={

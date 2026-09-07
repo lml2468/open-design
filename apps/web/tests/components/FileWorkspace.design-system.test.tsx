@@ -125,18 +125,7 @@ function collabValue(workspaceContext: WorkspaceCollabContext): CollabContextVal
     workspaceContextLoading: false,
     enabled: false,
     publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed',
     isOwner: true,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    checkStatusNow: () => {},
   };
 }
 
@@ -482,12 +471,6 @@ describe('FileWorkspace design-system project surface', () => {
       if (url.includes('/raw/fonts/') || url.includes('/raw/system/tokens.')) {
         return new Response(null, { status: 404 });
       }
-      if (url === '/api/projects/ds-acme/collab/status') {
-        return new Response(JSON.stringify({ syncState: 'local_only' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
       if (url === '/api/workspace/context') {
         return new Response(JSON.stringify({ context: null }), {
           status: 200,
@@ -609,12 +592,6 @@ describe('FileWorkspace design-system project surface', () => {
       if (url.includes('/raw/fonts/') || url.includes('/raw/system/tokens.')) {
         return new Response(null, { status: 404 });
       }
-      if (url === '/api/projects/ds-acme/collab/status') {
-        return new Response(JSON.stringify({ syncState: 'local_only' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
       if (url === '/api/workspace/context') {
         return new Response(JSON.stringify({ context: null }), {
           status: 200,
@@ -708,12 +685,6 @@ describe('FileWorkspace design-system project surface', () => {
       }
       if (url.includes('/raw/fonts/') || url.includes('/raw/system/tokens.')) {
         return new Response(null, { status: 404 });
-      }
-      if (url === '/api/projects/ds-acme/collab/status') {
-        return new Response(JSON.stringify({ syncState: 'local_only' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
       }
       if (url === '/api/workspace/context') {
         return new Response(JSON.stringify({ context: null }), {

@@ -242,7 +242,6 @@ import { useWorkspaceTabsDockRef } from './workspaceTabsDock';
 import { localizePluginTitle } from './plugins-home/localization';
 import { DesignSystemPicker } from './DesignSystemPicker';
 import { ProjectCollaborationPublish } from './collaboration/ProjectCollaborationPublish';
-import { useProjectCollab } from '../collab/useProjectCollab';
 import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
 import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import {
@@ -370,10 +369,6 @@ export function mergeSavedPreviewComment(current: PreviewComment[], saved: Previ
   return current.map((comment, index) => (index === existingIndex ? saved : comment));
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 function conversationForkErrorCode(error: unknown): TrackingConversationForkErrorCode {
   if (error instanceof ProjectConversationsHttpError) {
     if (error.status === 400) return 'bad_request';
@@ -399,40 +394,6 @@ function conversationForkPoint(
     return message.id === assistantMessageId ? 'latest' : 'historical';
   }
   return 'unknown';
-}
-
-export async function listConversationsWithRetry(
-  projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<Conversation[]> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= CONVERSATION_LOAD_RETRY_DELAYS_MS.length; attempt += 1) {
-    try {
-      return await listConversations(projectId, {
-        throwOnError: true,
-        workspaceContext,
-      });
-    } catch (err) {
-      lastError = err;
-      // A shared project may be visible in the catalog just before its local
-      // conversation materialization completes. Only that transient 404 earns
-      // the bounded retry window; auth/permission/request failures are settled
-      // and retrying them merely leaves the entire project in a loading state.
-      if (
-        !(err instanceof ProjectConversationsHttpError)
-        || err.status !== 404
-        || workspaceContext?.workspaceType !== 'team'
-      ) {
-        throw err;
-      }
-      const delay = CONVERSATION_LOAD_RETRY_DELAYS_MS[attempt];
-      if (delay === undefined) break;
-      await wait(delay);
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error('Could not load conversations for this project.');
 }
 
 /**
@@ -590,8 +551,6 @@ interface Props {
   /** Fresh route-bootstrap witnesses, reused to avoid repeating scope/detail reads. */
   initialWorkspaceScope?: ProjectWorkspaceScope | null;
   initialProjectDetail?: ProjectDetailSeed | null;
-  /** The seeded project row is a Team-bound placeholder, not content authority. */
-  initialMaterializationPending?: boolean;
   /** Workspace/member authorization lifetime for async title reads. */
   projectAuthorizationKey?: string;
   routeFileName: string | null;
@@ -710,49 +669,6 @@ const BEDROCK_BYOK_UNSUPPORTED_MESSAGE =
   'AWS Bedrock BYOK chat requires AWS credential signing and is not supported by the current API-key proxy.';
 const CHAT_PANEL_KEYBOARD_STEP = 16;
 const DESIGN_SYSTEM_AUDIT_AUTO_REPAIR_ATTEMPTS = 2;
-// The conversations list 404s while a project is not yet in the local daemon DB.
-// For a personal project that is a transient blip, but opening a TEAM-SHARED
-// project a member has not pulled yet only registers it locally after the collab
-// status resolves and the auto-pull completes — several seconds against a remote
-// collab backend (e.g. a packaged feature-env build round-tripping through vela).
-// The old ~1s window ran out mid-pull and surfaced a hard "conversations 404"
-// error on first open of a shared project. Retry on the 404 long enough to cover
-// that sync (~12s); a genuinely missing project is rare on this path (the user
-// navigated in from a real project list) and still surfaces the error afterward.
-const CONVERSATION_LOAD_RETRY_DELAYS_MS = [
-  120, 300, 600, 1000, 1500, 2000, 2500, 3500,
-] as const;
-type ConversationMaterializationRecovery = {
-  projectId: string;
-  authorityKey: string;
-  generation: number;
-  workspaceContext: WorkspaceCollabContext;
-  errorMessage: string;
-};
-export function reconcileConversationRecoveryGlobalError(
-  current: string | null,
-  previousConversationError: string,
-  nextConversationError: string,
-): string {
-  return current === null || current === previousConversationError
-    ? nextConversationError
-    : current;
-}
-export function createConversationMaterializationGenerationController() {
-  let current = 0;
-  return {
-    begin(): number {
-      current += 1;
-      return current;
-    },
-    invalidate(generation: number): void {
-      if (current === generation) current += 1;
-    },
-    isCurrent(generation: number): boolean {
-      return current === generation;
-    },
-  };
-}
 // Trailing-debounce window for the canonical (daemon + SQLite) tab-state write.
 // Embedded-browser navigation bursts settle well within this; the local cache
 // is written immediately so nothing is lost if the daemon write is coalesced.
@@ -1442,20 +1358,6 @@ export function projectSplitClassName(workspaceFocused: boolean): string {
   return workspaceFocused ? 'split split-focus' : 'split';
 }
 
-/**
- * Whether a project open should start with the chat pane collapsed (workspace
- * focus mode). Uses `useProjectCollab`'s confirmed shared-non-owner signal
- * (`isSharedNonOwner`) — not raw `isOwner` — so a catalog-confirmed owner whose
- * `/collab/status` payload is still missing `ownerMemberId` does not latch into
- * focus mode permanently (review: sticky apply ref).
- */
-export function shouldDefaultCollapseChatForSharedNonOwner(collab: {
-  enabled: boolean;
-  isSharedNonOwner: boolean;
-}): boolean {
-  return collab.enabled && collab.isSharedNonOwner;
-}
-
 // React key for the on-screen question form. Deliberately does NOT include the
 // form's parsed `id`: there is at most one (first) form per assistant message,
 // so `${conversation}:${message}` is already a stable, unique identity for the
@@ -1725,34 +1627,17 @@ function artifactWithHtml(
       };
 }
 
-const SHARED_PROJECT_PLACEHOLDER_NAME = '共享项目';
-
 /**
  * Reconcile the route/list snapshot with the daemon detail response.
- *
- * A shared-project placeholder is created locally with `updatedAt = now`, so
- * timestamp-only selection can make it look newer than the local project row.
- * Detail still owns newer project fields, but it must never replace a
- * meaningful local title with that transport placeholder. The project-id check
- * also keeps a late response from a previous route out of the next project.
+ * The project-id check keeps a late response from a previous route out of the
+ * next project, while the timestamp keeps an older detail read from regressing
+ * the current local row.
  */
 export function reconcileProjectDetail(
   project: Project,
   detail: Project | null,
 ): Project {
   if (!detail || detail.id !== project.id || detail.updatedAt < project.updatedAt) {
-    return project;
-  }
-  const projectName = project.name.trim();
-  const detailName = detail.name.trim();
-  if (
-    detailName === SHARED_PROJECT_PLACEHOLDER_NAME
-    && projectName
-    && projectName !== SHARED_PROJECT_PLACEHOLDER_NAME
-  ) {
-    // The placeholder is an unmaterialized transport row, not a newer project
-    // authority. Reject the whole row so its null skill/design metadata cannot
-    // regress the catalog/local record along with its synthetic title.
     return project;
   }
   return detail;
@@ -1763,7 +1648,6 @@ export function ProjectView({
   workspaceContextOverride,
   initialWorkspaceScope,
   initialProjectDetail,
-  initialMaterializationPending = false,
   projectAuthorizationKey = project.id,
   routeFileName,
   routeConversationId = null,
@@ -1911,65 +1795,13 @@ export function ProjectView({
   // Leaving the project (or changing project identity) crosses the boundary:
   // drop every source snapshot before a later mount can seed content that the
   // next project/workspace context has not reauthorized.
-  // `viewerOnly` is not a revocation signal: it also represents authorized
-  // read-only members, so this ProjectView lifetime is the fail-closed boundary.
   useEffect(() => () => {
     invalidateHtmlSourceSnapshotProject(project.id);
   }, [project.id]);
-  // Legacy Team sync state remains active until the mirror path is removed.
-  const projectCollab = useProjectCollab(project?.id ?? null, {
-    workspaceContext: projectRunWorkspaceContext,
-    workspaceContextLoading: projectWorkspaceScopeState.loading,
-    initialMaterializationPending,
-  });
-  // A Team-bound placeholder is safe to render and comment around, but its
-  // empty tree is never a writer authority. Reuse the established viewer-only
-  // gates for content/run/project mutations until the daemon's own status poll
-  // proves first materialization finished. Keep the read-only ownership banner
-  // keyed to `projectCollab.viewerOnly` below so an owner reinstall sees a
-  // syncing project, not the misleading “shared by someone else” notice.
-  const projectMutationReadOnly =
-    projectCollab.viewerOnly || projectCollab.materializationPending;
-  // Tab layout is private browser state for a read-only Team viewer. Keep its
-  // identity-partitioned local cache working, but only let a positively proven
-  // project writer update the daemon's shared project row. Personal and legacy
-  // unbound projects retain their existing local-daemon persistence once the
-  // daemon has settled that scope. The local project row is not an unbound
-  // authority witness: it can lag a daemon-side Team binding.
-  const projectTabsCanPersistToDaemon =
-    projectWorkspaceScopeState.scope?.kind === 'unbound'
-    || projectWorkspaceScopeState.scope?.kind === 'personal'
-    || (
-      projectWorkspaceScopeState.scope?.kind === 'team'
-      && projectCollab.writerAuthority === 'allowed'
-    );
-  const projectTabsCanPersistToDaemonRef = useRef(
-    projectTabsCanPersistToDaemon,
-  );
-  projectTabsCanPersistToDaemonRef.current = projectTabsCanPersistToDaemon;
-  // Stable references (useCallback with empty deps inside useCollab) — safe
-  // for the project-events handler's dependency array without re-subscribing.
-  const {
-    checkStatusNow: collabCheckStatusNow,
-  } = projectCollab;
-  // Read-only banner copy: when the collab cloud resolved who shared this project,
-  // name them ("这是 麻薯 创建的共享项目…"); otherwise fall back to the name-less
-  // notice. Only computed when the viewer is actually read-only.
-  const readonlyNoticeText = projectCollab.viewerOnly
-    ? projectCollab.ownerDisplayName
-      ? t('workspace.readonlyNoticeBy', { owner: projectCollab.ownerDisplayName })
-      : t('workspace.readonlyNotice')
-    : undefined;
-  // Team-share file-sync badge for the design-files tab bar + empty state
-  // (recvqghymxqQQq). A member downloads (their local mirror trails the
-  // published head); the owner uploads (a local edit hasn't published yet).
-  // The two are mutually exclusive — a project has exactly one writer — so at
-  // most one of these is ever true.
-  const fileSyncBadge: 'downloading' | 'uploading' | null = projectCollab.downloadPending
-    ? 'downloading'
-    : projectCollab.enabled && projectCollab.isOwner && projectCollab.syncState === 'pending_upload'
-      ? 'uploading'
-      : null;
+  // A ProjectView always renders the owner's local, writable source tree.
+  // Reviewer snapshots are isolated in the Collaboration review surface and
+  // never enter this mutation path.
+  const projectMutationReadOnly = false;
   const projectDetail = useProjectDetail(
     project.id,
     projectRunWorkspaceContext,
@@ -1981,9 +1813,7 @@ export function ProjectView({
     project,
     detailedProject,
   );
-  let projectTitleTooltip = currentProject.name;
-  if (projectMutationReadOnly) projectTitleTooltip = t('workspace.readonlyNotice');
-  if (projectCollab.materializationPending) projectTitleTooltip = t('designFiles.syncing');
+  const projectTitleTooltip = currentProject.name;
   const resolvedProjectDesignSystemId = resolveProjectDesignSystemId(currentProject);
   // A project can outlive a Design System being disabled in Settings. Keep the
   // persisted project value intact for recovery, but do not inject a disabled
@@ -2101,14 +1931,15 @@ export function ProjectView({
   );
   const collabValue = useMemo<CollabContextValue>(
     () => ({
-      ...projectCollab,
       workspaceContext: projectRunWorkspaceContext,
       workspaceContextLoading: projectWorkspaceScopeState.loading,
       projectResourceAuthority,
       onLostAnchors: handleLostAnchors,
+      enabled: false,
+      publishedVersion: null,
+      isOwner: true,
     }),
     [
-      projectCollab,
       projectRunWorkspaceContext,
       projectWorkspaceScopeState.loading,
       projectResourceAuthority,
@@ -2119,17 +1950,6 @@ export function ProjectView({
   const [messagesConversationId, setMessagesConversationId] = useState<string | null>(null);
   const [failedMessagesConversationId, setFailedMessagesConversationId] = useState<string | null>(null);
   const [conversationLoadError, setConversationLoadError] = useState<string | null>(null);
-  const conversationMaterializationRecoveryRef =
-    useRef<ConversationMaterializationRecovery | null>(null);
-  const conversationMaterializationGenerationControllerRef =
-    useRef<ReturnType<typeof createConversationMaterializationGenerationController> | null>(null);
-  const conversationMaterializationGenerationController =
-    conversationMaterializationGenerationControllerRef.current
-    ?? createConversationMaterializationGenerationController();
-  conversationMaterializationGenerationControllerRef.current =
-    conversationMaterializationGenerationController;
-  const conversationMaterializationRecoveryInFlightRef =
-    useRef<ConversationMaterializationRecovery | null>(null);
   const [messageLoadRetryNonce, setMessageLoadRetryNonce] = useState(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
@@ -2603,9 +2423,7 @@ export function ProjectView({
     let cancelled = false;
     const revalidatingCurrentProject =
       conversationsLoadedProjectIdRef.current === project.id;
-    const generation = conversationMaterializationGenerationController.begin();
     const requestWorkspaceContext = projectRunWorkspaceContextRef.current;
-    conversationMaterializationRecoveryRef.current = null;
     setPendingEmptyConversationSeed(null);
     setConversationLoadError(null);
     setError(null);
@@ -2626,18 +2444,13 @@ export function ProjectView({
     }
     (async () => {
       try {
-        const list = await listConversationsWithRetry(
-          project.id,
-          requestWorkspaceContext,
-        );
+        const list = await listConversations(project.id, {
+          throwOnError: true,
+          workspaceContext: requestWorkspaceContext,
+        });
         if (cancelled) return;
         conversationsLoadedProjectIdRef.current = project.id;
         if (list.length === 0) {
-          // Conversation reads can settle before collaboration ownership. Keep
-          // the empty result and let the effect below seed only after the
-          // fail-closed viewer gate proves this caller may mutate. This avoids
-          // both a member's POST -> 403 loop and reloading the whole transcript
-          // when status later confirms an owner.
           setConversations([]);
           setActiveConversationId(null);
           setPendingEmptyConversationSeed({
@@ -2665,19 +2478,6 @@ export function ProjectView({
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : 'Could not load conversations for this project.';
-        const materializationRecovery =
-          err instanceof ProjectConversationsHttpError
-          && err.status === 404
-          && requestWorkspaceContext?.workspaceType === 'team'
-            ? {
-                projectId: project.id,
-                authorityKey: projectRunAuthorityKey,
-                generation,
-                workspaceContext: requestWorkspaceContext,
-                errorMessage: message,
-              }
-            : null;
-        conversationMaterializationRecoveryRef.current = materializationRecovery;
         setPendingEmptyConversationSeed(null);
         const accessRevoked =
           err instanceof ProjectConversationsHttpError
@@ -2692,119 +2492,18 @@ export function ProjectView({
     })();
     return () => {
       cancelled = true;
-      conversationMaterializationGenerationController.invalidate(generation);
-      if (
-        conversationMaterializationRecoveryRef.current?.generation
-        === generation
-      ) {
-        conversationMaterializationRecoveryRef.current = null;
-      }
     };
   }, [
     commitPreviewComments,
-    conversationMaterializationGenerationController,
     project.id,
     projectRunAuthorityKey,
   ]);
 
-  const recoverMaterializedConversations = useCallback(async (
-    signalProjectId: string,
-    signalAuthorityKey: string,
-  ) => {
-    const recovery = conversationMaterializationRecoveryRef.current;
-    if (!recovery) return;
-    if (recovery.projectId !== signalProjectId) return;
-    if (recovery.authorityKey !== signalAuthorityKey) return;
-    if (!conversationMaterializationGenerationController.isCurrent(recovery.generation)) return;
-    if (projectIdRef.current !== recovery.projectId) return;
-    if (projectRunAuthorityKeyRef.current !== recovery.authorityKey) return;
-    if (conversationMaterializationRecoveryInFlightRef.current === recovery) return;
-    conversationMaterializationRecoveryInFlightRef.current = recovery;
-    try {
-      // Materialization completion is already our retry signal, so perform one
-      // exact-scoped read here instead of extending the fixed initial retry
-      // schedule. A still-early 404 leaves recovery armed for the next signal.
-      const list = await listConversations(recovery.projectId, {
-        throwOnError: true,
-        workspaceContext: recovery.workspaceContext,
-      });
-      if (conversationMaterializationRecoveryRef.current !== recovery) return;
-      if (!conversationMaterializationGenerationController.isCurrent(recovery.generation)) return;
-      if (projectIdRef.current !== recovery.projectId) return;
-      if (projectRunAuthorityKeyRef.current !== recovery.authorityKey) return;
-
-      conversationMaterializationRecoveryRef.current = null;
-      setConversationLoadError(null);
-      setError((current) => (
-        current === recovery.errorMessage ? null : current
-      ));
-      if (list.length === 0) {
-        setConversations([]);
-        setActiveConversationId(null);
-        setPendingEmptyConversationSeed({
-          projectId: recovery.projectId,
-          authorityKey: recovery.authorityKey,
-        });
-        return;
-      }
-
-      setPendingEmptyConversationSeed(null);
-      setConversations(list);
-      const routedMatch = routeConversationId
-        ? list.find((candidate) => candidate.id === routeConversationId) ?? null
-        : null;
-      setActiveConversationId(routedMatch ? routedMatch.id : list[0]!.id);
-    } catch (err) {
-      if (conversationMaterializationRecoveryRef.current !== recovery) return;
-      if (!conversationMaterializationGenerationController.isCurrent(recovery.generation)) return;
-      if (projectIdRef.current !== recovery.projectId) return;
-      if (projectRunAuthorityKeyRef.current !== recovery.authorityKey) return;
-      if (
-        err instanceof ProjectConversationsHttpError
-        && err.status === 404
-      ) {
-        return;
-      }
-      // A completion signal exposed a settled non-404 failure. Stop treating
-      // it as a materialization race and surface that exact response now; a
-      // later project/authority load owns only any further retry.
-      conversationMaterializationRecoveryRef.current = null;
-      const message = err instanceof Error
-        ? err.message
-        : 'Could not load conversations for this project.';
-      setConversationLoadError(message);
-      setError((current) => reconcileConversationRecoveryGlobalError(
-        current,
-        recovery.errorMessage,
-        message,
-      ));
-    } finally {
-      if (conversationMaterializationRecoveryInFlightRef.current === recovery) {
-        conversationMaterializationRecoveryInFlightRef.current = null;
-      }
-    }
-  }, [
-    conversationMaterializationGenerationController,
-    routeConversationId,
-  ]);
-
-  const emptyConversationWriterAuthorized =
-    projectWorkspaceScopeState.scope?.kind === 'personal'
-    || projectWorkspaceScopeState.scope?.kind === 'unbound'
-    || (
-      projectWorkspaceScopeState.scope?.kind === 'team'
-      && projectCollab.writerAuthority === 'allowed'
-    );
-  const emptyConversationReadOnlySettled =
-    pendingEmptyConversationSeed?.projectId === project.id
-    && pendingEmptyConversationSeed.authorityKey === projectRunAuthorityKey
-    && projectCollab.writerAuthority === 'denied';
   useEffect(() => {
     if (
       !pendingEmptyConversationSeed
       || pendingEmptyConversationSeed.projectId !== project.id
       || pendingEmptyConversationSeed.authorityKey !== projectRunAuthorityKey
-      || !emptyConversationWriterAuthorized
     ) {
       return;
     }
@@ -2838,7 +2537,6 @@ export function ProjectView({
     };
   }, [
     pendingEmptyConversationSeed,
-    emptyConversationWriterAuthorized,
     project.id,
     projectRunAuthorityKey,
   ]);
@@ -2872,28 +2570,10 @@ export function ProjectView({
     setActiveConversationId(routeConversationId);
   }, [routeConversationId, conversations, activeConversationId]);
 
-  // Reset chat pane to the open default on project switch. Shared non-owner
-  // projects re-collapse once collab status confirms (see below) — but only
-  // once per open, so expanding chat after that is sticky for the visit.
-  const sharedNonOwnerChatDefaultAppliedRef = useRef<string | null>(null);
+  // Each local project opens with both the chat and workspace visible.
   useEffect(() => {
     setWorkspaceFocused(false);
-    sharedNonOwnerChatDefaultAppliedRef.current = null;
   }, [project.id]);
-
-  useEffect(() => {
-    if (sharedNonOwnerChatDefaultAppliedRef.current === project.id) return;
-    if (
-      !shouldDefaultCollapseChatForSharedNonOwner({
-        enabled: projectCollab.enabled,
-        isSharedNonOwner: projectCollab.isSharedNonOwner,
-      })
-    ) {
-      return;
-    }
-    setWorkspaceFocused(true);
-    sharedNonOwnerChatDefaultAppliedRef.current = project.id;
-  }, [project.id, projectCollab.enabled, projectCollab.isSharedNonOwner]);
 
   // Load messages whenever the active conversation changes. This happens
   // on project mount (after conversations load) and on user-triggered
@@ -3195,7 +2875,7 @@ export function ProjectView({
     setOpenTabsState({ tabs: [], active: null });
     (async () => {
       const state = await loadTabs(project.id, requestWorkspaceContext, {
-        reconcileNewerCacheToDaemon: projectTabsCanPersistToDaemonRef.current,
+        reconcileNewerCacheToDaemon: true,
       });
       if (cancelled) return;
       const routeActive = routeFileNameRef.current;
@@ -3221,13 +2901,11 @@ export function ProjectView({
           nextState,
           requestWorkspaceContext,
         );
-        if (projectTabsCanPersistToDaemonRef.current) {
-          void persistTabsToDaemonNow(
-            project.id,
-            nextState,
-            requestWorkspaceContext,
-          );
-        }
+        void persistTabsToDaemonNow(
+          project.id,
+          nextState,
+          requestWorkspaceContext,
+        );
       }
       tabsHydratedFromSavedStateRef.current = state.hasSavedState === true;
       setOpenTabsState(nextState);
@@ -3277,14 +2955,6 @@ export function ProjectView({
         next,
         projectRunWorkspaceContext,
       );
-      if (!projectTabsCanPersistToDaemon) {
-        if (tabsDaemonSaveTimerRef.current != null) {
-          clearTimeout(tabsDaemonSaveTimerRef.current);
-          tabsDaemonSaveTimerRef.current = null;
-        }
-        pendingDaemonTabsRef.current = null;
-        return;
-      }
       pendingDaemonTabsRef.current = {
         projectId: project.id,
         state: stamped,
@@ -3309,21 +2979,8 @@ export function ProjectView({
     [
       project.id,
       projectRunWorkspaceContext,
-      projectTabsCanPersistToDaemon,
     ],
   );
-
-  // Revocation can arrive without another tab interaction. Discard a queued
-  // write immediately instead of letting its old authority fire after the
-  // project has become read-only.
-  useEffect(() => {
-    if (projectTabsCanPersistToDaemon) return;
-    if (tabsDaemonSaveTimerRef.current != null) {
-      clearTimeout(tabsDaemonSaveTimerRef.current);
-      tabsDaemonSaveTimerRef.current = null;
-    }
-    pendingDaemonTabsRef.current = null;
-  }, [projectTabsCanPersistToDaemon]);
 
   // Flush any pending tab write when the project changes or the view unmounts,
   // so a fast project switch / close doesn't leave the daemon a debounce behind.
@@ -3451,51 +3108,6 @@ export function ProjectView({
     );
     return { acceptedGeneration };
   }, [refreshWorkspaceItems]);
-
-  const previousMaterializationDownloadRef = useRef<{
-    projectId: string;
-    authorityKey: string;
-    pending: boolean;
-  } | null>(null);
-  useEffect(() => {
-    const previous = previousMaterializationDownloadRef.current;
-    const sameAuthority = previous?.projectId === project.id
-      && previous.authorityKey === projectRunAuthorityKey;
-    previousMaterializationDownloadRef.current = {
-      projectId: project.id,
-      authorityKey: projectRunAuthorityKey,
-      pending: projectCollab.downloadPending,
-    };
-    if (
-      !sameAuthority
-      || !previous.pending
-      || projectCollab.downloadPending
-    ) {
-      return;
-    }
-
-    // The first file read for a newly opened Team mirror can legitimately
-    // observe the empty placeholder directory. Materialization replaces that
-    // directory without producing a chokidar event for a stream that was not
-    // connected yet, so settling the download is itself an authoritative file
-    // invalidation. Fence the placeholder snapshot and fetch the exact scoped
-    // directory now; otherwise the first view stays empty until it is reopened.
-    invalidateProjectFilesCache(
-      project.id,
-      projectRunWorkspaceContextRef.current,
-    );
-    void refreshWorkspaceItems({ freshProjectFiles: true }).catch(() => {
-      // Preserve the last accepted snapshot on a transient transport failure.
-      // The project event stream and ordinary refresh paths remain retries.
-    });
-    void recoverMaterializedConversations(project.id, projectRunAuthorityKey);
-  }, [
-    project.id,
-    projectRunAuthorityKey,
-    projectCollab.downloadPending,
-    recoverMaterializedConversations,
-    refreshWorkspaceItems,
-  ]);
 
   useEffect(() => {
     if (!currentBrandExtractionId) {
@@ -3806,7 +3418,6 @@ export function ProjectView({
       projectRunWorkspaceContextRef.current,
     );
     const nextFiles = await refreshProjectFiles({ fresh: true });
-    collabCheckStatusNow();
     if (
       !hadAcceptedSnapshot
       || projectFileContentSnapshotsEqual(previousFiles, nextFiles)
@@ -3820,7 +3431,6 @@ export function ProjectView({
     setDesignMdRefreshKey((n) => n + 1);
   }, [
     bumpFilesRefresh,
-    collabCheckStatusNow,
     project.id,
     refreshProjectFiles,
   ]);
@@ -3828,11 +3438,6 @@ export function ProjectView({
     refreshFilesAndDesignMd,
     { wait: 80, maxWait: 250 },
   );
-  // Collab realtime hop-2: poll-as-floor for the comment poll below. True while
-  // the project events SSE (which now also carries `comment-changed`) is live;
-  // the comment poll slows to a safety-net cadence while true and runs at full
-  // ~5s cadence while false (SSE unavailable — packaged old shell / tests).
-  const [projectEventsSseConnected, setProjectEventsSseConnected] = useState(false);
   // Ref to the (later-defined) comment refresher so the SSE handler above can
   // call it without a temporal-dead-zone reference.
   const refreshPreviewCommentsRef = useRef<(() => Promise<void>) | null>(null);
@@ -3841,7 +3446,6 @@ export function ProjectView({
       iframeKeepAlivePool.evictProject(project.id);
       invalidateHtmlSourceSnapshotProject(project.id);
       coalescedFileChangedRefresh();
-      void recoverMaterializedConversations(project.id, projectRunAuthorityKey);
       return;
     }
     if (evt.type === 'comment-changed') {
@@ -3854,22 +3458,10 @@ export function ProjectView({
       return;
     }
     if (evt.type === 'project-metadata-changed') {
-      // Hub push channel: rename or a fresh content publish landed. Run one
-      // status check now (drives the member auto-pull) instead of waiting for
-      // the next 5s status tick.
       if (evt.projectId === project.id) {
         invalidateHtmlSourceSnapshotProject(project.id);
-        collabCheckStatusNow();
-        void recoverMaterializedConversations(project.id, projectRunAuthorityKey);
-        // The daemon also pushes this signal when a pull just swapped the
-        // shared-project placeholder record for the real name
-        // (registerPulledProject → notifyProjectMetadataChanged). App.tsx's
-        // `projects` state never re-reads a project record on its own, so
-        // without this refetch a member's sidebar/tab title stays on the
-        // "共享项目" placeholder until a full page reload (recvqhwv6RPU1j).
-        // Thin-event model: re-fetch the record, propagate up only when a
-        // rendered field actually changed — an unconditional apply would
-        // re-render the whole App on every content-publish nudge.
+        // Thin-event model: re-fetch the local row and propagate only when a
+        // rendered field actually changed.
         const capturedProjectId = project.id;
         const capturedAuthorizationKey = projectAuthorizationKey;
         const capturedProjectWorkspaceContext = projectRunWorkspaceContext;
@@ -3892,17 +3484,6 @@ export function ProjectView({
           }
           onProjectChange(reconciled);
         });
-      }
-      return;
-    }
-    if (evt.type === 'project-content-transfer-state') {
-      if (evt.projectId === project.id) {
-        // The daemon intentionally emits no transfer payload here. A project
-        // id can be reused across workspace/owner/resource bindings, so direct
-        // application could let scope A's idle hide scope B's download.
-        // Re-read the exact-scoped status; CollabClient's request/tombstone
-        // fences reject stale responses.
-        collabCheckStatusNow();
       }
       return;
     }
@@ -3955,12 +3536,10 @@ export function ProjectView({
     setDesignMdRefreshKey((n) => n + 1);
   }, [
     coalescedFileChangedRefresh,
-    collabCheckStatusNow,
     iframeKeepAlivePool,
     onProjectChange,
     onProjectsRefresh,
     refreshLiveArtifacts,
-    recoverMaterializedConversations,
     project.id,
     projectAuthorizationKey,
     projectRunAuthorityKey,
@@ -3976,7 +3555,6 @@ export function ProjectView({
     daemonLive
     && projectWorkspaceScopeReady(projectWorkspaceScopeState.scope);
   useProjectFileEvents(project.id, projectEventsEnabled, handleProjectEvent, {
-    onConnectedChange: setProjectEventsSseConnected,
     // Files or comments can change after their initial snapshots but before
     // SSE is listening. Reconcile both once the exact-scoped stream is ready:
     // for comments this also redeems a daemon-side dirty mark left by a hub
@@ -4758,34 +4336,6 @@ export function ProjectView({
     };
   }, [refreshPreviewComments]);
 
-  // Cross-daemon comment sync: the daemon merges teammates' comments into the
-  // local store on a background poll, but the web panel only shows what it last
-  // fetched. Collab realtime hop-2 makes this SSE-first: the daemon pushes a thin
-  // `comment-changed` on the project events stream when its poll merges a change,
-  // and `handleProjectEvent` re-fetches on receipt. This poll is the FLOOR — it
-  // slows to a safety-net cadence (30s) while the SSE is connected and runs at
-  // the original ~5s cadence while the SSE is unavailable (packaged old shell /
-  // tests), so a client whose stream never connects has zero regression.
-  // Gated on `projectCollab.enabled` so a personal / off-team project never
-  // polls. This only replaces the loaded comment LIST — the composer /
-  // create-form drafts are separate local state, so an in-flight comment the
-  // user is typing is never clobbered.
-  useEffect(() => {
-    if (!projectCollab.enabled || !activeConversationId) return undefined;
-    const pollMs = projectEventsSseConnected ? 30_000 : 5_000;
-    const interval = setInterval(() => {
-      void refreshPreviewComments();
-    }, pollMs);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void refreshPreviewComments();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [projectCollab.enabled, activeConversationId, refreshPreviewComments, projectEventsSseConnected]);
-
   const savePreviewComment = useCallback(
     async (
       target: PreviewCommentTarget,
@@ -4804,7 +4354,6 @@ export function ProjectView({
         });
         return null;
       }
-      if (projectCollab.materializationPending) return null;
       // Upload any attached images first so the saved comment carries durable
       // file paths — this is what lets the comment list / re-opened popover
       // re-display the images instead of losing them on echo.
@@ -4868,7 +4417,6 @@ export function ProjectView({
       previewComments,
       projectRunWorkspaceContext,
       t,
-      projectCollab.materializationPending,
     ],
   );
 
@@ -4884,7 +4432,6 @@ export function ProjectView({
         });
         return false;
       }
-      if (projectCollab.materializationPending) return false;
       const ok = await deletePreviewComment(
         project.id,
         commentConversationId,
@@ -4911,7 +4458,6 @@ export function ProjectView({
       commitPreviewComments,
       projectRunWorkspaceContext,
       t,
-      projectCollab.materializationPending,
     ],
   );
 
@@ -4939,7 +4485,6 @@ export function ProjectView({
         });
         return;
       }
-      if (projectCollab.materializationPending) return;
       commitPreviewComments((current) =>
         current.map((comment) => (comment.id === commentId ? { ...comment, sortKey } : comment)),
       );
@@ -4968,7 +4513,6 @@ export function ProjectView({
       commitPreviewComments,
       projectRunWorkspaceContext,
       t,
-      projectCollab.materializationPending,
     ],
   );
 
@@ -9703,25 +9247,9 @@ export function ProjectView({
     if (!projectIsDesignSystemProject || !projectDesignSystemId) return null;
     return designSystems.find((d) => d.id === projectDesignSystemId) ?? null;
   }, [designSystems, projectDesignSystemId, projectIsDesignSystemProject]);
-  // recvqb6mfyqXLD: `designSystemProject.teamSynced`/`canMutate` come off the
-  // exact same `GET /api/design-systems` list this project's design-system
-  // tab already reads (via the `designSystems` prop) — this is a genuinely
-  // separate signal from `projectCollab.viewerOnly` above. Team-sharing a
-  // design system does NOT also register its backing project with the
-  // project-level collab/hub (`/api/projects/:id/collab/status` stays
-  // `local_only` for a teammate's synced copy), so `viewerOnly` alone never
-  // catches this: a plain member opening a teammate's team-synced design
-  // system through this in-project tab (reachable once `DesignSystemFlow`'s
-  // `ensureUserDesignSystemWorkspaceProject` materializes a local project for
-  // it) used to see a fully-live Publish toggle, DESIGN.md editor, and the
-  // logo/image/color edit + delete-project affordances below with no
-  // ownership check at all. `canMutate` mirrors the daemon's own
-  // `canMutateUserDesignSystem` PATCH/DELETE verdict, so this stays in
-  // lockstep with whatever the backend actually allows; `undefined` (not
-  // `teamSynced`, i.e. the caller's own system or a built-in preset) reads as
-  // editable, matching every other consumer of this field.
+  // Design-system mutation authority remains enforced by the design-system
+  // API; it is independent of the removed project mirror state machine.
   const designSystemEditable =
-    !projectCollab.materializationPending &&
     designSystemProject?.canMutate !== false &&
     (
       !projectIsProgrammaticBrandExtraction ||
@@ -10999,7 +10527,7 @@ export function ProjectView({
               </button>
             </div>
           ) : null}
-          {activeConversationId || conversationLoadError || emptyConversationReadOnlySettled ? (
+          {activeConversationId || conversationLoadError ? (
             <ChatPane
               // The conversation id is part of the key so switching conversations
               // resets internal scroll/draft state inside ChatPane and ChatComposer.
@@ -11012,15 +10540,6 @@ export function ProjectView({
               // changes through chat (comments go through the separate overlay).
               sendDisabled={currentConversationSendDisabled || projectMutationReadOnly}
               viewerOnly={projectMutationReadOnly}
-              composerPlaceholder={
-                projectCollab.materializationPending
-                  ? t('designFiles.syncing')
-                  : projectMutationReadOnly
-                  ? (projectCollab.ownerDisplayName
-                      ? t('workspace.readonlyNoticeBy', { owner: projectCollab.ownerDisplayName })
-                      : t('workspace.readonlyNotice'))
-                  : undefined
-              }
               queuedItems={currentConversationQueuedItems}
               error={conversationLoadError ?? error}
               errorSourceAssistantId={
@@ -11308,13 +10827,6 @@ export function ProjectView({
           projectId={project.id}
           projectName={currentProject.name}
           viewerOnly={projectMutationReadOnly}
-          materializationPending={projectCollab.materializationPending}
-          readonlyNotice={
-            projectCollab.materializationPending
-              ? t('designFiles.syncing')
-              : readonlyNoticeText
-          }
-          fileSyncBadge={fileSyncBadge}
           projectKind={projectKindFromMetadataToTrackingOrLegacyDefault(currentProject.metadata)}
           rootDirName={(() => {
             const baseDir = currentProject.metadata?.baseDir;

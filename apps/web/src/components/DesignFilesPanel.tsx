@@ -23,7 +23,6 @@ import {
 import { isVisualStabilityMode } from '../utils/visualStability';
 import type { PluginFolderAgentAction } from './design-files/pluginFolderActions';
 import { getPluginFolderCandidates } from './design-files/pluginFolders';
-import { FileSyncBadge } from '../collab/FileSyncBadge';
 import { Icon } from './Icon';
 import { LiveArtifactBadges } from './LiveArtifactBadges';
 import { RemixIcon } from './RemixIcon';
@@ -51,13 +50,6 @@ interface Props {
   filesRefreshKey?: number;
   /** Read-only viewer of a team-shared project: disables project mutations. */
   viewerOnly?: boolean;
-  /**
-   * True while a non-owner member's local mirror has not yet caught up to the
-   * project's published head. Existing files belong to the last complete
-   * local materialization and remain useful while the next version downloads;
-   * only an empty local result swaps the creation CTAs for a syncing notice.
-   */
-  downloadPending?: boolean;
   // Basename of the project's working directory when the user has chosen a
   // real folder (e.g. "openclaw"). Shown as the breadcrumb root instead of
   // the generic "project" label. Undefined for default-storage projects.
@@ -448,7 +440,6 @@ export function DesignFilesPanel({
   projectKind,
   filesRefreshKey = 0,
   viewerOnly = false,
-  downloadPending = false,
   rootDirName,
   reloading,
   running = false,
@@ -1537,24 +1528,7 @@ export function DesignFilesPanel({
             </div>
           ) : null}
           {files.length === 0 && liveArtifacts.length === 0 && (folders?.length ?? 0) === 0 ? (
-            downloadPending ? (
-              // A shared project whose local mirror has not caught up yet
-              // reads as EXACTLY the same zero-files result as a genuinely
-              // empty project (this list is a plain local-disk read — see
-              // `downloadPending`'s doc comment). Without this branch the two
-              // are indistinguishable and the CTAs below (which create NEW
-              // content) actively mislead a viewer whose project is about to
-              // have real files. Swap them for a syncing notice instead.
-              <div className="df-empty df-empty-syncing" data-testid="design-files-syncing">
-                <div className="df-empty-pill">
-                  <FileSyncBadge state="downloading" size={20} />
-                  <span className="df-empty-title">
-                    {t('designFiles.syncing')}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="df-empty" data-testid="design-files-empty">
+            <div className="df-empty" data-testid="design-files-empty">
                 <div className="df-empty-pill">
                   <span className="df-empty-title">
                     {t('designFiles.empty')}
@@ -1634,7 +1608,6 @@ export function DesignFilesPanel({
                   </div>
                 </div>
               </div>
-            )
           ) : (
             <>
               {availableTabs.length > 0 ? (

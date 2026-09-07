@@ -321,18 +321,7 @@ function collabValue(workspaceContext: WorkspaceCollabContext): CollabContextVal
     workspaceContextLoading: false,
     enabled: false,
     publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed',
     isOwner: true,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    checkStatusNow: () => {},
   };
 }
 
@@ -2590,30 +2579,6 @@ describe('FileWorkspace launcher tab creation', () => {
     ]);
   });
 
-  it('shows project sync progress on the Design Files root tab without hiding materialized files', () => {
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[workspaceFile('notes.txt')]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        viewerOnly
-        fileSyncBadge="downloading"
-        tabsState={{ tabs: [], active: DESIGN_FILES_TAB }}
-        onTabsStateChange={vi.fn()}
-      />,
-    );
-
-    const rootTab = screen.getByTestId('design-files-tab');
-    expect(rootTab.title).toContain('Downloading from the team');
-    expect(rootTab.getAttribute('aria-label')).toContain('Downloading from the team');
-    expect(rootTab.querySelector('svg')).toBeTruthy();
-    expect(screen.getByText('notes.txt')).toBeTruthy();
-    expect(screen.queryByTestId('design-files-syncing')).toBeNull();
-  });
-
   it('opens Design Files from the browser snapshot toast action instead of the manifest file', async () => {
     const onTabsStateChange = vi.fn();
     const browserTab = {
@@ -4327,54 +4292,6 @@ describe('FileWorkspace add-module menu', () => {
 });
 
 describe('FileWorkspace empty-project generation contract', () => {
-  it('shows the first-materialization syncing surface instead of mounting a cached workspace tab', () => {
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[workspaceFile('stale.html')]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: ['terminal:stale'], active: 'terminal:stale' }}
-        onTabsStateChange={vi.fn()}
-        materializationPending
-      />,
-    );
-
-    expect(screen.getByTestId('design-files-syncing')).toBeTruthy();
-    expect(screen.queryByTestId('design-files-empty')).toBeNull();
-  });
-
-  it('keeps an already-materialized viewer and header actions mounted during route revalidation', () => {
-    const file = workspaceFile('artifact.html');
-    const tabsState = { tabs: [file.name], active: file.name };
-    const onTabsStateChange = vi.fn();
-    const renderWorkspace = (materializationPending: boolean) => (
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[file]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={tabsState}
-        onTabsStateChange={onTabsStateChange}
-        materializationPending={materializationPending}
-        fileActionsBefore={<button type="button">Reveal artifact</button>}
-        headerActions={<button type="button">Project action</button>}
-      />
-    );
-    const { rerender } = render(renderWorkspace(false));
-    const retainedViewer = screen.getByTestId('retained-file-viewer');
-
-    rerender(renderWorkspace(true));
-
-    expect(screen.getByTestId('retained-file-viewer')).toBe(retainedViewer);
-    expect(screen.queryByTestId('design-files-syncing')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Reveal artifact' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Project action' })).toBeTruthy();
-  });
 
   function assistantMessage(runStatus: 'running' | 'failed'): ChatMessage {
     return {

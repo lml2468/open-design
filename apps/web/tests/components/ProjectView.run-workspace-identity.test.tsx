@@ -109,10 +109,6 @@ const chatPaneSpy = vi.hoisted(() => vi.fn());
 const resourceContextObservations = vi.hoisted(
   () => [] as Array<WorkspaceCollabContext | null>,
 );
-const projectCollabMocks = vi.hoisted(() => ({
-  writerAuthority: 'allowed' as 'allowed' | 'denied' | 'pending',
-  viewerOnly: false,
-}));
 
 vi.mock('../../src/i18n', () => ({
   useI18n: () => ({ locale: 'zh-CN', setLocale: () => undefined, t: (key: string) => key }),
@@ -134,24 +130,6 @@ vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
 vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
   useProjectWorkspaceScope: () => workspaceScopeMocks.projectScope,
-}));
-
-vi.mock('../../src/collab/useProjectCollab', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectCollab')>()),
-  useProjectCollab: () => ({
-    enabled: true,
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: projectCollabMocks.viewerOnly,
-    writerAuthority: projectCollabMocks.writerAuthority,
-    isOwner: projectCollabMocks.writerAuthority === 'allowed',
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => undefined,
-    requestPublish: () => undefined,
-    checkStatusNow: () => undefined,
-  }),
 }));
 
 vi.mock('../../src/providers/daemon', () => ({
@@ -450,8 +428,6 @@ describe('a Home auto-send identifies its caller before the project scope resolv
     mockedStreamViaDaemon.mockResolvedValue(undefined);
     workspaceScopeMocks.projectScope = { loading: true, scope: null };
     workspaceScopeMocks.ambientContext = CALLER_CONTEXT;
-    projectCollabMocks.writerAuthority = 'allowed';
-    projectCollabMocks.viewerOnly = false;
     mockedLoadTabs.mockResolvedValue({ tabs: [], active: null });
     // Home's hand-off: this flag is what makes ProjectView fire the seeded
     // prompt without a second click.
@@ -1063,8 +1039,6 @@ describe('a Home auto-send observes a project run scope that settles after mount
     mockedFetchBrands.mockResolvedValue([]);
     workspaceScopeMocks.projectScope = { loading: true, scope: null };
     workspaceScopeMocks.ambientContext = CALLER_CONTEXT;
-    projectCollabMocks.writerAuthority = 'allowed';
-    projectCollabMocks.viewerOnly = false;
     mockedLoadTabs.mockResolvedValue({ tabs: [], active: null });
   });
 
@@ -1434,7 +1408,6 @@ describe('a Home auto-send observes a project run scope that settles after mount
 
   it('flushes project A tabs with A authority after rendering project B', async () => {
     window.sessionStorage.removeItem(`od:auto-send-first:${PROJECT_ID}`);
-    projectCollabMocks.writerAuthority = 'allowed';
     workspaceScopeMocks.projectScope = {
       loading: false,
       scope: {
@@ -1509,81 +1482,7 @@ describe('a Home auto-send observes a project run scope that settles after mount
     });
   });
 
-  it('keeps a read-only Team member tab-local and never sends a daemon PUT', async () => {
-    window.sessionStorage.removeItem(`od:auto-send-first:${PROJECT_ID}`);
-    projectCollabMocks.writerAuthority = 'denied';
-    projectCollabMocks.viewerOnly = true;
-    workspaceScopeMocks.projectScope = {
-      loading: false,
-      scope: {
-        kind: 'team',
-        projectId: PROJECT_ID,
-        workspaceId: TEAM_WORKSPACE,
-        visibility: 'team',
-        context: CALLER_CONTEXT as WorkspaceCollabContext & { workspaceType: 'team' },
-      },
-    };
-
-    const view = renderProjectView({
-      project: { ...project(), pendingPrompt: '' },
-      routeFileName: 'index.html',
-    });
-    await waitFor(() => expect(mockedLoadTabs).toHaveBeenCalledTimes(1));
-    expect(mockedLoadTabs).toHaveBeenCalledWith(
-      PROJECT_ID,
-      CALLER_CONTEXT,
-      { reconcileNewerCacheToDaemon: false },
-    );
-    vi.useFakeTimers();
-    fireEvent.click(view.getByTestId('queue-alt-tab-write'));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(400);
-    });
-    expect(mockedPersistTabsToDaemonNow).not.toHaveBeenCalled();
-  });
-
-  it.each(['pending', 'denied'] as const)(
-    'does not treat a missing local workspaceId as unbound when Team writer authority is %s',
-    async (writerAuthority) => {
-      window.sessionStorage.removeItem(`od:auto-send-first:${PROJECT_ID}`);
-      projectCollabMocks.writerAuthority = writerAuthority;
-      projectCollabMocks.viewerOnly = writerAuthority === 'denied';
-      workspaceScopeMocks.projectScope = {
-        loading: false,
-        scope: {
-          kind: 'team',
-          projectId: PROJECT_ID,
-          workspaceId: TEAM_WORKSPACE,
-          visibility: 'team',
-          context: CALLER_CONTEXT as WorkspaceCollabContext & { workspaceType: 'team' },
-        },
-      };
-
-      const view = renderProjectView({
-        project: {
-          ...project(),
-          pendingPrompt: '',
-          workspaceId: undefined,
-        },
-      });
-      await waitFor(() => expect(mockedLoadTabs).toHaveBeenCalledTimes(1));
-      expect(mockedLoadTabs).toHaveBeenCalledWith(
-        PROJECT_ID,
-        CALLER_CONTEXT,
-        { reconcileNewerCacheToDaemon: false },
-      );
-      vi.useFakeTimers();
-      fireEvent.click(view.getByTestId('queue-alt-tab-write'));
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(400);
-      });
-
-      expect(mockedPersistTabsToDaemonNow).not.toHaveBeenCalled();
-    },
-  );
-
-  it('coalesces confirmed-writer tab changes into one daemon PUT', async () => {
+  it('coalesces local-project tab changes into one daemon PUT', async () => {
     window.sessionStorage.removeItem(`od:auto-send-first:${PROJECT_ID}`);
     workspaceScopeMocks.projectScope = {
       loading: false,
@@ -1595,7 +1494,6 @@ describe('a Home auto-send observes a project run scope that settles after mount
         context: CALLER_CONTEXT as WorkspaceCollabContext & { workspaceType: 'team' },
       },
     };
-    projectCollabMocks.writerAuthority = 'allowed';
     const view = renderProjectView({
       project: { ...project(), pendingPrompt: '' },
     });
@@ -1620,7 +1518,7 @@ describe('a Home auto-send observes a project run scope that settles after mount
     vi.useRealTimers();
   });
 
-  it('does not rewrite an unchanged routed tab for a confirmed writer', async () => {
+  it('does not rewrite an unchanged routed tab', async () => {
     window.sessionStorage.removeItem(`od:auto-send-first:${PROJECT_ID}`);
     workspaceScopeMocks.projectScope = {
       loading: false,
@@ -1632,7 +1530,6 @@ describe('a Home auto-send observes a project run scope that settles after mount
         context: CALLER_CONTEXT as WorkspaceCollabContext & { workspaceType: 'team' },
       },
     };
-    projectCollabMocks.writerAuthority = 'allowed';
     mockedLoadTabs.mockResolvedValueOnce({
       tabs: ['index.html'],
       active: 'index.html',
@@ -1647,7 +1544,7 @@ describe('a Home auto-send observes a project run scope that settles after mount
     expect(mockedPersistTabsToDaemonNow).not.toHaveBeenCalled();
   });
 
-  it('writes one changed routed tab for a confirmed writer', async () => {
+  it('writes one changed routed tab', async () => {
     window.sessionStorage.removeItem(`od:auto-send-first:${PROJECT_ID}`);
     workspaceScopeMocks.projectScope = {
       loading: false,
@@ -1659,7 +1556,6 @@ describe('a Home auto-send observes a project run scope that settles after mount
         context: CALLER_CONTEXT as WorkspaceCollabContext & { workspaceType: 'team' },
       },
     };
-    projectCollabMocks.writerAuthority = 'allowed';
 
     renderProjectView({
       project: { ...project(), pendingPrompt: '' },
@@ -1677,46 +1573,8 @@ describe('a Home auto-send observes a project run scope that settles after mount
     );
   });
 
-  it('starts daemon tab persistence only after Team writer authority is allowed', async () => {
-    window.sessionStorage.removeItem(`od:auto-send-first:${PROJECT_ID}`);
-    workspaceScopeMocks.projectScope = {
-      loading: false,
-      scope: {
-        kind: 'team',
-        projectId: PROJECT_ID,
-        workspaceId: TEAM_WORKSPACE,
-        visibility: 'team',
-        context: CALLER_CONTEXT as WorkspaceCollabContext & { workspaceType: 'team' },
-      },
-    };
-    projectCollabMocks.writerAuthority = 'pending';
-    projectCollabMocks.viewerOnly = false;
-    const stableOverrides = {
-      project: { ...project(), pendingPrompt: '' },
-    };
-    const view = renderProjectView(stableOverrides);
-    await waitFor(() => expect(mockedLoadTabs).toHaveBeenCalledTimes(1));
-    vi.useFakeTimers();
-
-    fireEvent.click(view.getByTestId('queue-tab-write'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(400);
-    });
-    expect(mockedPersistTabsToDaemonNow).not.toHaveBeenCalled();
-
-    projectCollabMocks.writerAuthority = 'allowed';
-    view.rerender(projectViewElement(stableOverrides));
-    fireEvent.click(view.getByTestId('queue-alt-tab-write'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(400);
-    });
-    expect(mockedPersistTabsToDaemonNow).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
-  });
-
   it('preserves Personal project daemon tab persistence', async () => {
     window.sessionStorage.removeItem(`od:auto-send-first:${PROJECT_ID}`);
-    projectCollabMocks.writerAuthority = 'denied';
     workspaceScopeMocks.ambientContext = PERSONAL_CONTEXT;
     workspaceScopeMocks.projectScope = {
       loading: false,
@@ -1748,7 +1606,6 @@ describe('a Home auto-send observes a project run scope that settles after mount
 
   it('preserves anonymous unbound project daemon tab persistence', async () => {
     window.sessionStorage.removeItem(`od:auto-send-first:${PROJECT_ID}`);
-    projectCollabMocks.writerAuthority = 'pending';
     workspaceScopeMocks.ambientContext = null;
     workspaceScopeMocks.projectScope = {
       loading: false,
