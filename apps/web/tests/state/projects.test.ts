@@ -1029,11 +1029,11 @@ describe('createProject', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves the structured AMR auth error for the caller instead of reducing it to text', async () => {
+  it('preserves the structured agent auth error for the caller instead of reducing it to text', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({
         error: {
-          code: 'AMR_AUTH_REQUIRED',
+          code: 'AGENT_AUTH_REQUIRED',
           message: 'Sign in again to continue.',
           retryable: false,
           requestId: 'req-expired-1',
@@ -1052,7 +1052,7 @@ describe('createProject', () => {
     expect(failure).toBeInstanceOf(ProjectCreateError);
     expect(failure).toMatchObject({
       status: 401,
-      code: 'AMR_AUTH_REQUIRED',
+      code: 'AGENT_AUTH_REQUIRED',
       retryable: false,
       requestId: 'req-expired-1',
     });

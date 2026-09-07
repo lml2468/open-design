@@ -10,7 +10,7 @@ import type {
 import { isAcpHandshakeRpcErrorText } from '../runtimes/acp-handshake-id.js';
 
 const POLICY_REASONS = new Set<TrackingRunPolicyReason>([
-  'hard_quota', 'entitlement_required',
+  'hard_quota',
 ]);
 
 function record(value: unknown): Record<string, unknown> {
@@ -95,8 +95,7 @@ export function runFailureEvidence(
     && failure.failure_mechanism === 'policy_rejection';
   const policyReason: TrackingRunPolicyReason = !providerVerdict && POLICY_REASONS.has(failure.failure_detail as TrackingRunPolicyReason)
     ? failure.failure_detail as TrackingRunPolicyReason
-    : !providerVerdict && failure.failure_category === 'entitlement_required'
-      ? 'entitlement_required' : 'none';
+    : 'none';
   const phase = admissionPhase(input, events);
   const common: Partial<RunFailureClassification> = {
     classifier_version: 'run-failure-v3',

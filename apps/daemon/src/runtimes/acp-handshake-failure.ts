@@ -74,9 +74,8 @@ function readable(value: string | null | undefined): string | null {
  * The `details` bag a session refusal ships: what kind of thing failed, what
  * resolves it, and whichever identity the daemon actually detected.
  *
- * Mirrors the shape `createAmrModelUnavailablePayload` uses for
- * `AMR_MODEL_UNAVAILABLE` (`kind` / `action` / the one fact the copy names), so
- * a client reads every structured failure the same way. An unknown runtime name
+ * Uses the common structured failure shape (`kind` / `action` / the one fact
+ * the copy names), so a client reads every structured failure the same way. An unknown runtime name
  * is OMITTED rather than sent as null: the copy degrades to its agent-less
  * fallback, and a client must never render the word "null" at a user.
  *
@@ -122,7 +121,7 @@ interface AcpErrorFrame {
  * a handshake-numbered JSON-RPC error that named no cause of its own. The
  * message fields keep the agent's own line on both surfaces. Every other
  * payload is returned by identity, so structured failures
- * (`AMR_MODEL_UNAVAILABLE`, promoted opencode errors), post-session protocol
+ * (including promoted OpenCode errors), post-session protocol
  * errors, and handshake errors that already say what went wrong
  * (`Authentication required`, a 429, an upstream 5xx) keep the exact shape and
  * code their own handling depends on.

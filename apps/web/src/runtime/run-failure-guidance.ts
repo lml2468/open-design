@@ -2,12 +2,6 @@
 // UI: which contextual button the error card shows and whether to override
 // the error text. Kept separate so chat surfaces can reuse the classification
 // without a circular dependency.
-import {
-  isModelWindowLimitFailure,
-  readMembershipConcurrencyResetAt,
-  readModelWindowResetAt,
-} from '@open-design/contracts';
-
 // Primary action offered in the gray error card.
 //   - retry:                       re-run with the current agent.
 //   - launch-terminal-auth:        Antigravity-specific. agy's `-p`
@@ -46,16 +40,11 @@ export type RunFailureMessageKey =
   | 'chat.runError.promptTooLargeMessage'
   | 'chat.runError.modelUnavailableMessage'
   | 'chat.runError.rateLimitedMessage'
-  | 'chat.runError.modelWindowLimitMessage'
-  | 'chat.runError.modelWindowLimitMessageNoTime'
-  | 'chat.runError.membershipConcurrencyLimitMessage'
-  | 'chat.runError.membershipConcurrencyLimitMessageNoTime'
   | 'chat.runError.upstreamUnavailableMessage'
   | 'chat.runError.toolLoopMessage'
   | 'chat.runError.outputInvalidMessage'
   | 'chat.runError.runtimeConfigMessage'
   | 'chat.runError.quotaExhaustedMessage'
-  | 'chat.runError.workspaceCreditsMessage'
   | 'chat.runError.timedOutMessage'
   | 'chat.runError.inactivityTimeoutMessage'
   | 'chat.runError.emptyOutputMessage'
@@ -74,8 +63,6 @@ export type RunFailureTitleKey =
   | 'chat.runError.title.connectionDropped'
   | 'chat.runError.title.signInRequired'
   | 'chat.runError.title.rateLimited'
-  | 'chat.runError.title.modelWindowLimit'
-  | 'chat.runError.title.membershipConcurrencyLimit'
   | 'chat.runError.title.cliMissing'
   | 'chat.runError.title.promptTooLarge'
   | 'chat.runError.title.modelUnavailable'
@@ -101,71 +88,8 @@ export interface RunFailureUi {
   // Override the gray error card's text when a stable localized explanation is
   // clearer than the raw upstream string.
   messageKey: RunFailureMessageKey;
-  // Interpolation values for `messageKey`, for the cases whose copy names
-  // something the daemon read off the failure (e.g. when a rolling model window
-  // reopens). Absent for every message that is a fixed sentence.
-  messageVars?: Record<string, string>;
   // Show a secondary plain "retry" button alongside the primary action.
   secondaryRetry: boolean;
-}
-
-/**
- * The two window-limit message keys, narrowed away from `RunFailureMessageKey`
- * (which includes `null` for the cases that keep the raw upstream string) so
- * callers can hand the result straight to `t()` without a non-null assertion.
- */
-export type ModelWindowLimitMessageKey =
-  | 'chat.runError.modelWindowLimitMessage'
-  | 'chat.runError.modelWindowLimitMessageNoTime';
-
-/**
- * The copy a rolling model-window rejection should render, or null when the
- * text is some other failure.
- *
- * Two surfaces need this and they arrive from opposite directions: the chat
- * card already knows the daemon's `model_window_limit` classification and only
- * wants the instant, while the Home composer fails before a run exists and has
- * nothing but the raw upstream sentence. Sharing one reader keeps them from
- * disagreeing about what counts as a window limit.
- */
-export function modelWindowLimitCopy(
-  rawMessage: string | null | undefined,
-): { messageKey: ModelWindowLimitMessageKey; retryAt?: string } | null {
-  if (!isModelWindowLimitFailure(rawMessage)) return null;
-  const parsed = readModelWindowResetAt(rawMessage);
-  // Shape-valid but not a real instant (`2026-13-45T…`) counts as unreadable,
-  // so the message key and the variable can never disagree about whether a
-  // time exists — the card would otherwise render "Invalid Date".
-  const retryAt = parsed && Number.isFinite(Date.parse(parsed)) ? parsed : null;
-  return retryAt
-    ? { messageKey: 'chat.runError.modelWindowLimitMessage', retryAt }
-    // Promising a time we could not read is worse than not naming one.
-    : { messageKey: 'chat.runError.modelWindowLimitMessageNoTime' };
-}
-
-/**
- * The instant a model window reopens, rendered for a reader in `locale`.
- *
- * The gateway reports UTC; a user waiting on a clock needs their own. Date and
- * time are both shown because the wait can cross midnight, and the year is left
- * off because a rolling window never reaches one.
- *
- * Returns the input untouched if it cannot be formatted, so the copy degrades
- * to a machine-readable instant rather than to a gap.
- */
-export function formatModelWindowRetryAt(retryAt: string, locale: string): string {
-  const parsed = new Date(retryAt);
-  if (!Number.isFinite(parsed.getTime())) return retryAt;
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(parsed);
-  } catch {
-    return retryAt;
-  }
 }
 
 // Small helper for the common shape: a named failure type + actionable copy,
@@ -259,10 +183,6 @@ const DETAIL_FAILURE_UI: Record<string, RunFailureUi> = {
     'chat.runError.title.quotaExhausted',
     'chat.runError.quotaExhaustedMessage',
   ),
-  workspace_credits_exhausted: withoutAutomaticRecovery(
-    'chat.runError.title.quotaExhausted',
-    'chat.runError.workspaceCreditsMessage',
-  ),
   // CLI binary missing detected only from text (leaks in as the opaque
   // AGENT_EXECUTION_FAILED code, not AGENT_UNAVAILABLE) — reuse the same
   // "install the CLI, then retry" card the code path already renders.
@@ -328,15 +248,14 @@ const AGENT_AGNOSTIC_DETAIL_FAILURE_UI: Record<string, RunFailureUi> = {
 //     unavailable, tool loop, bad output, bad runtime def) → named type + fix
 //   - agent-agnostic failure_detail (timeout, empty output, stale resumed
 //     session, missing Git Bash) → named type + retry, for every agent
-//   - fine-grained failure_detail (hard quota, workspace credits, text-detected
-//     cli-missing) → named type + fix, overriding a too-coarse code
+//   - fine-grained failure_detail (hard quota or text-detected cli-missing)
+//     → named type + fix, overriding a too-coarse code
 //   - auth/rate/upstream failures → named guidance + retry
 //   - generic failure → plain retry
 export function resolveRunFailureUi(
   code: string | null | undefined,
   detail: string | null | undefined,
   agentId: string | null | undefined,
-  rawMessage?: string | null,
 ): RunFailureUi {
   // An ACP agent CLI that answered `initialize` and then refused to open a
   // session. Resolved before every other branch, and before the static
@@ -362,41 +281,6 @@ export function resolveRunFailureUi(
   // of them still gets the specific guidance instead of the generic fallback.
   const agnostic = typeof code === 'string' ? AGENT_AGNOSTIC_FAILURE_UI[code] : undefined;
   if (agnostic) return agnostic;
-  // A rolling per-model window resolves before every agent branch because the
-  // window is the gateway's, not the agent's. The reset instant is read from
-  // the same upstream text the card already displays.
-  if (detail === 'model_window_limit') {
-    // The daemon already decided this IS a window limit, so read the instant
-    // directly rather than re-deciding from the text — an upstream rewording
-    // that the daemon still classified must not silently lose the card.
-    const parsed = readModelWindowResetAt(rawMessage);
-    const retryAt = parsed && Number.isFinite(Date.parse(parsed)) ? parsed : null;
-    return {
-      primaryAction: 'retry',
-      titleKey: 'chat.runError.title.modelWindowLimit',
-      messageKey: retryAt
-        ? 'chat.runError.modelWindowLimitMessage'
-        : 'chat.runError.modelWindowLimitMessageNoTime',
-      ...(retryAt ? { messageVars: { retryAt } } : {}),
-      secondaryRetry: false,
-    };
-  }
-  // Membership concurrency is a temporary policy gate carried inside an ACP
-  // fatal envelope. Keep the Retry button manual, name the wait explicitly,
-  // and preserve the upstream reset instant when one is present.
-  if (detail === 'membership_concurrency_limit') {
-    const parsed = readMembershipConcurrencyResetAt(rawMessage);
-    const retryAt = parsed && Number.isFinite(Date.parse(parsed)) ? parsed : null;
-    return {
-      primaryAction: 'retry',
-      titleKey: 'chat.runError.title.membershipConcurrencyLimit',
-      messageKey: retryAt
-        ? 'chat.runError.membershipConcurrencyLimitMessage'
-        : 'chat.runError.membershipConcurrencyLimitMessageNoTime',
-      ...(retryAt ? { messageVars: { retryAt } } : {}),
-      secondaryRetry: false,
-    };
-  }
   // Engine-neutral failure_detail (timeout, empty output, stale resumed session,
   // missing Git Bash) resolves before agent-specific branches.
   const agnosticDetail =

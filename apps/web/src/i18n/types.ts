@@ -2724,8 +2724,6 @@ export interface Dict extends CollaborationSettingsDict {
   'chat.runError.title.connectionDropped': string;
   'chat.runError.title.signInRequired': string;
   'chat.runError.title.rateLimited': string;
-  'chat.runError.title.modelWindowLimit': string;
-  'chat.runError.title.membershipConcurrencyLimit': string;
   'chat.runError.title.cliMissing': string;
   'chat.runError.title.promptTooLarge': string;
   'chat.runError.title.modelUnavailable': string;
@@ -2749,16 +2747,11 @@ export interface Dict extends CollaborationSettingsDict {
   'chat.runError.promptTooLargeMessage': string;
   'chat.runError.modelUnavailableMessage': string;
   'chat.runError.rateLimitedMessage': string;
-  'chat.runError.modelWindowLimitMessage': string;
-  'chat.runError.modelWindowLimitMessageNoTime': string;
-  'chat.runError.membershipConcurrencyLimitMessage': string;
-  'chat.runError.membershipConcurrencyLimitMessageNoTime': string;
   'chat.runError.upstreamUnavailableMessage': string;
   'chat.runError.toolLoopMessage': string;
   'chat.runError.outputInvalidMessage': string;
   'chat.runError.runtimeConfigMessage': string;
   'chat.runError.quotaExhaustedMessage': string;
-  'chat.runError.workspaceCreditsMessage': string;
   'chat.runError.timedOutMessage': string;
   'chat.runError.inactivityTimeoutMessage': string;
   'chat.runError.emptyOutputMessage': string;

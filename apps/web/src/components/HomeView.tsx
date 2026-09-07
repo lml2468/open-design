@@ -60,10 +60,6 @@ import { fetchMcpServers } from '../state/mcp';
 import { takeHomeComposerAssetSeed } from '../state/libraryHandoff';
 import { useI18n, useT } from '../i18n';
 import {
-  formatModelWindowRetryAt,
-  modelWindowLimitCopy,
-} from '../runtime/run-failure-guidance';
-import {
   localizeSkillName,
   localizeSkillPrompt,
 } from '../i18n/content';
@@ -2998,32 +2994,10 @@ export function HomeView({
       if (isTransportFailure) {
         setDaemonRecoveryActive(true);
         setError(t('home.daemonRecovering'));
-      } else if (
-        err instanceof ProjectCreateError
-        && err.code === 'AMR_AUTH_REQUIRED'
-      ) {
-        setError(t('entry.authExpiredBody'));
       } else {
-        // A rolling model window is the one upstream failure whose own wording
-        // must not reach the user: the gateway writes it in English for API
-        // callers, and read literally it sounds like a charged failure rather
-        // than a wait. Everything else keeps the verbatim path, where the
-        // daemon's message IS the specific thing to say.
-        const windowLimit = modelWindowLimitCopy(
-          err instanceof Error ? err.message : null,
-        );
-        if (windowLimit) {
-          setError(t(
-            windowLimit.messageKey,
-            windowLimit.retryAt
-              ? { retryAt: formatModelWindowRetryAt(windowLimit.retryAt, locale) }
-              : undefined,
-          ));
-        } else {
-          setError(err instanceof Error && err.message.trim()
-            ? err.message
-            : t('home.createFailed'));
-        }
+        setError(err instanceof Error && err.message.trim()
+          ? err.message
+          : t('home.createFailed'));
       }
     } finally {
       setSending(false);

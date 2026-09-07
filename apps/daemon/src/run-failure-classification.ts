@@ -198,7 +198,7 @@ function isHardQuotaText(text: string): boolean {
   // `RESOURCE_EXHAUSTED` catches the same log when the phrase portion is
   // truncated or arrives separately — it is the gRPC status code that
   // Antigravity uses exclusively for per-model quota exhaustion.
-  return /\b(session limit|usage limit|limit reached|quota exceeded|quota reached|exceeded your current quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|credits|funds)|out of credits|no payment method|requires more credits|can only afford)\b|DAILY_LIMIT_EXCEEDED|RESOURCE_EXHAUSTED|用户额度不足|额度不足|预扣费额度失败/i
+  return /\b(session limit|usage limit|limit reached|quota exceeded|quota reached|exceeded your current quota|billing (?:hard )?limit|insufficient[ _-]?(?:balance|quota|credit|credits|funds)|out of credits|no payment method|requires more credits|can only afford)\b|DAILY_LIMIT_EXCEEDED|RESOURCE_EXHAUSTED|用户额度不足|额度不足|预扣费额度失败/i
     .test(text);
 }
 
@@ -705,9 +705,7 @@ function classification(
     evidenceLevel?: TrackingRunEvidenceLevel;
   } = {},
 ): RunFailureClassification {
-  const policy = [
-    'hard_quota',
-  ].includes(failure_detail) || failure_category === 'entitlement_required';
+  const policy = failure_detail === 'hard_quota';
   const localModel = [
     'cli_version_incompatible',
     'local_model_not_loaded',
@@ -774,9 +772,7 @@ function classification(
           : failure_category === 'timeout' || failure_category === 'process_exit'
             ? 'cross_boundary'
             : 'unknown';
-  const inferredEvidenceLevel: TrackingRunEvidenceLevel = failure_detail === 'membership_concurrency_limit'
-    ? 'structured_code'
-    : failure_detail === 'interrupted'
+  const inferredEvidenceLevel: TrackingRunEvidenceLevel = failure_detail === 'interrupted'
       ? 'lifecycle_signal'
     : transport
       ? 'legacy_text'

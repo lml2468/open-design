@@ -90,7 +90,7 @@ describe('withAcpHandshakeFailureGuidance', () => {
     };
 
     // A code crosses the daemon/web boundary; an English paragraph does not.
-    // The web maps this code to localized copy (see amr-guidance.ts), so the
+    // The web maps this code to localized copy, so the
     // identity the copy interpolates has to travel as data, not as prose.
     expect(payload.error.code).toBe(ACP_CLI_SESSION_REFUSED_CODE);
     expect(payload.error.details).toMatchObject({
@@ -327,7 +327,8 @@ describe('handshake failures that name their own remedy', () => {
       failure_category: 'rate_limit',
     });
     expect(classify('AGENT_EXECUTION_FAILED', NO_BALANCE)).toMatchObject({
-      failure_category: 'insufficient_balance',
+      failure_category: 'rate_limit',
+      failure_detail: 'hard_quota',
     });
     expect(classify('AGENT_EXECUTION_FAILED', UPSTREAM_DOWN)).toMatchObject({
       failure_category: 'upstream_unavailable',

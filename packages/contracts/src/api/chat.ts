@@ -48,7 +48,6 @@ export type RunFailureCategory = TrackingRunFailureCategory;
 export type RunFailureDetail = TrackingRunFailureDetail;
 export type RunCancelOrigin = TrackingRunCancelOrigin;
 export type RunTerminalTrigger = TrackingRunTerminalTrigger;
-export type RunFailureAction = 'relogin' | 'recharge' | 'upgrade' | 'retry' | 'none';
 
 export interface RunTerminalLifecycleStatus {
   version: 1;
@@ -729,8 +728,6 @@ export interface ChatRunStatusResponse {
    *  cli_not_installed, invalid_api_key, …). Primary key the UI maps to a named
    *  failure type + fix. Absent on success / older daemons. */
   failureDetail?: RunFailureDetail | null;
-  /** Recommended recovery action derived from the same failure classification. */
-  failureAction?: RunFailureAction | null;
   /** True when this terminal failure can be recovered by resuming the agent's
    *  existing CLI session (a transient upstream drop / inactivity timeout on a
    *  session-resuming runtime), rather than only restarting from scratch. The

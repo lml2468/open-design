@@ -1,41 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  formatModelWindowRetryAt,
-  modelWindowLimitCopy,
-  resolveRunFailureUi,
-} from '../../src/runtime/run-failure-guidance';
-
-describe('modelWindowLimitCopy', () => {
-  it('extracts a valid reset instant from a model-window failure', () => {
-    expect(
-      modelWindowLimitCopy(
-        'You have reached the 5-hour usage limit for this model. Try again after 2026-08-12T06:34:47Z.',
-      ),
-    ).toEqual({
-      messageKey: 'chat.runError.modelWindowLimitMessage',
-      retryAt: '2026-08-12T06:34:47Z',
-    });
-  });
-
-  it('uses copy without a time when the failure has no valid instant', () => {
-    expect(
-      modelWindowLimitCopy('[code=model_limit_exceeded] rolling window in effect'),
-    ).toEqual({ messageKey: 'chat.runError.modelWindowLimitMessageNoTime' });
-  });
-
-  it('ignores unrelated failures', () => {
-    expect(modelWindowLimitCopy('Could not create project')).toBeNull();
-    expect(modelWindowLimitCopy(null)).toBeNull();
-  });
-});
-
-describe('formatModelWindowRetryAt', () => {
-  it('formats valid instants and preserves invalid input', () => {
-    expect(formatModelWindowRetryAt('2026-08-12T06:34:47Z', 'en-US')).toContain('Aug');
-    expect(formatModelWindowRetryAt('not-an-instant', 'en-US')).toBe('not-an-instant');
-  });
-});
+import { resolveRunFailureUi } from '../../src/runtime/run-failure-guidance';
 
 describe('resolveRunFailureUi', () => {
   it('maps agent-independent failures to actionable localized guidance', () => {
@@ -60,14 +25,6 @@ describe('resolveRunFailureUi', () => {
       primaryAction: 'none',
       titleKey: 'chat.runError.title.quotaExhausted',
       messageKey: 'chat.runError.quotaExhaustedMessage',
-      secondaryRetry: false,
-    });
-    expect(
-      resolveRunFailureUi('RATE_LIMITED', 'workspace_credits_exhausted', 'claude'),
-    ).toEqual({
-      primaryAction: 'none',
-      titleKey: 'chat.runError.title.quotaExhausted',
-      messageKey: 'chat.runError.workspaceCreditsMessage',
       secondaryRetry: false,
     });
   });
@@ -103,19 +60,7 @@ describe('resolveRunFailureUi', () => {
     });
   });
 
-  it('preserves detailed retry guidance and parsed reset times', () => {
-    expect(
-      resolveRunFailureUi(
-        'RATE_LIMITED',
-        'model_window_limit',
-        'codex',
-        'You have reached the 5-hour usage limit for this model. Try again after 2026-08-12T06:34:47Z.',
-      ),
-    ).toMatchObject({
-      titleKey: 'chat.runError.title.modelWindowLimit',
-      messageKey: 'chat.runError.modelWindowLimitMessage',
-      messageVars: { retryAt: '2026-08-12T06:34:47Z' },
-    });
+  it('preserves session-resume guidance', () => {
     expect(
       resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'session_resume_expired', 'claude'),
     ).toMatchObject({

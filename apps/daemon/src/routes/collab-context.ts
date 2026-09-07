@@ -366,7 +366,7 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
       VerifiedWorkspaceRequestContextResult,
       { ok: true }
     >,
-  ) => verified.code === 'AMR_AUTH_REQUIRED'
+  ) => verified.code === 'AGENT_AUTH_REQUIRED'
     ? sendApiError(res, verified.status, verified.code, verified.message, {
         retryable: false,
       })
@@ -539,8 +539,8 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
         return sendApiError(
           res,
           401,
-          'AMR_AUTH_REQUIRED',
-          'AMR authorization expired. Sign in again to continue.',
+          'AGENT_AUTH_REQUIRED',
+          'Workspace authorization expired. Sign in again to continue.',
           { retryable: false },
         );
       }
@@ -596,8 +596,8 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
         return sendApiError(
           res,
           401,
-          'AMR_AUTH_REQUIRED',
-          'AMR authorization expired. Sign in again to continue.',
+          'AGENT_AUTH_REQUIRED',
+          'Workspace authorization expired. Sign in again to continue.',
           { retryable: false },
         );
       }
@@ -798,8 +798,8 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
           return sendApiError(
             res,
             401,
-            'AMR_AUTH_REQUIRED',
-            'AMR authorization expired. Sign in again to continue.',
+            'AGENT_AUTH_REQUIRED',
+            'Workspace authorization expired. Sign in again to continue.',
             { retryable: false },
           );
         }
@@ -904,8 +904,8 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
           return sendApiError(
             res,
             401,
-            'AMR_AUTH_REQUIRED',
-            'AMR authorization expired. Sign in again to continue.',
+            'AGENT_AUTH_REQUIRED',
+            'Workspace authorization expired. Sign in again to continue.',
             { retryable: false },
           );
         }

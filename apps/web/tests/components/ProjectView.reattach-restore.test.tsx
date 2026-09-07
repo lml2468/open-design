@@ -1863,17 +1863,17 @@ describe('ProjectView daemon reattach restore', () => {
     });
   });
 
-  it('renders AMR recharge guidance when a reattached run reports insufficient balance', async () => {
+  it('preserves a generic quota failure when a reattached run reports exhausted capacity', async () => {
     const startedAt = Date.now();
     listConversations.mockResolvedValue([{ id: 'conv-1', title: 'Conversation' }]);
     listMessages.mockResolvedValue([
       {
-        id: 'msg-amr-balance',
+        id: 'msg-hard-quota',
         role: 'assistant',
         content: '',
         createdAt: startedAt,
         startedAt,
-        runId: 'run-amr-balance',
+        runId: 'run-hard-quota',
         runStatus: 'running',
         preTurnFileNames: [],
       } satisfies ChatMessage,
@@ -1886,7 +1886,7 @@ describe('ProjectView daemon reattach restore', () => {
     fetchDesignSystem.mockResolvedValue(null);
     getTemplate.mockResolvedValue(null);
     fetchChatRunStatus.mockResolvedValue({
-      id: 'run-amr-balance',
+      id: 'run-hard-quota',
       status: 'running',
       createdAt: startedAt,
       updatedAt: startedAt,
@@ -1897,13 +1897,12 @@ describe('ProjectView daemon reattach restore', () => {
 
     reattachDaemonRun.mockImplementation(async (options: any) => {
       const error = new Error(
-        'AMR Cloud reported insufficient balance for this model. Top up your AMR balance at https://open-design.ai/amr/dashboard, then retry this run.',
+        'The provider reported that the account quota is exhausted.',
       ) as Error & { code: string; details: unknown };
-      error.code = 'AMR_INSUFFICIENT_BALANCE';
+      error.code = 'RATE_LIMITED';
       error.details = {
-        kind: 'amr_account',
-        action: 'recharge',
-        actionUrl: 'https://open-design.ai/amr/dashboard',
+        kind: 'provider_quota',
+        action: 'review_account',
       };
       options.handlers.onError(error);
     });
@@ -1914,13 +1913,13 @@ describe('ProjectView daemon reattach restore', () => {
     await waitFor(() => {
       const finalSave = saveMessage.mock.calls
         .map((call) => call[2] as ChatMessage)
-        .filter((m) => m?.id === 'msg-amr-balance' && m.runStatus === 'failed')
+        .filter((m) => m?.id === 'msg-hard-quota' && m.runStatus === 'failed')
         .at(-1);
       const errorEvent = finalSave?.events?.find(
         (event) => event.kind === 'status' && event.label === 'error',
       ) as { code?: string } | undefined;
       expect(errorEvent).toMatchObject({
-        code: 'AMR_INSUFFICIENT_BALANCE',
+        code: 'RATE_LIMITED',
       });
     });
   });

@@ -236,8 +236,6 @@ export type TrackingTestResult = 'success' | 'failed' | 'timeout';
 export type TrackingRunFailureCategory =
   | 'auth'
   | 'rate_limit'
-  | 'insufficient_balance'
-  | 'entitlement_required'
   | 'model_unavailable'
   | 'prompt_too_large'
   | 'upstream_unavailable'
@@ -254,20 +252,7 @@ export type TrackingRunFailureDetail =
   | 'missing_api_key'
   | 'invalid_api_key'
   | 'hard_quota'
-  // A rolling per-model usage window (vela's 5-hour `model_limit_exceeded`)
-  // that resets on its own at a known instant. Distinct from `hard_quota`:
-  // nothing was charged, nothing needs topping up, and the same request
-  // succeeds once the window rolls over — so it stays retryable and must not
-  // be counted as a quota exhaustion in reliability reporting.
-  | 'model_window_limit'
-  // Vela membership policy concurrency is temporarily full. The upstream
-  // reset instant makes this waitable, but it is deliberately non-retryable
-  // for automation so the daemon cannot create an immediate retry storm.
-  | 'membership_concurrency_limit'
-  | 'workspace_credits_exhausted'
   | 'rate_limit_429'
-  | 'amr_insufficient_balance'
-  | 'amr_tier_upgrade_required'
   | 'model_not_found'
   | 'model_not_supported'
   | 'model_disabled'
@@ -379,13 +364,7 @@ export type TrackingRunRepairOwner =
 export type TrackingRunAdmissionPhase = 'before_execution' | 'during_execution' | 'unknown';
 /** `none` means no affirmative policy evidence, not proof that no policy applied. */
 export type TrackingRunPolicyReason =
-  | 'model_window_limit'
-  | 'membership_concurrency_limit'
   | 'hard_quota'
-  | 'workspace_credits_exhausted'
-  | 'amr_insufficient_balance'
-  | 'amr_tier_upgrade_required'
-  | 'entitlement_required'
   | 'none';
 /** v2 values were defaults, not phase evidence. Use admission_phase on v3. */
 export type TrackingRunAdmissionStatus =
@@ -478,8 +457,6 @@ export type TrackingFirstModelEventType =
 export type TrackingRunFailureUserAction =
   | 'retry'
   | 'login'
-  | 'recharge'
-  | 'upgrade'
   | 'switch_model'
   | 'reduce_context'
   | 'install_cli'

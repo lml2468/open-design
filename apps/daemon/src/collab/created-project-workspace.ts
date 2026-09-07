@@ -14,7 +14,7 @@ export type CreatedProjectWorkspaceResolution =
       status: 400 | 401 | 403 | 503;
       code:
         | 'WORKSPACE_CONTEXT_INCOMPLETE'
-        | 'AMR_AUTH_REQUIRED'
+        | 'AGENT_AUTH_REQUIRED'
         | 'WORKSPACE_PROJECT_PERMISSION_DENIED'
         | 'WORKSPACE_AUTHORITY_UNAVAILABLE';
       message: string;

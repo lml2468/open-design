@@ -38,7 +38,7 @@ describe('API failure diagnostics journal', () => {
           route: { path: '/api/projects/:id/runs' },
         },
         status: 401,
-        code: 'AMR_AUTH_REQUIRED',
+        code: 'AGENT_AUTH_REQUIRED',
         retryable: false,
         requestId: `request-${index}`,
       });
@@ -51,7 +51,7 @@ describe('API failure diagnostics journal', () => {
       method: 'POST',
       path: '/api/projects/:id/runs',
       status: 401,
-      code: 'AMR_AUTH_REQUIRED',
+      code: 'AGENT_AUTH_REQUIRED',
       retryable: false,
       requestId: 'request-104',
     });
@@ -67,7 +67,7 @@ describe('API failure diagnostics journal', () => {
         route: { path: '/api/workspace/directory' },
       },
       status: 401,
-      code: 'AMR_AUTH_REQUIRED',
+      code: 'AGENT_AUTH_REQUIRED',
       retryable: false,
     });
 

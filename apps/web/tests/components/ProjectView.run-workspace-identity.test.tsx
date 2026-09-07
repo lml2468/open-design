@@ -537,17 +537,17 @@ describe('a Home auto-send identifies its caller before the project scope resolv
     window.sessionStorage.removeItem(`od:auto-send-first:${PROJECT_ID}`);
     const comments = deferred<Awaited<ReturnType<typeof fetchPreviewComments>>>();
     const failedAssistant: ChatMessage = {
-      id: 'failed-amr-assistant',
+      id: 'failed-agent-assistant',
       role: 'assistant',
       content: '',
       createdAt: 1,
       runStatus: 'failed',
-      agentId: 'amr',
+      agentId: 'claude',
       events: [{
         kind: 'status',
         label: 'error',
         detail: 'Sign in required.',
-        code: 'AMR_AUTH_REQUIRED',
+        code: 'AGENT_AUTH_REQUIRED',
       }],
     };
     mockedListMessages.mockResolvedValue([failedAssistant]);

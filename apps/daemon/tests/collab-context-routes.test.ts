@@ -387,7 +387,7 @@ describe('collab context routes', () => {
     });
   });
 
-  it('returns AMR_AUTH_REQUIRED instead of daemon unavailable for expired credentials', async () => {
+  it('returns AGENT_AUTH_REQUIRED instead of daemon unavailable for expired credentials', async () => {
     const api = await startContextServer({
       fetchWorkspaceDirectory: async () => ({
         ok: false,
@@ -405,13 +405,13 @@ describe('collab context routes', () => {
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({
       error: {
-        code: 'AMR_AUTH_REQUIRED',
+        code: 'AGENT_AUTH_REQUIRED',
         retryable: false,
       },
     });
   });
 
-  it('returns the same structured AMR auth failure from the directory bootstrap endpoint', async () => {
+  it('returns the same structured auth failure from the directory bootstrap endpoint', async () => {
     const api = await startContextServer({
       fetchWorkspaceDirectory: async () => ({
         ok: false,
@@ -423,11 +423,11 @@ describe('collab context routes', () => {
     const response = await api.req('/api/workspace/directory');
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({
-      error: { code: 'AMR_AUTH_REQUIRED', retryable: false },
+      error: { code: 'AGENT_AUTH_REQUIRED', retryable: false },
     });
   });
 
-  it('returns AMR_AUTH_REQUIRED when workspace selection encounters expired credentials', async () => {
+  it('returns AGENT_AUTH_REQUIRED when workspace selection encounters expired credentials', async () => {
     const api = await startContextServer({
       fetchWorkspaceDirectory: async () => ({
         ok: false,
@@ -442,7 +442,7 @@ describe('collab context routes', () => {
     });
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({
-      error: { code: 'AMR_AUTH_REQUIRED', retryable: false },
+      error: { code: 'AGENT_AUTH_REQUIRED', retryable: false },
     });
   });
 
@@ -608,7 +608,7 @@ describe('workspace billing routes', () => {
     role: 'owner' as const,
   }];
 
-  it('returns AMR_AUTH_REQUIRED when an interest declaration encounters expired credentials', async () => {
+  it('returns AGENT_AUTH_REQUIRED when an interest declaration encounters expired credentials', async () => {
     const api = await startContextServer({
       fetchWorkspaceDirectory: async () => ({
         ok: false,
@@ -626,11 +626,11 @@ describe('workspace billing routes', () => {
     });
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({
-      error: { code: 'AMR_AUTH_REQUIRED', retryable: false },
+      error: { code: 'AGENT_AUTH_REQUIRED', retryable: false },
     });
   });
 
-  it('returns AMR_AUTH_REQUIRED when a workspace wallet read encounters expired credentials', async () => {
+  it('returns AGENT_AUTH_REQUIRED when a workspace wallet read encounters expired credentials', async () => {
     const api = await startContextServer({
       fetchWorkspaceDirectory: async () => ({
         ok: false,
@@ -642,7 +642,7 @@ describe('workspace billing routes', () => {
     const response = await api.req('/api/workspace/billing?scope=workspace&workspaceId=wm-1');
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({
-      error: { code: 'AMR_AUTH_REQUIRED', retryable: false },
+      error: { code: 'AGENT_AUTH_REQUIRED', retryable: false },
     });
   });
 

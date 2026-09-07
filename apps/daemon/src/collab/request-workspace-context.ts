@@ -13,7 +13,7 @@ export type VerifiedWorkspaceRequestContextResult =
       code:
         | 'WORKSPACE_CONTEXT_REQUIRED'
         | 'WORKSPACE_CONTEXT_INCOMPLETE'
-        | 'AMR_AUTH_REQUIRED'
+        | 'AGENT_AUTH_REQUIRED'
         | 'WORKSPACE_AUTHORITY_UNAVAILABLE'
         | 'WORKSPACE_ACCESS_DENIED';
       message: string;
@@ -63,8 +63,8 @@ export async function verifyWorkspaceRequestContext(input: {
       return {
         ok: false,
         status: 401,
-        code: 'AMR_AUTH_REQUIRED',
-        message: 'AMR authorization expired. Sign in again to continue.',
+        code: 'AGENT_AUTH_REQUIRED',
+        message: 'Workspace authorization expired. Sign in again to continue.',
       };
     }
     return {

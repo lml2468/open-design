@@ -150,7 +150,6 @@ export interface ChatRun {
   signal?: string | null;
   error?: string | null;
   errorCode?: string | null;
-  failureAction?: string | null;
   projectMetadata?: ProjectMetadata;
   appliedPluginSnapshotId?: string | null;
   pluginId?: string | null;

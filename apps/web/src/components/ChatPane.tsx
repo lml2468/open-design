@@ -82,7 +82,6 @@ import {
   type NextStepActionsVariant,
 } from './NextStepActions';
 import {
-  formatModelWindowRetryAt,
   resolveRunFailureUi,
 } from '../runtime/run-failure-guidance';
 import { RESUME_CONTINUE_PROMPT } from '../runtime/resume';
@@ -1287,14 +1286,10 @@ export function ChatPane({
   // Per-case failure UI (button and copy). Only meaningful for a failed run
   // while retryAssistant is present.
   const runFailureUi = retryAssistant
-    ? resolveRunFailureUi(
+      ? resolveRunFailureUi(
         failedRunErrorEvent?.code,
         failedRunErrorEvent?.failureDetail,
         retryAssistant.agentId,
-        // The raw upstream sentence, so a failure whose copy names something the
-        // gateway reported (the instant a model window reopens) can read it back
-        // out. Same string the card renders under 「查看详情」.
-        failedRunErrorEvent?.detail,
       )
     : null;
   // Offer Continue (resume) when the failed run is resumable AND the active
@@ -1337,16 +1332,8 @@ export function ChatPane({
   const failedAgentLabel =
     agentDisplayName(retryAssistant?.agentId, retryAssistant?.agentName) ??
     t('chat.runError.agentFallback');
-  // Values the failure copy names, localized before interpolation: the gateway
-  // reports a UTC instant, the reader waits on their own clock.
-  const runFailureMessageVars = runFailureUi?.messageVars?.retryAt
-    ? {
-        ...runFailureUi.messageVars,
-        retryAt: formatModelWindowRetryAt(runFailureUi.messageVars.retryAt, locale),
-      }
-    : runFailureUi?.messageVars;
   const displayError = runFailureUi?.messageKey
-    ? t(runFailureUi.messageKey, { agent: failedAgentLabel, ...runFailureMessageVars })
+    ? t(runFailureUi.messageKey, { agent: failedAgentLabel })
     : rawError;
   const errorDiagnosticText = displayError
     ? buildRunErrorDiagnosticText({
