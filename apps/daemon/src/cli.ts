@@ -225,11 +225,6 @@ const DIAGNOSTICS_STRING_FLAGS = new Set(['daemon-url', 'output']);
 const DIAGNOSTICS_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const CONFIG_STRING_FLAGS = new Set(['daemon-url', 'value', 'value-json']);
 const CONFIG_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
-const COLLAB_STRING_FLAGS = new Set([
-  'daemon-url', 'project', 'design-system',
-  'workspace', 'workspace-member',
-]);
-const COLLAB_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const COLLABORATION_STRING_FLAGS = new Set([
   'daemon-url', 'email', 'device-name',
 ]);
@@ -389,7 +384,6 @@ const SUBCOMMAND_MAP = {
   artifacts: runArtifacts,
   media: runMedia,
   mcp: runMcp,
-  collab: runCollab,
   collaboration: runCollaboration,
   review: runReview,
   research: runResearch,
@@ -1065,7 +1059,7 @@ What the daemon does:
 }
 
 // ---------------------------------------------------------------------------
-// Subcommand: od collab …  (team-edition collaboration)
+// Subcommand: od collaboration …  (self-hosted Collaboration Server)
 // ---------------------------------------------------------------------------
 
 function printCollaborationHelp() {
@@ -1436,210 +1430,6 @@ function workspaceHeadersFromExplicitFlags(flags, required = false) {
     });
   }
   return null;
-}
-
-function printCollabHelp() {
-  console.log(`Usage:
-  od collab status <projectId> --workspace <id> --workspace-member <id> [--json]
-  od collab changed <projectId> --workspace <id> --workspace-member <id> [--json]
-  od collab publish <projectId> --workspace <id> --workspace-member <id> [--json]
-  od collab share <projectId> --workspace <id> --workspace-member <id> [--json]
-  od collab pull <projectId> --workspace <id> --workspace-member <id> [--json]
-  od collab share-resource <design-systems|plugins|skills> <id> --workspace <id> --workspace-member <id> [--json]
-  od collab team-resources <design-systems|plugins|skills> --workspace <id> --workspace-member <id> [--json]
-  od collab share-design-system <designSystemId> --workspace <id> --workspace-member <id> [--json]
-  od collab team-design-systems --workspace <id> --workspace-member <id> [--json]
-
-Legacy Team-edition sync trigger. The daemon coalesces author edits and flushes at a run boundary,
-advancing the published head version members poll to learn when to pull.
-\`share\` is the team-share intent: it requests the project be published so
-members can pull it, and reports the sync state (local_only / pending_upload /
-synced / sync_failed). \`share-resource <kind> <id>\` promotes a personal design
-system, plugin, or skill into the team scope through the resource hub, and
-\`team-resources <kind>\` lists the ones already shared (the \`*-design-system\`
-forms are kept as aliases).
-
-Options:
-  --project <id>          Project id (alternative to the positional argument).
-  --design-system <id>    Design system id for share-design-system.
-  --workspace <id>        Explicit workspace id for request authorization.
-  --workspace-member <id> Explicit workspace member id for request authorization.
-  --json                  Emit raw JSON.
-  --daemon-url <url>      Override daemon URL.
-
-Examples:
-  od collab publish p1 --workspace team-1 --workspace-member m-42
-  od collab share-resource plugins my-plugin --workspace team-1 --workspace-member m-42 --json
-  od collab team-resources skills --workspace team-1 --workspace-member m-42 --json
-  od collab share-design-system user:palette-x --workspace team-1 --workspace-member m-42 --json
-  od collab status p1 --workspace team-1 --workspace-member m-42 --json`);
-}
-
-async function runCollab(args) {
-  const sub = args[0];
-  if (!sub || sub === 'help' || args.includes('--help') || args.includes('-h')) {
-    printCollabHelp();
-    process.exit(!sub ? 2 : 0);
-  }
-  const rest = args.slice(1);
-  let flags;
-  try {
-    flags = parseFlags(rest, { string: COLLAB_STRING_FLAGS, boolean: COLLAB_BOOLEAN_FLAGS });
-  } catch (err) {
-    console.error(err.message);
-    process.exit(2);
-  }
-  // Team resource sharing (design systems / plugins / skills) is workspace-scoped
-  // — it takes a resource id, not a project id — so it runs before the project-id
-  // requirement below. `share-resource <kind> <id>` / `team-resources <kind>` are
-  // the generic forms; the design-system aliases are kept for compatibility.
-  const RESOURCE_BASE_PATHS = new Set(['design-systems', 'plugins', 'skills']);
-  if (
-    sub === 'share-resource' ||
-    sub === 'team-resources' ||
-    sub === 'share-design-system' ||
-    sub === 'team-design-systems'
-  ) {
-    const base = await cliDaemonBaseUrl(flags);
-    const workspaceHeaders = workspaceHeadersFromExplicitFlags(flags, true);
-    const emit = (payload, plain) =>
-      flags.json ? process.stdout.write(JSON.stringify(payload, null, 2) + '\n') : plain();
-    const wsRequest = async (method, path, body) => {
-      let resp;
-      try {
-        resp = await fetch(`${base}${path}`, {
-          method,
-          headers: {
-            ...workspaceHeaders,
-            ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-          },
-          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-        });
-      } catch (err) {
-        surfaceFetchError(err, base);
-        process.exit(3);
-      }
-      if (!resp.ok) return structuredHttpFailure(resp);
-      return resp.json();
-    };
-
-    // Resolve the resource kind (URL base path), whether this lists or shares,
-    // and the target id — from either the aliases or the generic <kind> <id>.
-    const positionals = positionalArgs(rest, COLLAB_STRING_FLAGS);
-    let basePath;
-    let isList;
-    let resourceId;
-    if (sub === 'team-design-systems') {
-      basePath = 'design-systems';
-      isList = true;
-    } else if (sub === 'share-design-system') {
-      basePath = 'design-systems';
-      isList = false;
-      resourceId = flags['design-system'] || positionals[0];
-    } else {
-      basePath = positionals[0];
-      if (!RESOURCE_BASE_PATHS.has(basePath)) {
-        console.error('kind must be one of: design-systems | plugins | skills');
-        process.exit(2);
-      }
-      isList = sub === 'team-resources';
-      resourceId = positionals[1];
-    }
-
-    if (isList) {
-      const body = await wsRequest('GET', `/api/workspace/${basePath}/team`);
-      return emit(body, () => {
-        const ids = Array.isArray(body?.ids) ? body.ids : [];
-        if (ids.length === 0) return console.log(`no shared ${basePath}`);
-        for (const id of ids) console.log(id);
-      });
-    }
-    if (!resourceId) {
-      console.error('missing <id>');
-      process.exit(2);
-    }
-    const body = await wsRequest(
-      'POST',
-      `/api/workspace/${basePath}/${encodeURIComponent(resourceId)}/share`,
-    );
-    return emit(body, () =>
-      console.log(`shared=${body?.shared ?? false}\tversion=${body?.version ?? '-'}`),
-    );
-  }
-
-  const projectId =
-    flags.project || positionalArgs(rest, COLLAB_STRING_FLAGS)[0] || process.env.OD_PROJECT_ID;
-  if (!projectId) {
-    console.error('missing <projectId> (positional, --project, or OD_PROJECT_ID)');
-    process.exit(2);
-  }
-  const base = await cliDaemonBaseUrl(flags);
-  const encoded = encodeURIComponent(projectId);
-  const workspaceHeaders = workspaceHeadersFromExplicitFlags(flags, true);
-
-  const request = async (method, path, body) => {
-    let resp;
-    try {
-      resp = await fetch(`${base}/api/projects/${encoded}${path}`, {
-        method,
-        headers: {
-          ...workspaceHeaders,
-          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-        },
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      });
-    } catch (err) {
-      surfaceFetchError(err, base);
-      process.exit(3);
-    }
-    if (!resp.ok) return structuredHttpFailure(resp);
-    return resp.json();
-  };
-
-  const emit = (payload, plain) => {
-    if (flags.json) return process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
-    return plain();
-  };
-
-  switch (sub) {
-    case 'status': {
-      const body = await request('GET', '/collab/status');
-      return emit(body, () => {
-        console.log(`publishedVersion\t${body?.publishedVersion ?? '-'}`);
-        console.log(`materializedVersion\t${body?.materializedVersion ?? '-'}`);
-        // Whether this daemon's local files are the project's content at all:
-        // true means it holds only an unmaterialized shared-project
-        // placeholder, so an `od files list` here would report an empty
-        // project that is really still downloading.
-        console.log(`awaitingFirstMaterialization\t${body?.awaitingFirstMaterialization === true}`);
-        console.log(`syncState\t${body?.syncState ?? '-'}`);
-      });
-    }
-    case 'share': {
-      // Team-share intent: request the project be published so members can pull.
-      const body = await request('POST', '/collab/sync-intent', {
-        event: 'project_team_share_requested',
-        projectId,
-      });
-      return emit(body, () => console.log(`ok\tsyncState=${body?.syncState ?? '-'}`));
-    }
-    case 'pull': {
-      // Member pull: fetch the published head (E extracts the bytes behind C's trigger).
-      const body = await request('POST', '/collab/pull');
-      return emit(body, () => console.log(`pulled\tversion=${body?.version ?? '-'}`));
-    }
-    case 'changed': {
-      const body = await request('POST', '/collab/changed');
-      return emit(body, () => console.log('change queued'));
-    }
-    case 'publish': {
-      const body = await request('POST', '/collab/publish');
-      return emit(body, () => console.log('publish requested'));
-    }
-    default:
-      console.error(`unknown subcommand: od collab ${sub}`);
-      process.exit(2);
-  }
 }
 
 // ---------------------------------------------------------------------------

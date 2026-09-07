@@ -639,39 +639,6 @@ describe('od project CLI', () => {
     expect(stub.requests).toHaveLength(0);
   });
 
-  it('sends explicit CLI workspace identity to team resource routes', async () => {
-    stub = await startProjectStubServer();
-
-    const result = await runCli([
-      'collab',
-      'team-resources',
-      'skills',
-      '--workspace',
-      'ws-1',
-      '--workspace-member',
-      'member-1',
-      '--json',
-      '--daemon-url',
-      stub.baseUrl,
-    ]);
-
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
-    expect(JSON.parse(result.stdout)).toEqual({
-      ids: ['team-skill'],
-      resources: [{ id: 'team-skill' }],
-    });
-    expect(stub.requests).toHaveLength(1);
-    expect(stub.requests[0]).toMatchObject({
-      method: 'GET',
-      url: '/api/workspace/skills/team',
-    });
-    expect(stub.requests[0]!.headers).toMatchObject({
-      'x-od-workspace-id': 'ws-1',
-      'x-od-workspace-member-id': 'member-1',
-    });
-  });
-
   it('sends repeatable project ids for workspace batch delete', async () => {
     stub = await startProjectStubServer();
 
