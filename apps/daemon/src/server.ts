@@ -230,8 +230,6 @@ import {
   isKnownModel,
   isKnownReasoningEffort,
   isKnownServiceTier,
-  openDesignAmrRunAttempt,
-  openDesignAmrTraceEnv,
   applyAgentLaunchEnv,
   resolveAgentLaunch,
   sanitizeCustomModel,
@@ -884,11 +882,6 @@ import {
   projectCollabScope,
 } from './collab/team-share-scope.js';
 import { resolveWorkspaceScope } from './collab/workspace-scope.js';
-import {
-  AmrWorkspaceScopeRequiredError,
-  openDesignAmrTraceEnvForRun,
-  pinRunWorkspaceScopeForProject,
-} from './runtimes/project-amr-trace-env.js';
 import {
   createWorkspaceDirectoryAuthorityBroker,
   createWorkspaceContextProviderFromEnv,
@@ -10465,17 +10458,6 @@ export async function startServer({
       cleanupOdNextRunInputProjection();
       return design.runs.fail(run, code, message);
     };
-    // Freeze the billing address once, before the first asynchronous setup
-    // step. HTTP-created runs already carry the scope captured by the request
-    // authorization transaction. Internal runs pin here. Retries reuse the
-    // existing property and therefore never consult a later project rebind.
-    if (!Object.prototype.hasOwnProperty.call(run, 'workspaceScope')) {
-      run.workspaceScope =
-        typeof projectId === 'string' && projectId
-          ? pinRunWorkspaceScopeForProject(db, projectId)
-          : null;
-      design.runs.persistState(run);
-    }
     // Stash the original user prompt + per-turn config so the
     // langfuse-bridge report path can include them without reaching back
     // into chatBody across the createChatRunService boundary. Each field
@@ -13246,61 +13228,6 @@ export async function startServer({
         ...(mmdRouteLaunchEnv || {}),
         ...odMediaEnv,
         ...(byokOpenCodeProvider ? byokOpenCodeProvider.env : {}),
-        ...await openDesignAmrTraceEnvForRun({
-          agentId: def.id,
-          runId: run.id,
-          conversationId: run.conversationId,
-          runAttempt: openDesignAmrRunAttempt({
-            cumulativeRetryAttemptCount: run.cumulativeRetryAttemptCount,
-            retryAttemptCount: run.retryAttemptCount,
-            manualResumeAttemptCount: run.manualResumeAttemptCount,
-          }),
-          // Vela's workspace-credit isolation reads this env together with the
-          // signed-in account identity. The run pins the project's exact
-          // Workspace before its first asynchronous setup step; Vela/AMR
-          // remains the authority for membership, balance, and billing
-          // eligibility. Team and Personal bindings are both sent explicitly.
-          // An unbound project is refused before process spawn. Later project
-          // rebinds and ambient/current selection never participate.
-          projectId,
-          workspaceScope: run.workspaceScope,
-          externalPluginAnalytics: run.externalPluginAnalytics ?? null,
-        }, {
-          // Report persisted-binding vs truly-unbound selection to the daemon
-          // log and telemetry. Ids and the branch name only —
-          // never member rows or credentials.
-          onWorkspaceScopeOutcome: (outcome) => {
-            console.log(
-              `[od] amr workspace scope ${outcome.kind}`
-                + ` project=${outcome.projectId}`
-                + ` workspace=${outcome.workspaceId ?? 'none'}`
-                + ` run=${run.id}`,
-            );
-            const context = run.analyticsContext ?? null;
-            if (!context || !design?.analytics?.capture) return;
-            design.analytics.capture({
-              eventName: 'amr_workspace_scope_resolved',
-              context,
-              // `design.getAppVersion` is the only app-version accessor this
-              // scope can see; the identically-named helper inside
-              // `createFinalizedMessageTelemetryReporter` is a different
-              // function's local and resolving it here threw a ReferenceError
-              // out of the spawn path, failing 100% of AMR runs. That helper's
-              // own last resort is this same accessor, so the value is
-              // unchanged.
-              appVersion: design.getAppVersion?.() ?? 'unknown',
-              properties: {
-                page_name: 'chat_panel',
-                area: 'chat_panel',
-                project_id: outcome.projectId,
-                conversation_id: run.conversationId ?? null,
-                run_id: run.id,
-                workspace_scope_outcome: outcome.kind,
-                workspace_id: outcome.workspaceId,
-              },
-            });
-          },
-        }),
         // OpenCode external-MCP injection (issue #2142). Layered AFTER
         // spawnEnvForAgent / odMediaEnv / configuredAgentEnv so the
         // daemon-built MCP config wins over a stale value the user
@@ -13430,12 +13357,8 @@ export async function startServer({
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
       send('error', createSseErrorPayload(
-        err instanceof AmrWorkspaceScopeRequiredError
-          ? err.code
-          : 'AGENT_EXECUTION_FAILED',
-        err instanceof AmrWorkspaceScopeRequiredError
-          ? err.message
-          : `spawn failed: ${err.message}`,
+        'AGENT_EXECUTION_FAILED',
+        `spawn failed: ${err.message}`,
       ));
       finishStrategyAwarePhysicalRun('failed', 1, null);
       return;
@@ -15994,29 +15917,6 @@ export async function startServer({
       reconcileAssistantMessageOnRunEnd,
     },
     internalRuns: internalRunCreation,
-    // POST /api/runs and POST /api/chat are this file's "create a run" entry
-    // points — see RegisterRunRoutesDeps.enforceWorkspaceProjectMutation.
-    // Same provider `collab` was built with (collab.workspaceContext ===
-    // workspaceContext), matching the cross-check `registerProjectRoutes`
-    // wires up for its own mutation routes above.
-    enforceWorkspaceProjectMutation: enforceAuthoritativeProjectMutation,
-    projectStore: {
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      ensureWorkspaceProject,
-    },
-    amrWorkspaceScope: {
-      isSignedIn: async () => {
-        const appConfig = await readAppConfig(RUNTIME_DATA_DIR).catch(
-          () => ({}),
-        );
-        return readVelaLoginStatus(
-          process.env,
-          agentCliEnvForAgent(appConfig.agentCliEnv, 'amr'),
-        ).loggedIn;
-      },
-    },
-    authorizeProjectRequest,
   });
 
   // Each routine fire resolves an agent, prepares project/conversation state,

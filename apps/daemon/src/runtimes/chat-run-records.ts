@@ -26,7 +26,6 @@ import type {
   RunEventForDiagnostics,
 } from '../run-diagnostics.js';
 import type { RunEventForFailureClassification } from '../run-failure-classification.js';
-import type { RunWorkspaceScope } from './project-amr-trace-env.js';
 import type { OdNextRolloutDecision } from '../strategies/od-next/rollout.js';
 import type { OdNextTaskInputSnapshotDescriptor } from '../strategies/od-next/task-input-snapshot.js';
 import type { RunTerminalLifecycleV1 } from '../observability/run-terminal-lifecycle.js';
@@ -138,7 +137,6 @@ export interface ChatRun {
   requestFingerprint?: string | null;
   strategyRolloutDecision?: OdNextRolloutDecision | null;
   agentId: string | null;
-  workspaceScope?: RunWorkspaceScope | null;
   model?: string | null;
   status: ChatRunStatus;
   createdAt: number;

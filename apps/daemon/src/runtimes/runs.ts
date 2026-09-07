@@ -571,7 +571,6 @@ function durableRunState(run) {
       ? { designSystemSelectionSource: run.designSystemSelectionSource }
       : {}),
     ...(typeof run.clientType === 'string' ? { clientType: run.clientType } : {}),
-    ...(run.workspaceScope !== undefined ? { workspaceScope: run.workspaceScope } : {}),
     ...(run.analyticsTelemetry ? { analyticsTelemetry: run.analyticsTelemetry } : {}),
     ...(run.promptTelemetry ? { promptTelemetry: run.promptTelemetry } : {}),
     ...(run.promptCache ? { promptCache: run.promptCache } : {}),
@@ -982,9 +981,6 @@ export function createChatRunService({
       && !Array.isArray(meta.odNextTaskInputSnapshot)
     ) {
       run.odNextTaskInputSnapshot = meta.odNextTaskInputSnapshot;
-    }
-    if (Object.prototype.hasOwnProperty.call(meta, 'workspaceScope')) {
-      run.workspaceScope = meta.workspaceScope ?? null;
     }
     runs.set(run.id, run);
     if (run.clientRequestId) runIdsByClientRequestId.set(run.clientRequestId, run.id);
