@@ -2424,12 +2424,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
       }
-      if (url.startsWith('/api/workspace/billing?')) {
-        return new Response(JSON.stringify({ summary: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       attempt += 1;
       return new Response(
         JSON.stringify(

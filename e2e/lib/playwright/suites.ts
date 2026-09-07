@@ -37,7 +37,6 @@ export const uiP0Groups = {
       "ui/settings-api-protocol.test.ts",
       "ui/settings-connectors-auth-happy-path.test.ts",
       "ui/settings-connectors-auth-recovery.test.ts",
-      "ui/workspace-team-interactions.test.ts",
     ],
   },
   "project-workspace": {
@@ -60,19 +59,15 @@ export const uiP0Groups = {
     files: [
       "ui/app-design-files.test.ts",
       "ui/app-manual-edit.test.ts",
-      "ui/workspace-team-design-system-picker.test.ts",
     ],
   },
-  // Split out of "project-workspace" (2026-08-04): the two multi-client collab
-  // specs alone accounted for ~10 of that group's ~26min single-worker wall
-  // time (workspace-multi-client-collab.test.ts spins up two isolated
-  // client/daemon runtimes per case). Keep this shard limited to the cluster-
-  // owned spec so it does not also boot the default worker runtime needed by
-  // ordinary UI files.
+  // Keep the real self-hosted Owner/Reviewer lifecycle on its own runner. It
+  // starts the Collaboration Server plus two isolated daemon/web clients and
+  // should not share a worker runtime with ordinary UI files.
   "project-collab": {
     grep: String.raw`\[P0\]`,
     workers: 1,
-    files: ["ui/workspace-multi-client-collab.test.ts"],
+    files: ["ui/collaboration-self-hosted-flow.test.ts"],
   },
   "project-runtime": {
     grep: String.raw`\[P0\]`,
@@ -112,6 +107,7 @@ const uiP0CoverageFiles = [
   "ui/app-restoration.test.ts",
   "ui/app.test.ts",
   "ui/critical-smoke.test.ts",
+  "ui/collaboration-self-hosted-flow.test.ts",
   "ui/entry-chrome-flows.test.ts",
   "ui/entry-configuration-flows.test.ts",
   "ui/home-hero-rail.test.ts",
@@ -121,9 +117,6 @@ const uiP0CoverageFiles = [
   "ui/settings-connectors-auth-happy-path.test.ts",
   "ui/settings-connectors-auth-recovery.test.ts",
   "ui/settings-local-cli-codex-fallback.test.ts",
-  "ui/workspace-team-interactions.test.ts",
-  "ui/workspace-multi-client-collab.test.ts",
-  "ui/workspace-team-design-system-picker.test.ts",
   "ui/workspace-keyboard-flows.test.ts",
 ] as const;
 

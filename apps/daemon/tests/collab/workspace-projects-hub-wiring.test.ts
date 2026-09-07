@@ -144,7 +144,7 @@ describe('handlePolledWorkspaceInvalidation', () => {
 
     handlePolledWorkspaceInvalidation({ type: 'workspace-context-changed', at: 1 }, emit, reconcile);
     handlePolledWorkspaceInvalidation({ type: 'members-changed', at: 1 }, emit, reconcile);
-    handlePolledWorkspaceInvalidation({ type: 'billing-changed', at: 1 }, emit, reconcile);
+    handlePolledWorkspaceInvalidation({ type: 'workspace-directory-changed', at: 1 }, emit, reconcile);
     expect(reconcile).not.toHaveBeenCalled();
 
     handlePolledWorkspaceInvalidation({ type: 'team-projects-changed', at: 1 }, emit, reconcile);
@@ -234,7 +234,7 @@ describe('server.ts wiring (source boundary)', () => {
   it('routes both project catalog event families through project reconciliation', () => {
     const switchBody = extractOnEventSwitchBody();
     const cases = switchBody.split(/(?=case '[a-z-]+':)/g).filter((chunk) => chunk.startsWith("case '"));
-    expect(cases.length).toBeGreaterThanOrEqual(7);
+    expect(cases.length).toBeGreaterThanOrEqual(6);
 
     const casesCallingReconcile = cases.filter((chunk) => /handleHubTeamProjectsChanged\(/.test(chunk));
     const caseNames = casesCallingReconcile.map((chunk) => chunk.match(/^case '([a-z-]+)':/)?.[1]);
@@ -282,9 +282,7 @@ describe('server.ts wiring (source boundary)', () => {
     expect(body).toContain(
       'event.workspaceId ?? subscribedWorkspaceId',
     );
-    expect(body).toContain(
-      'workspaceId: eventWorkspaceId',
-    );
+    expect(body).toMatch(/emitTeamProjectsChanged\(\s*eventWorkspaceId/);
   });
 
   it('runs reconnect and source-gap recovery for the exact subscribed Workspace', () => {

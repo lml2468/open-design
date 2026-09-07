@@ -107,9 +107,6 @@ export type FakeCollabHub = {
   removeMember: (memberId: string) => void;
   setMemberRole: (memberId: string, role: ClientIdentity['role']) => void;
   addWorkspace: (memberId: string, workspaceId: string, workspaceName: string) => void;
-  setAccountMembershipTier: (memberId: string, membershipTier: string) => void;
-  setWorkspacePlan: (planId: string, billingState?: string) => void;
-  setWorkspaceBalance: (memberId: string, balanceUsd: string) => void;
   close: () => Promise<void>;
 };
 
@@ -139,24 +136,6 @@ export async function startFakeCollabHub(options: {
     string,
     Map<string, { workspaceId: string; workspaceName: string; workspaceMemberId: string }>
   >();
-  const workspaceBalances = new Map(
-    options.clients.map((client) => [
-      workspaceMemberKey(options.workspaceId, client.memberId),
-      { balanceUsd: '0.00', revision: 1 },
-    ]),
-  );
-  const accountBilling = new Map(
-    options.clients.map((client) => [client.memberId, {
-      membershipTier: 'team_plus',
-      balanceUsd: '0.00',
-      revision: 1,
-    }]),
-  );
-  const workspaceBilling = new Map([[options.workspaceId, {
-    billingState: 'active',
-    planId: 'team_plus' as string | null,
-    revision: 1,
-  }]]);
   const commandLog: CommandLog[] = [];
   const eventLog: HubEvent[] = [];
   const requestLog: RequestLog[] = [];
@@ -272,7 +251,6 @@ export async function startFakeCollabHub(options: {
               ? [
                   'workspace-member-events-v1',
                   'workspace-event-listener-status-v1',
-                  'billing-revision-clocks-v1',
                   'workspace-directory-events-v1',
                 ]
               : [
@@ -321,9 +299,6 @@ export async function startFakeCollabHub(options: {
           resources,
           resourcesRoot,
           comments,
-          accountBilling,
-          workspaceBilling,
-          workspaceBalances,
           memberRoles,
           removedMembers,
           emit,
@@ -424,46 +399,6 @@ export async function startFakeCollabHub(options: {
         at: new Date().toISOString(),
       });
     },
-    setAccountMembershipTier: (memberId, membershipTier) => {
-      const previous = accountBilling.get(memberId) ?? {
-        membershipTier: 'team_plus',
-        balanceUsd: '0.00',
-        revision: 0,
-      };
-      const revision = previous.revision + 1;
-      accountBilling.set(memberId, { ...previous, membershipTier, revision });
-      emit({
-        type: 'billing-changed',
-        workspaceId: options.workspaceId,
-        revision: `account-${memberId}-${revision}`,
-      });
-    },
-    setWorkspacePlan: (planId, billingState = 'active') => {
-      const previous = workspaceBilling.get(options.workspaceId) ?? {
-        billingState: 'free',
-        planId: null,
-        revision: 0,
-      };
-      const revision = previous.revision + 1;
-      workspaceBilling.set(options.workspaceId, { billingState, planId, revision });
-      emit({
-        type: 'billing-subscription-changed',
-        workspaceId: options.workspaceId,
-        revision: `billing-${revision}`,
-      });
-    },
-    setWorkspaceBalance: (memberId, balanceUsd) => {
-      const key = workspaceMemberKey(options.workspaceId, memberId);
-      const previous = workspaceBalances.get(key) ?? { balanceUsd: '0.00', revision: 0 };
-      const revision = previous.revision + 1;
-      workspaceBalances.set(key, { balanceUsd, revision });
-      emit({
-        type: 'wallet-balance-changed',
-        workspaceId: options.workspaceId,
-        workspaceMemberId: memberId,
-        revision: `wallet-${revision}`,
-      });
-    },
     close: async () => {
       for (const subscriber of [...subscribers]) closeSubscriber(subscriber);
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -482,15 +417,6 @@ async function handleCommand(input: {
   resources: Map<string, ResourceRecord>;
   resourcesRoot: string;
   comments: Map<string, Array<Record<string, unknown>>>;
-  accountBilling: Map<
-    string,
-    { membershipTier: string; balanceUsd: string; revision: number }
-  >;
-  workspaceBilling: Map<
-    string,
-    { billingState: string; planId: string | null; revision: number }
-  >;
-  workspaceBalances: Map<string, { balanceUsd: string; revision: number }>;
   memberRoles: Map<string, ClientIdentity['role']>;
   removedMembers: Set<string>;
   emit: (event: HubEvent) => void;
@@ -502,45 +428,6 @@ async function handleCommand(input: {
   }
   if (args[0] === 'model' && args[1] === 'preset') {
     return jsonLine({ models: [] });
-  }
-  if (args[0] === 'billing' && args[1] === 'summary') {
-    const billing = input.accountBilling.get(input.identity.memberId) ?? {
-      membershipTier: 'team_plus',
-      balanceUsd: '0.00',
-    };
-    return jsonLine({
-      membershipTier: billing.membershipTier,
-      balanceUsd: billing.balanceUsd,
-    });
-  }
-  if (args[0] === 'billing' && args[1] === 'workspace-snapshot') {
-    const billing = input.workspaceBilling.get(input.workspaceId) ?? {
-      billingState: 'free',
-      planId: null,
-      revision: 0,
-    };
-    const balance = input.workspaceBalances.get(
-      workspaceMemberKey(input.workspaceId, input.identity.memberId),
-    ) ?? {
-      balanceUsd: '0.00',
-      revision: 0,
-    };
-    const updatedAt = new Date().toISOString();
-    return jsonLine({
-      schemaVersion: 1,
-      workspaceId: input.workspaceId,
-      workspaceMemberId: input.identity.memberId,
-      billingScopeVersion: 2,
-      billing: {
-        billingState: billing.billingState,
-        planId: billing.planId,
-      },
-      wallet: { balanceUsd: balance.balanceUsd, expiresAt: null, updatedAt },
-      revisions: {
-        billing: `billing-${billing.revision}`,
-        wallet: `wallet-${balance.revision}`,
-      },
-    });
   }
   if (args[0] === 'team-projects') {
     return await handleTeamProjectsCommand(input);
@@ -974,10 +861,6 @@ function addedWorkspaceDirectoryItem(workspace: {
 
 function personalWorkspaceId(memberId: string): string {
   return `personal-${memberId}`;
-}
-
-function workspaceMemberKey(workspaceId: string, memberId: string): string {
-  return `${workspaceId}\0${memberId}`;
 }
 
 function workspaceResourceKey(workspaceId: string, resourceId: string): string {

@@ -98,15 +98,12 @@ describe('server workspace context authority wiring', () => {
     const directoryReadsAfterInitial = directoryReads;
     expect(directoryReadsAfterInitial).toBeGreaterThan(0);
 
-    const interest = await fetch(`${daemon.url}/api/workspace/billing/interests/context-test`, {
-      method: 'PUT',
-      headers: { ...workspaceHeaders(), 'content-type': 'application/json' },
-      body: JSON.stringify({
-        generation: '1',
-        interests: [{ workspaceId: WORKSPACE_ID, workspaceMemberId: MEMBER_ID }],
-      }),
-    });
-    expect(interest.status).toBe(200);
+    const eventStreamAbort = new AbortController();
+    const eventStream = await fetch(
+      `${daemon.url}/api/workspace/events?workspaceId=${WORKSPACE_ID}&workspaceMemberId=${MEMBER_ID}`,
+      { signal: eventStreamAbort.signal },
+    );
+    expect(eventStream.status).toBe(200);
     await vi.waitFor(
       () => expect(directoryReads).toBeGreaterThan(directoryReadsAfterInitial),
       { timeout: 10_000, interval: 50 },
@@ -151,6 +148,7 @@ describe('server workspace context authority wiring', () => {
       role: 'admin',
     });
     expect(directoryReads).toBeGreaterThan(directoryReadsBeforeCredentialRoundTrip);
+    eventStreamAbort.abort();
   }, 60_000);
 });
 
@@ -261,30 +259,7 @@ async function writeVelaStub(root: string): Promise<string> {
   const script = join(root, 'vela-stub.mjs');
   await writeFile(
     script,
-    `const args = process.argv.slice(2);
-if (args[0] === 'billing' && args[1] === 'summary') {
-  process.stdout.write(JSON.stringify({
-    membershipTier: 'team',
-    balanceUsd: '0.00',
-    subscriptionStatus: 'active',
-    balances: { totalAvailableCredits: 0, subscriptionCredits: 0, rechargeCredits: 0 },
-    availableActions: [],
-  }) + '\\n');
-  process.exit(0);
-}
-if (args[0] === 'billing' && args[1] === 'workspace-snapshot') {
-  process.stdout.write(JSON.stringify({
-    schemaVersion: 1,
-    workspaceId: '${WORKSPACE_ID}',
-    workspaceMemberId: '${MEMBER_ID}',
-    billingScopeVersion: 2,
-    billing: { billingState: 'active', planId: 'team_pro' },
-    wallet: { balanceUsd: '10.00', expiresAt: null, updatedAt: '2026-08-13T00:00:00Z' },
-    revisions: { billing: 'billing-1', wallet: 'wallet-1' },
-  }) + '\\n');
-  process.exit(0);
-}
-process.stdout.write(JSON.stringify([]) + '\\n');
+    `process.stdout.write(JSON.stringify([]) + '\\n');
 `,
     'utf8',
   );

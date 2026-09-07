@@ -93,26 +93,6 @@ describe('fake collaboration hub authorization receipts', () => {
     expect(inspection.manifestEntryCount).toBe(1);
   });
 
-  it('forwards the resource command workspace instead of the agent trace workspace', async () => {
-    fixtureRoot = await mkdtemp(join(tmpdir(), 'open-design-fake-collab-hub-'));
-    const velaBin = join(fixtureRoot, 'vela');
-    hub = await startFakeCollabHub({
-      root: fixtureRoot,
-      workspaceId: WORKSPACE_ID,
-      workspaceName: 'Workspace header contract',
-      clients: [OWNER],
-    });
-    await hub.writeVelaBin(velaBin);
-
-    const snapshot = JSON.parse(await velaCommand(
-      velaBin,
-      ['billing', 'workspace-snapshot', '--json'],
-      undefined,
-      'ws-selected-by-resource-command',
-    )) as { workspaceId: string };
-
-    expect(snapshot.workspaceId).toBe('ws-selected-by-resource-command');
-  });
 });
 
 describe('fake collaboration hub Vela resource pulls', () => {

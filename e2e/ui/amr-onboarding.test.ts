@@ -493,11 +493,7 @@ test('[P0] onboarding AMR runtime selection carries into the first Home run requ
     amrAvailable: true,
     initialLoggedIn: true,
   });
-  await mockAmrPersonalWorkspace(page, undefined, {
-    accountBalanceUsd: '20.00',
-    accountCredits: 2_000,
-    accountPlan: 'free',
-  });
+  await mockAmrPersonalWorkspace(page);
 
   await seedOnboardingConfig(page, config);
   await gotoOnboarding(page);

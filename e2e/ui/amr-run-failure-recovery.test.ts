@@ -534,7 +534,6 @@ test('[P1] Settings AMR wallet fallback balance renders from the daemon wallet e
     profile,
     selectedAgentId: 'amr',
     assistantText: 'AMR wallet refresh smoke',
-    accountSummaryAvailable: false,
   });
 
   await gotoEntryHome(page);
@@ -992,7 +991,6 @@ async function setupAmrWorkspace(
     selectedAgentId: 'amr' | 'codex';
     seedLoginConfig?: boolean;
     assistantText?: string;
-    accountSummaryAvailable?: boolean;
   },
 ) {
   await stubCatalogsEmpty(page);
@@ -1057,14 +1055,6 @@ async function setupAmrWorkspace(
     page,
     projectId,
     'AMR UI failure smoke',
-    {
-      accountBalanceUsd: '20.00',
-      accountCredits: 2_000,
-      accountPlan: 'free',
-      ...(options.accountSummaryAvailable !== undefined
-        ? { accountSummaryAvailable: options.accountSummaryAvailable }
-        : {}),
-    },
   );
   return { projectId, conversationId, homeDir, root, velaBin };
 }

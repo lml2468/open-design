@@ -18,8 +18,6 @@
 //     frame at least every 15s, so 45s of silence means the TCP stream is
 //     zombied and we abort + reconnect.
 
-import type { WorkspaceBillingRevisionClock } from '@open-design/contracts';
-
 export type HubResourceStatus = 'shared' | 'retracted';
 export type HubWorkspaceMemberChange = 'added' | 'removed' | 'updated';
 export type HubWorkspaceDirectoryChange =
@@ -43,7 +41,6 @@ export interface HubReadyFrame {
   listenerStatus: HubListenerStatus | null;
 }
 
-const BILLING_REVISION_CLOCKS_CAPABILITY = 'billing-revision-clocks-v1';
 export const WORKSPACE_MEMBER_EVENTS_CAPABILITY =
   'workspace-member-events-v1';
 const WORKSPACE_EVENT_LISTENER_STATUS_CAPABILITY =
@@ -58,20 +55,15 @@ export interface HubWorkspaceEvent {
     | 'comment-changed'
     | 'workspace-context-changed'
     | 'workspace-members-changed'
-    | 'billing-changed'
-    | 'billing-subscription-changed'
-    | 'wallet-balance-changed'
     | 'project-metadata-changed'
     | 'project-content-changed'
     | 'team-resources-changed';
   workspaceId?: string;
   workspaceMemberId?: string;
-  /** Subject of a workspace-members-changed event. This is distinct from the
-   * authenticated workspaceMemberId carried by private billing events. */
+  /** Subject of a workspace-members-changed event. */
   memberId?: string;
   memberChange?: HubWorkspaceMemberChange;
   revision?: string;
-  revisionClock?: WorkspaceBillingRevisionClock;
   projectId?: string;
   resourceId?: string;
   /** Set on 'team-resources-changed': `resource_hub.resources.kind` at emit
@@ -102,9 +94,6 @@ const HUB_EVENT_TYPES = new Set<HubWorkspaceEvent['type']>([
   'comment-changed',
   'workspace-context-changed',
   'workspace-members-changed',
-  'billing-changed',
-  'billing-subscription-changed',
-  'wallet-balance-changed',
   'project-metadata-changed',
   'project-content-changed',
   'team-resources-changed',
@@ -146,8 +135,6 @@ export function parseHubWorkspaceEvent(data: string): HubWorkspaceEvent | null {
       event.memberChange = parsed.memberChange as HubWorkspaceMemberChange;
     }
     if (typeof parsed.revision === 'string') event.revision = parsed.revision;
-    const revisionClock = parseRevisionClock(parsed.revisionClock);
-    if (revisionClock) event.revisionClock = revisionClock;
     if (typeof parsed.projectId === 'string') event.projectId = parsed.projectId;
     if (typeof parsed.resourceId === 'string') event.resourceId = parsed.resourceId;
     if (typeof parsed.resourceKind === 'string') event.resourceKind = parsed.resourceKind;
@@ -237,15 +224,6 @@ function parseHubListenerStatusRecord(
     listenerHealth,
     sourceGap: parsed.sourceGap,
   };
-}
-
-function parseRevisionClock(value: unknown): WorkspaceBillingRevisionClock | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
-  const epoch = typeof raw.epoch === 'string' ? raw.epoch.trim() : '';
-  const counter = typeof raw.counter === 'string' ? raw.counter.trim() : '';
-  if (!epoch || !/^(?:0|[1-9]\d*)$/.test(counter)) return null;
-  return { epoch, counter };
 }
 
 function parseJsonRecord(data: string): Record<string, unknown> | null {
@@ -458,7 +436,6 @@ export function startHubEventsSubscriber(options: HubEventsSubscriberOptions): H
       const decoder = new TextDecoder();
       let buffer = '';
       let connectionNotified = false;
-      let revisionClocksEnabled = false;
       const reportSourceGap = (
         status: HubListenerStatus | null,
         suppressCallback = false,
@@ -566,9 +543,6 @@ export function startHubEventsSubscriber(options: HubEventsSubscriberOptions): H
             // with the maximum retry delay.
             backoffMs = backoffMinMs;
             setConnected(true, endpoint.identityKey);
-            revisionClocksEnabled = ready.capabilities.includes(
-              BILLING_REVISION_CLOCKS_CAPABILITY,
-            );
             const reconnect = everConnected;
             notifyVerifiedConnection(actualWorkspaceId, ready.capabilities);
             // Transport reconnect already invokes the broader onReconnect
@@ -685,20 +659,11 @@ export function startHubEventsSubscriber(options: HubEventsSubscriberOptions): H
             });
             continue;
           }
-          if (!revisionClocksEnabled && event.revisionClock) {
-            const { revisionClock: _, ...legacyEvent } = event;
-            options.onEvent(legacyEvent, {
-              ...(endpoint.identityKey
-                ? { identityKey: endpoint.identityKey }
-                : {}),
-            });
-          } else {
-            options.onEvent(event, {
-              ...(endpoint.identityKey
-                ? { identityKey: endpoint.identityKey }
-                : {}),
-            });
-          }
+          options.onEvent(event, {
+            ...(endpoint.identityKey
+              ? { identityKey: endpoint.identityKey }
+              : {}),
+          });
         }
       }
       return 'closed';

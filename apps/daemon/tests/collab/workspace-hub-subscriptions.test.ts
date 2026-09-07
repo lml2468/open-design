@@ -3,7 +3,7 @@ import type { HubEventsSubscriber } from '../../src/collab/hub-events-subscriber
 import { createWorkspaceHubSubscriptionManager } from '../../src/collab/workspace-hub-subscriptions.js';
 
 describe('WorkspaceHubSubscriptionManager', () => {
-  it('keeps one upstream carrier for local event streams without billing interest', () => {
+  it('keeps one upstream carrier for each referenced local event stream', () => {
     const stop = vi.fn();
     const manager = createWorkspaceHubSubscriptionManager({
       start: (): HubEventsSubscriber => ({
@@ -34,37 +34,12 @@ describe('WorkspaceHubSubscriptionManager', () => {
         refreshEndpoint,
       }),
     });
-    manager.setBillingInterests(['workspace-a', 'workspace-b']);
+    manager.retainEventInterest('workspace-a');
+    manager.retainEventInterest('workspace-b');
 
     manager.refreshEndpoints();
 
     expect(refreshEndpoint).toHaveBeenCalledTimes(2);
-  });
-
-  it('dedupes explicit billing interests into one upstream per workspace', () => {
-    const started: string[] = [];
-    const stopped: string[] = [];
-    const manager = createWorkspaceHubSubscriptionManager({
-      start: (workspaceId): HubEventsSubscriber => {
-        started.push(workspaceId);
-        return {
-          connected: () => true,
-          refreshEndpoint: vi.fn(),
-          stop: () => stopped.push(workspaceId),
-        };
-      },
-    });
-
-    manager.setBillingInterests(['workspace-a', 'workspace-b', 'workspace-b']);
-    expect(started).toEqual(['workspace-a', 'workspace-b']);
-    expect(manager.activeWorkspaceIds()).toEqual(['workspace-a', 'workspace-b']);
-
-    manager.setBillingInterests(['workspace-b']);
-    expect(stopped).toEqual(['workspace-a']);
-    expect(manager.activeWorkspaceIds()).toEqual(['workspace-b']);
-
-    manager.dispose();
-    expect(stopped).toEqual(['workspace-a', 'workspace-b']);
   });
 
   it('stops a workspace immediately after its final reason is revoked', () => {
@@ -76,8 +51,8 @@ describe('WorkspaceHubSubscriptionManager', () => {
         stop,
       }),
     });
-    manager.setBillingInterests(['workspace-a']);
-    manager.setBillingInterests([]);
+    const release = manager.retainEventInterest('workspace-a');
+    release();
     expect(stop).toHaveBeenCalledTimes(1);
     expect(manager.activeWorkspaceIds()).toEqual([]);
     manager.dispose();
@@ -98,7 +73,9 @@ describe('WorkspaceHubSubscriptionManager', () => {
       },
     });
 
-    manager.setBillingInterests(['workspace-a', 'workspace-b', 'workspace-c']);
+    manager.retainEventInterest('workspace-a');
+    manager.retainEventInterest('workspace-b');
+    manager.retainEventInterest('workspace-c');
     expect(manager.activeWorkspaceIds()).toEqual(['workspace-a', 'workspace-b']);
     expect(started).toEqual(['workspace-a', 'workspace-b']);
     expect(stopped).toEqual([]);

@@ -268,9 +268,6 @@ function installDaemonStub(options: { refusePatch?: boolean } = {}): DaemonSpy {
       spy.contextWorkspaceMemberId = headerOf(init, 'x-od-workspace-member-id');
       return jsonResponse({ context: teamContext() });
     }
-    if (pathname === '/api/workspace/billing') {
-      return jsonResponse({ summary: null, workspaceBalance: null });
-    }
     if (pathname === `/api/plugins/${TEMPLATE_ID}/duplicate-project`) {
       spy.duplicateInit = init;
       const workspaceId = headerOf(init, 'x-od-workspace-id');

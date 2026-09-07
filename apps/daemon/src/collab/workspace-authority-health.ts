@@ -16,7 +16,6 @@ export interface WorkspaceAuthorityHealthCoordinatorOptions {
   /** Bounded-cadence retry after a transient catch-up failure. */
   catchUpRetryMs?: number;
   setDirectoryPollingHealthy(workspaceId: string, healthy: boolean): void;
-  setBillingPollingHealthy(workspaceId: string, healthy: boolean): void;
   setContextCachingHealthy?(workspaceId: string, healthy: boolean): void;
   onDecision?: (input: {
     source: 'sse';
@@ -45,7 +44,6 @@ export function createWorkspaceAuthorityHealthCoordinator(
 
   const setHealthy = (workspaceId: string, healthy: boolean): void => {
     options.setDirectoryPollingHealthy(workspaceId, healthy);
-    options.setBillingPollingHealthy(workspaceId, healthy);
     options.setContextCachingHealthy?.(workspaceId, healthy);
   };
 

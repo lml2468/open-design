@@ -1821,11 +1821,10 @@ process.stdin.on("end", () => {
       files: [
         "ui/app-design-files.test.ts",
         "ui/app-manual-edit.test.ts",
-        "ui/workspace-team-design-system-picker.test.ts",
       ],
     });
     expect(uiP0Groups["project-collab"].files).toEqual([
-      "ui/workspace-multi-client-collab.test.ts",
+      "ui/collaboration-self-hosted-flow.test.ts",
     ]);
     expect(uiP0Groups["project-collab"].workers).toBe(1);
     expect(uiP0Groups["critical-extras"]).toEqual({

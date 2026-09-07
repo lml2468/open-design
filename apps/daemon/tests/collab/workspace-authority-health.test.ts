@@ -34,7 +34,6 @@ describe('workspace authority health coordinator', () => {
         mode,
         catchUp,
         setDirectoryPollingHealthy: (_workspaceId, healthy) => states.push(healthy),
-        setBillingPollingHealthy: () => undefined,
       });
 
       await coordinator.update({ workspaceId: 'w1', healthy: true });
@@ -51,7 +50,6 @@ describe('workspace authority health coordinator', () => {
       mode: 'adaptive',
       catchUp: () => gate.promise,
       setDirectoryPollingHealthy: (_workspaceId, healthy) => states.push(healthy),
-      setBillingPollingHealthy: () => undefined,
       onDecision,
     });
 
@@ -70,14 +68,11 @@ describe('workspace authority health coordinator', () => {
   it('cannot re-enable adaptive polling from a catch-up that lost its health generation', async () => {
     const gate = deferred();
     const directoryStates: boolean[] = [];
-    const billingStates: boolean[] = [];
     const coordinator = createWorkspaceAuthorityHealthCoordinator({
       mode: 'adaptive',
       catchUp: () => gate.promise,
       setDirectoryPollingHealthy: (_workspaceId, healthy) =>
         directoryStates.push(healthy),
-      setBillingPollingHealthy: (_workspaceId, healthy) =>
-        billingStates.push(healthy),
     });
 
     const connecting = coordinator.update({ workspaceId: 'w1', healthy: true });
@@ -86,7 +81,6 @@ describe('workspace authority health coordinator', () => {
     await connecting;
 
     expect(directoryStates).toEqual([false, false]);
-    expect(billingStates).toEqual([false, false]);
   });
 
   it('recovers adaptive polling after a transient catch-up failure', async () => {
@@ -100,7 +94,6 @@ describe('workspace authority health coordinator', () => {
       catchUp,
       catchUpRetryMs: 10,
       setDirectoryPollingHealthy: (_workspaceId, healthy) => states.push(healthy),
-      setBillingPollingHealthy: () => undefined,
     });
 
     await coordinator.update({ workspaceId: 'w1', healthy: true });
@@ -123,7 +116,6 @@ describe('workspace authority health coordinator', () => {
       catchUp,
       catchUpRetryMs: 10,
       setDirectoryPollingHealthy: (_workspaceId, healthy) => states.push(healthy),
-      setBillingPollingHealthy: () => undefined,
     });
 
     await coordinator.update({ workspaceId: 'w1', healthy: true });

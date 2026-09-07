@@ -18,13 +18,6 @@ type MockAmrWalletOptions = {
   profile?: string;
 };
 
-type MockAmrPersonalWorkspaceOptions = {
-  accountBalanceUsd?: string;
-  accountCredits?: number;
-  accountPlan?: string;
-  accountSummaryAvailable?: boolean;
-};
-
 export const AMR_PERSONAL_WORKSPACE_ITEM = {
   workspaceId: 'ws-amr-playwright-personal',
   workspaceName: 'AMR Playwright personal workspace',
@@ -76,11 +69,7 @@ export const AMR_PERSONAL_WORKSPACE_HEADERS: Readonly<Record<string, string>> = 
 export async function mockAmrPersonalWorkspace(
   page: Page,
   projectId?: string,
-  options: MockAmrPersonalWorkspaceOptions = {},
 ) {
-  const accountPlan = options.accountPlan ?? 'free';
-  const accountBalanceUsd = options.accountBalanceUsd ?? '0.00';
-  const accountCredits = options.accountCredits ?? 0;
   await page.route('**/api/workspace/directory', async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback();
@@ -111,77 +100,6 @@ export async function mockAmrPersonalWorkspace(
       return;
     }
     await route.fulfill({ json: { context: AMR_PERSONAL_WORKSPACE_CONTEXT } });
-  });
-
-  await page.route('**/api/workspace/billing**', async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    if (request.method() !== 'GET' || url.pathname !== '/api/workspace/billing') {
-      await route.fallback();
-      return;
-    }
-    if (url.searchParams.get('scope') === 'workspace') {
-      const workspaceId = url.searchParams.get('workspaceId');
-      if (workspaceId !== AMR_PERSONAL_WORKSPACE_CONTEXT.workspaceId) {
-        await route.fulfill({ status: 404, json: { error: 'workspace_not_found' } });
-        return;
-      }
-      const observedAt = '2026-07-26T00:00:00.000Z';
-      await route.fulfill({
-        json: {
-          summary: null,
-          workspaceBalance: {
-            workspaceId,
-            workspaceMemberId: AMR_PERSONAL_WORKSPACE_CONTEXT.workspaceMemberId,
-            balanceUsd: accountBalanceUsd,
-            billingScopeVersion: 2,
-            expiresAt: null,
-            updatedAt: observedAt,
-          },
-          workspaceRuntime: {
-            workspaceId,
-            workspaceMemberId: AMR_PERSONAL_WORKSPACE_CONTEXT.workspaceMemberId,
-            status: 'fresh',
-            revision: '1',
-            observedAt,
-            softExpiresAt: '2099-07-26T00:00:30.000Z',
-            hardExpiresAt: '2099-07-26T00:02:00.000Z',
-            retryAt: null,
-            errorCode: null,
-            reason: 'authoritative-action-read',
-            sourceGapDetected: false,
-          },
-          authoritativeWorkspaceRead: {
-            workspaceId,
-            workspaceMemberId: AMR_PERSONAL_WORKSPACE_CONTEXT.workspaceMemberId,
-            observedAt,
-          },
-        },
-      });
-      return;
-    }
-    if (url.searchParams.get('scope') !== 'account' || url.searchParams.size !== 1) {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      json: {
-        summary: options.accountSummaryAvailable === false
-          ? null
-          : {
-              workspaceId: null,
-              membershipTier: accountPlan,
-              totalAvailableCredits: accountCredits,
-              subscriptionCredits: accountCredits,
-              rechargeCredits: 0,
-              balanceUsd: accountBalanceUsd,
-              subscriptionStatus: 'active',
-              availableActions: [],
-              workspaceBalance: null,
-            },
-        workspaceBalance: null,
-      },
-    });
   });
 
   if (projectId) {
@@ -438,9 +356,8 @@ export async function createProjectViaApi(
   page: Page,
   projectId: string,
   name: string,
-  workspaceOptions: MockAmrPersonalWorkspaceOptions = {},
 ) {
-  await mockAmrPersonalWorkspace(page, projectId, workspaceOptions);
+  await mockAmrPersonalWorkspace(page, projectId);
   const response = await page.request.post('/api/projects', {
     headers: { ...AMR_PERSONAL_WORKSPACE_HEADERS },
     data: {

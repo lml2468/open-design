@@ -3,16 +3,6 @@ import type {
   CollabCloudMemberDirectoryEntry,
   CollabCloudMembersResponse,
   TeamProject,
-  WorkspaceBillingCatalog,
-  WorkspaceBillingCatalogResponse,
-  WorkspaceBillingCheckoutResponse,
-  WorkspaceBillingInterestRequest,
-  WorkspaceBillingInterestResponse,
-  WorkspaceBillingSnapshot,
-  WorkspaceTeamBillingPlanId,
-  WorkspaceBillingResponse,
-  WorkspaceBillingSummary,
-  WorkspaceWalletBalance,
   WorkspaceDirectoryItem,
   WorkspaceDirectoryResponse,
   WorkspaceCollabContext,
@@ -40,23 +30,10 @@ import {
   type CreateWorkspaceInviteInput,
 } from '../collab/invite-create.js';
 import {
-  fetchBillingCheckoutUrl,
-  fetchVelaBillingCatalog,
-  fetchVelaWorkspaceBillingProjection,
-  fetchVelaBillingSummary,
-  type VelaWorkspaceBillingProjection,
-} from '../integrations/vela-billing.js';
-import {
   listVelaWorkspaceDirectory,
   workspaceContextFromDirectoryItem,
   type WorkspaceDirectoryFetchResult,
 } from '../collab/vela-workspace-context.js';
-import {
-  createWorkspaceBillingRuntimeCoordinator,
-  WorkspaceBillingInterestError,
-  type WorkspaceBillingRuntimeCoordinator,
-  type WorkspaceBillingRuntimeResult,
-} from '../collab/workspace-billing-runtime.js';
 import {
   verifyWorkspaceRequestContext,
   type VerifiedWorkspaceRequestContextResult,
@@ -72,7 +49,7 @@ export type WorkspaceEventSinksByWorkspace =
  * Deliver one thin invalidation only to clients whose EventSource connection
  * was freshly verified for the affected Workspace. Member identity is still
  * verified at subscription time; delivery is workspace-wide because roster,
- * catalog, context, and team billing changes legitimately invalidate every
+ * catalog and context changes legitimately invalidate every
  * active member's view of that Workspace.
  */
 export function emitWorkspaceEventToScope(
@@ -142,24 +119,6 @@ export interface RegisterCollabContextRoutesDeps {
   consumeInvite?: (nonce: string) => Promise<InviteContinueOutcome>;
   /** Injectable for tests; defaults to creating invites on B with the vela session. */
   createInvite?: (input: CreateWorkspaceInviteInput) => Promise<CreateInviteOutcome>;
-  /** Injectable for tests; defaults to the vela billing CLI 收口. */
-  fetchBilling?: () => Promise<WorkspaceBillingSummary | null>;
-  /** Injectable for tests; returns one backend-proven v2 workspace wallet. */
-  fetchWorkspaceBalance?: (workspaceId: string) => Promise<WorkspaceWalletBalance | null>;
-  /** Injectable for tests; returns the additive atomic plan+wallet projection. */
-  fetchWorkspaceBillingProjection?: (
-    workspaceId: string,
-  ) => Promise<VelaWorkspaceBillingProjection>;
-  /** Daemon-owned exact-scope billing state. Shared with upstream SSE hooks. */
-  billingRuntime?: WorkspaceBillingRuntimeCoordinator;
-  /** Injectable for tests; defaults to the vela billing catalog CLI 收口. */
-  fetchBillingCatalog?: (workspaceId: string) => Promise<WorkspaceBillingCatalog | null>;
-  /** Injectable for tests; defaults to the vela billing checkout CLI 收口. */
-  startCheckout?: (input: {
-    workspaceId?: string;
-    planId?: WorkspaceTeamBillingPlanId;
-    seats?: number;
-  }) => Promise<string | null>;
   /** Injectable for tests; defaults to the resource-hub team-project lister
    *  built from the same workspace context + env-configured hub client the share
    *  path uses. */
@@ -326,27 +285,6 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
   }));
   const createInvite =
     deps.createInvite ?? ((input: CreateWorkspaceInviteInput) => createWorkspaceInvite(input));
-  const fetchBilling = deps.fetchBilling ?? (() => fetchVelaBillingSummary());
-  const fetchWorkspaceBillingProjection =
-    deps.fetchWorkspaceBillingProjection ??
-    (deps.fetchWorkspaceBalance
-      ? async (workspaceId: string): Promise<VelaWorkspaceBillingProjection> => ({
-          snapshot: null,
-          workspaceBalance: await deps.fetchWorkspaceBalance!(workspaceId),
-        })
-      : (workspaceId: string) => fetchVelaWorkspaceBillingProjection(workspaceId));
-  const billingRuntime =
-    deps.billingRuntime ??
-    createWorkspaceBillingRuntimeCoordinator({
-      fetchProjection: ({ workspaceId }) =>
-        fetchWorkspaceBillingProjection(workspaceId),
-    });
-  const fetchBillingCatalog =
-    deps.fetchBillingCatalog ?? ((workspaceId: string) => fetchVelaBillingCatalog(workspaceId));
-  const startCheckout =
-    deps.startCheckout ??
-    ((input: { workspaceId?: string; planId?: WorkspaceTeamBillingPlanId; seats?: number }) =>
-      fetchBillingCheckoutUrl(input));
   const rawTeamProjectsLister = createTeamProjectsLister({});
   const listTeamProjects =
     deps.listTeamProjects ??
@@ -473,7 +411,7 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
   //
   // Carries thin
   // `WorkspaceInvalidationSsePayload` signals (`team-projects-changed`,
-  // `members-changed`, `workspace-context-changed`, `billing-changed`); the web
+  // `members-changed`, `workspace-context-changed`); the web
   // re-fetches the affected resource on receipt. Modeled on the project events
   // SSE (`/api/projects/:id/events`): one flat sink set, dropped on disconnect
   // via `res.on('close')`. No event buffer — a disconnect gap is closed by the
@@ -754,303 +692,6 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
     }
   });
 
-  // Billing reads are explicit at the HTTP boundary:
-  // - scope=account is retained only for old callers that cannot name a
-  //   Workspace;
-  // - scope=workspace requires a workspaceId that resolves to an active
-  //   Personal or Team membership in the directory, then reads Vela's
-  //   independently scoped v2 wallet response.
-  //
-  // The URL is the selection source. Authorization is an independent
-  // membership lookup — never daemon-global active/current state — so two
-  // clients can address different workspaces without switching each other.
-  // Account metadata and workspace money remain independently nullable.
-  app.put('/api/workspace/billing/interests/:clientId', async (req, res) => {
-    const clientId = req.params.clientId?.trim() ?? '';
-    const body = (req.body ?? {}) as Partial<WorkspaceBillingInterestRequest>;
-    const generation = typeof body.generation === 'string' ? body.generation.trim() : '';
-    if (
-      !clientId ||
-      clientId.length > 160 ||
-      !/^(?:0|[1-9]\d*)$/.test(generation) ||
-      !Array.isArray(body.interests)
-    ) {
-      return res.status(400).json({ error: 'invalid_billing_interest' });
-    }
-    const interests = body.interests.map((interest) => ({
-      workspaceId:
-        typeof interest?.workspaceId === 'string' ? interest.workspaceId.trim() : '',
-      workspaceMemberId:
-        typeof interest?.workspaceMemberId === 'string'
-          ? interest.workspaceMemberId.trim()
-          : '',
-    }));
-    if (interests.some((interest) => !interest.workspaceId || !interest.workspaceMemberId)) {
-      return res.status(400).json({ error: 'invalid_billing_interest' });
-    }
-
-    if (interests.length > 0) {
-      const directoryResult = await fetchWorkspaceDirectory().catch(
-        (): WorkspaceDirectoryFetchResult => ({ ok: false, items: [] }),
-      );
-      if (!directoryResult.ok) {
-        if (directoryResult.reason === 'unauthorized') {
-          return sendApiError(
-            res,
-            401,
-            'AGENT_AUTH_REQUIRED',
-            'Workspace authorization expired. Sign in again to continue.',
-            { retryable: false },
-          );
-        }
-        return res.status(503).json({ error: 'workspace_directory_unavailable' });
-      }
-      const unauthorized = interests.filter(
-        (interest) =>
-          !directoryResult.items.some(
-            (item) =>
-              item.workspaceId === interest.workspaceId &&
-              item.workspaceMemberId === interest.workspaceMemberId &&
-              item.memberStatus === 'active' &&
-              item.lifecycleState === 'active',
-          ),
-      );
-      if (unauthorized.length > 0) {
-        // A stale renderer may still declare an old membership epoch for a
-        // workspace another renderer is legitimately using. Reject this
-        // declaration without mutating process-wide workspace state.
-        return res.status(403).json({ error: 'workspace_not_authorized' });
-      }
-    }
-
-    try {
-      const lease: WorkspaceBillingInterestResponse =
-        billingRuntime.setClientInterests({
-          clientId,
-          clientGeneration: generation,
-          interests,
-        });
-      return res.json(lease);
-    } catch (error) {
-      if (!(error instanceof WorkspaceBillingInterestError)) throw error;
-      return res
-        .status(error.code === 'interest_capacity_exceeded' ? 429 : 409)
-        .json({
-          error: error.code,
-          ...(error.acceptedGeneration
-            ? { acceptedGeneration: error.acceptedGeneration }
-            : {}),
-        });
-    }
-  });
-
-  app.delete('/api/workspace/billing/interests/:clientId', (req, res) => {
-    const clientId = req.params.clientId?.trim() ?? '';
-    const generation =
-      typeof req.query.generation === 'string' ? req.query.generation.trim() : undefined;
-    if (!clientId) return res.status(400).json({ error: 'invalid_billing_interest' });
-    try {
-      const released = billingRuntime.releaseClientInterests(clientId, generation);
-      return res.json({ ok: true, released });
-    } catch (error) {
-      if (!(error instanceof WorkspaceBillingInterestError)) throw error;
-      return res.status(400).json({ error: error.code });
-    }
-  });
-
-  app.get('/api/workspace/billing', async (req, res) => {
-    const scope = typeof req.query.scope === 'string' ? req.query.scope.trim() : '';
-    const requestedWorkspaceId =
-      typeof req.query.workspaceId === 'string' ? req.query.workspaceId.trim() : '';
-    const freshness =
-      typeof req.query.freshness === 'string' ? req.query.freshness.trim() : '';
-    if (
-      (scope !== 'account' && scope !== 'workspace') ||
-      (scope === 'account' && requestedWorkspaceId) ||
-      (scope === 'workspace' && !requestedWorkspaceId) ||
-      (freshness !== '' && freshness !== 'authoritative') ||
-      (scope !== 'workspace' && freshness !== '')
-    ) {
-      return res.status(400).json({ error: 'invalid_billing_scope' });
-    }
-    if (scope === 'account') {
-      const summary = await fetchBilling();
-      const body: WorkspaceBillingResponse = { summary, workspaceBalance: null };
-      return res.json(body);
-    }
-
-    const clientId = req.header('x-od-workspace-runtime-client-id') ?? undefined;
-    const clientGeneration =
-      req.header('x-od-workspace-runtime-generation') ?? undefined;
-    const cachedAuthority = deps.readCachedWorkspaceAuthority?.(
-      req,
-      requestedWorkspaceId,
-    ) ?? null;
-    let membership: WorkspaceDirectoryItem | WorkspaceCollabContext | undefined =
-      cachedAuthority?.memberStatus === 'active' &&
-      cachedAuthority.lifecycleState === 'active'
-        ? cachedAuthority
-        : undefined;
-    if (!membership) {
-      const directoryResult = await fetchWorkspaceDirectory().catch(
-        (): WorkspaceDirectoryFetchResult => ({ ok: false, items: [] }),
-      );
-      if (!directoryResult.ok) {
-        billingRuntime.markWorkspaceUnavailable(
-          requestedWorkspaceId,
-          'workspace_directory_unavailable',
-        );
-        if (directoryResult.reason === 'unauthorized') {
-          return sendApiError(
-            res,
-            401,
-            'AGENT_AUTH_REQUIRED',
-            'Workspace authorization expired. Sign in again to continue.',
-            { retryable: false },
-          );
-        }
-        return res.status(503).json({ error: 'workspace_directory_unavailable' });
-      }
-      membership = directoryResult.items.find(
-        (item) =>
-          item.workspaceId === requestedWorkspaceId &&
-          item.memberStatus === 'active' &&
-          item.lifecycleState === 'active',
-      );
-    }
-    if (!membership) {
-      billingRuntime.revokeWorkspace(requestedWorkspaceId);
-      return res.status(403).json({ error: 'workspace_not_authorized' });
-    }
-    billingRuntime.retainWorkspaceMember(
-      requestedWorkspaceId,
-      membership.workspaceMemberId,
-    );
-    billingRuntime.authorizeWorkspaceMember({
-      workspaceId: requestedWorkspaceId,
-      workspaceMemberId: membership.workspaceMemberId,
-    });
-    let accountSummary: WorkspaceBillingSummary | null;
-    let runtimeResult: WorkspaceBillingRuntimeResult;
-    try {
-      [accountSummary, runtimeResult] = await Promise.all([
-        fetchBilling(),
-        billingRuntime.read(
-          {
-            workspaceId: requestedWorkspaceId,
-            workspaceMemberId: membership.workspaceMemberId,
-          },
-          {
-            reason:
-              freshness === 'authoritative'
-                ? 'authoritative-action-read'
-                : 'explicit-billing-read',
-            ...(freshness === 'authoritative' ? { requireFresh: true } : {}),
-            ...(clientId ? { clientId } : {}),
-            ...(clientGeneration ? { clientGeneration } : {}),
-          },
-        ),
-      ]);
-    } catch (error) {
-      if (error instanceof WorkspaceBillingInterestError) {
-        return res.status(409).json({
-          error: error.code,
-          ...(error.acceptedGeneration
-            ? { acceptedGeneration: error.acceptedGeneration }
-            : {}),
-        });
-      }
-      if (freshness === 'authoritative') {
-        const code =
-          typeof (error as { code?: unknown })?.code === 'string'
-            ? (error as { code: string }).code
-            : 'workspace_billing_authoritative_unavailable';
-        return res.status(503).json({ error: code });
-      }
-      throw error;
-    }
-    const projection = runtimeResult.projection;
-    const workspaceBalance = projection.workspaceBalance;
-    const authorizedWorkspaceBalance =
-      workspaceBalance?.workspaceId === requestedWorkspaceId &&
-      workspaceBalance.workspaceMemberId === membership.workspaceMemberId
-        ? workspaceBalance
-        : null;
-    const snapshot = projection.snapshot;
-    const authorizedWorkspaceSnapshot: WorkspaceBillingSnapshot | null =
-      snapshot?.workspaceId === requestedWorkspaceId &&
-      snapshot.workspaceMemberId === membership.workspaceMemberId
-        ? snapshot
-        : null;
-    const authoritativeObservedAt =
-      freshness === 'authoritative' &&
-      runtimeResult.state.status === 'fresh'
-        ? runtimeResult.state.observedAt
-        : null;
-    if (freshness === 'authoritative' && !authoritativeObservedAt) {
-      return res.status(503).json({
-        error: 'workspace_billing_authoritative_unavailable',
-      });
-    }
-    const body: WorkspaceBillingResponse = {
-      summary: accountSummary,
-      workspaceBalance: authorizedWorkspaceBalance,
-      ...(authorizedWorkspaceSnapshot
-        ? { workspaceSnapshot: authorizedWorkspaceSnapshot }
-        : {}),
-      workspaceRuntime: runtimeResult.state,
-      ...(authoritativeObservedAt
-        ? {
-            authoritativeWorkspaceRead: {
-              workspaceId: requestedWorkspaceId,
-              workspaceMemberId: membership.workspaceMemberId,
-              observedAt: authoritativeObservedAt,
-            },
-          }
-        : {}),
-    };
-    return res.json(body);
-  });
-
-  app.get('/api/workspace/billing/catalog', async (req, res) => {
-    const verified = await verifyWorkspaceRequestContext({
-      req,
-      fetchWorkspaceDirectory,
-      configuredEnv: configuredEnv(),
-      requireTeam: true,
-    });
-    if (!verified.ok) return sendWorkspaceVerificationFailure(res, verified);
-    const catalog = await fetchBillingCatalog(verified.context.workspaceId);
-    const body: WorkspaceBillingCatalogResponse = { catalog };
-    return res.json(body);
-  });
-
-  // Compatibility checkout route. The current product UI opens Vela Web for
-  // upgrade/payment, but keeping this endpoint avoids breaking existing tests
-  // and lets A's CLI checkout path be exercised directly when needed.
-  app.post('/api/workspace/billing/checkout', async (req, res) => {
-    const verified = await verifyWorkspaceRequestContext({
-      req,
-      fetchWorkspaceDirectory,
-      configuredEnv: configuredEnv(),
-      requireTeam: true,
-    });
-    if (!verified.ok) return sendWorkspaceVerificationFailure(res, verified);
-    const body = (req.body ?? {}) as { planId?: unknown; seats?: unknown };
-    const planId = parseTeamBillingPlanId(body.planId);
-    const seats = typeof body.seats === 'number' && body.seats > 0 ? Math.floor(body.seats) : undefined;
-    const checkoutInput: {
-      workspaceId?: string;
-      planId?: WorkspaceTeamBillingPlanId;
-      seats?: number;
-    } = { workspaceId: verified.context.workspaceId };
-    if (planId) checkoutInput.planId = planId;
-    if (seats !== undefined) checkoutInput.seats = seats;
-    const checkoutUrl = await startCheckout(checkoutInput);
-    const response: WorkspaceBillingCheckoutResponse = { checkoutUrl };
-    res.json(response);
-  });
-
   // Dev/demo seam: override the in-memory context. A real B-backed provider does
   // not expose `set`, so this 404s in production instead of spoofing identity.
   app.put('/api/workspace/context', (req, res) => {
@@ -1070,8 +711,4 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
     const response: WorkspaceContextResponse = { context };
     res.json(response);
   });
-}
-
-function parseTeamBillingPlanId(value: unknown): WorkspaceTeamBillingPlanId | null {
-  return value === 'team_plus' || value === 'team_pro' || value === 'team_max' ? value : null;
 }

@@ -4,26 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  handleHubVerifiedConnection,
   handleHubWorkspaceAccessRevoked,
   handleHubWorkspaceContextChanged,
 } from '../../src/server.js';
-
-describe('handleHubVerifiedConnection', () => {
-  it('catches up billing on the first workspace-verified connection', () => {
-    const catchUpPublishedHeads = vi.fn(async () => undefined);
-    const catchUpWorkspaceBilling = vi.fn();
-
-    handleHubVerifiedConnection(
-      'workspace-1',
-      catchUpPublishedHeads,
-      catchUpWorkspaceBilling,
-    );
-
-    expect(catchUpPublishedHeads).toHaveBeenCalledWith('workspace-1');
-    expect(catchUpWorkspaceBilling).toHaveBeenCalledWith('workspace-1');
-  });
-});
 
 // Regression coverage for the fix wiring the hub's real `workspace-context-changed`
 // push (`startHubEventsSubscriber`'s `onEvent` in server.ts) to an immediate
@@ -70,25 +53,19 @@ describe('handleHubWorkspaceContextChanged', () => {
 });
 
 describe('handleHubWorkspaceAccessRevoked', () => {
-  it('invalidates directory and billing state before starting reconciliation', () => {
+  it('invalidates directory authority before starting reconciliation', () => {
     const pollWorkspaceInvalidation = vi.fn(async () => undefined);
     const invalidateWorkspaceDirectory = vi.fn();
-    const revokeWorkspaceBilling = vi.fn();
 
     handleHubWorkspaceAccessRevoked(
       'workspace-1',
       pollWorkspaceInvalidation,
       invalidateWorkspaceDirectory,
-      revokeWorkspaceBilling,
     );
 
     expect(invalidateWorkspaceDirectory).toHaveBeenCalledTimes(1);
-    expect(revokeWorkspaceBilling).toHaveBeenCalledWith('workspace-1');
     expect(pollWorkspaceInvalidation).toHaveBeenCalledTimes(1);
     expect(invalidateWorkspaceDirectory.mock.invocationCallOrder[0]).toBeLessThan(
-      pollWorkspaceInvalidation.mock.invocationCallOrder[0]!,
-    );
-    expect(revokeWorkspaceBilling.mock.invocationCallOrder[0]).toBeLessThan(
       pollWorkspaceInvalidation.mock.invocationCallOrder[0]!,
     );
   });
@@ -97,7 +74,7 @@ describe('handleHubWorkspaceAccessRevoked', () => {
 // Scope-boundary guard (real source, not a re-implementation): the fix is
 // deliberately scoped to ONLY the `workspace-context-changed` hub event.
 // `team-projects-changed`, `comment-changed`,
-// `billing-changed`, `project-metadata-changed`, and `project-content-changed`
+// `project-metadata-changed` and `project-content-changed`
 // already have their own handling and must not gain a redundant immediate
 // poll trigger as a side effect of this change (or of some later edit next to
 // it) — each keeps costing exactly the requests its own case already made.
@@ -131,7 +108,7 @@ describe('hub events onEvent switch (source boundary)', () => {
   it('calls the immediate poll trigger only for context and roster authority changes', () => {
     const switchBody = extractOnEventSwitchBody();
     const cases = switchBody.split(/(?=case '[a-z-]+':)/g).filter((chunk) => chunk.startsWith("case '"));
-    expect(cases.length).toBeGreaterThanOrEqual(7);
+    expect(cases.length).toBeGreaterThanOrEqual(6);
 
     const casesCallingPoll = cases.filter((chunk) => /handleHubWorkspaceContextChanged|workspaceInvalidationPoller\.pollOnce\(/.test(chunk));
     const caseNames = casesCallingPoll.map((chunk) => chunk.match(/^case '([a-z-]+)':/)?.[1]);

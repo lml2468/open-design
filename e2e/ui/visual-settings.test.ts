@@ -67,11 +67,7 @@ test('[P1] captures the settings OpenDesign account balance surface', async ({ p
   // permissions come from the selected Workspace. Use the same exact Personal
   // Workspace identity as the AMR runtime tests so directory bootstrap and the
   // subsequent scoped context lookup agree.
-  await mockAmrPersonalWorkspace(page, undefined, {
-    accountPlan: 'plus',
-    accountBalanceUsd: '247.51',
-    accountCredits: 2_475_100,
-  });
+  await mockAmrPersonalWorkspace(page);
   await gotoVisualHome(page);
   await gotoVisualWorkspace(page);
 

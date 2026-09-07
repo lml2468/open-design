@@ -7290,7 +7290,6 @@ async function runWorkspace(args) {
   od workspace projects batch-delete --workspace <id> --member <id> --project <id> [--project <id> ...] [--json]
   od workspace projects batch-move --workspace <id> --member <id> --visibility personal|team --project <id> [--project <id> ...] [--json]
   od workspace members list --workspace <id> --member <id> [--json]
-  od workspace billing [--workspace-type personal|team --workspace <id>] [--json]
 
 Common options:
   --daemon-url <url>   OpenDesign daemon HTTP base.
@@ -7302,12 +7301,12 @@ Common options:
     process.exit(args.length === 0 ? 2 : 0);
   }
   const area = args[0];
-  if (!['invite', 'projects', 'members', 'billing'].includes(area)) {
+  if (!['invite', 'projects', 'members'].includes(area)) {
     console.error(`unknown subcommand: od workspace ${area}`);
     process.exit(2);
   }
   const sub = args[1] ?? 'list';
-  const rest = area === 'invite' || area === 'billing' ? args.slice(1) : args.slice(2);
+  const rest = area === 'invite' ? args.slice(1) : args.slice(2);
   const flags = parseFlags(rest, { string: WORKSPACE_STRING_FLAGS, boolean: WORKSPACE_BOOLEAN_FLAGS });
   const base = (await projectDaemonUrl(flags)).replace(/\/$/, '');
 
@@ -7353,55 +7352,6 @@ Common options:
     const results = Array.isArray(data?.results) ? data.results : [];
     for (const result of results) {
       console.log(`${result.email}\t${result.ok ? 'invited' : `failed:${result.error ?? 'unknown'}`}`);
-    }
-    return;
-  }
-
-  // Dual-track parity for the account menu's credits card. Billing scope is an
-  // explicit CLI argument, never daemon active-workspace state: account is the
-  // compatibility default; team requires both type + workspace id.
-  if (area === 'billing') {
-    const workspaceType =
-      typeof flags['workspace-type'] === 'string'
-        ? flags['workspace-type'].trim().toLowerCase()
-        : '';
-    const workspaceId =
-      typeof flags.workspace === 'string' ? flags.workspace.trim() : '';
-    if (
-      (workspaceType && workspaceType !== 'personal' && workspaceType !== 'team') ||
-      (workspaceType && !workspaceId) ||
-      (!workspaceType && workspaceId)
-    ) {
-      console.error(
-        'Usage: od workspace billing [--workspace-type personal|team --workspace <id>] [--json]',
-      );
-      process.exit(2);
-    }
-    const billingPath =
-      workspaceType
-        ? `/api/workspace/billing?scope=workspace&workspaceId=${encodeURIComponent(workspaceId)}`
-        : '/api/workspace/billing?scope=account';
-    const data = await workspaceContextRequest(billingPath);
-    if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-    const summary = data?.summary ?? null;
-    const workspaceBalance = data?.workspaceBalance ?? null;
-    if (!summary && !workspaceBalance) {
-      console.log('No billing summary (no vela session or CLI unavailable).');
-      return;
-    }
-    if (workspaceBalance) {
-      console.log(`Workspace:\t${workspaceBalance.workspaceId}`);
-    }
-    if (summary) {
-      console.log(`Account plan:\t${summary.membershipTier || 'free'}`);
-      console.log(`Subscription:\t${summary.subscriptionStatus || 'none'}`);
-      console.log(`Account credits:\t${summary.totalAvailableCredits}`);
-      console.log(`  Account plan credits:\t${summary.subscriptionCredits}`);
-      console.log(`  Account top-up credits:\t${summary.rechargeCredits}`);
-    }
-    const balanceUsd = workspaceBalance?.balanceUsd ?? summary?.balanceUsd;
-    if (balanceUsd != null) {
-      console.log(`${workspaceBalance ? 'Workspace' : 'Account'} balance (USD):\t${balanceUsd}`);
     }
     return;
   }

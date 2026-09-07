@@ -9,12 +9,11 @@ export interface WorkspaceHubSubscriptionManagerOptions {
 /**
  * Owns the process-wide set of Vela workspace event streams.
  *
- * Every live stream is backed by an explicit, leased billing interest. A
+ * Every live stream is backed by a local Workspace EventSource reference. A
  * daemon-global UI selection is deliberately not a subscription authority:
  * one tab switching to B must not stop another tab's A stream.
  */
 export class WorkspaceHubSubscriptionManager {
-  private billingWorkspaceIds = new Set<string>();
   private readonly eventWorkspaceReferences = new Map<string, number>();
   private readonly subscribers = new Map<string, HubEventsSubscriber>();
   private disposed = false;
@@ -22,18 +21,6 @@ export class WorkspaceHubSubscriptionManager {
 
   constructor(private readonly options: WorkspaceHubSubscriptionManagerOptions) {
     this.maxSubscribers = Math.max(1, options.maxSubscribers ?? 8);
-  }
-
-  setBillingInterests(workspaceIds: Iterable<string>): void {
-    this.assertUsable();
-    const next = new Set(
-      [...workspaceIds]
-        .map((workspaceId) => workspaceId.trim())
-        .filter(Boolean),
-    );
-    if (sameSet(this.billingWorkspaceIds, next)) return;
-    this.billingWorkspaceIds = next;
-    this.reconcile();
   }
 
   activeWorkspaceIds(): string[] {
@@ -81,17 +68,11 @@ export class WorkspaceHubSubscriptionManager {
     this.disposed = true;
     for (const subscriber of this.subscribers.values()) subscriber.stop();
     this.subscribers.clear();
-    this.billingWorkspaceIds.clear();
     this.eventWorkspaceReferences.clear();
   }
 
   private reconcile(): void {
-    // A visible browser stream gets first claim on the bounded upstream pool;
-    // billing-only interests then fill the remaining capacity.
-    const ordered = [
-      ...this.eventWorkspaceReferences.keys(),
-      ...this.billingWorkspaceIds,
-    ];
+    const ordered = [...this.eventWorkspaceReferences.keys()];
     const desired = new Set<string>();
     for (const workspaceId of ordered) {
       if (desired.size >= this.maxSubscribers) break;
@@ -119,12 +100,4 @@ export function createWorkspaceHubSubscriptionManager(
   options: WorkspaceHubSubscriptionManagerOptions,
 ): WorkspaceHubSubscriptionManager {
   return new WorkspaceHubSubscriptionManager(options);
-}
-
-function sameSet(left: Set<string>, right: Set<string>): boolean {
-  if (left.size !== right.size) return false;
-  for (const value of left) {
-    if (!right.has(value)) return false;
-  }
-  return true;
 }

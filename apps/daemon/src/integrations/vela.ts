@@ -25,12 +25,6 @@ export interface VelaUser {
   name?: string;
   image?: string | null;
   plan?: string;
-  /**
-   * Wallet balance (USD, string), surfaced live from the control-plane
-   * `/api/v1/me` endpoint. `null` when unknown (lookup failed, not yet warmed,
-   * or upstream does not return it). Absent on stale config-only reads.
-   */
-  balanceUsd?: string | null;
 }
 
 export interface VelaLoginStatus {
@@ -39,15 +33,6 @@ export interface VelaLoginStatus {
   loginInFlight: boolean;
   profile: string;
   user: VelaUser | null;
-  /**
-   * Live billing projection (plan tier + wallet balance) for the signed-in
-   * account. Kept SEPARATE from `user` so env-backed sessions (where `user` is
-   * null) can surface plan/balance without fabricating a blank identity, and so
-   * `user.id === null` keeps meaning "no account identity available" for
-   * analytics and other callers. Absent until the live summary resolves;
-   * absent means unknown / hidden.
-   */
-  account?: VelaLiveAccount;
   configPath: string;
   /**
    * Device-authorization URL parsed from `vela login` stdout, surfaced so the
@@ -306,101 +291,6 @@ function readRawVelaLoginStatus(
     configPath,
     ...readVelaLoginAttemptSnapshot(),
   };
-}
-
-/**
- * Live account fields (plan tier + wallet balance) sourced from the vela CLI
- * (`vela billing summary`). Cached separately from the config-only
- * {@link readVelaLoginStatus} read so the status route can merge live data
- * without blocking: the route reads this cache synchronously and triggers a
- * background CLI refresh for the next poll. The CLI spawn itself lives in the
- * route layer (which already resolves the vela launch path for models).
- */
-export interface VelaLiveAccount {
-  plan?: string;
-  balanceUsd?: string | null;
-}
-
-const liveAccountCache = new Map<string, VelaLiveAccount>();
-const liveAccountFetchedAt = new Map<string, number>();
-const LIVE_ACCOUNT_TTL_MS = 60_000;
-
-/**
- * Cache key for the live account. Derived from the full credential revision
- * (auth source + profile + signed-in user + config mtime), NOT just the
- * profile — so a logout or an account switch on the same profile produces a
- * fresh key and the previous account's plan/balance can never leak into a new
- * session before the background refresh completes.
- */
-export function velaLiveAccountCacheKey(
-  revision: VelaCredentialRevision,
-): string {
-  return [
-    revision.authSource,
-    revision.profile,
-    revision.loggedIn ? '1' : '0',
-    revision.userId,
-    revision.configMtimeMs ?? '',
-    revision.credentialFingerprint,
-  ].join('|');
-}
-
-/** Synchronous, non-blocking read of the most recent live-account projection. */
-export function peekVelaLiveAccount(cacheKey: string): VelaLiveAccount | null {
-  return liveAccountCache.get(cacheKey) ?? null;
-}
-
-/**
- * TTL gate for the background refresh. Returns true (and records the attempt)
- * at most once per cache key per {@link LIVE_ACCOUNT_TTL_MS}, so concurrent
- * status polls don't all spawn the CLI.
- */
-export function shouldRefreshVelaLiveAccount(cacheKey: string): boolean {
-  const last = liveAccountFetchedAt.get(cacheKey) ?? 0;
-  if (Date.now() - last < LIVE_ACCOUNT_TTL_MS) return false;
-  liveAccountFetchedAt.set(cacheKey, Date.now());
-  return true;
-}
-
-/** Store a freshly fetched live-account projection. */
-export function setVelaLiveAccount(
-  cacheKey: string,
-  account: VelaLiveAccount,
-): void {
-  liveAccountCache.set(cacheKey, account);
-  // Stamp the fetch time so the warm-path TTL gate doesn't immediately trigger
-  // a redundant refresh right after a (blocking) cold fetch populated the cache.
-  liveAccountFetchedAt.set(cacheKey, Date.now());
-}
-
-/** Clear the refresh throttle so a failed fetch can retry on the next poll. */
-export function clearVelaLiveAccountRefreshThrottle(cacheKey: string): void {
-  liveAccountFetchedAt.delete(cacheKey);
-}
-
-/**
- * Drop every cached live-account projection + throttle. Call on logout so a
- * subsequent login can never surface the signed-out account's plan or balance.
- */
-export function clearAllVelaLiveAccounts(): void {
-  liveAccountCache.clear();
-  liveAccountFetchedAt.clear();
-}
-
-/**
- * Attach a fetched live account (plan tier + wallet balance) to a login status
- * on the dedicated {@link VelaLoginStatus.account} field. Deliberately does NOT
- * touch `status.user`: env-backed sessions keep `user: null` (no fabricated
- * blank identity), and the billing projection rides on its own field so every
- * surface can read plan/balance uniformly. No-op when signed out or when there
- * is no account to apply.
- */
-export function applyVelaLiveAccount(
-  status: VelaLoginStatus,
-  account: VelaLiveAccount | null,
-): void {
-  if (!status.loggedIn || !account) return;
-  status.account = account;
 }
 
 export function readVelaCredentialRevision(

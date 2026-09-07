@@ -873,11 +873,6 @@ import {
 } from './collab/vela-workspace-context.js';
 import { verifyWorkspaceRequestContext } from './collab/request-workspace-context.js';
 import {
-  createWorkspaceBillingRuntimeCoordinator,
-  shouldEmitWorkspaceBillingRuntimeNudge,
-  WorkspaceBillingAccessRevokedError,
-} from './collab/workspace-billing-runtime.js';
-import {
   startHubEventsSubscriber,
   WORKSPACE_DIRECTORY_EVENTS_CAPABILITY,
 } from './collab/hub-events-subscriber.js';
@@ -923,14 +918,6 @@ import {
   type RememberedTeamResourceScopeLease,
 } from './collab/remembered-team-resource-scopes.js';
 import { readVelaControlApiContext } from './integrations/vela.js';
-import {
-  fetchBillingCheckoutUrl,
-  fetchVelaBillingCatalog,
-  fetchVelaBillingSummary,
-  fetchVelaWorkspaceBillingProjection,
-  isVelaWorkspaceAuthorizationError,
-} from './integrations/vela-billing.js';
-import { createAccountBillingSummaryCache } from './collab/account-billing-summary-cache.js';
 import { createEventRefreshCoordinator } from './collab/event-refresh-coordinator.js';
 import { createWorkspaceExactAuthorityCache } from './collab/workspace-exact-authority-cache.js';
 import {
@@ -1496,7 +1483,6 @@ function emitWorkspaceDirectoryChanged(): boolean {
 function hubEventRefreshToken(event: {
   type?: string;
   revision?: string;
-  revisionClock?: { epoch: string; counter: string };
   workspaceMemberId?: string;
   memberId?: string;
   projectId?: string;
@@ -1512,35 +1498,11 @@ function hubEventRefreshToken(event: {
     event.projectId ?? '',
     event.resourceId ?? '',
   ].join(':');
-  if (event.revisionClock) {
-    return `${scope}:clock:${event.revisionClock.epoch}:${event.revisionClock.counter}`;
-  }
   if (event.revision) return `${scope}:revision:${event.revision}`;
   if (event.seq != null) return `${scope}:seq:${event.seq}`;
   if (event.version != null) return `${scope}:version:${event.version}`;
   if (event.at) return `${scope}:at:${event.at}`;
   return undefined;
-}
-
-function accountBillingInvalidationToken(event: {
-  type: 'billing-changed' | 'billing-subscription-changed' | 'wallet-balance-changed';
-  revision?: string;
-  revisionClock?: { epoch: string; counter: string };
-  at?: string;
-}): string | undefined {
-  let revision: string | undefined;
-  if (event.revisionClock) {
-    revision = `clock:${event.revisionClock.epoch}:${event.revisionClock.counter}`;
-  } else if (event.revision) {
-    revision = `revision:${event.revision}`;
-  } else if (event.at) {
-    revision = `at:${event.at}`;
-  }
-  if (!revision) return undefined;
-  // Current Vela producers emit a subscription mutation under both names.
-  // Wallet clocks are independent and therefore need a separate domain.
-  const domain = event.type === 'wallet-balance-changed' ? 'wallet' : 'billing';
-  return `${domain}:${revision}`;
 }
 
 /**
@@ -1574,37 +1536,18 @@ export function handleHubWorkspaceContextChanged(
 
 /** Terminal counterpart to workspace-context-changed. Vela has already
  * re-derived the stream principal and is closing the connection, so local
- * directory and billing projections must be retired synchronously before any
- * reconciliation I/O starts. */
+ * directory authority must be retired synchronously before reconciliation. */
 export function handleHubWorkspaceAccessRevoked(
   workspaceId: string,
   pollWorkspaceInvalidation: () => Promise<void>,
   invalidateWorkspaceDirectory: () => void,
-  revokeWorkspaceBilling: (workspaceId: string) => void,
 ): void {
   invalidateWorkspaceDirectory();
-  revokeWorkspaceBilling(workspaceId);
   emitWorkspaceEvent(
     workspaceId,
     { type: 'workspace-context-changed', at: Date.now() },
   );
   void pollWorkspaceInvalidation().catch(() => undefined);
-}
-
-/**
- * A verified hub connection is itself a freshness boundary, including the
- * daemon's very first connection. Published content and billing may already
- * have changed before the subscriber came online, so both scopes catch up
- * immediately instead of waiting for a later reconnect or poll tick.
- */
-export function handleHubVerifiedConnection(
-  workspaceId: string | undefined,
-  catchUpPublishedHeads: (workspaceId: string) => Promise<void>,
-  catchUpWorkspaceBilling: (workspaceId: string) => void,
-): void {
-  if (!workspaceId) return;
-  void catchUpPublishedHeads(workspaceId).catch(() => undefined);
-  catchUpWorkspaceBilling(workspaceId);
 }
 
 // Windows ENAMETOOLONG mitigation constants
@@ -4706,57 +4649,6 @@ export async function startServer({
     if (!teamMembersCache) return [];
     return context ? teamMembersCache(context) : [];
   };
-  const accountBillingSummary = createAccountBillingSummaryCache({
-    identity: () => velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    ),
-    fetch: () => fetchVelaBillingSummary({ configuredEnv: configuredAmrEnv() }),
-  });
-  const workspaceBillingRuntime = createWorkspaceBillingRuntimeCoordinator({
-    fetchProjection: async ({ workspaceId }) => {
-      try {
-        // The Vela CLI sends only the Bearer credential plus workspace-id
-        // candidate. Vela re-derives the member principal server-side, and
-        // the runtime validates the returned member id before accepting it.
-        return await fetchVelaWorkspaceBillingProjection(workspaceId, {
-          configuredEnv: configuredAmrEnv(),
-        });
-      } catch (error) {
-        if (isVelaWorkspaceAuthorizationError(error)) {
-          throw new WorkspaceBillingAccessRevokedError();
-        }
-        throw error;
-      }
-    },
-    onAccessRevoked: ({ workspaceId }) => {
-      workspaceDirectoryAuthority.invalidate('auth_reject');
-      workspaceExactAuthorityCache.invalidate(workspaceId);
-      workspaceExactContextCache.invalidate(workspaceId, 'auth_reject');
-    },
-    onStateChange: (state) => {
-      // The request that created a runtime already receives this state in its
-      // response. Background catch-up/retry/poll completion needs a thin nudge
-      // so old and new web clients re-read the same explicit route.
-      if (!shouldEmitWorkspaceBillingRuntimeNudge(state)) return;
-      emitWorkspaceEvent(state.workspaceId, {
-        type: 'billing-changed',
-        workspaceId: state.workspaceId,
-        revision: `runtime:${state.revision}`,
-        at: Date.now(),
-      });
-    },
-    onInterestSetChange: (interests) => {
-      workspaceHubSubscriptions?.setBillingInterests(
-        interests.map((interest) => interest.workspaceId),
-      );
-    },
-    onPollSuppressed: () => recordWorkspaceAuthoritySuppressedRequest({
-      mode: workspaceAuthorityCacheMode,
-      source: 'billing',
-      reason: 'safety_floor',
-    }),
-  });
   /**
    * Warm or revalidate both digest faces for one exact directory-verified
    * Workspace/member identity. A UI switch uses the lightweight warm path;
@@ -4799,15 +4691,6 @@ export async function startServer({
     // Warm only the directory-verified id announced by that request; the
     // daemon-global legacy pin is neither read nor updated.
     onWorkspaceSwitched: (workspaceId) => warmWorkspaceDigestFaces(workspaceId),
-    fetchBilling: accountBillingSummary.read,
-    billingRuntime: workspaceBillingRuntime,
-    fetchBillingCatalog: (workspaceId) => fetchVelaBillingCatalog(workspaceId, {
-      configuredEnv: configuredAmrEnv(),
-    }),
-    startCheckout: (input) => fetchBillingCheckoutUrl({
-      ...input,
-      configuredEnv: configuredAmrEnv(),
-    }),
     // Same directory read the route would have made on its own, wrapped so every
     // workspace type it carries is memoized for the team-share invariant.
     listWorkspaceDirectory,
@@ -4946,12 +4829,9 @@ export async function startServer({
         revalidate: true,
       });
       await pollWorkspaceInvalidationForWorkspace(workspaceId);
-      workspaceBillingRuntime.reconnect(workspaceId);
     },
     setDirectoryPollingHealthy: (workspaceId, healthy) =>
       workspaceInvalidationPollerFor(workspaceId).setRealtimeHealthy(healthy),
-    setBillingPollingHealthy: (workspaceId, healthy) =>
-      workspaceBillingRuntime.setRealtimeHealthy(workspaceId, healthy),
     setContextCachingHealthy: (workspaceId, healthy) => {
       workspaceExactAuthorityCache.setRealtimeHealthy(workspaceId, healthy);
       workspaceExactContextCache.setRealtimeHealthy(workspaceId, healthy);
@@ -5151,15 +5031,6 @@ export async function startServer({
       console.info(
         `[od] hub events workspace verified workspaceId=${workspaceId ?? 'unknown'} reconnect=${reconnect}`,
       );
-      handleHubVerifiedConnection(
-        verifiedWorkspaceId,
-        undefined,
-        (exactWorkspaceId) => {
-          // A reconnect is closed exactly once by onReconnect below. Keep
-          // this initial-connect hook from scheduling a duplicate catch-up.
-          if (!reconnect) workspaceBillingRuntime.reconnect(exactWorkspaceId);
-        },
-      );
     },
     onDrop: ({ reason, eventName, expectedWorkspaceId, actualWorkspaceId }) => {
       console.warn(
@@ -5191,11 +5062,6 @@ export async function startServer({
             'auth_reject',
           );
         },
-        (revokedWorkspaceId) =>
-          workspaceBillingRuntime.revokeWorkspace(
-            revokedWorkspaceId,
-            'vela-access-revoked',
-          ),
       );
       recordWorkspaceAuthorityRevocationClear(
         workspaceAuthorityCacheMode,
@@ -5321,10 +5187,6 @@ export async function startServer({
             ),
             hubEventRefreshToken(event),
           );
-          // Revalidate exact membership before the next billing projection.
-          // A removed/rebound member must clear money and entitlement state,
-          // even when no billing-specific event accompanies the roster change.
-          workspaceBillingRuntime.reconnect(subscribedWorkspaceId);
           break;
         case 'workspace-members-changed':
           workspaceDirectoryAuthority.invalidate('event_dirty');
@@ -5339,80 +5201,6 @@ export async function startServer({
               eventWorkspaceId,
               () => pollWorkspaceInvalidationForWorkspace(eventWorkspaceId),
             ),
-            hubEventRefreshToken(event),
-          );
-          // A role update or removal changes both authorization and the
-          // billing member projection even when no billing event accompanies
-          // the roster mutation.
-          workspaceBillingRuntime.reconnect(subscribedWorkspaceId);
-          break;
-        case 'billing-changed':
-          accountBillingSummary.invalidate(accountBillingInvalidationToken(event));
-          workspaceBillingRuntime.invalidate({
-            domain: 'legacy',
-            ...(event.workspaceId ? { workspaceId: event.workspaceId } : {}),
-            ...(event.revision ? { revision: event.revision } : {}),
-            ...(event.revisionClock ? { revisionClock: event.revisionClock } : {}),
-            reason: 'vela-billing-changed',
-          });
-          hubEventRefreshes.request(
-            `billing-signal:${eventWorkspaceId}`,
-            () => {
-              emitWorkspaceEvent(eventWorkspaceId, {
-                type: 'billing-changed',
-                workspaceId: eventWorkspaceId,
-                ...(event.revision ? { revision: event.revision } : {}),
-                at: Date.now(),
-              });
-            },
-            hubEventRefreshToken(event),
-          );
-          break;
-        case 'billing-subscription-changed':
-          if (!event.workspaceId) break;
-          accountBillingSummary.invalidate(accountBillingInvalidationToken(event));
-          workspaceBillingRuntime.invalidate({
-            domain: 'subscription',
-            workspaceId: event.workspaceId,
-            ...(event.revision ? { revision: event.revision } : {}),
-            ...(event.revisionClock ? { revisionClock: event.revisionClock } : {}),
-            reason: 'vela-billing-subscription-changed',
-          });
-          hubEventRefreshes.request(
-            `billing-signal:${event.workspaceId}`,
-            () => {
-              emitWorkspaceEvent(event.workspaceId!, {
-                type: 'billing-subscription-changed',
-                workspaceId: event.workspaceId!,
-                ...(event.revision ? { revision: event.revision } : {}),
-                at: Date.now(),
-              });
-            },
-            hubEventRefreshToken(event),
-          );
-          break;
-        case 'wallet-balance-changed':
-          if (!event.workspaceId || !event.workspaceMemberId) break;
-          accountBillingSummary.invalidate(accountBillingInvalidationToken(event));
-          workspaceBillingRuntime.invalidate({
-            domain: 'wallet',
-            workspaceId: event.workspaceId,
-            workspaceMemberId: event.workspaceMemberId,
-            ...(event.revision ? { revision: event.revision } : {}),
-            ...(event.revisionClock ? { revisionClock: event.revisionClock } : {}),
-            reason: 'vela-wallet-balance-changed',
-          });
-          hubEventRefreshes.request(
-            `billing-signal:${event.workspaceId}:${event.workspaceMemberId}`,
-            () => {
-              emitWorkspaceEvent(event.workspaceId!, {
-                type: 'wallet-balance-changed',
-                workspaceId: event.workspaceId!,
-                workspaceMemberId: event.workspaceMemberId!,
-                ...(event.revision ? { revision: event.revision } : {}),
-                at: Date.now(),
-              });
-            },
             hubEventRefreshToken(event),
           );
           break;
@@ -5481,7 +5269,6 @@ export async function startServer({
         .catch(() => undefined);
       void reconcileWorkspaceProjectsFromRemote(subscribedWorkspaceId)
         .catch(() => undefined);
-      workspaceBillingRuntime.reconnect(subscribedWorkspaceId);
       // Same catch-up principle for the design-system/plugin/skill resource
       // reconciler: a missed 'team-resources-changed' push during the
       // disconnect window is closed by one full re-check across every kind
@@ -5511,7 +5298,6 @@ export async function startServer({
         .catch(() => undefined);
       void reconcileWorkspaceProjectsFromRemote(exactWorkspaceId)
         .catch(() => undefined);
-      workspaceBillingRuntime.reconnect(exactWorkspaceId);
       void reconcileTeamResourcesFromRemote(undefined, exactWorkspaceId, 'catch-up')
         .catch(() => undefined);
     },
@@ -5522,9 +5308,6 @@ export async function startServer({
   workspaceHubSubscriptions = createWorkspaceHubSubscriptionManager({
     start: startWorkspaceHubSubscriber,
   });
-  workspaceHubSubscriptions.setBillingInterests(
-    workspaceBillingRuntime.interestedKeys().map((interest) => interest.workspaceId),
-  );
 
   registerTeamResourceRoutes(app, { teamResources: collab.teamResources });
 
@@ -15554,7 +15337,6 @@ export async function startServer({
       workspaceHubSubscriptions?.dispose();
       hubEventRefreshes.dispose();
       workspaceDirectoryRefreshes.dispose();
-      workspaceBillingRuntime.dispose();
     };
     const shutdownDaemonRuns = async () => {
       if (daemonShutdownStarted) return;
