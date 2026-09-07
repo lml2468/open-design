@@ -24,7 +24,6 @@ vi.mock('../../src/analytics/provider', async (importOriginal) => {
 vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
   useWorkspaceContext: () => ({ context: null, loading: false, refresh: vi.fn() }),
-  useWorkspaceBilling: () => null,
 }));
 
 vi.mock('../../src/state/projects', async (importOriginal) => {

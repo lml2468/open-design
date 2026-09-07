@@ -64,7 +64,6 @@ let workspaceContext: unknown = TEAM_CONTEXT;
 vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
   useWorkspaceContext: () => ({ context: workspaceContext, loading: false, refresh: vi.fn() }),
-  useWorkspaceBilling: () => ({ membershipTier: '' }),
 }));
 
 const OWNED_PLUGIN = {

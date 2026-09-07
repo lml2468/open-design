@@ -107,7 +107,6 @@ import {
 import { AgentIcon } from './AgentIcon';
 import { CommunityView } from './CommunityView';
 import {
-  notifyWorkspaceBillingRefresh,
   notifyWorkspaceContextRefresh,
   useWorkspaceContext,
   workspaceResourceReadContext,
@@ -859,7 +858,6 @@ export function EntryShell({
    */
   function refreshWorkspaceSurfacesAfterOnboarding() {
     notifyWorkspaceContextRefresh();
-    notifyWorkspaceBillingRefresh();
   }
 
   function finishOnboarding() {

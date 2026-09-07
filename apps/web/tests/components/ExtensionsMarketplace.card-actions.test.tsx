@@ -58,7 +58,6 @@ let workspaceContext: unknown = null;
 vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
   useWorkspaceContext: () => ({ context: workspaceContext, loading: false, refresh: vi.fn() }),
-  useWorkspaceBilling: () => null,
 }));
 
 const USER_SKILL = {

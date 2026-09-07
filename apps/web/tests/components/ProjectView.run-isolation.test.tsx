@@ -125,7 +125,6 @@ vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
       : {}),
   }),
   lastResolvedWorkspaceContext: () => workspaceScopeMocks.ambientContext,
-  useWorkspaceBilling: () => null,
 }));
 
 // Only the HOOK is stubbed; every pure helper comes from the real module.

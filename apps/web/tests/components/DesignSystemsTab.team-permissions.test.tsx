@@ -61,7 +61,6 @@ const TEAM_CONTEXT = {
 
 vi.mock('../../src/collab/useWorkspaceContext', () => ({
   useWorkspaceContext: () => ({ context: TEAM_CONTEXT, loading: false, refresh: vi.fn() }),
-  useWorkspaceBilling: () => ({ membershipTier: '' }),
 }));
 
 // The system as it reads for a member who merely has a teammate's shared copy

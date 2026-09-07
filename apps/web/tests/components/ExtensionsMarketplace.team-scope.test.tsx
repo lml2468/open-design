@@ -111,9 +111,6 @@ vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
     refresh: vi.fn(),
   }),
   currentWorkspaceAccountGeneration: () => workspaceAccountGeneration,
-  // Deliberately reports no paid plan — the fix must NOT consult this to decide
-  // whether the team scope is offered.
-  useWorkspaceBilling: () => ({ membershipTier: '' }),
 }));
 
 vi.mock('../../src/providers/registry', async (importOriginal) => ({

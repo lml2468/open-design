@@ -26,7 +26,6 @@ vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
     context: workspaceContext,
     loading: workspaceContextLoading,
   }),
-  useWorkspaceBilling: () => null,
 }));
 
 const USER_PLUGIN: InstalledPluginRecord = {

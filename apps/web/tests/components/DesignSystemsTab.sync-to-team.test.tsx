@@ -99,7 +99,6 @@ let workspaceContext: WorkspaceCollabContext | null = TEAM_CONTEXT;
 
 vi.mock('../../src/collab/useWorkspaceContext', () => ({
   useWorkspaceContext: () => ({ context: workspaceContext, loading: false, refresh: vi.fn() }),
-  useWorkspaceBilling: () => ({ membershipTier: '' }),
 }));
 
 // The sharer's OWN copy: `teamSynced` is never stamped on it (only on a

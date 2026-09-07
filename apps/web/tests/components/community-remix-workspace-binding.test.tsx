@@ -30,10 +30,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/App';
 import { EntryShell } from '../../src/components/EntryShell';
 import { I18nProvider } from '../../src/i18n';
-import {
-  resetWorkspaceBillingCache,
-  resetWorkspaceContextCache,
-} from '../../src/collab/useWorkspaceContext';
+import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
 import {
   daemonIsLive,
   fetchAgentsStream,
@@ -373,7 +370,6 @@ describe('Community Remix workspace binding', () => {
   beforeEach(() => {
     globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
     resetWorkspaceContextCache();
-    resetWorkspaceBillingCache();
     window.history.replaceState(null, '', '/community');
     vi.mocked(daemonIsLive).mockResolvedValue(true);
     vi.mocked(fetchAgentsStream).mockResolvedValue([codexAgent()]);
@@ -396,7 +392,6 @@ describe('Community Remix workspace binding', () => {
     cleanup();
     vi.clearAllMocks();
     resetWorkspaceContextCache();
-    resetWorkspaceBillingCache();
   });
 
   it('binds an entry-shell remix to the team workspace the member is standing in', async () => {
