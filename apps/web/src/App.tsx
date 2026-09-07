@@ -82,7 +82,6 @@ import {
   switchApiProtocolConfig,
   updateCurrentApiProtocolConfig,
   type SettingsSection,
-  type SettingsHighlight,
 } from './components/SettingsDialog';
 import { PrivacyConsentModal } from './components/PrivacyConsentModal';
 import {
@@ -971,7 +970,6 @@ function AppInner() {
   const [deepLinkRetryRevision, setDeepLinkRetryRevision] = useState(0);
   const [settingsWelcome, setSettingsWelcome] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('execution');
-  const [settingsHighlight, setSettingsHighlight] = useState<SettingsHighlight>(null);
   const [integrationInitialTab, setIntegrationInitialTab] = useState<IntegrationTab>('mcp');
   const [daemonLive, setDaemonLive] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -4479,10 +4477,7 @@ function AppInner() {
     reconcileFetchedProjects,
   ]);
 
-  const openSettings = useCallback((
-    section: SettingsSection = 'execution',
-    opts?: { highlight?: SettingsHighlight },
-  ) => {
+  const openSettings = useCallback((section: SettingsSection = 'execution') => {
     if (section === 'composio' || section === 'mcpClient' || section === 'integrations') {
       settingsReturnTargetRef.current = null;
       setIntegrationInitialTab(
@@ -4506,15 +4501,11 @@ function AppInner() {
         : null;
     setSettingsWelcome(false);
     setSettingsInitialSection(section);
-    setSettingsHighlight(opts?.highlight ?? null);
     navigate({ kind: 'home', view: 'settings' });
   }, [identityScopeKey]);
 
-  // Entry point from the failed-run AMR nudge: open Settings on the execution
-  // section and flag the AMR agent card for a one-shot scroll-into-view +
-  // highlight (and a sign-in coachmark when not yet authorized).
   const openAmrSettings = useCallback(() => {
-    openSettings('execution', { highlight: 'amr' });
+    openSettings('execution');
   }, [openSettings]);
 
   const openPetSettings = useCallback(() => {
@@ -4529,7 +4520,6 @@ function AppInner() {
         : null;
     setSettingsWelcome(false);
     setSettingsInitialSection('pet');
-    setSettingsHighlight(null);
     navigate({ kind: 'home', view: 'settings' });
   }, [identityScopeKey]);
 
@@ -4695,7 +4685,6 @@ function AppInner() {
     }
     setSettingsOpen(false);
     settingsDraftConfigRef.current = null;
-    setSettingsHighlight(null);
     if (route.kind === 'home' && route.view === 'settings') {
       const returnTarget = settingsReturnTargetRef.current;
       settingsReturnTargetRef.current = null;
@@ -4719,21 +4708,7 @@ function AppInner() {
     setConfig(next);
     setSettingsOpen(false);
     settingsDraftConfigRef.current = null;
-    setSettingsHighlight(null);
     navigate({ kind: 'home', view: 'onboarding' });
-  }, []);
-
-  const handleActiveCloudSignOut = useCallback(async () => {
-    const next = resetExecutionConfigAfterSignOut(latestPersistedConfigRef.current);
-    latestPersistedConfigRef.current = next;
-    saveConfig(next);
-    setConfig(next);
-    setProviderModelsCache({});
-    setSettingsOpen(false);
-    settingsDraftConfigRef.current = null;
-    setSettingsHighlight(null);
-    navigate({ kind: 'home', view: 'onboarding' });
-    await syncConfigToDaemon(next, { allowOnboardingReset: true });
   }, []);
 
   const renderSettingsSurface = (presentation: 'modal' | 'page') => (
@@ -4746,7 +4721,6 @@ function AppInner() {
       appVersionInfo={appVersionInfo}
       welcome={presentation === 'modal' ? settingsWelcome : false}
       initialSection={settingsInitialSection}
-      initialHighlight={settingsHighlight}
       persistedProjectWorkspaceId={
         route.kind === 'project'
           ? projects.find((project) => project.id === route.projectId)?.workspaceId ?? null
@@ -4759,9 +4733,7 @@ function AppInner() {
       onPersistComposioKey={handleConfigPersistComposioKey}
       onClose={handleCloseSettings}
       onResetOnboarding={handleResetOnboarding}
-      onAmrSignedOut={handleActiveCloudSignOut}
       onRefreshAgents={refreshAgents}
-      onAmrLoginStatusChange={handleAmrLoginStatusChange}
       daemonMediaProviders={daemonMediaProviders}
       daemonMediaProvidersFetchState={daemonMediaProvidersFetchState}
       mediaProvidersNotice={mediaProvidersNotice}

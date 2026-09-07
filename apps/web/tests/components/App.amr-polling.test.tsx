@@ -89,17 +89,9 @@ vi.mock('../../src/components/pet/pets', () => ({
 vi.mock('../../src/components/SettingsDialog', () => ({
   SettingsDialog: ({
     onRefreshAgents,
-    onAmrLoginStatusChange,
     onClose,
   }: {
     onRefreshAgents: (options?: { agentCliEnv?: AppConfig['agentCliEnv'] }) => void | Promise<void>;
-    onAmrLoginStatusChange?: (status: {
-      loggedIn: boolean;
-      loginInFlight?: boolean;
-      profile: string;
-      user: null;
-      configPath: string;
-    } | null) => void;
     onClose: () => void;
   }) => (
     <>
@@ -112,19 +104,6 @@ vi.mock('../../src/components/SettingsDialog', () => ({
           })}
       >
         rescan agents
-      </button>
-      <button
-        onClick={() => {
-          window.dispatchEvent(new CustomEvent('od:amr-login-status-change'));
-          onAmrLoginStatusChange?.({
-            loggedIn: true,
-            profile: 'default',
-            user: null,
-            configPath: '/tmp/amr-config.json',
-          });
-        }}
-      >
-        mark amr signed in
       </button>
       <button onClick={onClose}>close settings</button>
     </>
@@ -521,14 +500,7 @@ describe('App AMR polling', () => {
       configPath: '/tmp/amr-config.json',
     });
 
-    fireEvent.click(screen.getByText('open settings'));
-    expect(screen.getByText('mark amr signed in')).toBeTruthy();
-    fireEvent.click(screen.getByText('mark amr signed in'));
-    await advanceTestClock(0);
-
-    // Settings is a full-page route now; return home so the EntryView
-    // mock (which renders the amr-model probe) is mounted again.
-    fireEvent.click(screen.getByText('close settings'));
+    window.dispatchEvent(new CustomEvent('od:amr-login-status-change'));
     await advanceTestClock(0);
 
     expect(mockedFetchAmrModels).toHaveBeenCalledTimes(3);
@@ -549,18 +521,20 @@ describe('App AMR polling', () => {
       expect(mockedFetchAmrModels).toHaveBeenCalledTimes(1);
     });
 
-    fireEvent.click(screen.getByText('open settings'));
-    await waitFor(() => {
-      expect(screen.getByText('mark amr signed in')).toBeTruthy();
+    mockedFetchVelaLoginStatus.mockResolvedValue({
+      loggedIn: true,
+      profile: 'default',
+      user: null,
+      configPath: '/tmp/amr-config.json',
     });
 
-    fireEvent.click(screen.getByText('mark amr signed in'));
+    window.dispatchEvent(new CustomEvent('od:amr-login-status-change'));
     await waitFor(() => {
       expect(mockedFetchAmrModels).toHaveBeenCalledTimes(2);
     });
 
-    fireEvent.click(screen.getByText('mark amr signed in'));
-    fireEvent.click(screen.getByText('mark amr signed in'));
+    window.dispatchEvent(new CustomEvent('od:amr-login-status-change'));
+    window.dispatchEvent(new CustomEvent('od:amr-login-status-change'));
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(mockedFetchAmrModels).toHaveBeenCalledTimes(2);
