@@ -42,29 +42,6 @@ export function asObject(value: unknown): JsonObject | null {
   return value && typeof value === 'object' ? value as JsonObject : null;
 }
 /**
- * Returns a short diagnostic string describing the JSON kind of `value`:
- * `'array'`, `'null'`, or the result of `typeof`. Used to build
- * `acp_raw_event_shape` diagnostics without touching the value.
- *
- * @param value - Any value from a parsed ACP update object.
- */
-export function acpValueKind(value: unknown): string {
-  if (Array.isArray(value)) return 'array';
-  if (value === null) return 'null';
-  return typeof value;
-}
-/**
- * Returns a sorted array of own string keys from `value` if it is a
- * `JsonObject`, or an empty array otherwise. Used to snapshot object
- * structure for diagnostic payloads without risking a throw.
- *
- * @param value - Any value from a parsed ACP update object.
- */
-export function objectKeys(value: unknown): string[] {
-  const obj = asObject(value);
-  return obj ? Object.keys(obj).sort() : [];
-}
-/**
  * Recursively traverses an ACP update value up to 4 levels deep and returns
  * the first non-empty string found, checking common text-bearing keys in order:
  * `text`, `delta`, `content`, `message`, `output`, `answer`, `value`, `body`,

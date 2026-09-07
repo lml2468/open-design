@@ -254,10 +254,7 @@ import {
   persistPlainStreamArtifactList,
   plainStdoutFromRunEvents,
 } from './runtimes/plain-stream.js';
-import {
-  readVelaLoginStatus,
-  resolveAmrProfile,
-} from './integrations/vela.js';
+import { resolveAmrProfile } from './integrations/vela.js';
 import { isAbortedOperationError } from './integrations/aborted-error.js';
 import { projectResourceIdFor } from './integrations/vela-team-projects.js';
 import {
@@ -268,10 +265,6 @@ import {
   teamProjectMaterializationSupersedes,
 } from './collab/team-mirror-materializer.js';
 import { recoverAuthorizedTeamProjectPromotions } from './collab/team-mirror-promotion.js';
-import {
-  amrAccountFailureDetails,
-  classifyAmrAccountFailureSignal,
-} from './integrations/vela-errors.js';
 import { migrateLegacyDataDirSync } from './migration/index.js';
 import {
   consumedImportNonces,
@@ -2492,7 +2485,7 @@ function rewriteKnownAgentStreamError(agentId, message, failureText = '') {
   if (
     /bufio\.scanner:\s*token too long/i.test(combined) &&
     /opencode/i.test(combined) &&
-    (agentId === 'opencode' || agentId === 'mimo' || agentId === 'amr' || /json-rpc id \d+/i.test(combined))
+    (agentId === 'opencode' || agentId === 'mimo' || /json-rpc id \d+/i.test(combined))
   ) {
     return 'The run failed due to an unknown upstream streaming error. Please retry.';
   }
@@ -2519,25 +2512,6 @@ function rewriteKnownAgentStreamError(agentId, message, failureText = '') {
  */
 function agentFailureIdentity(def) {
   return { agentName: def?.name ?? null };
-}
-
-function createAmrModelUnavailablePayload(model, init = {}) {
-  const modelText = typeof model === 'string' && model.trim()
-    ? `"${model.trim()}"`
-    : 'the selected model';
-  return createSseErrorPayload(
-    'AMR_MODEL_UNAVAILABLE',
-    `AMR model ${modelText} is not available from Vela. Refresh the AMR model list, choose a supported model, and retry this run.`,
-    {
-      retryable: false,
-      details: {
-        kind: 'amr_model',
-        action: 'choose_model',
-        ...(typeof model === 'string' && model.trim() ? { model: model.trim() } : {}),
-        ...init,
-      },
-    },
-  );
 }
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -12402,22 +12376,6 @@ export async function startServer({
       ).catch(() => null);
     }
 
-    // agentLaunch / resolvedBin are resolved above the resume guard (hoisted).
-    // Hoisted above the AMR catalog preflight: the empty-catalog branch
-    // below calls `sendAmrAccountFailure(...)` to surface AMR_AUTH_REQUIRED
-    // for signed-out users, and a `const` declared later in the same outer
-    // function scope would hit a TDZ ReferenceError before initialization.
-    const sendAmrAccountFailure = (failure) => {
-      send('error', createSseErrorPayload(
-        failure.code,
-        failure.message,
-        {
-          retryable: false,
-          details: amrAccountFailureDetails(failure),
-        },
-      ));
-    };
-
     // Plain-streaming adapters that own a "continue most recent
     // conversation" CLI flag (today: only `agy -c`) read this signal
     // to resume upstream session state on follow-up turns. The query
@@ -13151,20 +13109,6 @@ export async function startServer({
       undefined,
       { resolvedBin: agentLaunch.selectedPath },
     );
-    if (def.id === 'amr') {
-      const loginStatus = readVelaLoginStatus(agentSpawnEnv, configuredAgentSpawnEnv);
-      if (!loginStatus.loggedIn) {
-        cleanupPromptFile();
-        revokeToolToken('child_exit');
-        unregisterChatAgentEventSink();
-        sendAmrAccountFailure({
-          code: 'AMR_AUTH_REQUIRED',
-          message: 'AMR sign-in is required. Sign in to AMR Cloud again, then retry this run.',
-          action: 'relogin',
-        });
-        return finishStrategyAwarePhysicalRun('failed', 1, null);
-      }
-    }
     const odMediaEnv = createOpenDesignToolEnv({
       daemonUrl,
       projectDir: cwd,
@@ -14339,7 +14283,6 @@ export async function startServer({
         stdioMcpRemovedInVersion: def.acpStdioMcpRemovedInVersion ?? null,
         executionProfile,
         completePromptOnTurnEnd: def.acpTurnEndCompletesPrompt === true,
-        ...(def.id === 'amr' ? { modelUnavailableErrorCode: 'AMR_MODEL_UNAVAILABLE' } : {}),
         // Resume the prior upstream session (drives `session/load`) when the
         // resume-identity guard says it is safe; otherwise a fresh session/new.
         ...(def.resumesSessionViaAcpLoad === true && agentResumePromptPolicy.resumeSessionId
@@ -14388,20 +14331,6 @@ export async function startServer({
           // progress. Freeze here so the recorded age keeps describing the
           // silence rather than our own teardown.
           if (event === 'error') retireAttemptOnAcpVerdict();
-          if (def.id === 'amr' && event === 'error') {
-            const failure = classifyAmrAccountFailureSignal({
-              details: data?.error?.details,
-              message: data?.message,
-              errorMessage: data?.error?.message,
-              errorCode: data?.error?.code,
-              stdoutTail: agentStdoutTail,
-              stderrTail: agentStderrTail,
-            });
-            if (failure) {
-              sendAmrAccountFailure(failure);
-              return;
-            }
-          }
           // Hold back the `resume_failed` error so the same-turn reseed stays
           // transparent. When this run is resuming an upstream session via
           // `session/load` and the agent reports that session is gone, the ACP
@@ -14463,19 +14392,6 @@ export async function startServer({
           send(event, data);
         },
         ...(acpStageTimeoutMs !== undefined ? { stageTimeoutMs: acpStageTimeoutMs } : {}),
-      });
-      // Publish AMR/vela child-evidence coverage at child close. Without it the
-      // ACP runtime emits no `child_evidence_coverage_v1` at all and every AMR
-      // task aggregates as `child_lifecycle_unavailable_not_zero`, which cannot
-      // tell "this run had no Child agents" from "nobody was observing".
-      //
-      // Registration order is load-bearing: `attachAcpSession` installs its own
-      // close handler above, so the session has already settled
-      // finished/fatal/aborted by the time this one reads it and the coverage
-      // reflects how the turn actually ended. A non-AMR ACP agent has no vela
-      // consumer and yields undefined, which the publisher already ignores.
-      child.on('close', () => {
-        publishRuntimeChildEvidenceCoverage(acpSession?.childEvidenceCoverage?.());
       });
     } else if (def.streamFormat === 'dsh-profile-jsonl') {
       trackingSubstantiveOutput = true;
@@ -14863,16 +14779,6 @@ export async function startServer({
         code !== 0 &&
         !run.cancelRequested
       ) {
-        if (def.id === 'amr') {
-          const amrFailure = classifyAmrAccountFailureSignal({
-            stdoutTail: agentStdoutTail,
-            stderrTail: agentStderrTail,
-          });
-          if (amrFailure) {
-            sendAmrAccountFailure(amrFailure);
-            return finishWithRetryDecision('failed', code ?? 1, signal ?? null);
-          }
-        }
         const authFailure = classifyAgentAuthFailure(
           agentId,
           `${agentStderrTail}\n${agentStdoutTail}`,

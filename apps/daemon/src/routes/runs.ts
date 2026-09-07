@@ -51,7 +51,6 @@ import {
   updateProject,
   upsertMessage,
 } from '../db.js';
-import { readVelaLoginStatus } from '../integrations/vela.js';
 import {
   ensureDetectedRuntimeCapabilities,
   ensureDetectedRuntimeVersions,
@@ -705,7 +704,6 @@ function withoutSensitiveRunInput(body: JsonRecord): JsonRecord {
   delete sanitized.byokProvider;
   delete sanitized.byokProfileId;
   delete sanitized.apiKey;
-  delete sanitized.rechargeResumeCapability;
   delete sanitized.odNextTaskInputSnapshot;
   return sanitized;
 }
@@ -2447,16 +2445,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
               },
             }
           : {}),
-        resume: {
-          requested: requestBody.resume === true,
-          canResume: (candidate) =>
-            candidate.status === 'failed'
-            && candidate.agentId === 'amr'
-            && (
-              candidate.failureAction === 'recharge'
-              || candidate.errorCode === 'AMR_INSUFFICIENT_BALANCE'
-            ),
-        },
       });
     } catch (error) {
       removeOdNextTaskInputSnapshotBestEffort(
@@ -2472,16 +2460,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         preparedRun = internalRuns.prepare({
           meta,
           ...(runUserSeed ? { beforeClaimCommit: () => seedRunUserMessage() } : {}),
-          resume: {
-            requested: requestBody.resume === true,
-            canResume: (candidate) =>
-              candidate.status === 'failed'
-              && candidate.agentId === 'amr'
-              && (
-                candidate.failureAction === 'recharge'
-                || candidate.errorCode === 'AMR_INSUFFICIENT_BALANCE'
-              ),
-          },
         });
       } else {
       if (error instanceof OdNextTaskInputSnapshotError) {

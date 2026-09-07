@@ -42,7 +42,6 @@ describe('BYOK run input boundary', () => {
       byokProfileId: 'byok-openrouter',
       byokProvider: { apiKey: 'nested-secret' },
       apiKey: 'top-level-secret',
-      rechargeResumeCapability: 'capability-secret',
       message: 'Create a site',
     });
 
