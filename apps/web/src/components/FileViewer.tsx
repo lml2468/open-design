@@ -16,7 +16,6 @@ import {
 import {
   buildSocialSharePayload,
   OPEN_DESIGN_GITHUB_REPO_URL,
-  workspaceContextHasTeamIdentity,
   type CollabCloudMemberDirectoryEntry,
   type CollabMemberRole,
   type AgentInfo,
@@ -96,17 +95,11 @@ import {
 import { useT, useI18n } from '../i18n';
 import { useDismissOnOutsideInteraction } from '../hooks/useDismissOnOutsideInteraction';
 import {
-  notifyTeamProjectsChanged,
-  TEAM_PROJECTS_CHANGED_EVENT,
-} from '../collab/useWorkspaceContext';
-import {
   canPublishPublicFile,
   publicFileManualRevokePublication,
   publicFilePublishFailureKey,
   type PublicFilePublishFailureKey,
 } from '../collab/public-file-publish';
-import { moveWorkspaceProject } from '../state/projects';
-import { MoveToTeamConfirmDialog, moveConfirmSkipped } from './MoveToTeamConfirmDialog';
 import type { Dict, Locale } from '../i18n/types';
 import {
   fetchLiveArtifact,
@@ -236,7 +229,6 @@ import type {
 } from '../types';
 import { Icon } from './Icon';
 import { RemixIcon } from './RemixIcon';
-import { projectIsSharedWithWorkspace } from '../collab/project-shared-status';
 import { HandoffButton } from './HandoffButton';
 import { SocialShareGrid } from './SocialShareGrid';
 import { Toast } from './Toast';
@@ -6424,10 +6416,6 @@ function ReactComponentViewer({
   const [reloadKey, setReloadKey] = useState(0);
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [unifiedActionTab, setUnifiedActionTab] = useState<'share' | 'export'>('share');
-  const [shareAccess, setShareAccess] = useState<'private' | 'workspace'>('private');
-  const [shareAccessMenuOpen, setShareAccessMenuOpen] = useState(false);
-  const [shareAccessConfirm, setShareAccessConfirm] = useState<'private' | 'workspace' | null>(null);
-  const [shareAccessBusy, setShareAccessBusy] = useState(false);
   const [publishedFileUrl, setPublishedFileUrl] = useState('');
   const [publishedFileSlug, setPublishedFileSlug] = useState('');
   const [publishingPublicFile, setPublishingPublicFile] = useState(false);
@@ -6509,39 +6497,9 @@ function ReactComponentViewer({
     };
   }, [shareMenuOpen]);
 
-  // Mirror the selected share access level onto the document body so shell-level
-  // chrome can react to it (matches the demo's `data-artifact-share-access`).
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    document.body.dataset.artifactShareAccess = shareAccess;
-    return () => {
-      delete document.body.dataset.artifactShareAccess;
-    };
-  }, [shareAccess]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const refreshShareAccess = () => void projectIsSharedWithWorkspace(projectId, workspaceContext).then((shared) => {
-      if (!cancelled) setShareAccess(shared ? 'workspace' : 'private');
-    });
-    refreshShareAccess();
-    window.addEventListener(TEAM_PROJECTS_CHANGED_EVENT, refreshShareAccess);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(TEAM_PROJECTS_CHANGED_EVENT, refreshShareAccess);
-    };
-  }, [projectId, shareMenuOpen, workspaceContext]);
-
-  // Collapse the nested workspace-access listbox whenever the share popover
-  // itself closes, so it never re-opens mid-flight.
-  useEffect(() => {
-    if (!shareMenuOpen) setShareAccessMenuOpen(false);
-  }, [shareMenuOpen]);
-
   useEffect(() => {
     if (!viewerOnly) return;
     setShareMenuOpen(false);
-    setShareAccessMenuOpen(false);
   }, [viewerOnly]);
 
   useEffect(() => {
@@ -6746,36 +6704,6 @@ function ReactComponentViewer({
     }, 1800);
   }
 
-  // Crossing the team-space boundary routes through the shared 转入/移出
-  // 团队空间 confirmation (same dialog + 不再提示 skip key as the project
-  // grid) instead of silently moving the project.
-  function setWorkspaceShareAccess(nextAccess: 'private' | 'workspace') {
-    setShareAccessMenuOpen(false);
-    if (nextAccess === shareAccess || shareAccessBusy || viewerOnly) return;
-    if (moveConfirmSkipped()) {
-      void commitWorkspaceShareAccess(nextAccess);
-      return;
-    }
-    setShareAccessConfirm(nextAccess);
-  }
-
-  async function commitWorkspaceShareAccess(nextAccess: 'private' | 'workspace') {
-    setShareAccessBusy(true);
-    try {
-      await moveWorkspaceProject({
-        projectId,
-        visibility: nextAccess === 'workspace' ? 'team' : 'personal',
-        workspaceContext,
-      });
-      setShareAccess(nextAccess);
-      notifyTeamProjectsChanged();
-    } catch (error) {
-      console.warn('[FileViewer] failed to update workspace project sharing', error);
-    } finally {
-      setShareAccessBusy(false);
-    }
-  }
-
   const exportTitle = file.name.replace(/\.(jsx|tsx)$/i, '') || file.name;
   const sourceExtension = file.name.toLowerCase().endsWith('.tsx') ? '.tsx' : '.jsx';
 
@@ -6810,17 +6738,6 @@ function ReactComponentViewer({
 
   return (
     <div className="viewer react-component-viewer">
-      {shareAccessConfirm ? (
-        <MoveToTeamConfirmDialog
-          action={shareAccessConfirm === 'workspace' ? 'to-team' : 'to-personal'}
-          onCancel={() => setShareAccessConfirm(null)}
-          onConfirm={() => {
-            const next = shareAccessConfirm;
-            setShareAccessConfirm(null);
-            if (next) void commitWorkspaceShareAccess(next);
-          }}
-        />
-      ) : null}
       <div className="viewer-toolbar">
         <div className="viewer-toolbar-left">
           <button
@@ -6907,95 +6824,6 @@ function ReactComponentViewer({
                   <div className="share-menu-popover chrome-unified-popover" role="menu">
                     {unifiedActionTab === 'share' ? (
                       <div className="chrome-unified-panel chrome-unified-panel--share">
-                        {/* Sharing a project INTO a workspace needs a team on the other
-                            end — a personal workspace has none, so `setWorkspaceShareAccess`
-                            (moveWorkspaceProject → visibility: 'team') always fails there
-                            (recvq5bM78HWCE: card rendered, click showed a failure toast).
-                            `workspaceContextHasTeamIdentity` is the same predicate the
-                            daemon's `teamShareRefusalFor` enforces server-side — this must
-                            not be the wider `workspaceContextHasWorkspaceIdentity` gate the
-                            public single-file publish card below uses; that one is
-                            deliberately workspace-agnostic. */}
-                        {workspaceContextHasTeamIdentity(workspaceContext) ? (
-                        <>
-                        {/* Access control gets the same section-label + row treatment as the
-                            publish / deploy / save tiers below; its explanation moves into the
-                            trailing "?" instead of a card sub-line. */}
-                        <div className="share-menu-section-label share-menu-section-label--help" role="presentation">
-                          <span>{t('fileViewer.workspaceShareTitle')}</span>
-                          <button
-                            type="button"
-                            className="share-menu-help od-tooltip"
-                            data-testid="workspace-access-help"
-                            aria-label={shareAccess === 'private'
-                              ? t('fileViewer.workspaceSharePrivateDescription')
-                              : t('fileViewer.workspaceShareWorkspaceDescription')}
-                            data-tooltip={shareAccess === 'private'
-                              ? t('fileViewer.workspaceSharePrivateDescription')
-                              : t('fileViewer.workspaceShareWorkspaceDescription')}
-                            data-tooltip-placement="bottom"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <RemixIcon name="question-line" size={14} />
-                          </button>
-                        </div>
-                        <div className="chrome-access-select">
-                            <button
-                              type="button"
-                              className="chrome-access-trigger"
-                              aria-haspopup="listbox"
-                              aria-expanded={shareAccessMenuOpen}
-                              disabled={shareAccessBusy || viewerOnly}
-                              onClick={() => setShareAccessMenuOpen((v) => !v)}
-                            >
-                              <span className="share-menu-icon">
-                                {/* recvqaVLC3MNaQ: switching access showed nothing but a
-                                    disabled button — a spinner reads as "in progress"
-                                    where a bare disabled state reads as broken/unresponsive. */}
-                                <RemixIcon
-                                  name={
-                                    shareAccessBusy
-                                      ? 'loader-4-line'
-                                      : shareAccess === 'private'
-                                        ? 'lock-line'
-                                        : 'team-line'
-                                  }
-                                  size={16}
-                                  className={shareAccessBusy ? 'icon-spin' : undefined}
-                                />
-                              </span>
-                              <span>
-                                {shareAccess === 'private'
-                                  ? t('fileViewer.workspaceAccessPrivate')
-                                  : t('fileViewer.workspaceAccessMembers')}
-                              </span>
-                              <RemixIcon name="arrow-down-s-line" size={16} />
-                            </button>
-                            {shareAccessMenuOpen ? (
-                              <div className="chrome-access-options" role="listbox">
-                                {([
-                                  ['private', 'lock-line', t('fileViewer.workspaceAccessPrivate')],
-                                  ['workspace', 'team-line', t('fileViewer.workspaceAccessMembers')],
-                                ] as const).map(([value, icon, label]) => (
-                                  <button
-                                    key={value}
-                                    type="button"
-                                    role="option"
-                                    aria-selected={shareAccess === value}
-                                    className={shareAccess === value ? 'is-active' : undefined}
-                                    disabled={shareAccessBusy || viewerOnly}
-                                    onClick={() => void setWorkspaceShareAccess(value)}
-                                  >
-                                    <span className="share-menu-icon"><RemixIcon name={icon} size={16} /></span>
-                                    <span>{label}</span>
-                                    {shareAccess === value ? <RemixIcon name="check-line" size={15} /> : null}
-                                  </button>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        </>
-                        ) : null}
                         {/* Menu row like the tiers below — same structure as
                             the HtmlViewer copy. */}
                         {canPublishPublic ? (
@@ -7848,10 +7676,6 @@ function HtmlViewer({
   // preselect the tab and open this one popover.
   const [deployMenuOpen, setDeployMenuOpen] = useState(false);
   const [unifiedActionTab, setUnifiedActionTab] = useState<'share' | 'export'>('share');
-  const [shareAccess, setShareAccess] = useState<'private' | 'workspace'>('private');
-  const [shareAccessMenuOpen, setShareAccessMenuOpen] = useState(false);
-  const [shareAccessConfirm, setShareAccessConfirm] = useState<'private' | 'workspace' | null>(null);
-  const [shareAccessBusy, setShareAccessBusy] = useState(false);
   const [publishedFileUrl, setPublishedFileUrl] = useState('');
   const [publishedFileSlug, setPublishedFileSlug] = useState('');
   const [publishingPublicFile, setPublishingPublicFile] = useState(false);
@@ -7935,36 +7759,6 @@ function HtmlViewer({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [closeDeployModal, deployModalOpen, workspaceActive]);
-  // Mirror the selected share access level onto the document body so shell-level
-  // chrome can react to it (matches the demo's `data-artifact-share-access`).
-  useEffect(() => {
-    if (!workspaceActive || typeof document === 'undefined') return;
-    document.body.dataset.artifactShareAccess = shareAccess;
-    return () => {
-      delete document.body.dataset.artifactShareAccess;
-    };
-  }, [shareAccess, workspaceActive]);
-
-  useEffect(() => {
-    if (!workspaceActive) return;
-    let cancelled = false;
-    const refreshShareAccess = () => void projectIsSharedWithWorkspace(projectId, workspaceContext).then((shared) => {
-      if (!cancelled) setShareAccess(shared ? 'workspace' : 'private');
-    });
-    refreshShareAccess();
-    window.addEventListener(TEAM_PROJECTS_CHANGED_EVENT, refreshShareAccess);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(TEAM_PROJECTS_CHANGED_EVENT, refreshShareAccess);
-    };
-  }, [projectId, deployMenuOpen, workspaceActive, workspaceContext]);
-
-  // Collapse the nested workspace-access listbox whenever the unified share
-  // popover itself closes, so it never re-opens mid-flight.
-  useEffect(() => {
-    if (!deployMenuOpen) setShareAccessMenuOpen(false);
-  }, [deployMenuOpen]);
-
   useEffect(() => {
     publicFileIdentityRef.current = { projectId, fileName: file.name };
     const requestSeq = ++publicFileRequestSeqRef.current;
@@ -8174,44 +7968,6 @@ function HtmlViewer({
     window.setTimeout(() => {
       setPublishLinkFeedback((current) => (current === feedback ? null : current));
     }, 1800);
-  }
-  // Same shared 转入/移出团队空间 confirmation as the project grid — see the
-  // ReactComponentViewer copy above for the rationale.
-  function setWorkspaceShareAccess(nextAccess: 'private' | 'workspace') {
-    setShareAccessMenuOpen(false);
-    if (nextAccess === shareAccess || shareAccessBusy || viewerOnly) return;
-    if (moveConfirmSkipped()) {
-      void commitWorkspaceShareAccess(nextAccess);
-      return;
-    }
-    setShareAccessConfirm(nextAccess);
-  }
-
-  async function commitWorkspaceShareAccess(nextAccess: 'private' | 'workspace') {
-    setShareAccessBusy(true);
-    try {
-      await moveWorkspaceProject({
-        projectId,
-        visibility: nextAccess === 'workspace' ? 'team' : 'personal',
-        workspaceContext,
-      });
-      setShareAccess(nextAccess);
-      notifyTeamProjectsChanged();
-      setShareGuideToast(
-        nextAccess === 'workspace'
-          ? t('fileViewer.workspaceShareSuccess')
-          : t('fileViewer.workspaceUnshareSuccess'),
-      );
-    } catch (error) {
-      console.warn('[FileViewer] failed to update workspace project sharing', error);
-      setShareGuideToast(
-        nextAccess === 'workspace'
-          ? t('fileViewer.workspaceShareFailed')
-          : t('fileViewer.workspaceUnshareFailed'),
-      );
-    } finally {
-      setShareAccessBusy(false);
-    }
   }
   const [inTabPresent, setInTabPresent] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -9407,8 +9163,6 @@ function HtmlViewer({
     setZoomMenuOpen(false);
     setPresentMenuOpen(false);
     setDeployMenuOpen(false);
-    setShareAccessMenuOpen(false);
-    setShareAccessConfirm(null);
     setToolbarMoreOpen(false);
     setVersionModalOpen(false);
     setExportReadyNudge(false);
@@ -16785,87 +16539,6 @@ function HtmlViewer({
                   <div className="share-menu-popover chrome-unified-popover" role="menu">
                     {unifiedActionTab === 'share' && rawCanShare ? (
                       <div className="chrome-unified-panel chrome-unified-panel--share">
-                      {/* Team-only, same as ReactComponentViewer's copy of this card above —
-                          see the comment there (recvq5bM78HWCE). */}
-                      {workspaceContextHasTeamIdentity(workspaceContext) ? (
-                      <>
-                      {/* Access control gets the same section-label + row treatment as the
-                          publish / deploy / save tiers below; its explanation moves into the
-                          trailing "?" instead of a card sub-line. */}
-                      <div className="share-menu-section-label share-menu-section-label--help" role="presentation">
-                        <span>{t('fileViewer.workspaceShareTitle')}</span>
-                        <button
-                          type="button"
-                          className="share-menu-help od-tooltip"
-                          data-testid="workspace-access-help"
-                          aria-label={shareAccess === 'private'
-                            ? t('fileViewer.workspaceSharePrivateDescription')
-                            : t('fileViewer.workspaceShareWorkspaceDescription')}
-                          data-tooltip={shareAccess === 'private'
-                            ? t('fileViewer.workspaceSharePrivateDescription')
-                            : t('fileViewer.workspaceShareWorkspaceDescription')}
-                          data-tooltip-placement="bottom"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <RemixIcon name="question-line" size={14} />
-                        </button>
-                      </div>
-                      <div className="chrome-access-select">
-                          <button
-                            type="button"
-                            className="chrome-access-trigger"
-                            aria-haspopup="listbox"
-                            aria-expanded={shareAccessMenuOpen}
-                            disabled={shareAccessBusy || viewerOnly}
-                            onClick={() => setShareAccessMenuOpen((v) => !v)}
-                          >
-                            <span className="share-menu-icon">
-                              {/* recvqaVLC3MNaQ: same spinner-over-disabled fix as the
-                                  ReactComponentViewer copy of this card above. */}
-                              <RemixIcon
-                                name={
-                                  shareAccessBusy
-                                    ? 'loader-4-line'
-                                    : shareAccess === 'private'
-                                      ? 'lock-line'
-                                      : 'team-line'
-                                }
-                                size={16}
-                                className={shareAccessBusy ? 'icon-spin' : undefined}
-                              />
-                            </span>
-                            <span>
-                              {shareAccess === 'private'
-                                ? t('fileViewer.workspaceAccessPrivate')
-                                : t('fileViewer.workspaceAccessMembers')}
-                            </span>
-                            <RemixIcon name="arrow-down-s-line" size={16} />
-                          </button>
-                          {shareAccessMenuOpen ? (
-                            <div className="chrome-access-options" role="listbox">
-                              {([
-                                ['private', 'lock-line', t('fileViewer.workspaceAccessPrivate')],
-                                ['workspace', 'team-line', t('fileViewer.workspaceAccessMembers')],
-                              ] as const).map(([value, icon, label]) => (
-                                <button
-                                  key={value}
-                                  type="button"
-                                  role="option"
-                                  aria-selected={shareAccess === value}
-                                  className={shareAccess === value ? 'is-active' : undefined}
-                                  disabled={shareAccessBusy || viewerOnly}
-                                  onClick={() => void setWorkspaceShareAccess(value)}
-                                >
-                                  <span className="share-menu-icon"><RemixIcon name={icon} size={16} /></span>
-                                  <span>{label}</span>
-                                  {shareAccess === value ? <RemixIcon name="check-line" size={15} /> : null}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      </>
-                      ) : null}
                       {/* Publishing is a menu row like every other action in
                           this panel (deploy, save-as-template): same section
                           label, same icon + label row, with a trailing "?"
@@ -18469,17 +18142,6 @@ function HtmlViewer({
           onDismiss={() => setDeployActionToast(null)}
         />,
         document.body,
-      ) : null}
-      {workspaceActive && shareAccessConfirm ? (
-        <MoveToTeamConfirmDialog
-          action={shareAccessConfirm === 'workspace' ? 'to-team' : 'to-personal'}
-          onCancel={() => setShareAccessConfirm(null)}
-          onConfirm={() => {
-            const next = shareAccessConfirm;
-            setShareAccessConfirm(null);
-            if (next) void commitWorkspaceShareAccess(next);
-          }}
-        />
       ) : null}
       {workspaceActive && versionRestoredToast && typeof document !== 'undefined' ? createPortal(
         <Toast

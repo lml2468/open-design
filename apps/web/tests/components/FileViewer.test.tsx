@@ -6750,7 +6750,6 @@ describe('FileViewer SVG artifacts', () => {
     // Share panel: everything that produces a link or reusable asset —
     // publish, deploy, social share, save as template. No file formats.
     expect(await screen.findByRole('menu')).toBeTruthy();
-    expect(screen.getByText('Share project in workspace')).toBeTruthy();
     expect(await screen.findByText('Get a share link')).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: /Get a share link/i })).toBeTruthy();
     expect(screen.getByText('SHARE ON YOUR OWN HOSTING')).toBeTruthy();
@@ -6838,10 +6837,6 @@ describe('FileViewer SVG artifacts', () => {
     // missing — is back for a personal workspace.
     expect(await screen.findByText('Get a share link')).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: /Get a share link/i })).toBeTruthy();
-    // "Share project in workspace" is TEAM project sharing, which a personal
-    // workspace has no team to receive — see the dedicated test below
-    // (recvq5bM78HWCE) for the card's own gating.
-    expect(screen.queryByText('Share project in workspace')).toBeNull();
   });
 
   // recvq56lzckGtE: publishing a file from a real team workspace 403'd against
@@ -7046,64 +7041,8 @@ describe('FileViewer SVG artifacts', () => {
     'ReactComponentViewer',
   );
 
-  // The publish "?" is not the only one — the workspace-access help beside it
-  // uses the same markup, so the focusability fix has to be panel-wide rather
-  // than a one-off on the row that happened to get reviewed. This case needs a
-  // TEAM workspace, since the access card is team-gated.
-  it('exposes the workspace-access help as a focusable control too', async () => {
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(await screen.findByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-
-    const help = await screen.findByTestId('workspace-access-help');
-    expect(help.tagName).toBe('BUTTON');
-    expect(help).toHaveProperty('type', 'button');
-    expect(help.closest('[role="menuitem"]')).toBeNull();
-    help.focus();
-    expect(document.activeElement).toBe(help);
-  });
-
-  // recvq5bM78HWCE: the "在工作空间中分享项目" card rendered for a personal
-  // workspace with no gate at all, so clicking its access toggle called
-  // `moveWorkspaceProject({ visibility: 'team' })`, which the daemon's
-  // `teamShareRefusalFor` always refuses outside a team workspace — the click
-  // silently failed. The public single-file publish card right above it is
-  // unaffected (that one IS meant to work for a personal workspace).
-  it('hides the team-only workspace-share card for a personal workspace', async () => {
-    const context: WorkspaceCollabContext = {
-      ...teamWorkspaceContext(),
-      workspaceType: 'personal',
-      teamId: undefined,
-    };
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    await screen.findByText('Get a share link');
-    expect(screen.queryByText('Share project in workspace')).toBeNull();
-  });
-
-  // recvqgif6Xa7Wb: product ruled the "no team to share with yet" bridge card
-  // (added for recvqae3pK5hyx/recvq6W8GX8NaH) out entirely — it was never a
-  // designed surface, just a stopgap to avoid a blank tab. A personal
-  // workspace that can already publish must show ONLY the publish card, with
-  // no team-CTA card and no create-team link underneath it.
+  // A personal workspace that can already publish must show only the publish
+  // card, with no unrelated team-creation bridge in the file share menu.
   it('does not show a create-team CTA for a personal workspace that can already publish', async () => {
     const context: WorkspaceCollabContext = {
       ...teamWorkspaceContext(),
@@ -7124,27 +7063,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(await screen.findByRole('menu')).toBeTruthy();
     await screen.findByText('Get a share link');
     expect(screen.queryByText('Nothing to share yet')).toBeNull();
-    expect(screen.queryByText('No team to share with yet')).toBeNull();
     expect(screen.queryByRole('link', { name: /create team/i })).toBeNull();
-  });
-
-  // The team-workspace side of the same rule: the card must still render
-  // there — "separates deploy sharing actions from download actions" above
-  // already pins this, this test names the invariant directly.
-  it('offers the workspace-share card to a team workspace', async () => {
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    expect(screen.getByText('Share project in workspace')).toBeTruthy();
   });
 
   it('hides the public publish entry when there is no workspace at all', async () => {
@@ -7169,14 +7088,9 @@ describe('FileViewer SVG artifacts', () => {
     // under and the daemon answers 409 WORKSPACE_IDENTITY_REQUIRED.
     expect(screen.queryByText('Get a share link')).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Get a share link/i })).toBeNull();
-    expect(screen.queryByText('Share project in workspace')).toBeNull();
-    // recvqgif6Xa7Wb: the "no team to share with yet" bridge card that used to
-    // fill this gap was product-ruled out entirely (never a designed surface —
-    // see recvqae3pK5hyx/recvq6W8GX8NaH history). With neither card able to
-    // render, the share tab is simply empty now — no fallback text, no
-    // create-team link.
+    // With no publish identity, the share tab stays empty and does not offer a
+    // workspace-creation detour.
     expect(screen.queryByText('Nothing to share yet')).toBeNull();
-    expect(screen.queryByText('No team to share with yet')).toBeNull();
     expect(screen.queryByRole('link', { name: /create team/i })).toBeNull();
 
     // And nothing may probe the endpoint on behalf of a caller it will refuse.

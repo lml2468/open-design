@@ -27,7 +27,6 @@ import {
   listProjects,
   listWorkspaceProjectSummaries,
   loadTabs,
-  moveWorkspaceProject,
   patchProject,
   pickLocalFolderPath,
   publishGeneratedPluginToGitHub,
@@ -35,7 +34,6 @@ import {
   startGeneratedPluginShareTask,
   uploadPluginFolder,
   waitGeneratedPluginShareTask,
-  workspaceProjectMoveErrorCode,
 } from '../../src/state/projects';
 import {
   buildWorkspacePermissions,
@@ -1117,9 +1115,8 @@ describe('createProject', () => {
 // `x-od-workspace-member-id` as a legacy caller outside the workspace system
 // entirely and skips its ownership check — so every delete from a
 // workspace-team build silently bypassed cross-workspace permission checking,
-// wrong-workspace project or not. Attaching the same headers
-// `moveWorkspaceProject` already sends is what lets the daemon's existing
-// (correct) `getWorkspaceProject(ctx.workspaceId, projectId)` scoping fire.
+// wrong-workspace project or not. Attaching the authority headers lets the
+// daemon's existing `getWorkspaceProject(ctx.workspaceId, projectId)` scoping fire.
 describe('deleteProject', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -2136,90 +2133,10 @@ describe('pickLocalFolderPath', () => {
   });
 });
 
-describe('moveWorkspaceProject error surfaces (recvqzjnshIlOe)', () => {
+describe('workspace project list cache invalidation', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     resetProjectDisplaySnapshots();
-  });
-
-  it('carries the daemon contract error code so the UI can tell a permanent owner conflict from a transient failure', async () => {
-    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(
-      JSON.stringify({
-        error: {
-          code: 'TEAM_PROJECT_OWNER_CONFLICT',
-          message: 'Error: … 403: {"error":"team_project_owner_conflict"}',
-        },
-      }),
-      { status: 409, headers: { 'content-type': 'application/json' } },
-    )));
-
-    const attempt = moveWorkspaceProject({
-      projectId: 'wsclone-visual-verify',
-      visibility: 'team',
-      workspaceContext: teamWorkspaceContext(),
-    });
-    const error = await attempt.then(
-      () => {
-        throw new Error('expected the move to reject');
-      },
-      (err: unknown) => err,
-    );
-    expect(workspaceProjectMoveErrorCode(error)).toBe('TEAM_PROJECT_OWNER_CONFLICT');
-    expect(String(error)).toMatch(/team_project_owner_conflict/);
-  });
-
-  it('classifies a body-less failure as code-less (generic handling)', async () => {
-    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(null, { status: 502 })));
-
-    const error = await moveWorkspaceProject({
-      projectId: 'p1',
-      visibility: 'team',
-      workspaceContext: teamWorkspaceContext(),
-    }).then(
-      () => {
-        throw new Error('expected the move to reject');
-      },
-      (err: unknown) => err,
-    );
-    expect(workspaceProjectMoveErrorCode(error)).toBeNull();
-  });
-
-  it('invalidates every cached Workspace project view after a successful move', async () => {
-    const context = teamWorkspaceContext({
-      workspaceId: 'ws-move-cache-invalidation',
-      workspaceMemberId: 'wm-move-cache-invalidation',
-    });
-    const responses = [
-      Response.json({ projects: [{ id: 'recent-before', project: { id: 'recent-before' } }] }),
-      Response.json({ projects: [{ id: 'draft-before', project: { id: 'draft-before' } }] }),
-      Response.json({ project: { id: 'recent-before', visibility: 'team' } }),
-      Response.json({ projects: [{ id: 'recent-after', project: { id: 'recent-after' } }] }),
-      Response.json({ projects: [{ id: 'draft-after', project: { id: 'draft-after' } }] }),
-    ];
-    const fetchMock = vi.fn<typeof fetch>(async () => responses.shift()!);
-    vi.stubGlobal('fetch', fetchMock);
-    const recentDisplayScope = { accountGeneration: 7, context, view: 'recent' as const };
-    const draftsDisplayScope = { accountGeneration: 7, context, view: 'drafts' as const };
-    writeProjectDisplaySnapshot(recentDisplayScope, []);
-    writeProjectDisplaySnapshot(draftsDisplayScope, []);
-
-    await listWorkspaceProjectSummaries({ context, workspaceView: 'recent' });
-    await listWorkspaceProjectSummaries({ context, workspaceView: 'drafts' });
-    await moveWorkspaceProject({
-      projectId: 'recent-before',
-      visibility: 'team',
-      workspaceContext: context,
-    });
-    expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey(recentDisplayScope))?.dirty)
-      .toBe(true);
-    expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey(draftsDisplayScope))?.dirty)
-      .toBe(true);
-
-    await expect(listWorkspaceProjectSummaries({ context, workspaceView: 'recent' }))
-      .resolves.toMatchObject([{ id: 'recent-after' }]);
-    await expect(listWorkspaceProjectSummaries({ context, workspaceView: 'drafts' }))
-      .resolves.toMatchObject([{ id: 'draft-after' }]);
-    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
   it('invalidates every cached Workspace project view after a successful patch', async () => {

@@ -402,16 +402,6 @@
   color: var(--text-muted);
   flex: 0 0 auto;
 }
-/* "转入团队空间" confirm button: green label on the dark filled button to read
-   as the positive, forward action. The selector mirrors mention-home.css's
-   `.modal-confirm .row button.primary` ink-pill restyle (color: #fafafa,
-   including :hover/:active) with one extra class so the green label wins in
-   every interaction state. */
-.modal-confirm .row button.recent-projects__move-confirm.primary,
-.modal-confirm .row button.recent-projects__move-confirm.primary:hover,
-.modal-confirm .row button.recent-projects__move-confirm.primary:active {
-  color: var(--brand);
-}
 .recent-projects__card-status {
   display: inline-flex;
   align-items: center;

@@ -31,7 +31,6 @@ import type {
   PluginShareAction,
   ProjectPluginFolderInstallRequest,
   ProjectScenarioTaskProfile,
-  ProjectVisibility,
   ProjectWorkspaceScopeResponse,
   TerminalSession,
   WorkspaceCollabContext,
@@ -168,23 +167,6 @@ export function resolvedWorkspaceContextForWrite(
   return state.context;
 }
 
-/**
- * A workspace project move the daemon refused, carrying the contract error
- * code (`ApiError.code`) when the response body names one. Kept as a named
- * class so UI callers can branch on `code` — `TEAM_PROJECT_OWNER_CONFLICT`
- * is a permanent ownership conflict that must not render as the generic
- * "try again later" hint.
- */
-export class WorkspaceProjectMoveError extends Error {
-  readonly code: ApiErrorCode | null;
-
-  constructor(message: string, code: ApiErrorCode | null) {
-    super(message);
-    this.name = 'WorkspaceProjectMoveError';
-    this.code = code;
-  }
-}
-
 /** A refused project delete with the daemon's stable status/code preserved. */
 export class ProjectDeleteError extends Error {
   constructor(
@@ -195,68 +177,6 @@ export class ProjectDeleteError extends Error {
     super(message);
     this.name = 'ProjectDeleteError';
   }
-}
-
-/**
- * The contract error code a failed move carries, or null. Duck-typed on a
- * string `code` property (validated against `API_ERROR_CODES`) instead of
- * `instanceof`, so callers and tests can classify any conforming error
- * without importing the concrete class.
- */
-export function workspaceProjectMoveErrorCode(error: unknown): ApiErrorCode | null {
-  if (!(error instanceof Error)) return null;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === 'string' && (API_ERROR_CODES as readonly string[]).includes(code)
-    ? (code as ApiErrorCode)
-    : null;
-}
-
-export async function moveWorkspaceProject(input: {
-  projectId: string;
-  visibility: ProjectVisibility;
-  workspaceContext: WorkspaceCollabContext | null;
-}): Promise<WorkspaceProjectSummary> {
-  const context = input.workspaceContext;
-  if (!context) throw new Error('Workspace context is required');
-  const resp = await fetch(
-    `/api/workspaces/${encodeURIComponent(context.workspaceId)}/projects/${encodeURIComponent(input.projectId)}/move`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...workspaceProjectHeaders(context),
-      },
-      body: JSON.stringify({ visibility: input.visibility }),
-    },
-  );
-  if (!resp.ok) {
-    let message = `workspace project move failed with status ${resp.status}`;
-    let code: ApiErrorCode | null = null;
-    try {
-      const body = await resp.json() as { error?: unknown };
-      if (body.error && typeof body.error === 'object') {
-        const errorBody = body.error as { code?: unknown; message?: unknown };
-        if (
-          typeof errorBody.code === 'string' &&
-          (API_ERROR_CODES as readonly string[]).includes(errorBody.code)
-        ) {
-          code = errorBody.code as ApiErrorCode;
-        }
-        if (typeof errorBody.message === 'string' && errorBody.message.trim()) {
-          message = errorBody.message;
-        }
-      }
-    } catch {
-      // Keep the generic fallback when the error body is absent or invalid.
-    }
-    throw new WorkspaceProjectMoveError(message, code);
-  }
-  // A share/unshare changes membership across several projections at once
-  // (`recent`, `drafts`, `team`, and `all`). Do not let the coalescing window
-  // replay the pre-move snapshot into the immediate refresh.
-  invalidateWorkspaceProjectLists(context);
-  const json = (await resp.json()) as { project: WorkspaceProjectSummary };
-  return json.project;
 }
 
 function omitWorkspaceContext<T extends { workspaceContext?: WorkspaceCollabContext | null }>(
@@ -1117,10 +1037,8 @@ export async function patchProject(
  * caller and skips its ownership check entirely (`ctx === null` → allowed).
  * Omitting these headers — which this call used to do unconditionally — meant
  * every delete from a workspace-team build bypassed the daemon's own
- * cross-workspace permission check, so a project that leaked into the wrong
- * workspace's 草稿 grid (recvq5bz3HIDVt) was ALSO really deletable from there
- * (recvq5ecTkar91), not just visible. See {@link moveWorkspaceProject} for the
- * same headers on the sibling move endpoint.
+ * cross-workspace permission check. Keep the authority headers on this local
+ * project mutation while the legacy Workspace routes are being removed.
  */
 export async function deleteProject(
   id: string,

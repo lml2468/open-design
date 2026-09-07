@@ -111,13 +111,8 @@ import {
   type WorkspaceCollabContext,
   type WorkspaceContextItem,
 } from '@open-design/contracts';
-import {
-  notifyTeamProjectsChanged,
-  TEAM_PROJECTS_CHANGED_EVENT,
-} from '../collab/useWorkspaceContext';
 import { useProjectCollabContext } from '../collab/collab-context';
-import { createTerminal, killTerminal, listPlugins, moveWorkspaceProject } from '../state/projects';
-import { MoveToTeamConfirmDialog, moveConfirmSkipped } from './MoveToTeamConfirmDialog';
+import { createTerminal, killTerminal, listPlugins } from '../state/projects';
 import { DesignFilesPanel, type DesignFilesNavState } from './DesignFilesPanel';
 import {
   DesignBrowserPanel,
@@ -132,7 +127,6 @@ import { APP_CHROME_FILE_ACTIONS_ID } from './AppChromeHeader';
 import { FileViewer, LiveArtifactViewer } from './FileViewer';
 import { useIframeKeepAlivePool } from './IframeKeepAlivePool';
 import { Icon, type IconName } from './Icon';
-import { projectIsSharedWithWorkspace } from '../collab/project-shared-status';
 import { FileSyncBadge, type FileSyncBadgeState } from '../collab/FileSyncBadge';
 import { Toast } from './Toast';
 import { TabLauncherMenu } from './workspace/TabLauncherMenu';
@@ -1474,11 +1468,6 @@ export function FileWorkspace({
   // "+" launcher (file search + registry-driven create-new actions:
   // Side Chat, Terminal, Browser).
   const [launcherOpen, setLauncherOpen] = useState(false);
-  const [projectShareMenuOpen, setProjectShareMenuOpen] = useState(false);
-  const [projectShareAccess, setProjectShareAccess] = useState<'private' | 'workspace'>('private');
-  const [projectShareAccessMenuOpen, setProjectShareAccessMenuOpen] = useState(false);
-  const [projectShareConfirm, setProjectShareConfirm] = useState<'private' | 'workspace' | null>(null);
-  const [projectShareBusy, setProjectShareBusy] = useState(false);
   const [pageCreatorOpen, setPageCreatorOpen] = useState(false);
   const [pageCreatorQuery, setPageCreatorQuery] = useState('');
   const [pageCreatorCategory, setPageCreatorCategory] =
@@ -1499,7 +1488,6 @@ export function FileWorkspace({
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const launcherBtnRef = useRef<HTMLButtonElement | null>(null);
-  const projectShareRef = useRef<HTMLDivElement | null>(null);
   const tabsBarRef = useRef<HTMLDivElement | null>(null);
   // Focus-mode dock host for the workspace tab strip (workspaceTabsDock.ts).
   const focusTabsDockRef = useWorkspaceTabsDockRef();
@@ -3755,42 +3743,6 @@ export function FileWorkspace({
     };
   }, [browserTabs.length, designSystemProject, tabNames.length]);
 
-  useEffect(() => {
-    if (!projectShareMenuOpen) return;
-    const onDocClick = (event: MouseEvent) => {
-      if (!projectShareRef.current) return;
-      if (!projectShareRef.current.contains(event.target as Node)) {
-        setProjectShareMenuOpen(false);
-      }
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setProjectShareMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [projectShareMenuOpen]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const refreshShareAccess = () => void projectIsSharedWithWorkspace(projectId, workspaceContext).then((shared) => {
-      if (!cancelled) setProjectShareAccess(shared ? 'workspace' : 'private');
-    });
-    refreshShareAccess();
-    window.addEventListener(TEAM_PROJECTS_CHANGED_EVENT, refreshShareAccess);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(TEAM_PROJECTS_CHANGED_EVENT, refreshShareAccess);
-    };
-  }, [projectId, projectShareMenuOpen, workspaceContext]);
-
-  useEffect(() => {
-    if (!projectShareMenuOpen) setProjectShareAccessMenuOpen(false);
-  }, [projectShareMenuOpen]);
-
   const isActiveSketch = activeFile?.kind === 'sketch' && isSketchName(activeFile.name);
   const activeSketch = activeFile && isActiveSketch ? sketches[activeFile.name] : null;
   // The "+" launcher's create-new actions come from the registry. `openTab`
@@ -3830,51 +3782,6 @@ export function FileWorkspace({
   };
   // A read-only viewer gets no launcher edit actions (new file, import, etc.).
   const launcherActions = viewerOnly ? [] : buildLauncherActions(launcherContext);
-  // Crossing the team-space boundary routes through the shared 转入/移出
-  // 团队空间 confirmation (same dialog + 不再提示 skip key as the project
-  // grid) instead of silently moving the project.
-  function setProjectWorkspaceShareAccess(nextAccess: 'private' | 'workspace') {
-    setProjectShareAccessMenuOpen(false);
-    if (nextAccess === projectShareAccess || projectShareBusy || viewerOnly) return;
-    if (moveConfirmSkipped()) {
-      void commitProjectWorkspaceShareAccess(nextAccess);
-      return;
-    }
-    setProjectShareConfirm(nextAccess);
-  }
-
-  async function commitProjectWorkspaceShareAccess(nextAccess: 'private' | 'workspace') {
-    if (projectShareBusy) return;
-    setProjectShareBusy(true);
-    try {
-      await moveWorkspaceProject({
-        projectId,
-        visibility: nextAccess === 'workspace' ? 'team' : 'personal',
-        workspaceContext,
-      });
-      setProjectShareAccess(nextAccess);
-      notifyTeamProjectsChanged();
-      setLauncherToast({
-        message:
-          nextAccess === 'workspace'
-            ? t('fileViewer.workspaceShareSuccess')
-            : t('fileViewer.workspaceUnshareSuccess'),
-        tone: 'success',
-      });
-    } catch (error) {
-      console.warn('[FileWorkspace] failed to update workspace project sharing', error);
-      setLauncherToast({
-        message:
-          nextAccess === 'workspace'
-            ? t('fileViewer.workspaceShareFailed')
-            : t('fileViewer.workspaceUnshareFailed'),
-        tone: 'error',
-      });
-    } finally {
-      setProjectShareBusy(false);
-    }
-  }
-
   return (
     <div
       className={[
@@ -3884,17 +3791,6 @@ export function FileWorkspace({
       ].filter(Boolean).join(' ')}
       data-testid="file-workspace"
     >
-      {projectShareConfirm ? (
-        <MoveToTeamConfirmDialog
-          action={projectShareConfirm === 'workspace' ? 'to-team' : 'to-personal'}
-          onCancel={() => setProjectShareConfirm(null)}
-          onConfirm={() => {
-            const next = projectShareConfirm;
-            setProjectShareConfirm(null);
-            if (next) void commitProjectWorkspaceShareAccess(next);
-          }}
-        />
-      ) : null}
       <SketchEnginePrewarm />
       <div className="ws-tabs-shell">
         {onFocusModeChange && focusMode ? (
