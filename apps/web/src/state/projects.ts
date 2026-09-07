@@ -30,7 +30,6 @@ import type {
   PluginShareAction,
   ProjectPluginFolderInstallRequest,
   ProjectScenarioTaskProfile,
-  ProjectWorkspaceScopeResponse,
   TerminalSession,
   WorkspaceCollabContext,
   WorkspaceProjectSummary,
@@ -287,105 +286,22 @@ export type ProjectRouteBootstrapResult =
   | {
       kind: 'found';
       project: Project;
-      scope: ProjectWorkspaceScopeResponse['scope'];
       resolvedDir: string | null;
     }
   | { kind: 'not-found' }
   | { kind: 'forbidden' }
   | { kind: 'unavailable' };
 
-/**
- * Bootstrap a fresh project deep link without borrowing the shell's ambient
- * Workspace. A card-opening witness goes straight through the scoped endpoint;
- * a context-free deep link uses its first headerless response only to discover
- * the persisted binding, then re-confirms it with exact Workspace/member
- * headers. The project row is read only after either exact check succeeds.
- */
+/** Bootstrap a fresh local Project deep link from the daemon-owned Project row. */
 export async function bootstrapProjectRoute(
   projectId: string,
-  options: {
-    accountGeneration: number;
-    exactContext?: WorkspaceCollabContext | null;
-  },
 ): Promise<ProjectRouteBootstrapResult> {
-  const suppliedContext = options.exactContext ?? null;
-  const suppliedIdentity = workspaceIdentityCacheKey(suppliedContext);
-  const key = [
-    'project-route-bootstrap',
-    options.accountGeneration,
-    projectId,
-    suppliedIdentity,
-  ].join(':');
+  const key = `project-route-bootstrap:${projectId}`;
   const result = await coalescedGet(key, async (): Promise<ProjectRouteBootstrapResult> => {
     try {
-      const scopeResponse = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/workspace-scope`,
-        {
-          cache: 'no-store',
-          ...(suppliedContext
-            ? { headers: workspaceProjectHeaders(suppliedContext) }
-            : {}),
-        },
-      );
-      if (!scopeResponse.ok) {
-        if (scopeResponse.status === 404) return { kind: 'not-found' };
-        if (scopeResponse.status === 403) return { kind: 'forbidden' };
-        return { kind: 'unavailable' };
-      }
-      let body = (await scopeResponse.json()) as ProjectWorkspaceScopeResponse;
-      if (!body.scope || body.scope.projectId !== projectId) {
-        return { kind: 'unavailable' };
-      }
-      let context = body.scope.context;
-      if (suppliedContext) {
-        if (
-          !context
-          || body.scope.workspaceId !== suppliedContext.workspaceId
-          || workspaceIdentityCacheKey(context) !== suppliedIdentity
-        ) {
-          // A caller-supplied witness is exact authority, never a hint. If the
-          // daemon cannot re-confirm it, do not retry this project headerless or
-          // let it fall through to Personal/local scope.
-          return { kind: 'forbidden' };
-        }
-      } else if (context) {
-        // Headerless scope is discovery only. Once it names the exact persisted
-        // Workspace/member pair, prove that claim through the ordinary
-        // fail-closed authorization lane before trusting it as ProjectView's
-        // seed. This also ensures an already-known Team route never completes
-        // with headerless scope as its last authorization request.
-        const exactScopeResponse = await fetch(
-          `/api/projects/${encodeURIComponent(projectId)}/workspace-scope`,
-          {
-            cache: 'no-store',
-            headers: workspaceProjectHeaders(context),
-          },
-        );
-        if (!exactScopeResponse.ok) {
-          if (exactScopeResponse.status === 404) return { kind: 'not-found' };
-          if (exactScopeResponse.status === 403) return { kind: 'forbidden' };
-          return { kind: 'unavailable' };
-        }
-        const exactBody = (await exactScopeResponse.json()) as ProjectWorkspaceScopeResponse;
-        const exactContext = exactBody.scope?.context;
-        if (
-          !exactBody.scope
-          || exactBody.scope.projectId !== projectId
-          || !exactContext
-          || exactBody.scope.workspaceId !== context.workspaceId
-          || workspaceIdentityCacheKey(exactContext) !== workspaceIdentityCacheKey(context)
-        ) {
-          return { kind: 'forbidden' };
-        }
-        body = exactBody;
-        context = exactContext;
-      }
       const projectResponse = await fetch(
         `/api/projects/${encodeURIComponent(projectId)}`,
-        {
-          cache: 'no-store',
-          ...(context ? { headers: workspaceProjectHeaders(context) } : {}),
-        },
+        { cache: 'no-store' },
       );
       if (!projectResponse.ok) {
         if (projectResponse.status === 404) return { kind: 'not-found' };
@@ -399,21 +315,9 @@ export async function bootstrapProjectRoute(
       if (!projectBody.project || projectBody.project.id !== projectId) {
         return { kind: 'unavailable' };
       }
-      if (
-        context
-        && projectBody.project.workspaceId !== context.workspaceId
-      ) {
-        // The binding changed between the scope witness and the detail read.
-        // Do not mount the row under stale authority.
-        return { kind: 'forbidden' };
-      }
-      if (!context && projectBody.project.workspaceId) {
-        return { kind: 'forbidden' };
-      }
       return {
         kind: 'found',
         project: projectBody.project,
-        scope: body.scope,
         resolvedDir:
           typeof projectBody.resolvedDir === 'string'
             ? projectBody.resolvedDir

@@ -3442,26 +3442,13 @@ function AppInner() {
     const accountChanged = () =>
       currentWorkspaceAccountGeneration() !== accountGeneration;
     void (async () => {
-      const openingWitness = projectOpenWorkspaceWitnessRef.current;
-      const exactOpenContext =
-        openingWitness?.projectId === projectId
-        && openingWitness.accountGeneration === accountGeneration
-          ? openingWitness.context
-          : null;
-      const bootstrap = await bootstrapProjectRoute(projectId, {
-        accountGeneration,
-        exactContext: exactOpenContext,
-      });
-      // This scope came from the project's persisted binding, not the shell's
-      // selection. Ambient null -> B settlement and A -> B navigation cannot
-      // invalidate it; only a real account boundary can.
+      const bootstrap = await bootstrapProjectRoute(projectId);
       if (cancelled || accountChanged()) return;
       if (bootstrap.kind === 'found') {
         routeProjectSnapshotRef.current = {
           project: bootstrap.project,
           accountGeneration,
           capturedAfterListGeneration: latestAppliedProjectListGenerationRef.current,
-          workspaceScope: bootstrap.scope,
           resolvedDir: bootstrap.resolvedDir,
           awaitingFirstMaterialization:
             bootstrap.project.metadata?.sharedProjectPlaceholderAt != null,
