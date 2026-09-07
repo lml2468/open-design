@@ -688,7 +688,6 @@ import { validateArtifactManifestInput } from './artifacts/manifest.js';
 import { ArtifactPublicationBlockedError } from './artifacts/publication-guard.js';
 import {
   appendMessageStatusEvent,
-  confirmPreviewCommentPinSeq,
   deleteConversation,
   deletePreviewComment,
   deleteProject as dbDeleteProject,
@@ -701,7 +700,6 @@ import {
   getMessage,
   getMessageTelemetryFinalizationState,
   getPreviewComment,
-  getProjectCommentAnchorConversationId,
   getProjectPreviewComment,
   getProject,
   countWorkspaceProjectRefs,
@@ -744,7 +742,6 @@ import {
   listTemplates,
   getLatestRoutineRun,
   getRoutine,
-  mergeSyncedPreviewComment,
   normalizeConversationSessionMode,
   deleteRoutine as dbDeleteRoutine,
   openDatabase,
@@ -966,11 +963,6 @@ import {
   type ResourceHubPrincipal,
 } from './collab/resource-principal.js';
 import { createCollabCloudClientFromEnv } from './integrations/collab-cloud.js';
-import { createCollabCloudService } from './collab/collab-cloud-service.js';
-import {
-  commentRelayLocalBindingMatches,
-  createCommentRelayOutboxStore,
-} from './collab/comment-relay-outbox.js';
 import { createWorkspaceInvalidationPoller } from './collab/workspace-invalidation-poller.js';
 import { createWorkspaceExactContextCache } from './collab/workspace-exact-context-cache.js';
 import {
@@ -3914,131 +3906,11 @@ export async function startServer({
     console.warn('[od] design-system workspace-resource backfill failed:', error);
   });
   const collabCloudClient = velaCliCollabClient ?? createCollabCloudClientFromEnv();
-  const resolveBoundProjectWorkspaceContext = async (
-    projectId: string,
-    options: { fresh?: boolean } = {},
-  ): Promise<WorkspaceCollabContext | null> => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    const workspaceId = binding?.workspaceId?.trim();
-    if (!workspaceId) return null;
-    const directory = await (
-      options.fresh
-        // `fresh` is requested only by the durable comment-outbox recovery
-        // service. It must bypass a settled success lease but share the daemon's
-        // account-wide outage circuit with other background recovery work.
-        ? fetchFreshBackgroundWorkspaceDirectory()
-        : fetchWorkspaceDirectory()
-    ).catch(() => ({
-      ok: false as const,
-      items: [],
-    }));
-    if (!directory.ok) return null;
-    const membership = directory.items.find(
-      (item) =>
-        item.workspaceId === workspaceId
-        && item.workspaceType === 'team'
-        && item.memberStatus === 'active'
-        && item.lifecycleState !== 'deleted',
-    );
-    return membership
-      ? workspaceContextFromDirectoryItem(membership, configuredAmrEnv())
-      : null;
-  };
 
-  // Uncached remote catalog authority for both comment relay delivery and the
-  // later project-sharing routes. A missing row is authoritative unshare;
-  // transport failure throws so the durable outbox keeps the delivery pending.
+  // Uncached remote catalog authority for the remaining project-sharing routes.
   const teamProjectsLister = createTeamProjectsLister({
     ...(velaCliTeamProjectCatalog ? { teamProjectCatalog: velaCliTeamProjectCatalog } : {}),
   });
-
-  // Collab cloud (C-lane §D2.5/§D4): cross-daemon comment sync + member
-  // directory. The client is null (all calls degrade to no-op) unless
-  // OD_COLLAB_CLOUD_URL is set. The service ties it to the one workspace context
-  // so a single identity drives member registration, comment push, and the
-  // pull+merge poller. Kept out of collab/runtime.ts to avoid colliding with the
-  // team-project-catalog work also editing that file.
-  const collabCloud = collabCloudClient
-    ? createCollabCloudService({
-        client: collabCloudClient,
-        commentOutbox: createCommentRelayOutboxStore(db),
-        resolveLocalProjectRelayBinding: (projectId) => {
-          const binding = getWorkspaceProjectByProjectId(db, projectId);
-          const workspaceId = binding?.workspaceId?.trim() ?? '';
-          const ownerMemberId = binding?.createdByWorkspaceMemberId?.trim() || null;
-          if (
-            !workspaceId
-            || binding?.visibility !== 'team'
-            || binding?.resourceState === 'deleted'
-          ) return null;
-          return { workspaceId, ownerMemberId };
-        },
-        validateCommentRelayProjectBinding: (record) =>
-          commentRelayLocalBindingMatches(
-            record,
-            getWorkspaceProjectByProjectId(db, record.projectId),
-          ),
-        resolveCommentRelayWorkspaceContext: async (queuedIdentity) => {
-          const context = await resolveAuthoritativeTeamWorkspaceContext(
-            queuedIdentity.workspaceId,
-            { fresh: true, backgroundFresh: true },
-          );
-          const principal = contextToResourceHubPrincipal(context);
-          if (
-            !context
-            || !principal
-            || principal.memberId !== queuedIdentity.workspaceMemberId
-            || principal.teamId !== queuedIdentity.teamId
-          ) return null;
-          return context;
-        },
-        listRemoteProjectRelayBindings: async (context) =>
-          (await teamProjectsLister(context.workspaceId)).map((project) => ({
-            projectId: project.projectId,
-            ownerMemberId: project.ownerMemberId,
-          })),
-        resolveRemoteProjectOwnerMemberId: async (projectId, context) =>
-          (await teamProjectsLister(context.workspaceId))
-            .find((project) => project.projectId === projectId)
-            ?.ownerMemberId ?? null,
-        workspaceContext: collab.workspaceContext,
-        // Only poll comments for projects the UI is actively viewing — those
-        // have a live `/api/projects/:id/events` SSE subscriber, so their id is
-        // a key in activeProjectEventSinks. Polling every local project each 5s
-        // cycle spawned one `vela collab comment pull` subprocess per project
-        // and did not scale: a workspace with many shared projects turned every
-        // tick into a spawn storm that starved the pull the open project was
-        // waiting on. A member picks up a project's comments when they open it
-        // (a fresh sink) and stops polling it once they navigate away.
-        listProjectIds: () => [...activeProjectEventSinks.keys()],
-        resolveProjectWorkspaceContext: resolveBoundProjectWorkspaceContext,
-        resolveLocalConversationId: (projectId) =>
-          getProjectCommentAnchorConversationId(db, projectId),
-        mergeComment: ({ projectId, conversationId, comment }) =>
-          mergeSyncedPreviewComment(db, projectId, conversationId, comment),
-        onError: (error) => console.warn('[od] collab cloud sync error:', error),
-        onCommentPushed: ({ projectId, commentId, seq }) => {
-          confirmPreviewCommentPinSeq(db, projectId, commentId, seq);
-        },
-        // Collab realtime hop-2 (reference path): when the ~5s comment self-poll
-        // merges any teammate change into local storage (a new comment, a
-        // strictly-newer edit/status change, or a delete tombstone all count),
-        // push a thin `comment-changed` onto the project's existing events SSE.
-        // The open project view re-fetches the comment list on receipt, so the
-        // owner sees a member's freshly-synced comment without waiting for the
-        // web poll tick.
-        onMerged: ({ projectId }) =>
-          emitProjectEvent(projectId, {
-            type: 'comment-changed',
-            projectId,
-            at: Date.now(),
-          }),
-      })
-    : null;
-  // The poller registers each open project's exact bound membership before it
-  // pulls. There is deliberately no ambient startup registration: no project
-  // scope exists yet, so active-workspace state is not data-plane authority.
-  collabCloud?.start();
   // Server-authoritative owner lookup for register-on-pull: read the shared
   // project's owner from the team hub (the same list the discovery endpoint
   // serves) rather than trusting a client-supplied id, so a pulled project is
@@ -4749,19 +4621,6 @@ export async function startServer({
           onPullTiming: emitSharedProjectPullTiming,
         }
       : {}),
-    // Resolve the owner's display name + role from the collab-cloud directory so
-    // /collab/status can hand the client a named "shared project" banner.
-    ...(collabCloud
-      ? {
-          resolveOwnerDisplayName: async (
-            memberId: string,
-            context: WorkspaceCollabContext,
-          ) => {
-            const entry = await collabCloud.resolveMember(memberId, context);
-            return entry ? { displayName: entry.displayName, role: entry.role } : null;
-          },
-        }
-      : {}),
   });
   // Stale-while-revalidate the member directory by explicit Workspace scope.
   // The web shell re-reads members on every navigation (and several mounted
@@ -4773,7 +4632,7 @@ export async function startServer({
   // Same two-layer split as the catalog above: the persistent snapshot answers
   // the cold read (digest token unchanged -> serve the roster off disk), the SWR
   // above it answers the burst of consumers one navigation mounts at once.
-  const teamMembersCache = collabCloud
+  const teamMembersCache = collabCloudClient
     ? (() => {
         const snapshots = new Map<
           string,
@@ -4791,10 +4650,10 @@ export async function startServer({
           const key = teamProjectsDisplayScopeKey(scope);
           let snapshot = snapshots.get(key);
           if (!snapshot) {
-            const capturedContext = { ...context };
+            const capturedTeamId = context.teamId?.trim() || context.workspaceId;
             snapshot = createPersistentSyncCache({
               face: 'members',
-              fetch: () => collabCloud.listMembers(capturedContext),
+              fetch: () => collabCloudClient.listMembers(capturedTeamId),
               readDigest: createSyncDigestReader({
                 env: process.env,
                 getWorkspaceId: () => scope.workspaceId,
@@ -5113,7 +4972,6 @@ export async function startServer({
   // polling. Every upstream stream comes from an explicit leased Workspace
   // interest; reconnect/source-gap handlers run one exact-scope poller cycle
   // to close the disconnect gap.
-  const dirtyCommentProjects = new Set<string>();
   // Thin events are invalidation hints, so repeated events for one resource
   // may share refresh work. Authorization revocation and project content stay
   // outside this coordinator: both have immediate, domain-specific handling.
@@ -5166,23 +5024,6 @@ export async function startServer({
       },
       token,
     );
-  };
-  const restoreDirtyCommentProject = (projectId: string) => {
-    dirtyCommentProjects.add(projectId);
-    // The upstream hub event has already proved that this project changed.
-    // If the daemon's eager pull lost a transient race (for example a failed
-    // Vela CLI/TLS attempt), wake the open view once so its exact-scoped list
-    // read can redeem the retained dirty mark immediately. That read awaits
-    // its pull before serializing comments; a failed read deliberately does
-    // not signal again, avoiding a retry storm while the 30s poll remains the
-    // recovery floor.
-    if (activeProjectEventSinks.has(projectId)) {
-      emitProjectEvent(projectId, {
-        type: 'comment-changed',
-        projectId,
-        at: Date.now(),
-      });
-    }
   };
   const emitTeamProjectsChanged = createTeamProjectsChangeEmitter({
     invalidateWorkspace: (workspaceId) => {
@@ -5450,33 +5291,6 @@ export async function startServer({
           );
           break;
         }
-        case 'comment-changed': {
-          const projectId = event.projectId;
-          if (!projectId) break;
-          if (activeProjectEventSinks.has(projectId)) {
-            // Project is open here — pull IT now instead of waiting for the
-            // next poll tick; the merge emits `comment-changed` to the web.
-            // A consumed dirty mark is only redeemed by a pull that actually
-            // ran; on a no-op/failed pull restore it so the next comment read
-            // retries instead of losing the event outright.
-            dirtyCommentProjects.delete(projectId);
-            void resolveBoundProjectWorkspaceContext(projectId)
-              .then((context) =>
-                context?.workspaceId === eventWorkspaceId
-                  ? collabCloud?.pullProject(projectId, context) ?? false
-                  : false,
-              )
-              .then((pulled) => {
-                if (!pulled) restoreDirtyCommentProject(projectId);
-              })
-              .catch(() => restoreDirtyCommentProject(projectId));
-          } else {
-            // Closed project: just mark dirty. The open-project path pulls
-            // immediately, and an unopened project costs zero requests.
-            dirtyCommentProjects.add(projectId);
-          }
-          break;
-        }
         case 'project-content-changed': {
           // Content is fetched only by an explicit client pull. Keep the thin
           // metadata nudge for an open legacy view so it can refresh status.
@@ -5667,7 +5481,6 @@ export async function startServer({
         .catch(() => undefined);
       void reconcileWorkspaceProjectsFromRemote(subscribedWorkspaceId)
         .catch(() => undefined);
-      void collabCloud?.pollOnce().catch(() => undefined);
       workspaceBillingRuntime.reconnect(subscribedWorkspaceId);
       // Same catch-up principle for the design-system/plugin/skill resource
       // reconciler: a missed 'team-resources-changed' push during the
@@ -5699,7 +5512,6 @@ export async function startServer({
       void reconcileWorkspaceProjectsFromRemote(exactWorkspaceId)
         .catch(() => undefined);
       workspaceBillingRuntime.reconnect(exactWorkspaceId);
-      void collabCloud?.pollOnce().catch(() => undefined);
       void reconcileTeamResourcesFromRemote(undefined, exactWorkspaceId, 'catch-up')
         .catch(() => undefined);
     },
@@ -7795,88 +7607,6 @@ export async function startServer({
         }),
       );
     },
-    ...(collabCloud
-      ? {
-          onCommentsRead: async (
-            projectId,
-            leasedContext,
-            resolveFreshWorkspaceContext,
-          ) => {
-            // Consume the hub push channel's dirty mark: first read after
-            // opening a project pulls THAT project's missed comments — a
-            // targeted pull, because the poll loop only covers projects with
-            // a live events subscriber and this read can arrive before (or
-            // without) one.
-            if (dirtyCommentProjects.delete(projectId)) {
-              // The list response may use a short successful authority lease,
-              // but the cloud pull mutates local state and therefore must
-              // independently prove the same exact member and Workspace with
-              // fresh authority. Any denial, outage, identity drift, no-op, or
-              // failure restores the dirty mark for a later authorized read.
-              if (!leasedContext) {
-                dirtyCommentProjects.add(projectId);
-                return;
-              }
-              try {
-                const freshResolution = await resolveFreshWorkspaceContext();
-                if (!freshResolution.ok || !freshResolution.context) {
-                  dirtyCommentProjects.add(projectId);
-                  return;
-                }
-                const freshContext = freshResolution.context;
-                if (
-                  freshContext.workspaceId !== leasedContext.workspaceId
-                  || freshContext.workspaceMemberId
-                    !== leasedContext.workspaceMemberId
-                ) {
-                  dirtyCommentProjects.add(projectId);
-                  return;
-                }
-                if (!await collabCloud.pullProject(projectId, freshContext)) {
-                  dirtyCommentProjects.add(projectId);
-                }
-              } catch {
-                dirtyCommentProjects.add(projectId);
-              }
-            }
-          },
-          // The durable outbox also reconciles pin_seq (recvq5BVsolIxi): a genuinely
-          // new comment on a team-shared project is inserted with a
-          // provisional LOCAL pin_seq (pin_seq_confirmed=0 — see
-          // upsertPreviewComment); once this push resolves with the
-          // collab-cloud's globally-serialized seq, confirmPreviewCommentPinSeq
-          // overwrites it with that authoritative value, which is what keeps
-          // two devices creating a comment in the same ~5s poll window from
-          // ever landing on the same number. The guard inside
-          // confirmPreviewCommentPinSeq is idempotent, so a coalesced edit can
-          // safely supply the first successful relay seq when the create's
-          // original delivery failed.
-          onCommentCreated: (comment, context) => {
-            if (!context) return;
-            const enqueued = collabCloud.enqueueComment(comment, context);
-            if (!enqueued) {
-              console.warn('[od] refused to enqueue comment without exact Team authority');
-            }
-            return enqueued;
-          },
-          onCommentUpdated: (comment, context) => {
-            if (!context) return;
-            const enqueued = collabCloud.enqueueComment(comment, context);
-            if (!enqueued) {
-              console.warn('[od] refused to enqueue comment update without exact Team authority');
-            }
-            return enqueued;
-          },
-          onCommentDeleted: (comment, context) => {
-            if (!context) return;
-            const enqueued = collabCloud.enqueueCommentDeletion(comment, context);
-            if (!enqueued) {
-              console.warn('[od] refused to enqueue comment deletion without exact Team authority');
-            }
-            return enqueued;
-          },
-        }
-      : {}),
   });
   registerTerminalRoutes(app, {
     db,
@@ -15825,7 +15555,6 @@ export async function startServer({
       hubEventRefreshes.dispose();
       workspaceDirectoryRefreshes.dispose();
       workspaceBillingRuntime.dispose();
-      collabCloud?.dispose();
     };
     const shutdownDaemonRuns = async () => {
       if (daemonShutdownStarted) return;
