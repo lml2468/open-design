@@ -35,7 +35,6 @@ import { isVisibleLocalCliAgent } from '../utils/visibleAgents';
 import { AgentIcon } from './AgentIcon';
 import { Icon } from './Icon';
 import { modelProviderIconSrc } from './modelProviderIcon';
-import { orderAgentsWithOpenDesignFirst } from './agentOrdering';
 import {
   agentModelIsSelectable,
   defaultAgentModelId,
@@ -260,13 +259,11 @@ export function InlineModelSwitcher({
 
   const installedAgents = useMemo(
     () =>
-      orderAgentsWithOpenDesignFirst(
-        agents.filter(
-          (agent) =>
-            agent.id !== 'amr' &&
-            agent.available &&
-            isVisibleLocalCliAgent(agent),
-        ),
+      agents.filter(
+        (agent) =>
+          agent.id !== 'amr' &&
+          agent.available &&
+          isVisibleLocalCliAgent(agent),
       ),
     [agents],
   );

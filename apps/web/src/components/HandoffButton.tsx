@@ -57,7 +57,6 @@ interface CliTarget {
 }
 
 const CLI_ORDER = [
-  'amr',
   'claude',
   'codex',
   'opencode',
@@ -82,7 +81,6 @@ const CLI_ORDER = [
 ];
 
 const FALLBACK_CLI_TARGETS: CliTarget[] = [
-  { id: 'amr', name: 'OpenDesign', bin: 'vela', available: false },
   { id: 'claude', name: 'Claude Code', bin: 'claude', available: false },
   { id: 'codex', name: 'Codex CLI', bin: 'codex', available: false },
   { id: 'opencode', name: 'OpenCode', bin: 'opencode-cli', available: false },
@@ -165,7 +163,7 @@ function writePreferredFramework(id: string): void {
 }
 
 function cliDisplayName(agent: Pick<CliTarget, 'id' | 'name'>): string {
-  return agent.id === 'amr' ? 'OpenDesign' : agent.name;
+  return agent.name;
 }
 
 function mergeCliTargets(agents: AgentInfo[] | undefined): CliTarget[] {
@@ -174,6 +172,9 @@ function mergeCliTargets(agents: AgentInfo[] | undefined): CliTarget[] {
     byId.set(target.id, target);
   }
   for (const agent of agents ?? []) {
+    // Old daemons can still report the retired hosted runtime while the
+    // backend removal rolls out. Never expose it as a handoff target.
+    if (agent.id === 'amr') continue;
     byId.set(agent.id, {
       id: agent.id,
       name: cliDisplayName(agent),

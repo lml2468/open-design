@@ -72,19 +72,6 @@ describe('AgentIcon', () => {
     expect(markup).not.toContain('agent-icon-mono');
   });
 
-  it('renders AMR as the bundled color SVG instead of the fallback initial', () => {
-    const amrSvg = readFileSync(
-      new URL('../../public/agent-icons/amr.svg', import.meta.url),
-      'utf8',
-    );
-    const markup = renderToStaticMarkup(<AgentIcon id="amr" size={24} />);
-
-    expect(amrSvg).toMatch(/^<svg\b/);
-    expect(amrSvg).toContain('fill="#202020"');
-    expect(markup).toContain('src="/agent-icons/amr.svg"');
-    expect(markup).not.toContain('agent-icon-fallback');
-  });
-
   it('reuses the DeepSeek brand asset for the DeepSeek Harness runtime', () => {
     const markup = renderToStaticMarkup(<AgentIcon id="deepseek-harness" size={24} />);
 

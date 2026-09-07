@@ -34,7 +34,6 @@ import type { Dict } from '../i18n/types';
 import { AgentIcon } from './AgentIcon';
 import { AgentDiagnosticRow } from './AgentDiagnosticRow';
 import { DeepSeekHarnessSetupDialog } from './DeepSeekHarnessSetupDialog';
-import { orderAgentsWithOpenDesignFirst } from './agentOrdering';
 import { installDeepSeekHarnessCompanion } from '../providers/agent-companion';
 import { deepSeekHarnessNeedsSetup, isVisibleLocalCliAgent } from '../utils/visibleAgents';
 import { ExportDiagnosticsRow } from './ExportDiagnosticsButton';
@@ -3493,8 +3492,8 @@ export function SettingsDialog({
   };
   const activeHeader = sectionHeader[activeSection];
   const visibleAgents = agents.filter(isVisibleSettingsAgent);
-  const installedAgents = orderAgentsWithOpenDesignFirst(
-    visibleAgents.filter((agent) => agent.available || deepSeekHarnessNeedsSetup(agent)),
+  const installedAgents = visibleAgents.filter(
+    (agent) => agent.available || deepSeekHarnessNeedsSetup(agent),
   );
   const unavailableAgents = visibleAgents.filter(
     (agent) => !agent.available && !deepSeekHarnessNeedsSetup(agent),
