@@ -78,10 +78,6 @@ interface Props {
   // Forwarded to EntryShell so local-agent setup can reflect the cold-start
   // detection stream until it reaches its terminal `done` event.
   agentsLoading?: boolean;
-  amrLoggedIn?: boolean | null;
-  amrSessionState?: import('@open-design/contracts').AmrSessionState;
-  /** Forwarded to EntryShell for personal free campaign audience resolution. */
-  amrAccountPlan?: string | null;
   // Execution / model-switching context forwarded to the EntryShell so the
   // sticky top-bar can expose the active CLI/BYOK + model and persist
   // changes through the same channels as the project view.
@@ -256,9 +252,6 @@ export function EntryView({
   defaultDesignSystemId,
   agents,
   agentsLoading,
-  amrLoggedIn,
-  amrSessionState,
-  amrAccountPlan,
   config,
   providerModelsCache,
   onProviderModelsCacheChange,
@@ -388,9 +381,6 @@ export function EntryView({
       onProviderModelsCacheChange={onProviderModelsCacheChange}
       agents={agents}
       {...(agentsLoading !== undefined ? { agentsLoading } : {})}
-      {...(amrLoggedIn !== undefined ? { amrLoggedIn } : {})}
-      {...(amrSessionState !== undefined ? { amrSessionState } : {})}
-      {...(amrAccountPlan !== undefined ? { amrAccountPlan } : {})}
       daemonLive={daemonLive}
       onModeChange={onModeChange}
       onAgentChange={onAgentChange}

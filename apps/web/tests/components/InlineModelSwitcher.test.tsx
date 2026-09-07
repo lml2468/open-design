@@ -26,7 +26,6 @@ vi.mock('../../src/analytics/provider', async (importOriginal) => {
       setConsent: vi.fn(),
       setIdentity: vi.fn(),
       setConfigureGlobals: vi.fn(),
-      setUserId: vi.fn(),
       anonymousId: 'test-anonymous-id',
       sessionId: 'test-session-id',
       newRequestId: () => 'test-request-id',

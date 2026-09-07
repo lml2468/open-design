@@ -557,13 +557,6 @@ describe('App project list across a workspace switch', () => {
               ])
             : pathname.endsWith('/workspace/context')
               ? workspaceContextPayload(activeWorkspaceId)
-              : pathname.endsWith('/integrations/vela/status')
-                ? {
-                    loggedIn: true,
-                    profile: 'default',
-                    user: { id: 'user-1', email: 'owner@example.com' },
-                    configPath: '/test/config.json',
-                  }
               : {},
         ), {
           status: 200,
@@ -846,13 +839,6 @@ describe('App project list across a workspace switch', () => {
               ])
             : pathname.endsWith('/workspace/context')
               ? workspaceContextPayload('ws-a')
-              : pathname.endsWith('/integrations/vela/status')
-                ? {
-                    loggedIn: true,
-                    profile: 'default',
-                    user: { id: 'user-1', email: 'owner@example.com' },
-                    configPath: '/test/config.json',
-                  }
               : {},
         ), {
           status: 200,

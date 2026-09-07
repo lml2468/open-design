@@ -40,7 +40,6 @@ vi.mock('../../src/analytics/provider', async () => {
       setConsent: () => undefined,
       setIdentity: () => undefined,
       setConfigureGlobals: () => undefined,
-      setUserId: () => undefined,
       anonymousId: 'test-anon',
       sessionId: 'test-session',
       newRequestId: () => 'test-request',

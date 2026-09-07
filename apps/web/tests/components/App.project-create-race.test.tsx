@@ -59,7 +59,6 @@ import {
   resetProjectDisplaySnapshots,
   writeProjectDisplaySnapshot,
 } from '../../src/state/project-display-cache';
-import type { VelaLoginStatus } from '../../src/providers/daemon';
 import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 
 const workspaceInvalidationHarness = vi.hoisted(() => ({
@@ -115,7 +114,6 @@ vi.mock('../../src/components/EntryView', () => ({
     onOpenSettings,
     onRefreshAgents,
     agents,
-    amrLoggedIn,
     projects,
     projectsLoading,
   }: {
@@ -145,13 +143,11 @@ vi.mock('../../src/components/EntryView', () => ({
     onOpenSettings: () => void;
     onRefreshAgents: () => void | Promise<void>;
     agents: AgentInfo[];
-    amrLoggedIn?: boolean | null;
     projects: Project[];
     projectsLoading?: boolean;
   }) => (
     <main>
       <div data-testid="entry-home-surface" />
-      <div data-testid="amr-login-status">{String(amrLoggedIn)}</div>
       <div data-testid="entry-projects-loading">{String(Boolean(projectsLoading))}</div>
       <button
         type="button"
@@ -1282,9 +1278,9 @@ describe('App project creation routing', () => {
 
   it.each([
     ['Local CLI', { ...baseConfig, mode: 'daemon' as const, agentId: 'codex' }],
-    ['BYOK', { ...baseConfig, mode: 'api' as const, agentId: 'amr' }],
+    ['BYOK', { ...baseConfig, mode: 'api' as const, agentId: null }],
   ])(
-    'lets %s create an unscoped project without waiting for AMR identity discovery',
+    'lets %s create an unscoped project without waiting for Workspace discovery',
     async (_label, executionConfig) => {
       mockedLoadConfig.mockReturnValue(executionConfig);
       mockedListProjects.mockResolvedValue([]);
@@ -1292,9 +1288,6 @@ describe('App project creation routing', () => {
         'fetch',
         vi.fn(async (input: RequestInfo | URL) => {
           const pathname = new URL(String(input), 'http://d.local').pathname;
-          if (pathname.endsWith('/integrations/vela/status')) {
-            return new Promise<Response>(() => {});
-          }
           if (pathname.endsWith('/workspace/directory')) {
             return new Promise<Response>(() => {});
           }
@@ -1306,7 +1299,6 @@ describe('App project creation routing', () => {
       );
 
       render(<App />);
-      await screen.findByText('null', { selector: '[data-testid="amr-login-status"]' });
       fireEvent.click(await screen.findByRole('button', { name: 'Create project' }));
 
       await waitFor(() => {
@@ -1324,24 +1316,13 @@ describe('App project creation routing', () => {
     mockedLoadConfig.mockReturnValue({
       ...baseConfig,
       mode: 'daemon',
-      agentId: 'amr',
+      agentId: 'codex',
     });
     mockedListProjects.mockResolvedValue([]);
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const pathname = new URL(String(input), 'http://d.local').pathname;
-        if (pathname.endsWith('/integrations/vela/status')) {
-          return new Response(JSON.stringify({
-            loggedIn: true,
-            profile: 'default',
-            user: { id: 'account-team-member' },
-            configPath: '/test/vela.json',
-          }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          });
-        }
         if (pathname.endsWith('/workspace/directory')) {
           return new Response(
             JSON.stringify(workspaceDirectoryFixture([context])),
@@ -1357,7 +1338,6 @@ describe('App project creation routing', () => {
     );
 
     render(<App />);
-    await screen.findByText('true', { selector: '[data-testid="amr-login-status"]' });
     fireEvent.click(await screen.findByRole('button', { name: 'Create project' }));
 
     await waitFor(() => {
@@ -1371,9 +1351,9 @@ describe('App project creation routing', () => {
 
   it.each([
     ['Local CLI', 'loading', { ...baseConfig, mode: 'daemon' as const, agentId: 'codex' }],
-    ['BYOK', 'unavailable', { ...baseConfig, mode: 'api' as const, agentId: 'amr' }],
+    ['BYOK', 'unavailable', { ...baseConfig, mode: 'api' as const, agentId: null }],
   ])(
-    'lets %s create locally for a signed-in account while Team workspace discovery is %s',
+    'lets %s create locally while Workspace discovery is %s',
     async (_label, discoveryState, executionConfig) => {
       mockedLoadConfig.mockReturnValue(executionConfig);
       mockedListProjects.mockResolvedValue([]);
@@ -1381,17 +1361,6 @@ describe('App project creation routing', () => {
         'fetch',
         vi.fn(async (input: RequestInfo | URL) => {
           const pathname = new URL(String(input), 'http://d.local').pathname;
-          if (pathname.endsWith('/integrations/vela/status')) {
-            return new Response(JSON.stringify({
-              loggedIn: true,
-              profile: 'default',
-              user: { id: 'account-team-member' },
-              configPath: '/test/vela.json',
-            }), {
-              status: 200,
-              headers: { 'content-type': 'application/json' },
-            });
-          }
           if (pathname.endsWith('/workspace/directory')) {
             if (discoveryState === 'loading') return new Promise<Response>(() => {});
             return new Response('{}', { status: 503 });
@@ -1404,7 +1373,6 @@ describe('App project creation routing', () => {
       );
 
       render(<App />);
-      await screen.findByText('true', { selector: '[data-testid="amr-login-status"]' });
       fireEvent.click(await screen.findByRole('button', { name: 'Create project' }));
 
       await waitFor(() => {
@@ -1415,49 +1383,6 @@ describe('App project creation routing', () => {
       expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
     },
   );
-
-  it('allows an unbound local AMR project while workspace discovery is loading', async () => {
-    mockedLoadConfig.mockReturnValue({
-      ...baseConfig,
-      mode: 'daemon',
-      agentId: 'amr',
-    });
-    mockedListProjects.mockResolvedValue([]);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const pathname = new URL(String(input), 'http://d.local').pathname;
-        if (pathname.endsWith('/integrations/vela/status')) {
-          return new Response(JSON.stringify({
-            loggedIn: false,
-            profile: 'default',
-            user: null,
-            configPath: '/test/vela.json',
-          }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          });
-        }
-        if (pathname.endsWith('/workspace/directory')) {
-          return new Promise<Response>(() => {});
-        }
-        return new Response('{}', {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }),
-    );
-
-    render(<App />);
-    await screen.findByText('false', { selector: '[data-testid="amr-login-status"]' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Create project' }));
-
-    await waitFor(() => {
-      expect(mockedCreateProject).toHaveBeenCalledWith(
-        expect.objectContaining({ workspaceContext: null }),
-      );
-    });
-  });
 
   it('routes "create with this design system" through the default design router, not a prototype', async () => {
     mockedListProjects.mockResolvedValue([existingProject]);
@@ -3440,12 +3365,6 @@ describe('App project creation routing', () => {
       ...existingProject,
       workspaceId: 'ws-1',
     }]);
-    const loginStatus: VelaLoginStatus = {
-      loggedIn: true,
-      profile: 'test',
-      user: { id: 'account-a', email: 'account-a@example.com', plan: 'free' },
-      configPath: '',
-    };
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -3460,9 +3379,7 @@ describe('App project creation routing', () => {
                 ])
               : pathname.endsWith('/workspace/context')
                 ? workspaceContextPayload('ws-1', 'wm-1')
-                : pathname.endsWith('/integrations/vela/status')
-                  ? loginStatus
-                  : {},
+              : {},
         } as Response;
       }),
     );

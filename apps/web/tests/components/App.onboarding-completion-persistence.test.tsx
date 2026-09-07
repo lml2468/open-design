@@ -17,7 +17,7 @@
 import { cleanup, act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { App, resetExecutionConfigAfterSignOut } from '../../src/App';
+import { App } from '../../src/App';
 import type { AppConfig } from '../../src/types';
 import { loadConfig, fetchDaemonConfig, syncConfigToDaemon } from '../../src/state/config';
 import {
@@ -28,7 +28,6 @@ import {
   fetchPromptTemplates,
   fetchSkills,
 } from '../../src/providers/registry';
-import { fetchAmrModels } from '../../src/providers/daemon';
 import { listProjects, listTemplates } from '../../src/state/projects';
 
 type TestRoute = Record<string, unknown>;
@@ -147,16 +146,6 @@ vi.mock('../../src/providers/registry', async () => {
   };
 });
 
-vi.mock('../../src/providers/daemon', async () => {
-  const actual = await vi.importActual<typeof import('../../src/providers/daemon')>(
-    '../../src/providers/daemon',
-  );
-  return {
-    ...actual,
-    fetchAmrModels: vi.fn(),
-  };
-});
-
 vi.mock('../../src/state/projects', async () => {
   const actual = await vi.importActual<typeof import('../../src/state/projects')>(
     '../../src/state/projects',
@@ -195,7 +184,6 @@ const mockedFetchAppVersionInfo = vi.mocked(fetchAppVersionInfo);
 const mockedFetchDesignSystems = vi.mocked(fetchDesignSystems);
 const mockedFetchPromptTemplates = vi.mocked(fetchPromptTemplates);
 const mockedFetchSkills = vi.mocked(fetchSkills);
-const mockedFetchAmrModels = vi.mocked(fetchAmrModels);
 const mockedListProjects = vi.mocked(listProjects);
 const mockedListTemplates = vi.mocked(listTemplates);
 const mockedLoadConfig = vi.mocked(loadConfig);
@@ -212,7 +200,7 @@ function returningUserConfig(): AppConfig {
     model: 'claude-sonnet-4-5',
     apiProviderBaseUrl: 'https://api.anthropic.com',
     apiProtocolConfigs: {},
-    agentId: 'amr',
+    agentId: 'claude',
     skillId: null,
     designSystemId: null,
     // The user already finished the first-run flow on this install.
@@ -265,11 +253,6 @@ describe('App onboarding completion persistence', () => {
     mockedFetchAppVersionInfo.mockResolvedValue(null);
     mockedListProjects.mockResolvedValue([]);
     mockedListTemplates.mockResolvedValue([]);
-    mockedFetchAmrModels.mockResolvedValue({
-      source: 'preset',
-      refreshing: false,
-      models: [],
-    });
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
@@ -280,88 +263,6 @@ describe('App onboarding completion persistence', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
-  });
-
-  it('preserves local BYOK configuration across an active Cloud sign-out', () => {
-    const current = {
-      ...returningUserConfig(),
-      mode: 'api',
-      apiKey: 'secret',
-      apiProtocol: 'openai',
-      apiVersion: '2026-01-01',
-      baseUrl: 'https://example.com/v1',
-      model: 'private-model',
-      apiProviderBaseUrl: 'https://example.com/v1',
-      apiProtocolConfigs: {
-        openai: {
-          apiKey: 'secret',
-          baseUrl: 'https://example.com/v1',
-          model: 'private-model',
-        },
-      },
-      byokImageModel: 'private-image-model',
-      byokVideoModel: 'private-video-model',
-      byokSpeechModel: 'private-speech-model',
-      byokSpeechVoice: 'private-voice',
-      byokProviderConfigDrafts: {
-        'openai:https://example.com/v1': {
-          apiConfig: {
-            apiKey: 'draft-secret',
-            baseUrl: 'https://example.com/v1',
-            model: 'draft-model',
-          },
-          maxTokens: 8192,
-        },
-      },
-      byokPendingProviderKey: 'openai:https://example.com/v1',
-      maxTokens: 12345,
-      agentId: 'claude-code',
-      agentModels: { 'claude-code': { model: 'sonnet' } },
-      agentCliEnv: { 'claude-code': { TOKEN: 'secret' } },
-      agentCliEnvIntent: { 'claude-code': { TOKEN: 'set' } },
-      designSystemId: 'keep-design-system',
-      telemetry: { metrics: false, content: false },
-    } as AppConfig;
-
-    expect(resetExecutionConfigAfterSignOut(current)).toMatchObject({
-      onboardingCompleted: false,
-      mode: 'daemon',
-      agentId: null,
-      agentModels: {},
-      agentCliEnv: {},
-      agentCliEnvIntent: {},
-      apiKey: 'secret',
-      apiProtocol: 'openai',
-      apiVersion: '2026-01-01',
-      baseUrl: 'https://example.com/v1',
-      model: 'private-model',
-      apiProviderBaseUrl: 'https://example.com/v1',
-      apiProtocolConfigs: {
-        openai: {
-          apiKey: 'secret',
-          baseUrl: 'https://example.com/v1',
-          model: 'private-model',
-        },
-      },
-      byokImageModel: 'private-image-model',
-      byokVideoModel: 'private-video-model',
-      byokSpeechModel: 'private-speech-model',
-      byokSpeechVoice: 'private-voice',
-      byokProviderConfigDrafts: {
-        'openai:https://example.com/v1': {
-          apiConfig: {
-            apiKey: 'draft-secret',
-            baseUrl: 'https://example.com/v1',
-            model: 'draft-model',
-          },
-          maxTokens: 8192,
-        },
-      },
-      byokPendingProviderKey: 'openai:https://example.com/v1',
-      maxTokens: 12345,
-      designSystemId: 'keep-design-system',
-      telemetry: { metrics: false, content: false },
-    });
   });
 
   it('keeps a completed user out of onboarding when the daemon copy still says false', async () => {

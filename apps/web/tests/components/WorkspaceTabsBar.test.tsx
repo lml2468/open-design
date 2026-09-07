@@ -1588,15 +1588,11 @@ describe('WorkspaceTabsBar identity-scope tab reset', () => {
   });
 
   // Regression for the "team member's deep-linked/refreshed project bounces
-  // to Home" bug: amrLoginStatus and workspaceContext resolve on independent
-  // timers on every fresh boot, and a logged-in account's workspaceContext
-  // routinely lands after amrLoginStatus does. `deriveTabIdentityScope`'s
-  // `workspaceContextLoading` gate (see tab-scope.test.ts) keeps App.tsx from
-  // ever handing this component an intermediate "workspace: none" scopeKey
-  // while workspaceContext is still loading — so from THIS component's point
-  // of view, a fresh boot for an already-team-scoped member must go straight
-  // from unresolved (no identityScopeKey prop) to the real team scope key in
-  // one hop, never passing through a fabricated no-workspace key in between.
+  // to Home" bug. `deriveTabIdentityScope`'s `workspaceContextLoading` gate
+  // keeps App.tsx from handing this component an intermediate
+  // "workspace: none" scope while the Workspace authority is still loading.
+  // A fresh boot for an already-team-scoped member must therefore go straight
+  // from unresolved to the real team scope in one hop.
   // This test locks in that the component does not treat that direct hop as
   // a reset, closing the loop on the upstream fix.
   it('adopts a team scope key silently when it resolves directly, with no intermediate no-workspace tick', async () => {

@@ -31,7 +31,6 @@ import {
   fetchPromptTemplates,
   fetchSkills,
 } from '../../src/providers/registry';
-import { fetchAmrModels, fetchVelaLoginStatus } from '../../src/providers/daemon';
 import { listProjects, listTemplates } from '../../src/state/projects';
 import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
@@ -82,17 +81,6 @@ vi.mock('../../src/providers/registry', async () => {
     fetchDesignSystems: vi.fn(),
     fetchPromptTemplates: vi.fn(),
     fetchSkills: vi.fn(),
-  };
-});
-
-vi.mock('../../src/providers/daemon', async () => {
-  const actual = await vi.importActual<typeof import('../../src/providers/daemon')>(
-    '../../src/providers/daemon',
-  );
-  return {
-    ...actual,
-    fetchAmrModels: vi.fn(),
-    fetchVelaLoginStatus: vi.fn(),
   };
 });
 
@@ -195,18 +183,6 @@ describe('design-system create page — Back destination', () => {
     vi.mocked(loadConfig).mockReturnValue({ ...baseConfig });
     vi.mocked(mergeDaemonConfig).mockImplementation((local) => local);
     vi.mocked(fetchDaemonConfig).mockResolvedValue({});
-    vi.mocked(fetchAmrModels).mockResolvedValue({
-      source: 'preset',
-      refreshing: false,
-      models: [],
-    });
-    vi.mocked(fetchVelaLoginStatus).mockResolvedValue({
-      loggedIn: false,
-      loginInFlight: false,
-      profile: 'prod',
-      user: null,
-      configPath: '/tmp/amr-config.json',
-    });
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
