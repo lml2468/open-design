@@ -1185,7 +1185,6 @@ export interface Dict extends CollaborationSettingsDict {
   'entry.accountGithubHelp': string;
   'entry.accountFeatureRequest': string;
   'entry.accountAddAccount': string;
-  'entry.accountSignOut': string;
   // Sign-out confirmation dialog (recvqgMWpJZqhL) — shared by every logout
   // entry point (nav-rail account menu + AMR account pill) so a stray click
   // can never sign the user out without an explicit confirm.

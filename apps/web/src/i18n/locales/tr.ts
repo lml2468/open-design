@@ -787,7 +787,6 @@ export const tr: Dict = {
   "entry.accountGithubHelp": "Get help on GitHub",
   "entry.accountFeatureRequest": "Submit feature request",
   "entry.accountAddAccount": "Add account",
-  "entry.accountSignOut": "Sign out",
   "signOut.confirmTitle": "Çıkış yap",
   "signOut.confirmMessage": "Çıkış yapmak istediğinizden emin misiniz?",
   "signOut.confirmAction": "Çıkış yap",

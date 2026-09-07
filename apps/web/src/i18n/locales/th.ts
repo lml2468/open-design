@@ -787,7 +787,6 @@ export const th: Dict = {
   "entry.accountGithubHelp": "Get help on GitHub",
   "entry.accountFeatureRequest": "Submit feature request",
   "entry.accountAddAccount": "Add account",
-  "entry.accountSignOut": "Sign out",
   "signOut.confirmTitle": "ออกจากระบบ",
   "signOut.confirmMessage": "คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ?",
   "signOut.confirmAction": "ออกจากระบบ",

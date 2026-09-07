@@ -787,7 +787,6 @@ export const fa: Dict = {
   "entry.accountGithubHelp": "Get help on GitHub",
   "entry.accountFeatureRequest": "Submit feature request",
   "entry.accountAddAccount": "Add account",
-  "entry.accountSignOut": "Sign out",
   "signOut.confirmTitle": "خروج از حساب",
   "signOut.confirmMessage": "آیا مطمئن هستید که می‌خواهید از حساب خارج شوید؟",
   "signOut.confirmAction": "خروج",

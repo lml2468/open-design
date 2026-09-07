@@ -787,7 +787,6 @@ export const it: Dict = {
   "entry.accountGithubHelp": "Get help on GitHub",
   "entry.accountFeatureRequest": "Submit feature request",
   "entry.accountAddAccount": "Add account",
-  "entry.accountSignOut": "Sign out",
   "signOut.confirmTitle": "Esci",
   "signOut.confirmMessage": "Vuoi davvero uscire?",
   "signOut.confirmAction": "Esci",

@@ -877,7 +877,6 @@ export const zhCN: Dict = {
   "entry.accountGithubHelp": "在 GitHub 上获取帮助",
   "entry.accountFeatureRequest": "提交功能建议",
   "entry.accountAddAccount": "添加账号",
-  "entry.accountSignOut": "退出登录",
   "signOut.confirmTitle": "退出登录",
   "signOut.confirmMessage": "确定要退出登录吗？",
   "signOut.confirmAction": "退出登录",

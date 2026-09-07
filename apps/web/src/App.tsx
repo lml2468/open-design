@@ -5321,7 +5321,6 @@ function AppInner() {
         onPersistComposioKey={handleConfigPersistComposioKey}
         onOpenSettings={openSettings}
         onCompleteOnboarding={handleCompleteOnboarding}
-        onSignedOut={handleActiveCloudSignOut}
         onAmrLoginStatusChange={handleAmrLoginStatusChange}
       />
     );
@@ -5360,7 +5359,6 @@ function AppInner() {
         {route.kind === 'project' ? (
           <WorkspaceTopRightAccountCluster
             onOpenSettings={openSettings}
-            onSignedOut={handleActiveCloudSignOut}
             updaterSlot={
               <UpdaterPopup
                 allowSilentUpdates={config.allowSilentUpdates}

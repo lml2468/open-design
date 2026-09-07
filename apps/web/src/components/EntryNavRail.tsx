@@ -48,10 +48,7 @@ import {
 import {
   fetchVelaLoginStatus,
   formatVelaBalanceUsd,
-  velaLogout,
 } from '../providers/daemon';
-import { SignOutConfirmDialog } from './SignOutConfirmDialog';
-import { notifyAmrLoginStatusChanged } from './amrLoginPolling';
 import { Icon } from './Icon';
 import { GITHUB_STARS_FALLBACK_LABEL, formatStars, useGithubStars } from './useGithubStars';
 import { PlanWordmark, planBadgeTierForWorkspace } from './PlanWordmark';
@@ -225,8 +222,6 @@ interface Props {
   onOpenSettings?: (section?: EntrySettingsSection) => void;
   /** Open the members / invite slot (B's InviteDialog). */
   onInvite?: () => void;
-  /** Clear app-owned model-source state after the daemon confirms sign-out. */
-  onSignedOut?: () => void | Promise<void>;
   /**
    * The update-ready host (`UpdaterPopup`), which renders nothing until the
    * updater reports a downloaded, unopened installer.
@@ -747,7 +742,6 @@ interface EntryTopRightClusterProps {
   /** Update-ready host; rides the account row right after the avatar chip. */
   updaterSlot?: ReactNode;
   onOpenSettings?: (section?: EntrySettingsSection) => void;
-  onSignedOut?: () => void | Promise<void>;
 }
 
 /**
@@ -771,7 +765,6 @@ export function EntryTopRightCluster({
   leadingSlot,
   updaterSlot,
   onOpenSettings,
-  onSignedOut,
 }: EntryTopRightClusterProps) {
   const { t } = useI18n();
   const analytics = useAnalytics();
@@ -870,9 +863,6 @@ export function EntryTopRightCluster({
     });
   }, [accountOpen, analytics.track, page, workspaceDimensions.workspace_key]);
   const accountTriggerRef = useRef<HTMLButtonElement | null>(null);
-  // Sign-out confirm gate (recvqgMWpJZqhL): the menu item only ARMS the
-  // confirmation dialog; the real logout chain runs on explicit confirm.
-  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const githubStars = useGithubStars();
   // Signed-in account email for the menu head (#5517 shows it under the
   // display name). The workspace context carries no email, so lazily read the
@@ -1186,43 +1176,8 @@ export function EntryTopRightCluster({
                         It now lives in the nav rail's footer — see
                         `RailSocialRow` — so the account menu stays a pure list
                         of account actions. */}
-                    <div className="entry-nav-rail__menu-divider" />
-                    <button
-                      type="button"
-                      className="entry-nav-rail__menu-item"
-                      role="menuitem"
-                      onClick={() => {
-                        trackAccountAction('logout');
-                        closeAccountMenu();
-                        // recvqgMWpJZqhL: never sign out on this click alone —
-                        // arm the confirmation dialog and let it run the logout.
-                        setConfirmSignOut(true);
-                      }}
-                    >
-                      <Icon name="log-out" size={15} /> {t('entry.accountSignOut')}
-                    </button>
                   </div>
                 </>
-              ) : null}
-              {confirmSignOut ? (
-                <SignOutConfirmDialog
-                  onCancel={() => setConfirmSignOut(false)}
-                  onConfirm={() => {
-                    setConfirmSignOut(false);
-                    // Real sign-out: clear the vela profile auth on the
-                    // daemon, then nudge every workspace surface to re-read
-                    // (the context read now resolves to null → the shell
-                    // falls back to the signed-out local form).
-                    void velaLogout().then(async (result) => {
-                      if (!result.ok) return;
-                      await onSignedOut?.();
-                      notifyAmrLoginStatusChanged();
-                      notifyWorkspaceContextRefresh();
-                      notifyWorkspaceBillingRefresh();
-                      notifyTeamProjectsChanged();
-                    });
-                  }}
-                />
               ) : null}
               </div>
               </div>
@@ -1252,13 +1207,11 @@ export function EntryTopRightCluster({
  * the shell's ambient account context. */
 export function WorkspaceTopRightAccountCluster({
   onOpenSettings,
-  onSignedOut,
   updaterSlot,
   workspaceContextOverride,
   workspaceContextLoading,
 }: {
   onOpenSettings?: (section?: EntrySettingsSection) => void;
-  onSignedOut?: () => void | Promise<void>;
   /** Keep the project-detail account cluster on the same updater surface as Home. */
   updaterSlot?: ReactNode;
   workspaceContextOverride?: WorkspaceCollabContext | null;
@@ -1289,7 +1242,6 @@ export function WorkspaceTopRightAccountCluster({
       balanceUsd={balanceUsd}
       updaterSlot={updaterSlot}
       onOpenSettings={onOpenSettings}
-      onSignedOut={onSignedOut}
     />
   );
 }
@@ -1386,7 +1338,6 @@ export function EntryNavRail({
   billing,
   balanceUsd,
   onOpenSettings,
-  onSignedOut,
   updaterSlot,
   footerNotice,
   recentProjects,
@@ -2036,7 +1987,6 @@ export function EntryNavRail({
         leadingSlot={topRightSlot}
         updaterSlot={updaterSlot}
         onOpenSettings={onOpenSettings}
-        onSignedOut={onSignedOut}
       />
     </nav>
   );

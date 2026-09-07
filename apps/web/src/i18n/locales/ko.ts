@@ -787,7 +787,6 @@ export const ko: Dict = {
   "entry.accountGithubHelp": "Get help on GitHub",
   "entry.accountFeatureRequest": "Submit feature request",
   "entry.accountAddAccount": "Add account",
-  "entry.accountSignOut": "Sign out",
   "signOut.confirmTitle": "로그아웃",
   "signOut.confirmMessage": "정말 로그아웃하시겠어요?",
   "signOut.confirmAction": "로그아웃",

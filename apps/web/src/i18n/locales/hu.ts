@@ -787,7 +787,6 @@ export const hu: Dict = {
   "entry.accountGithubHelp": "Get help on GitHub",
   "entry.accountFeatureRequest": "Submit feature request",
   "entry.accountAddAccount": "Add account",
-  "entry.accountSignOut": "Sign out",
   "signOut.confirmTitle": "Kijelentkezés",
   "signOut.confirmMessage": "Biztosan ki szeretne jelentkezni?",
   "signOut.confirmAction": "Kijelentkezés",

@@ -794,7 +794,6 @@ export const zhTW: Dict = {
   "entry.accountGithubHelp": "Get help on GitHub",
   "entry.accountFeatureRequest": "Submit feature request",
   "entry.accountAddAccount": "Add account",
-  "entry.accountSignOut": "Sign out",
   "signOut.confirmTitle": "登出",
   "signOut.confirmMessage": "確定要登出嗎？",
   "signOut.confirmAction": "登出",

@@ -787,7 +787,6 @@ export const ptBR: Dict = {
   "entry.accountGithubHelp": "Get help on GitHub",
   "entry.accountFeatureRequest": "Submit feature request",
   "entry.accountAddAccount": "Add account",
-  "entry.accountSignOut": "Sign out",
   "signOut.confirmTitle": "Sair",
   "signOut.confirmMessage": "Tem certeza de que deseja sair?",
   "signOut.confirmAction": "Sair",
