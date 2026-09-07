@@ -47,7 +47,7 @@ interface Props {
  * Completed: a dark disc with the checkmark knocked out of it. Two hardcoded
  * fills, so it cannot go through `Icon` — that component emits a single
  * `currentColor` path. Standalone two-colour marks are the repo's convention
- * here (see PlanWordmark, EditorIcon).
+ * here (see EditorIcon).
  *
  * The viewBox is the disc's own bounds (a circle of r=10 centred at 12,12),
  * NOT the artwork's 24-unit frame: at `size` 14 that frame left the disc

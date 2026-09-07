@@ -118,9 +118,7 @@ import {
   currentWorkspaceAccountGeneration,
   resolveBoundProjectWorkspaceContext,
   resolveCurrentWorkspaceContextReadWitness,
-  useWorkspaceBillingResponse,
   useWorkspaceContext,
-  workspaceBillingSummaryForContext,
   workspaceIdentityCacheKey,
   workspaceResourceReadContext,
 } from './collab/useWorkspaceContext';
@@ -4871,7 +4869,7 @@ function AppInner() {
           onboardingCompleted={config.onboardingCompleted === true}
           identityScopeKey={workspaceTabsIdentityScopeKey}
         />
-        {/* Avatar + credits keep their home-view spot (the top-right actions
+        {/* The account avatar keeps its home-view spot (the top-right actions
             host inside the tabs chrome) while a project tab is open, even
             though EntryShell — the cluster's usual owner — is unmounted here.
             Home and the other entry views mount theirs through EntryNavRail;
@@ -4889,11 +4887,6 @@ function AppInner() {
             workspaceContextOverride={
               activeProject?.workspaceId
                 ? activeProjectWorkspaceContext
-                : undefined
-            }
-            workspaceContextLoading={
-              activeProject?.workspaceId
-                ? projectRouteWorkspaceContext.loading
                 : undefined
             }
           />

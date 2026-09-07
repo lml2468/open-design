@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { teamConsoleUrl, workspaceUpgradeUrl } from '../../src/components/EntryNavRail';
-import type { WorkspaceBillingSummary, WorkspaceCollabContext } from '@open-design/contracts';
+import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 const OPEN_DESIGN_PRICING_URL = 'https://open-design.ai/pricing/';
 
@@ -18,14 +18,6 @@ describe('teamConsoleUrl', () => {
     expect(teamConsoleUrl(base, 'settings')).toBe(
       'https://web.example/settings?workspaceId=ws-1',
     );
-  });
-
-  // Product decision: the console has no wallet page in its information
-  // architecture any more. The team 「额度」 row opens the console dashboard,
-  // which is where balance, top-up and the auto-recharge policy now report
-  // (vela #1055 rehomed them off the wallet route).
-  it('sends the team billing row to the console dashboard, not a wallet page', () => {
-    expect(teamConsoleUrl(base, 'billing')).toBe('https://web.example/dashboard?workspaceId=ws-1');
   });
 
   // recvq725Kx0rM4 / recvqfXzHtY5wg: B's create-workspace dialog opens from a
@@ -76,40 +68,22 @@ describe('workspaceUpgradeUrl', () => {
     },
     workspaceSettingsUrl: settingsUrl,
   };
-  const billingSummary = (membershipTier: string): WorkspaceBillingSummary => ({
-    workspaceId: null,
-    membershipTier,
-    totalAvailableCredits: 0,
-    subscriptionCredits: 0,
-    rechargeCredits: 0,
-    balanceUsd: '0.00',
-    subscriptionStatus: membershipTier ? 'active' : 'none',
-    availableActions: [],
-    workspaceBalance: null,
-  });
-
   it('sends a personal workspace to public Pricing', () => {
     const context: WorkspaceCollabContext = {
       ...baseContext,
       workspaceType: 'personal',
     };
-    expect(workspaceUpgradeUrl(context, null)).toBe(OPEN_DESIGN_PRICING_URL);
+    expect(workspaceUpgradeUrl(context)).toBe(OPEN_DESIGN_PRICING_URL);
   });
 
   it('sends a never-subscribed team to public Pricing', () => {
-    expect(workspaceUpgradeUrl(baseContext, null)).toBe(OPEN_DESIGN_PRICING_URL);
-    expect(workspaceUpgradeUrl(baseContext, billingSummary(''))).toBe(
-      OPEN_DESIGN_PRICING_URL,
-    );
+    expect(workspaceUpgradeUrl(baseContext)).toBe(OPEN_DESIGN_PRICING_URL);
   });
 
   it('sends an already-subscribed team to public Pricing', () => {
     expect(
-      workspaceUpgradeUrl({ ...baseContext, planId: 'team_pro', billingState: 'active' }, null),
+      workspaceUpgradeUrl({ ...baseContext, planId: 'team_pro', billingState: 'active' }),
     ).toBe(OPEN_DESIGN_PRICING_URL);
-    expect(workspaceUpgradeUrl(baseContext, billingSummary('team_pro'))).toBe(
-      OPEN_DESIGN_PRICING_URL,
-    );
   });
 
   it.each(['admin', 'member'] as const)(
@@ -124,14 +98,14 @@ describe('workspaceUpgradeUrl', () => {
         },
       };
 
-      expect(workspaceUpgradeUrl(context, billingSummary('team_pro'))).toBeNull();
+      expect(workspaceUpgradeUrl(context)).toBeNull();
     },
   );
 
   it('does not require a console URL when workspace ownership is known', () => {
     const context: WorkspaceCollabContext = { ...baseContext };
     delete context.workspaceSettingsUrl;
-    expect(workspaceUpgradeUrl(context, null)).toBe(OPEN_DESIGN_PRICING_URL);
-    expect(workspaceUpgradeUrl(null, null)).toBeNull();
+    expect(workspaceUpgradeUrl(context)).toBe(OPEN_DESIGN_PRICING_URL);
+    expect(workspaceUpgradeUrl(null)).toBeNull();
   });
 });

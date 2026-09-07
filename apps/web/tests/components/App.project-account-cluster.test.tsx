@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 //
-// The floating avatar + credits cluster must survive opening a project.
+// The floating account cluster must survive opening a project.
 //
-// The entry refresh moved the account module (avatar chip + credits pill)
+// The entry refresh moved the account avatar
 // into a top-right chrome cluster owned by EntryNavRail — which unmounts with
-// EntryShell the moment a project tab opens. Product: the avatar and credits
-// stay visible on the project view too, in the same top-right spot. App.tsx
+// EntryShell the moment a project tab opens. Product: the avatar stays visible
+// on the project view too, in the same top-right spot. App.tsx
 // therefore mounts `WorkspaceTopRightAccountCluster` with the route-owned
 // Workspace authority whenever `route.kind === 'project'`.
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,10 +37,7 @@ import {
   fetchSkills,
 } from '../../src/providers/registry';
 import { listProjects, listTemplates } from '../../src/state/projects';
-import {
-  resetWorkspaceBillingCache,
-  resetWorkspaceContextCache,
-} from '../../src/collab/useWorkspaceContext';
+import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
 import { resetWorkspaceDirectoryCache } from '../../src/components/EntryNavRail';
 
 const PROJECT_ROUTE: Route = {
@@ -236,40 +233,6 @@ const AMBIENT_WORKSPACE_CONTEXT: WorkspaceCollabContext = {
   workspaceSettingsUrl: 'https://cloud.example/settings?workspaceId=ws-ambient',
 };
 
-const PROJECT_BILLING_RESPONSE = {
-  summary: {
-    workspaceId: 'ws-project',
-    membershipTier: 'pro',
-    totalAvailableCredits: 0,
-    subscriptionCredits: 0,
-    rechargeCredits: 0,
-    balanceUsd: '12.34',
-    subscriptionStatus: 'active',
-    availableActions: [],
-  },
-  workspaceBalance: {
-    billingScopeVersion: 2,
-    workspaceId: 'ws-project',
-    workspaceMemberId: 'wm-project',
-    balanceUsd: '12.34',
-  },
-};
-
-const AMBIENT_BILLING_RESPONSE = {
-  ...PROJECT_BILLING_RESPONSE,
-  summary: {
-    ...PROJECT_BILLING_RESPONSE.summary,
-    workspaceId: 'ws-ambient',
-    balanceUsd: '98.76',
-  },
-  workspaceBalance: {
-    ...PROJECT_BILLING_RESPONSE.workspaceBalance,
-    workspaceId: 'ws-ambient',
-    workspaceMemberId: 'wm-ambient',
-    balanceUsd: '98.76',
-  },
-};
-
 function stubFetchByUrl() {
   vi.stubGlobal(
     'fetch',
@@ -280,11 +243,7 @@ function stubFetchByUrl() {
         ? { items: [PROJECT_DIRECTORY_ITEM, AMBIENT_DIRECTORY_ITEM] }
         : url.includes('/api/workspace/context')
           ? { context: AMBIENT_WORKSPACE_CONTEXT }
-          : url.includes('/api/workspace/billing')
-            ? url.includes('workspaceId=ws-project')
-              ? PROJECT_BILLING_RESPONSE
-              : AMBIENT_BILLING_RESPONSE
-            : {};
+          : {};
       return new Response(JSON.stringify(body), { status: 200 });
     }),
   );
@@ -293,7 +252,6 @@ function stubFetchByUrl() {
 describe('project route — floating account cluster', () => {
   beforeEach(() => {
     resetWorkspaceContextCache();
-    resetWorkspaceBillingCache();
     resetWorkspaceDirectoryCache();
     useRouteMock.mockReturnValue(PROJECT_ROUTE);
     vi.mocked(daemonIsLive).mockResolvedValue(true);
@@ -324,31 +282,16 @@ describe('project route — floating account cluster', () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     resetWorkspaceContextCache();
-    resetWorkspaceBillingCache();
     resetWorkspaceDirectoryCache();
   });
 
-  it('keeps the avatar and credits pill mounted on an open project', async () => {
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+  it('keeps the project-scoped account avatar mounted on an open project', async () => {
     render(<App />);
 
-    // Both cluster members ride the shared chrome portal; they appear once the
-    // workspace context read resolves.
     const avatar = await screen.findByTestId('entry-nav-account');
     expect(avatar.closest('.entry-top-right-cluster')).not.toBeNull();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('entry-top-right-credits')).toBeTruthy();
-    });
     expect(avatar.getAttribute('aria-label')).toBe('Project Nova');
-    expect(
-      screen.getByTestId('entry-top-right-credits').textContent,
-    ).toContain('$12.34');
-    expect(screen.getByTestId('entry-top-right-credits').textContent).not.toContain('$98.76');
-
-    fireEvent.click(screen.getByTestId('entry-top-right-credits'));
-    expect(open).toHaveBeenCalledOnce();
-    expect(open.mock.calls[0]?.[0]).toContain('/dashboard?workspaceId=ws-project');
+    expect(screen.queryByTestId('entry-top-right-credits')).toBeNull();
   });
 
   it.each([

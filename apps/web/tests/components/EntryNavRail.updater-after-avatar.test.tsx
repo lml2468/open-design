@@ -86,7 +86,6 @@ function renderRail(context: WorkspaceCollabContext | null) {
         onNewProject={() => {}}
         open
         context={context}
-        billing={null}
         updaterSlot={<UpdaterPopup />}
       />
     </I18nProvider>,

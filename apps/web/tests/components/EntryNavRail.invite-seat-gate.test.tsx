@@ -75,7 +75,6 @@ function renderRail(context: WorkspaceCollabContext) {
         onNewProject={() => {}}
         open
         context={context}
-        billing={null}
       />
     </I18nProvider>,
   );

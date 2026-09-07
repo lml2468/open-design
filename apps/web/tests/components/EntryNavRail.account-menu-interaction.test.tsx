@@ -33,7 +33,6 @@ function renderRail() {
         onNewProject={() => {}}
         open
         context={teamContext()}
-        billing={null}
       />
     </I18nProvider>,
   );
@@ -165,7 +164,6 @@ describe('EntryNavRail account menu interaction state', () => {
           onOpenSettings={onOpenSettings}
           open
           context={teamContext()}
-          billing={null}
         />
       </I18nProvider>,
     );

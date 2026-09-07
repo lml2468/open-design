@@ -5576,12 +5576,8 @@
 .entry-top-right-account-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  /* ONE shared capsule around credits + avatar (per product: 两个合成一个
-     胶囊) — the pill material lives here; the segments inside stay
-     chrome-free click targets. */
   min-height: 30px;
-  padding: 2px 3px 2px 10px;
+  padding: 2px 3px;
   border: 1px solid var(--material-separator);
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--bg-elevated) 86%, transparent);
@@ -5609,39 +5605,6 @@
   flex: 0 0 24px;
   border-radius: 50%;
   font-size: 11px;
-}
-/* Credits segment, left of the avatar inside the capsule. */
-.entry-top-right-credits {
-  appearance: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  /* Chrome-free segment inside the shared capsule — the wrapper
-     (.entry-top-right-account-pill) owns the pill material. */
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  box-shadow: none;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--text-strong);
-  white-space: nowrap;
-}
-.entry-top-right-credits svg {
-  color: var(--text-soft);
-}
-/* No hover fill on the credits segment — the shared capsule stays calm;
-   the pointer cursor alone signals clickability. Needs an explicit :hover
-   override: the primitives.css `button:hover:not(:disabled)` gray fill
-   outranks the bare class rule above. */
-.entry-top-right-credits:hover:not(:disabled) {
-  background: transparent;
-  border-color: transparent;
 }
 /* Doubled class on the container: the rail-era
    `.entry-nav-rail__account .entry-nav-rail__account-menu` sizing rule
@@ -5855,97 +5818,6 @@
   flex: 0 0 auto;
   color: inherit;
 }
-/* Plan + credits block under the identity header (upgrade CTA on the plan
-   row, then remaining/bonus credit rows), mirroring the reference card. */
-.entry-nav-rail__menu-credits {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
-  /* Inverted card: ink-black ground, white-tier text (颜色规范 #202020 /
-     #fafafa 反白文字). */
-  background: #202020;
-  margin-bottom: 6px;
-}
-.entry-nav-rail__menu-credits-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2px 0 6px;
-}
-.entry-nav-rail__menu-credits-plan {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #fafafa;
-}
-.entry-nav-rail__menu-credits-upgrade {
-  appearance: none;
-  border: 0;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 10px;
-  border-radius: var(--radius-pill);
-  /* Light pill on the inverted black card (浅底深字 per 按钮规范). */
-  background: #fafafa;
-  color: #202020;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-}
-/* :not(:disabled) lifts specificity above the global button:hover reset. */
-.entry-nav-rail__menu-credits-upgrade:hover:not(:disabled),
-.entry-nav-rail__menu-credits-upgrade:focus-visible {
-  background: #fff;
-  color: #202020;
-}
-.entry-nav-rail__menu-credits-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 26px;
-  font-size: 13px;
-  color: #fafafa;
-}
-/* The 积分 row is a button (opens the credits panel) — reset the primitives
-   button chrome so it reads as the same flat row as the static bonus line
-   (#5517), not an inset pill. */
-button.entry-nav-rail__menu-credits-row {
-  width: 100%;
-  border: 0;
-  background: none;
-  padding: 0;
-  border-radius: 6px;
-  font: inherit;
-  box-shadow: none;
-  cursor: pointer;
-}
-button.entry-nav-rail__menu-credits-row:hover:not(:disabled) {
-  background: color-mix(in srgb, #fafafa 8%, transparent);
-  border-color: transparent;
-}
-button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
-  transform: none;
-}
-.entry-nav-rail__menu-credits-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.entry-nav-rail__menu-credits-label .od-icon { color: rgba(250, 250, 250, 0.72); }
-.entry-nav-rail__menu-credits-value {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-variant-numeric: tabular-nums;
-}
-.entry-nav-rail__menu-credits-value .od-icon { color: rgba(250, 250, 250, 0.72); }
 .entry-nav-rail__menu-item {
   appearance: none;
   border: 0;

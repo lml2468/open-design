@@ -2,25 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { WorkspaceBillingSummary, WorkspaceCollabContext } from '@open-design/contracts';
 
 import {
-  canUpgradeFromPlanTier,
   hasTeamPlan,
   isFreePlanTier,
   isTeamPlanTier,
-  isTopPlanTier,
-  resolvePlanLabelTier,
   resolvePlanTier,
 } from '../src/collab/team-plan';
 
 function context(planId: string | null, workspaceType: 'team' | 'personal' = 'personal') {
   return { workspaceId: 'ws', workspaceType, planId } as unknown as WorkspaceCollabContext;
-}
-
-function contextWithBillingState(
-  planId: string | null,
-  billingState: string,
-  workspaceType: 'team' | 'personal' = 'team',
-) {
-  return { workspaceId: 'ws', workspaceType, planId, billingState } as unknown as WorkspaceCollabContext;
 }
 
 function billing(membershipTier: string) {
@@ -114,41 +103,6 @@ describe('resolvePlanTier', () => {
   });
 });
 
-describe('resolvePlanLabelTier', () => {
-  // Acceptance #146. B makes EVERY user-created workspace `type: 'team'`, so
-  // the workspace kind cannot be the label's source; the entitlement is.
-  it('reads B’s free entitlement as a positive free, not an unknown', () => {
-    expect(
-      resolvePlanLabelTier({
-        billing: billing(''),
-        context: contextWithBillingState(null, 'free'),
-      }),
-    ).toBe('free');
-  });
-
-  it('still prefers a real tier over the entitlement fallback', () => {
-    expect(
-      resolvePlanLabelTier({
-        billing: billing('team_plus'),
-        context: contextWithBillingState(null, 'free'),
-      }),
-    ).toBe('team_plus');
-  });
-
-  // B omits billingState/planId for non-owners, so nothing here can speak for
-  // a paying member — the caller must keep whatever hint it already had rather
-  // than being handed a wrong answer.
-  it('returns null when B has reported no entitlement at all', () => {
-    expect(
-      resolvePlanLabelTier({
-        billing: billing(''),
-        context: contextWithBillingState(null, 'active'),
-      }),
-    ).toBeNull();
-    expect(resolvePlanLabelTier({})).toBeNull();
-  });
-});
-
 describe('isFreePlanTier', () => {
   it('is true only for a known, genuinely free tier', () => {
     expect(isFreePlanTier('free')).toBe(true);
@@ -172,68 +126,6 @@ describe('isFreePlanTier', () => {
   it('rejects the personal paid tiers', () => {
     for (const tier of ['pro', 'plus', 'max']) {
       expect(isFreePlanTier(tier)).toBe(false);
-    }
-  });
-});
-
-// Product ruling (owner, from a real packaged client on Team Max):
-// 「个人档位都是要显示可升级的, 最顶的就是团队 max」. Team and personal tiers are
-// two ladders — personal `max` tops only the personal one and still has the
-// whole team ladder above it.
-describe('isTopPlanTier', () => {
-  it('recognises the team ladder’s max, including a billing-period suffix', () => {
-    for (const tier of ['team_max', 'TEAM_MAX', 'team-max', ' team_max ', 'team_max_yearly']) {
-      expect(isTopPlanTier(tier)).toBe(true);
-    }
-  });
-
-  it('never reads a PERSONAL max as the top tier', () => {
-    for (const tier of ['max', 'MAX', ' max ']) {
-      expect(isTopPlanTier(tier)).toBe(false);
-    }
-  });
-
-  it('rejects team tiers below max', () => {
-    for (const tier of ['team', 'team_basic', 'team_plus', 'team_pro']) {
-      expect(isTopPlanTier(tier)).toBe(false);
-    }
-  });
-
-  it('rejects an unknown or empty tier', () => {
-    for (const tier of ['', '   ', null, undefined]) {
-      expect(isTopPlanTier(tier)).toBe(false);
-    }
-  });
-});
-
-describe('canUpgradeFromPlanTier', () => {
-  it('offers an upgrade for every tier that has one above it', () => {
-    for (const tier of [
-      'free',
-      'plus',
-      'pro',
-      // The case a careless fix breaks: a personal Max user can still move onto
-      // a team plan (vela #1146 routes their click to the Team upgrade dialog).
-      'max',
-      'team',
-      'team_basic',
-      'team_plus',
-      'team_pro',
-    ]) {
-      expect(canUpgradeFromPlanTier(tier)).toBe(true);
-    }
-  });
-
-  it('offers nothing at the top tier', () => {
-    for (const tier of ['team_max', 'TEAM_MAX', 'team-max', 'team_max_yearly']) {
-      expect(canUpgradeFromPlanTier(tier)).toBe(false);
-    }
-  });
-
-  // Fails closed while billing is unresolved, so a slow read cannot flash a CTA.
-  it('offers nothing for an unknown tier', () => {
-    for (const tier of ['', '   ', null, undefined]) {
-      expect(canUpgradeFromPlanTier(tier)).toBe(false);
     }
   });
 });
