@@ -1,9 +1,46 @@
-.pane.pane {
-  padding-bottom: 112px;
+.view {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.pane {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 72px 64px 112px;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .center {
+  display: flex;
   width: min(440px, 100%);
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.body {
+  max-width: 42ch;
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1.6;
 }
 
 .options {
@@ -34,10 +71,6 @@
     box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.center :global(.onboarding-cloud__primary) {
-  margin-top: 24px;
-}
-
 .option.option.option:hover {
   border-color: var(--border-strong);
   background: var(--bg-subtle);
@@ -49,29 +82,8 @@
   box-shadow: 0 5px 16px rgb(20 24 32 / 7%);
 }
 
-.hostedOption.hostedOption.hostedOption {
-  border-color: color-mix(in srgb, var(--brand) 42%, var(--border));
-  background: color-mix(in srgb, var(--brand-soft) 38%, transparent);
-}
-
-.hostedOption.hostedOption.hostedOption:hover {
-  border-color: color-mix(in srgb, var(--brand) 68%, var(--border-strong));
-  background: color-mix(in srgb, var(--brand-soft) 72%, var(--bg-panel));
-}
-
-.hostedOption.optionActive.optionActive {
-  border-color: color-mix(in srgb, var(--brand) 82%, var(--border-strong));
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--brand-soft) 88%, var(--bg-panel)) 0%,
-    color-mix(in srgb, var(--brand-soft) 42%, var(--bg-panel)) 72%
-  );
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--brand) 16%, transparent),
-    0 8px 22px color-mix(in srgb, var(--brand) 14%, transparent);
-}
-
-.option.option.option:focus-visible {
+.option.option.option:focus-visible,
+.primary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -104,48 +116,6 @@
   letter-spacing: -0.01em;
 }
 
-.optionHeading {
-  display: flex;
-  min-width: 0;
-  margin-bottom: 4px;
-  gap: 8px;
-  align-items: center;
-}
-
-.recommendedBadge {
-  display: inline-flex;
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  border: 1px solid color-mix(in srgb, var(--brand) 64%, var(--green-border));
-  border-radius: 999px;
-  background: var(--brand-soft);
-  color: var(--brand-text);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  line-height: 1.35;
-  text-transform: uppercase;
-}
-
-.hostedOption .optionIcon {
-  border-color: color-mix(in srgb, var(--brand) 55%, var(--border));
-  background: color-mix(in srgb, var(--brand-soft) 76%, var(--bg));
-  color: var(--brand-text);
-}
-
-.hostedOption.optionActive .optionTitle,
-.hostedOption.optionActive .radio {
-  color: var(--brand-text);
-}
-
-.hostedOption.optionActive .radio {
-  border-color: var(--brand-text);
-}
-
-.hostedOption.optionActive .radio::after {
-  background: var(--brand-text);
-}
-
 .optionBody {
   display: block;
   min-height: 2.9em;
@@ -174,14 +144,142 @@
   content: '';
 }
 
+.primary {
+  display: inline-flex;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 24px;
+  padding: 0 20px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 14px;
+  background: var(--text-strong);
+  color: var(--bg);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    opacity 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.primary:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--text-strong);
+  opacity: 0.88;
+}
+
+.primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.footer {
+  position: absolute;
+  right: 24px;
+  bottom: 64px;
+  left: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: left;
+}
+
+.footer > span,
+.footer :global(.foot-pill) {
+  opacity: 0.8;
+}
+
+.footer :global(.foot-pill) {
+  display: inline-flex;
+  min-height: 26px;
+  padding: 5px 10px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.footer :global(.foot-pill:hover) {
+  border-color: var(--border-strong);
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+.art {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 8px 8px 0;
+}
+
+.art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-md, 8px);
+  object-fit: cover;
+}
+
+.back {
+  display: inline-flex;
+  padding: 0;
+  align-self: start;
+  justify-self: start;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.back:hover {
+  color: var(--text-strong);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .option {
+  .option,
+  .primary {
     transition: none;
   }
 }
 
+@media (max-width: 1136px) {
+  .view {
+    grid-template-columns: 1fr;
+  }
+
+  .art {
+    display: none;
+  }
+
+  .pane {
+    padding-right: 24px;
+    padding-left: 24px;
+    align-items: center;
+  }
+
+  .footer {
+    right: 24px;
+    left: 24px;
+    align-items: center;
+    text-align: center;
+  }
+}
+
 @media (max-width: 600px) {
-  .pane.pane {
+  .pane {
     padding: 48px 16px 112px;
   }
 
@@ -199,31 +297,22 @@
     width: 32px;
     height: 32px;
   }
-
-  .optionHeading {
-    gap: 4px;
-    align-items: flex-start;
-    flex-direction: column;
-  }
 }
 
 @media (max-height: 720px) {
-  .pane.pane {
-    justify-content: flex-start;
-    overflow-y: auto;
+  .pane {
     padding-top: 32px;
     padding-bottom: 32px;
+    justify-content: flex-start;
+    overflow-y: auto;
   }
 
-  .options {
+  .options,
+  .primary {
     margin-top: 16px;
   }
 
-  .center :global(.onboarding-cloud__primary) {
-    margin-top: 16px;
-  }
-
-  .pane :global(.onboarding-cloud__footer) {
+  .footer {
     position: static;
     width: 100%;
     margin-top: 32px;

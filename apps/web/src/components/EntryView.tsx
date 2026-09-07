@@ -43,7 +43,6 @@ import type {
   PluginShareAction,
   PluginShareProjectOutcome,
 } from '../state/projects';
-import type { VelaLoginStatus } from '../providers/daemon';
 
 type EntryCreateProjectInput = Omit<CreateInput, 'metadata'> & {
   metadata?: CreateInput['metadata'];
@@ -76,8 +75,8 @@ interface Props {
   promptTemplates: PromptTemplateSummary[];
   defaultDesignSystemId: string | null;
   agents: AgentInfo[];
-  // Forwarded to EntryShell → OnboardingView so the AMR cloud card can show a
-  // detecting/skeleton state while the cold-start agent stream is in flight.
+  // Forwarded to EntryShell so local-agent setup can reflect the cold-start
+  // detection stream until it reaches its terminal `done` event.
   agentsLoading?: boolean;
   amrLoggedIn?: boolean | null;
   amrSessionState?: import('@open-design/contracts').AmrSessionState;
@@ -150,7 +149,6 @@ interface Props {
   onPersistComposioKey: (composio: AppConfig['composio']) => Promise<void> | void;
   onOpenSettings: (section?: 'execution' | 'media' | 'composio' | 'orbit' | 'integrations' | 'mcpClient' | 'language' | 'appearance' | 'notifications' | 'pet' | 'projectLocations' | 'library' | 'about' | 'memory' | 'designSystems') => void;
   onCompleteOnboarding: () => void;
-  onAmrLoginStatusChange?: (status: VelaLoginStatus | null) => void;
   artifactUpgradeSlot?: ReactNode;
 }
 
@@ -301,7 +299,6 @@ export function EntryView({
   onPersistComposioKey,
   onOpenSettings,
   onCompleteOnboarding,
-  onAmrLoginStatusChange,
   artifactUpgradeSlot,
 }: Props) {
   const [connectors, setConnectors] = useState<ConnectorDetail[]>([]);
@@ -425,7 +422,6 @@ export function EntryView({
       onPersistComposioKey={onPersistComposioKey}
       onOpenSettings={onOpenSettings}
       onCompleteOnboarding={onCompleteOnboarding}
-      onAmrLoginStatusChange={onAmrLoginStatusChange}
       artifactUpgradeSlot={artifactUpgradeSlot}
     />
   );

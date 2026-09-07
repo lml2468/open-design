@@ -159,11 +159,14 @@ describe('Onboarding welcome (theme toggle removed)', () => {
     );
   }
 
-  it('renders no sun/moon theme toggle on the welcome pane', () => {
-    const { container } = renderOnboarding();
+  it('renders the model-source chooser without a theme toggle', () => {
+    renderOnboarding();
 
-    expect(container.querySelector('.onboarding-cloud__pane')).not.toBeNull();
-    expect(container.querySelector('.onboarding-cloud__theme')).toBeNull();
+    expect(screen.getByRole('radio', { name: /Local Agent/i })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: /Bring Your Own Key/i })).toBeTruthy();
+    for (const label of THEME_CONTROL_LABELS) {
+      expect(screen.queryByRole('button', { name: label })).toBeNull();
+    }
   });
 
   it('exposes no theme control by accessible name', () => {

@@ -2,7 +2,7 @@
 
 import { readFileSync } from 'node:fs';
 import { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EntryShell } from '../../src/components/EntryShell';
@@ -146,13 +146,9 @@ function renderOnboarding() {
 }
 
 async function openLocalCliStep() {
-  fireEvent.click(
-    await screen.findByRole('button', { name: /Continue \(signed in\)/i }),
-  );
-  await waitFor(() => {
-    expect(screen.getByRole('heading', { name: 'Choose your model source' })).toBeTruthy();
-  });
-  fireEvent.click(screen.getByRole('radio', { name: /Local Agent/i }));
+  expect(
+    await screen.findByRole('heading', { name: 'Choose your model source' }),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: /^Continue$/i }));
   expect(await screen.findByText('Local CLI')).toBeTruthy();
 }
@@ -168,18 +164,7 @@ afterEach(() => {
 
 beforeEach(() => {
   globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
-  globalThis.fetch = vi.fn(async (input) => {
-    const url = String(input);
-    if (url.endsWith('/api/integrations/vela/status')) {
-      return jsonResponse({
-        loggedIn: true,
-        profile: 'prod',
-        configPath: '/x',
-        user: { id: 'u', email: 'user@example.com' },
-      });
-    }
-    return jsonResponse({});
-  }) as typeof fetch;
+  globalThis.fetch = vi.fn(async () => jsonResponse({})) as typeof fetch;
 });
 
 describe('onboarding Local CLI chip alignment', () => {

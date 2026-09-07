@@ -270,20 +270,7 @@ export const zhTW: Dict = {
   "settings.onboardingSystemsBody":
     "選擇或建立品牌系統，讓生成結果跟隨真實的顏色、字體和產品語言。",
   "settings.onboardingExecutionTitle": "選擇模型來源",
-  "settings.onboardingExecutionBody":
-    "使用 OpenDesign 託管服務、連接本機 Agent，或使用你自己的模型 Key。",
-  "settings.onboardingAmrCloudBenefitOfficial": "官方推薦",
-  "settings.onboardingAmrCloudBenefitReady": "免部署即用",
-  "settings.onboardingAmrCloudBenefitModels":
-    "限時優惠、高併發使用 Claude、GPT、Fable 5 和 5.6 sol。",
-  "settings.onboardingAmrCloudBenefitPricing": "SOTA Harness",
-  "settings.onboardingAmrCloudUpcomingLabel": "即將支援",
-  "settings.onboardingAmrCloudUpcomingImageVideo": "生圖/影片",
-  "settings.onboardingAmrCloudUpcomingSkills": "海量 Skills",
-  "settings.onboardingAmrCloudUpcomingRouting": "智慧路由",
-  "settings.onboardingAmrModelSourceLabel": "OpenDesign 託管",
-  "settings.onboardingAmrCloudAuthorizeAction": "授權使用",
-  "settings.onboardingAmrCloudAuthorizedAction": "已授權",
+  "settings.onboardingExecutionBody": "連接本機 Agent，或使用你自己的模型 Key。",
   "settings.onboardingStepConnect": "連接",
   "settings.onboardingStepDesignSystem": "建構設計系統",
   "settings.onboardingStepProfile": "關於你",
@@ -293,24 +280,14 @@ export const zhTW: Dict = {
     "在信箱裡收到產品更新、新模版、設計系統與大使活動。選填——可以跳過。",
   "settings.onboardingConnectTitle": "選擇執行方式",
   "settings.onboardingConnectBody": "",
-  "settings.onboardingCloudTitle": "登入 OpenDesign",
-  "settings.onboardingCloudBody":
-    "登入後可直接用雲端 AI 開始設計，無需任何複雜設定。",
-  "settings.onboardingCloudSignIn": "登入 OpenDesign 雲端",
-  "settings.onboardingCloudContinue": "繼續（已登入）",
-  "settings.onboardingCloudAlternative": "使用本機 CLI 或自己的 API Key",
-  "settings.onboardingCloudRights": "保留所有權利。",
-  "settings.onboardingCloudOr": "或",
+  "settings.onboardingRights": "保留所有權利。",
   "settings.onboardingGateTooltipNoRuntime":
     "後續流程由 AI 執行，請先選擇一種執行方式。",
-  "settings.onboardingGateTooltipAmr":
-    "後續流程由 AI 執行，請先登入 OpenDesign Cloud。",
   "settings.onboardingGateTooltipLocal":
     "後續流程由 AI 執行，請先選擇一個可用的本機 CLI。",
   "settings.onboardingGateTooltipByok":
     "後續流程由 AI 執行，請先填寫並測試通過你的模型 Key。",
   "settings.onboardingRecommended": "推薦",
-  "settings.onboardingAmrCloudOfficialBadge": "官方",
   "settings.onboardingLocalTitle": "本機 Agent",
   "settings.onboardingLocalBody":
     "使用 Claude Code、Codex、Cursor、OpenCode、Kimi、Qwen、Hermes、Kiro 等。",

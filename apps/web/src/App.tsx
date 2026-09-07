@@ -1827,10 +1827,6 @@ function AppInner() {
     );
   }, [analytics.setUserId, amrLoginStatus]);
 
-  const handleAmrLoginStatusChange = useCallback((status: VelaLoginStatus | null) => {
-    if (status) applyAmrLoginStatus(status, { restartOnSignIn: true });
-  }, [applyAmrLoginStatus]);
-
   useEffect(() => {
     const usesOpenDesignCloud =
       config.mode === 'daemon'
@@ -5128,7 +5124,6 @@ function AppInner() {
         onPersistComposioKey={handleConfigPersistComposioKey}
         onOpenSettings={openSettings}
         onCompleteOnboarding={handleCompleteOnboarding}
-        onAmrLoginStatusChange={handleAmrLoginStatusChange}
       />
     );
   }
