@@ -81,8 +81,6 @@ import { canUpgradeFromPlanTier, resolvePlanLabelTier } from '../collab/team-pla
 import { shouldShowCreditsBalance } from './entry-rail-account-state';
 import { amrPlansUrlForProfile } from '../runtime/amr-guidance';
 import { useWorkspaceInvalidation } from '../collab/workspace-events';
-import { resolveDeepSeekV4FlashCampaignAudience } from '../campaigns/deepseek-v4-flash';
-import { useDeepSeekV4FlashCampaignVisibility } from '../campaigns/use-deepseek-v4-flash-campaign';
 import type { EntryHomeView } from '../router';
 import type {
   AccountMenuClickProps,
@@ -101,7 +99,6 @@ import {
   stableAnalyticsErrorCode,
   workspaceAnalyticsDimensions,
 } from '../analytics/workspace';
-import { WorkbenchCampaignBadge } from './WorkbenchCampaignBadge';
 import { workspaceChromeAccountActionsHost } from './workspaceChromeActions';
 
 const REPO_URL = 'https://github.com/nexu-io/open-design';
@@ -216,8 +213,7 @@ interface Props {
   newProjectDisabled?: boolean;
   /** When false the rail is collapsed (hidden off-canvas) on the entry view. */
   open: boolean;
-  /** Extra content for the top-right chrome cluster, rendered LEFT of the
-   *  account module (e.g. the DeepSeek campaign badge). */
+  /** Extra content for the top-right chrome cluster, rendered left of the account module. */
   topRightSlot?: ReactNode;
   /** The one shared workspace context; null → local (no cloud identity) state. */
   context: WorkspaceCollabContext | null;
@@ -258,11 +254,6 @@ interface Props {
   /** Opens one of those projects — the pull-first opener, so a shared project
    *  that is not local yet still lands. */
   onOpenRecentProject?: (id: string) => void | Promise<unknown>;
-  /** One-off targeted announcement coordination owned by the Home shell. */
-  priorityAnnouncementActive?: boolean;
-  onPriorityAnnouncementPendingChange?: (pending: boolean) => void;
-  priorityAnnouncementCurrentPlanId?: string | null;
-  priorityAnnouncementMetricsConsent?: boolean;
 }
 
 interface NavButtonProps {
@@ -755,17 +746,12 @@ interface EntryTopRightClusterProps {
   context: WorkspaceCollabContext | null;
   billing?: WorkspaceBillingSummary | null;
   balanceUsd?: string | null;
-  /** Extra content rendered LEFT of the credits pill (e.g. the DeepSeek
-   *  campaign badge on Home). */
+  /** Extra content rendered left of the credits pill. */
   leadingSlot?: ReactNode;
   /** Update-ready host; rides the account row right after the avatar chip. */
   updaterSlot?: ReactNode;
   onOpenSettings?: (section?: EntrySettingsSection) => void;
   onSignedOut?: () => void | Promise<void>;
-  priorityAnnouncementActive?: boolean;
-  onPriorityAnnouncementPendingChange?: (pending: boolean) => void;
-  priorityAnnouncementCurrentPlanId?: string | null;
-  priorityAnnouncementMetricsConsent?: boolean;
 }
 
 /**
@@ -790,10 +776,6 @@ export function EntryTopRightCluster({
   updaterSlot,
   onOpenSettings,
   onSignedOut,
-  priorityAnnouncementActive,
-  onPriorityAnnouncementPendingChange,
-  priorityAnnouncementCurrentPlanId,
-  priorityAnnouncementMetricsConsent,
 }: EntryTopRightClusterProps) {
   const { t } = useI18n();
   const analytics = useAnalytics();
@@ -1311,10 +1293,6 @@ export function EntryTopRightCluster({
           onOpenChange={setMessageCenterOpen}
           onUnreadCountChange={setMessageUnreadCount}
           onOpenNotificationSettings={onOpenSettings ? () => onOpenSettings('notifications') : undefined}
-          priorityAnnouncementActive={priorityAnnouncementActive}
-          onPriorityAnnouncementPendingChange={onPriorityAnnouncementPendingChange}
-          priorityAnnouncementCurrentPlanId={priorityAnnouncementCurrentPlanId}
-          priorityAnnouncementMetricsConsent={priorityAnnouncementMetricsConsent}
         />
       ) : null}
     </>
@@ -1330,10 +1308,6 @@ export function WorkspaceTopRightAccountCluster({
   updaterSlot,
   workspaceContextOverride,
   workspaceContextLoading,
-  amrLoggedIn = null,
-  amrAccountPlan = null,
-  metricsConsent = false,
-  installationId,
 }: {
   onOpenSettings?: (section?: EntrySettingsSection) => void;
   onSignedOut?: () => void | Promise<void>;
@@ -1341,10 +1315,6 @@ export function WorkspaceTopRightAccountCluster({
   updaterSlot?: ReactNode;
   workspaceContextOverride?: WorkspaceCollabContext | null;
   workspaceContextLoading?: boolean;
-  amrLoggedIn?: boolean | null;
-  amrAccountPlan?: string | null;
-  metricsConsent?: boolean;
-  installationId?: string | null;
 }) {
   const ambient = useWorkspaceContext();
   const hasExplicitWorkspaceContext = workspaceContextOverride !== undefined;
@@ -1363,39 +1333,12 @@ export function WorkspaceTopRightAccountCluster({
   // ACCOUNT read (`workspaceId: null` by contract). Same rule as EntryShell.
   const billing = workspaceBillingSummaryForContext(billingResponse, context);
   const balanceUsd = workspaceBillingBalanceUsd(billingResponse, context);
-  const deepSeekCampaignVisibility = useDeepSeekV4FlashCampaignVisibility();
-  const campaignPlan = resolvePlanLabelTier({
-    billing,
-    context,
-    accountPlan:
-      contextLoading || context?.workspaceType === 'team'
-        ? null
-        : amrAccountPlan,
-  });
-  const deepSeekCampaignAudience = resolveDeepSeekV4FlashCampaignAudience({
-    plan: campaignPlan,
-    loggedIn: amrLoggedIn,
-    now: deepSeekCampaignVisibility.now,
-  });
-  const campaignAudience =
-    deepSeekCampaignAudience === 'unknown'
-      ? null
-      : deepSeekCampaignAudience;
   return (
     <EntryTopRightCluster
       page="project"
       context={context}
       billing={billing}
       balanceUsd={balanceUsd}
-      leadingSlot={campaignAudience ? (
-        <WorkbenchCampaignBadge
-          audience={campaignAudience}
-          page="project"
-          metricsConsent={metricsConsent}
-          installationId={installationId}
-          loggedIn={amrLoggedIn}
-        />
-      ) : null}
       updaterSlot={updaterSlot}
       onOpenSettings={onOpenSettings}
       onSignedOut={onSignedOut}
@@ -1502,10 +1445,6 @@ export function EntryNavRail({
   onOpenRecentProject,
   onRenameRecentProject,
   onDeleteRecentProject,
-  priorityAnnouncementActive,
-  onPriorityAnnouncementPendingChange,
-  priorityAnnouncementCurrentPlanId,
-  priorityAnnouncementMetricsConsent,
 }: Props) {
   const { t } = useI18n();
   const analytics = useAnalytics();
@@ -2156,10 +2095,6 @@ export function EntryNavRail({
           onOpenChange={setMessageCenterOpen}
           onUnreadCountChange={setMessageUnreadCount}
           onOpenNotificationSettings={onOpenSettings ? () => onOpenSettings('notifications') : undefined}
-          priorityAnnouncementActive={priorityAnnouncementActive}
-          onPriorityAnnouncementPendingChange={onPriorityAnnouncementPendingChange}
-          priorityAnnouncementCurrentPlanId={priorityAnnouncementCurrentPlanId}
-          priorityAnnouncementMetricsConsent={priorityAnnouncementMetricsConsent}
         />
       )}
 
@@ -2192,10 +2127,6 @@ export function EntryNavRail({
         updaterSlot={updaterSlot}
         onOpenSettings={onOpenSettings}
         onSignedOut={onSignedOut}
-        priorityAnnouncementActive={priorityAnnouncementActive}
-        onPriorityAnnouncementPendingChange={onPriorityAnnouncementPendingChange}
-        priorityAnnouncementCurrentPlanId={priorityAnnouncementCurrentPlanId}
-        priorityAnnouncementMetricsConsent={priorityAnnouncementMetricsConsent}
       />
     </nav>
   );

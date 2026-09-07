@@ -35,10 +35,7 @@ import {
 } from '../analytics/amr-attribution';
 import { amrPlansUrlForProfile } from '../runtime/amr-guidance';
 import { getResolvedDeviceId } from '../analytics/client';
-import {
-  trackDeepSeekCampaignModelBenefitSurfaceView,
-  trackExecutionSettingsPopoverClick,
-} from '../analytics/events';
+import { trackExecutionSettingsPopoverClick } from '../analytics/events';
 import {
   beginAmrAuthTracking,
   confirmAmrAuthTracking,
@@ -96,8 +93,6 @@ import {
   providerModelsCacheKey,
   type ProviderModelsCache,
 } from './providerModelsCache';
-import { isDeepSeekV4FlashCampaignModel } from '../campaigns/deepseek-v4-flash';
-import { useDeepSeekV4FlashCampaignVisibility } from '../campaigns/use-deepseek-v4-flash-campaign';
 
 interface Props {
   config: AppConfig;
@@ -189,11 +184,6 @@ export function InlineModelSwitcher({
 }: Props) {
   const t = useT();
   const analytics = useAnalytics();
-  // This flag is a reserved presentation branch with no trigger wired yet.
-  // It remains available for a real unpaid-audience signal reaching this
-  // component without surfacing an unlimited-use claim in the model picker.
-  const campaignNeedsUpgrade = false;
-  const campaignVisibility = useDeepSeekV4FlashCampaignVisibility();
   // recvqfYKutwWlQ: gate the AMR upgrade entry on billing permission below,
   // not just plan tier — a team member without `canManageBilling` (owner-only)
   // can't act on an upgrade even when the tier itself is upgradeable.
@@ -205,7 +195,6 @@ export function InlineModelSwitcher({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
-  const campaignBenefitTrackedForOpenRef = useRef(false);
   // Viewport clamp for the popover (issue #99): the anchor chip can sit
   // anywhere on screen (home hero mid-page, chat composer at the bottom), so
   // a fixed downward placement runs past the screen edge once the model list
@@ -711,15 +700,6 @@ export function InlineModelSwitcher({
       : configuredModelId ?? defaultAgentModelId(currentAgent);
   const currentModelOption =
     currentAgentModels.find((m) => m.id === currentModelId) ?? null;
-  // `agentId` and `agentModels` intentionally retain the last local-agent
-  // choice while BYOK is active so switching back restores that choice. Do
-  // not let campaign UI read that dormant AMR state: in BYOK mode the visible
-  // model comes from `config.model` and usage is billed by the user's provider.
-  const deepSeekCampaignVisibleForCurrentExecution =
-    campaignVisibility.visible
-    && config.mode === 'daemon'
-    && currentAgent?.id === 'amr';
-
   useEffect(() => {
     if (!currentAgentId || !normalizedCurrentModelId) return;
     const nextChoice: {
@@ -785,60 +765,15 @@ export function InlineModelSwitcher({
     [currentAgent, inlineAgentModelOptions],
   );
 
-  useEffect(() => {
-    if (!open) {
-      campaignBenefitTrackedForOpenRef.current = false;
-      return;
-    }
-    if (!compact || !deepSeekCampaignVisibleForCurrentExecution
-      || campaignBenefitTrackedForOpenRef.current) {
-      return;
-    }
-    // One impression per campaign model actually on screen, not one for the
-    // popover: the campaign runs two models and product compares their reach
-    // separately, so a single row-agnostic event would make Pro and Flash
-    // indistinguishable in the funnel.
-    const visibleCampaignModelIds = compactModelRows
-      .filter(({ model }) => isDeepSeekV4FlashCampaignModel(model.id))
-      .map(({ model }) => model.id);
-    if (visibleCampaignModelIds.length === 0) return;
-    campaignBenefitTrackedForOpenRef.current = true;
-    for (const modelId of visibleCampaignModelIds) {
-      trackDeepSeekCampaignModelBenefitSurfaceView(analytics.track, {
-        page_name: 'home',
-        area: 'execution_settings_popover',
-        element: 'deepseek_v4_pro_benefit',
-        campaign_id: 'deepseek_v4_pro',
-        user_state: campaignNeedsUpgrade ? 'unpaid' : 'paid',
-        model_id: modelId,
-      });
-    }
-  }, [
-    analytics.track,
-    campaignNeedsUpgrade,
-    compact,
-    compactModelRows,
-    deepSeekCampaignVisibleForCurrentExecution,
-    open,
-  ]);
-
   /** Where a refused model pick sends the user instead — the same plans
    *  destination the settings picker's upgrade lock already opens. */
   const openAmrModelUpgrade = useCallback(() => {
     const attribution = recordAmrEntry(
       analytics.track,
-      campaignNeedsUpgrade
-        ? 'deepseek_model_switcher_upgrade'
-        : 'inline_amr_upgrade',
+      'inline_amr_upgrade',
       new Date(),
       {
         metricsConsent: config.telemetry?.metrics === true,
-        ...(campaignNeedsUpgrade
-          ? {
-              campaignId: 'deepseek_v4_pro' as const,
-              conversionSource: 'deepseek_model_switcher_upgrade' as const,
-            }
-          : {}),
       },
     );
     const deviceId = amrHandoffDeviceId({
@@ -860,7 +795,6 @@ export function InlineModelSwitcher({
   }, [
     amrStatus?.profile,
     analytics.track,
-    campaignNeedsUpgrade,
     config.agentCliEnv?.amr?.OPEN_DESIGN_AMR_PROFILE,
     config.installationId,
     config.telemetry?.metrics,
@@ -1063,11 +997,9 @@ export function InlineModelSwitcher({
       : apiProtocolLabel(apiProtocol);
   const chipModel =
     config.mode === 'daemon'
-      ? isDeepSeekV4FlashCampaignModel(currentModelId)
-        ? currentModelLabel ?? 'DeepSeek V4 Flash'
-        : currentModelLabel && currentModelId !== 'default'
-          ? currentModelLabel
-          : t('inlineSwitcher.modelDefault')
+      ? currentModelLabel && currentModelId !== 'default'
+        ? currentModelLabel
+        : t('inlineSwitcher.modelDefault')
       : config.model.trim() || t('inlineSwitcher.modelDefault');
   // Visible chip text drops the company token the way the model rows do
   // (`claude-fable-5` → `fable-5`); the aria-label/tooltip above keep the full
@@ -1415,7 +1347,7 @@ export function InlineModelSwitcher({
                             // the settings picker's lock) instead of writing a
                             // choice the config would revert.
                             if (!applyAgentModel(m.id)) {
-                              if (amrCanUpgrade || campaignNeedsUpgrade) {
+                              if (amrCanUpgrade) {
                                 openAmrModelUpgrade();
                               }
                               return;

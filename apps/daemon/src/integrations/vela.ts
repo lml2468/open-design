@@ -12,8 +12,6 @@ import type {
   AmrAuthStageResult,
   AmrEntryAttribution,
   TrackingAmrEntrySource,
-  TrackingCampaignConversionSource,
-  TrackingCampaignId,
   TrackingPageName,
 } from '@open-design/contracts/analytics';
 import type { AmrSessionState } from '@open-design/contracts';
@@ -52,10 +50,6 @@ const AMR_ENTRY_SOURCES: ReadonlySet<TrackingAmrEntrySource> = new Set([
   'generation_preview_switch_retry_card',
   'settings_amr_upgrade',
   'inline_amr_upgrade',
-  'go_plan_sunset_modal',
-  'deepseek_unpaid_modal',
-  'deepseek_workbench_badge',
-  'deepseek_model_switcher_upgrade',
   'avatar_amr_upgrade',
   'avatar_amr_agent_card',
   'artifact_success_upgrade',
@@ -86,27 +80,6 @@ const AMR_ENTRY_SOURCE_PAGES: ReadonlySet<AmrEntrySourcePageName> = new Set([
   'home',
 ]);
 
-// Fail-closed: an id missing here voids the WHOLE entry, not just its campaign
-// field, so a live campaign left out loses every attributed entry it produces.
-// Both are listed because entries minted during the finished free week can
-// still arrive within their attribution window.
-const AMR_ENTRY_CAMPAIGN_IDS: ReadonlySet<TrackingCampaignId> = new Set([
-  'deepseek_v4_flash',
-  'deepseek_v4_pro',
-  'go_plan_sunset_202608',
-]);
-
-const AMR_ENTRY_CAMPAIGN_CONVERSION_SOURCES: ReadonlySet<TrackingCampaignConversionSource> =
-  new Set([
-    'go_plan_sunset_modal',
-    'deepseek_unpaid_modal',
-    'deepseek_workbench_badge',
-    'deepseek_model_switcher_upgrade',
-    'landing_home_banner',
-    'landing_pricing_personal_plan',
-    'landing_pricing_team_plan',
-  ]);
-
 const AMR_ENTRY_SOURCE_PAGE_BY_SOURCE: Record<
   TrackingAmrEntrySource,
   AmrEntrySourcePageName
@@ -136,10 +109,6 @@ const AMR_ENTRY_SOURCE_PAGE_BY_SOURCE: Record<
   generation_preview_switch_retry_card: 'file_manager',
   settings_amr_upgrade: 'settings',
   inline_amr_upgrade: 'chat_panel',
-  go_plan_sunset_modal: 'home',
-  deepseek_unpaid_modal: 'home',
-  deepseek_workbench_badge: 'home',
-  deepseek_model_switcher_upgrade: 'chat_panel',
   avatar_amr_upgrade: 'chat_panel',
   avatar_amr_agent_card: 'chat_panel',
   artifact_success_upgrade: 'artifact',
@@ -170,10 +139,6 @@ export interface AmrEntryAnalyticsPayload {
   sourceProduct: 'open_design';
   sourceDetail: TrackingAmrEntrySource;
   entryOccurredAt: string;
-  // Campaign dimensions mirrored from the web consent-gated channel so the
-  // AMR ingest body matches the local PostHog + redirect URL envelope.
-  campaignId?: TrackingCampaignId;
-  conversionSource?: TrackingCampaignConversionSource;
   // Optional self-reported onboarding profile, forwarded to AMR for paid-
   // conversion segmentation. Open strings (not a union) so a new onboarding
   // option never forces a contract bump on either side. useCase is multi-select.
@@ -1584,10 +1549,6 @@ export function parseAmrEntryAnalyticsPayload(
   const sourceProduct = raw.sourceProduct;
   const sourceDetail = raw.sourceDetail;
   const entryOccurredAt = raw.entryOccurredAt;
-  const campaignId = raw.campaignId;
-  const conversionSource = raw.conversionSource;
-  const hasCampaignId = campaignId !== undefined;
-  const hasConversionSource = conversionSource !== undefined;
   const odRole = sanitizeOptionalProfileValue(raw.odRole);
   const odOrgSize = sanitizeOptionalProfileValue(raw.odOrgSize);
   const odSource = sanitizeOptionalProfileValue(raw.odSource);
@@ -1610,14 +1571,6 @@ export function parseAmrEntryAnalyticsPayload(
       !== AMR_ENTRY_SOURCE_PAGE_BY_SOURCE[sourceDetail as TrackingAmrEntrySource]
     || typeof entryOccurredAt !== 'string'
     || !Number.isFinite(Date.parse(entryOccurredAt))
-    || (hasCampaignId
-      && (typeof campaignId !== 'string'
-        || !AMR_ENTRY_CAMPAIGN_IDS.has(campaignId as TrackingCampaignId)))
-    || (hasConversionSource
-      && (typeof conversionSource !== 'string'
-        || !AMR_ENTRY_CAMPAIGN_CONVERSION_SOURCES.has(
-          conversionSource as TrackingCampaignConversionSource,
-        )))
     || odRole === INVALID_PROFILE_VALUE
     || odOrgSize === INVALID_PROFILE_VALUE
     || odSource === INVALID_PROFILE_VALUE
@@ -1635,10 +1588,6 @@ export function parseAmrEntryAnalyticsPayload(
     sourceProduct,
     sourceDetail: sourceDetail as TrackingAmrEntrySource,
     entryOccurredAt,
-    ...(hasCampaignId ? { campaignId: campaignId as TrackingCampaignId } : {}),
-    ...(hasConversionSource
-      ? { conversionSource: conversionSource as TrackingCampaignConversionSource }
-      : {}),
     ...(odRole ? { odRole } : {}),
     ...(odOrgSize ? { odOrgSize } : {}),
     ...(odUseCase ? { odUseCase } : {}),

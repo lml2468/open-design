@@ -6,7 +6,7 @@ import type { DesignSystemEnrichClickProps, TrackingDesignSystemEditSurface } fr
 import type { TrackingPageName, TrackingSettingsPage } from './event-names.js';
 import type { OnboardingClickProps, TrackingOnboardingFirstLoopStep, TrackingOnboardingProductType, TrackingOnboardingRole, TrackingOnboardingUseCase } from './onboarding.js';
 import type { TrackingRunRecoveryActionType } from './result-events.js';
-import type { TrackingAmrEntrySource, TrackingArtifactKind, TrackingByokProviderId, TrackingCampaignConversionSource, TrackingCampaignDeliveryMode, TrackingCampaignId, TrackingCampaignUserState, TrackingCliProviderId, TrackingExecutionMode, TrackingExportFormat, TrackingFeedbackProviderId, TrackingNewProjectTab, TrackingProjectKind, TrackingProjectSource } from './shared-enums.js';
+import type { TrackingAmrEntrySource, TrackingArtifactKind, TrackingByokProviderId, TrackingCliProviderId, TrackingExecutionMode, TrackingExportFormat, TrackingFeedbackProviderId, TrackingNewProjectTab, TrackingProjectKind, TrackingProjectSource } from './shared-enums.js';
 import type { AccountMenuClickProps, CommunityTemplateClickProps, EntryNavigationClickProps, ExtensionMarketplaceClickProps, ProjectCollectionClickProps, TrackingWorkspaceScope, WorkspaceInviteClickProps, WorkspaceSwitcherClickProps } from './workspace.js';
 // ---- ui_click ------------------------------------------------------------
 //
@@ -963,36 +963,6 @@ export interface AmrEntryClickProps {
   source_product: 'open_design';
   source_detail: TrackingAmrEntrySource;
   entry_occurred_at: string;
-  campaign_id?: TrackingCampaignId;
-  conversion_source?: TrackingCampaignConversionSource;
-}
-
-export interface DeepSeekCampaignModalClickProps {
-  page_name: 'home';
-  area: 'deepseek_campaign_modal';
-  element: 'close' | 'later' | 'use_now' | 'upgrade';
-  campaign_id: TrackingCampaignId;
-  user_state: TrackingCampaignUserState;
-}
-
-export interface GoPlanSunsetModalClickProps {
-  page_name: 'home';
-  area: 'go_plan_sunset_modal';
-  element: 'view_other_subscriptions' | 'acknowledge' | 'close';
-  close_method?: 'unknown';
-  campaign_id: 'go_plan_sunset_202608';
-  announcement_version: '2026_08_25';
-  delivery_mode: TrackingCampaignDeliveryMode;
-  current_plan_id: string;
-  locale: string;
-}
-
-export interface DeepSeekCampaignBadgeClickProps {
-  page_name: 'home';
-  area: 'campaign_badge';
-  element: 'open_pricing';
-  campaign_id: TrackingCampaignId;
-  user_state: TrackingCampaignUserState;
 }
 
 // Terminal outcome of one AMR (vela) sign-in attempt, fired exactly once
@@ -1724,9 +1694,6 @@ export type UiClickProps =
   | RunFailedToastClickProps
   | RunRecoveryActionClickProps
   | AmrEntryClickProps
-  | DeepSeekCampaignModalClickProps
-  | GoPlanSunsetModalClickProps
-  | DeepSeekCampaignBadgeClickProps
   | ChatPanelResourcesPopoverClickProps
   | ChatPanelMessageQueueClickProps
   | FileManagerClickProps

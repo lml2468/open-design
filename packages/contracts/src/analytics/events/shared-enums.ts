@@ -86,43 +86,16 @@ export type TrackingAmrEntrySource =
   | 'generation_preview_switch_retry_card'
   | 'settings_amr_upgrade'
   | 'inline_amr_upgrade'
-  | 'go_plan_sunset_modal'
-  | 'deepseek_unpaid_modal'
-  | 'deepseek_workbench_badge'
-  | 'deepseek_model_switcher_upgrade'
   | 'avatar_amr_upgrade'
   | 'avatar_amr_agent_card'
   | 'artifact_success_upgrade'
   | 'home_artifact_upgrade';
-
-// `deepseek_v4_flash` is the finished 8/6-8/13 free week; `deepseek_v4_pro`
-// is the 8/13-8/27 two-model window that follows it. Both stay declared so
-// the finished campaign's rows keep a valid id in the warehouse.
-export type TrackingCampaignId =
-  | 'deepseek_v4_flash'
-  | 'deepseek_v4_pro'
-  | 'go_plan_sunset_202608';
-export type TrackingCampaignUserState = 'paid' | 'unpaid';
-export type TrackingCampaignDeliveryMode = 'demo' | 'targeted';
-export type TrackingCampaignConversionSource =
-  | 'go_plan_sunset_modal'
-  | 'deepseek_unpaid_modal'
-  | 'deepseek_workbench_badge'
-  | 'deepseek_model_switcher_upgrade'
-  | 'landing_home_banner'
-  | 'landing_pricing_personal_plan'
-  | 'landing_pricing_team_plan';
 
 export interface AmrEntryAttribution {
   entryId: string;
   sourceProduct: 'open_design';
   sourceDetail: TrackingAmrEntrySource;
   occurredAt: string;
-  // Campaign joins keep the first entry source stable and record the final
-  // conversion touch separately. Both fields are forwarded to Vela so a
-  // Stripe payment result can be attributed without replacing first touch.
-  campaignId?: TrackingCampaignId;
-  conversionSource?: TrackingCampaignConversionSource;
   // OpenDesign install/device id forwarded only on consent-gated AMR handoffs.
   odDeviceId?: string;
   // Self-reported onboarding profile, forwarded to AMR (anchored to entryId) so

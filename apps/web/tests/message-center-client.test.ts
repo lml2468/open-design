@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   clearAnonymousState,
-  findGoPlanSunsetMessage,
-  GO_PLAN_SUNSET_MESSAGE_KEY_PREFIX,
   pullMessageCenter,
   type MessageCenterMessage,
 } from '../src/message-center-client';
@@ -26,37 +24,16 @@ describe('message center client', () => {
     ...overrides,
   });
 
-  it.each([
-    GO_PLAN_SUNSET_MESSAGE_KEY_PREFIX,
-    `${GO_PLAN_SUNSET_MESSAGE_KEY_PREFIX}-test`,
-    `${GO_PLAN_SUNSET_MESSAGE_KEY_PREFIX}-v2`,
-  ])('selects an unread targeted message with the allowlisted prefix: %s', (messageKey) => {
-    const expected = message({ messageKey });
-    expect(findGoPlanSunsetMessage([
-      message({ id: 'missing-key' }),
-      message({ id: 'unknown-key', messageKey: 'another-announcement' }),
-      message({ id: 'global', audienceType: 'global', messageKey }),
-      message({ id: 'read', messageKey, readAt: '2026-08-26T01:00:00.000Z' }),
-      expected,
-    ])).toBe(expected);
-  });
-
-  it('leaves ordinary messages without a message key untouched', () => {
-    expect(findGoPlanSunsetMessage([message({ messageKey: null })])).toBeNull();
-  });
-
-  it('clears legacy anonymous window keys with anonymous state', () => {
+  it('clears anonymous message state', () => {
     const storage = new Map<string, string>();
     const adapter = {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => void storage.set(key, value),
       removeItem: (key: string) => void storage.delete(key),
     } as Storage;
-    storage.set('open-design.message-center.anonymous-started-at.v1', '2026-07-16T00:00:00.000Z');
     storage.set('open-design.message-center.anonymous-messages.v1', '[]');
     storage.set('open-design.message-center.anonymous-read-ids.v1', '[]');
     clearAnonymousState(adapter);
-    expect(storage.has('open-design.message-center.anonymous-started-at.v1')).toBe(false);
     expect(storage.has('open-design.message-center.anonymous-messages.v1')).toBe(false);
     expect(storage.has('open-design.message-center.anonymous-read-ids.v1')).toBe(false);
   });

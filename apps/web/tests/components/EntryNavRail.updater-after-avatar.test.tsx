@@ -49,16 +49,6 @@ function teamContext(): WorkspaceCollabContext {
   } as unknown as WorkspaceCollabContext;
 }
 
-function freeContext(): WorkspaceCollabContext {
-  return {
-    ...teamContext(),
-    workspaceId: 'ws-free',
-    workspaceType: 'personal',
-    billingState: 'free',
-    planId: null,
-  } as unknown as WorkspaceCollabContext;
-}
-
 function idleStatus(): OpenDesignHostUpdaterStatusSnapshot {
   return {
     arch: 'arm64',
@@ -145,26 +135,6 @@ async function renderWithDownloadedUpdate(context: WorkspaceCollabContext | null
 }
 
 describe('standalone updater rocket placement in the top-right cluster', () => {
-  it('shows the shared DeepSeek campaign badge on an unpaid project detail route', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'));
-
-    render(
-      <I18nProvider initial="zh-CN">
-        <WorkspaceTopRightAccountCluster
-          workspaceContextOverride={freeContext()}
-          amrLoggedIn
-          metricsConsent={false}
-          installationId="test-installation"
-        />
-      </I18nProvider>,
-    );
-
-    expect(screen.getByTestId('deepseek-campaign-pricing-badge').textContent).toContain(
-      'DeepSeek V4 Pro + V4 Flash 无限免费用',
-    );
-  });
-
   it('keeps the project-detail updater slot outside the shared account capsule', () => {
     render(
       <I18nProvider initial="zh-CN">

@@ -1,8 +1,6 @@
 import type {
   AmrEntryAttribution,
   TrackingAmrEntrySource,
-  TrackingCampaignConversionSource,
-  TrackingCampaignId,
   TrackingPageName,
 } from '@open-design/contracts/analytics';
 import {
@@ -20,8 +18,6 @@ type Track = (
 interface RecordAmrEntryOptions {
   metricsConsent?: boolean;
   reuseExistingFrom?: readonly TrackingAmrEntrySource[];
-  campaignId?: TrackingCampaignId;
-  conversionSource?: TrackingCampaignConversionSource;
 }
 
 interface SyncAmrProfileOptions {
@@ -32,27 +28,6 @@ interface SyncAmrProfileOptions {
 
 const AMR_ATTRIBUTION_STORAGE_KEY = 'open-design:amr-entry-attribution:v1';
 const AMR_ATTRIBUTION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * How long a CAMPAIGN entry survives, as opposed to the ordinary window above.
- *
- * A campaign runs longer than seven days, so the ordinary window would drop a
- * visitor's entry while the campaign that produced it is still running: click
- * the banner on day 1, subscribe on day 11, and the payment arrives with no
- * entry left to attribute it to. The campaign then under-reports against the
- * very metric it is judged on.
- *
- * Scoped to entries carrying a `campaignId` rather than raised globally, so
- * every other entry point keeps the attribution window its dashboards were
- * built on.
- */
-const AMR_CAMPAIGN_ATTRIBUTION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
-
-function amrAttributionTtlMs(attribution: Pick<AmrEntryAttribution, 'campaignId'>): number {
-  return attribution.campaignId
-    ? AMR_CAMPAIGN_ATTRIBUTION_TTL_MS
-    : AMR_ATTRIBUTION_TTL_MS;
-}
 
 const ENTRY_PAGE_BY_SOURCE: Record<TrackingAmrEntrySource, TrackingPageName> = {
   onboarding_amr_card: 'onboarding',
@@ -80,10 +55,6 @@ const ENTRY_PAGE_BY_SOURCE: Record<TrackingAmrEntrySource, TrackingPageName> = {
   generation_preview_switch_retry_card: 'file_manager',
   settings_amr_upgrade: 'settings',
   inline_amr_upgrade: 'chat_panel',
-  go_plan_sunset_modal: 'home',
-  deepseek_unpaid_modal: 'home',
-  deepseek_workbench_badge: 'home',
-  deepseek_model_switcher_upgrade: 'chat_panel',
   avatar_amr_upgrade: 'chat_panel',
   avatar_amr_agent_card: 'chat_panel',
   artifact_success_upgrade: 'artifact',
@@ -120,10 +91,6 @@ export function recordAmrEntry(
     sourceProduct: 'open_design',
     sourceDetail,
     occurredAt: now.toISOString(),
-    ...(options.campaignId ? { campaignId: options.campaignId } : {}),
-    ...(options.conversionSource
-      ? { conversionSource: options.conversionSource }
-      : {}),
     ...(profile?.role ? { odRole: profile.role } : {}),
     ...(profile?.orgSize ? { odOrgSize: profile.orgSize } : {}),
     ...(profile?.useCase && profile.useCase.length > 0
@@ -141,10 +108,6 @@ export function recordAmrEntry(
     source_product: attribution.sourceProduct,
     source_detail: attribution.sourceDetail,
     entry_occurred_at: attribution.occurredAt,
-    ...(attribution.campaignId ? { campaign_id: attribution.campaignId } : {}),
-    ...(attribution.conversionSource
-      ? { conversion_source: attribution.conversionSource }
-      : {}),
   });
   if (options.metricsConsent === true) {
     void mirrorAmrEntryToAmrAnalytics(attribution);
@@ -159,7 +122,7 @@ export function readAmrAttribution(now: Date = new Date()): AmrEntryAttribution 
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<AmrEntryAttribution>;
     if (!isValidAmrAttribution(parsed)) return null;
-    if (now.getTime() - Date.parse(parsed.occurredAt) > amrAttributionTtlMs(parsed)) {
+    if (now.getTime() - Date.parse(parsed.occurredAt) > AMR_ATTRIBUTION_TTL_MS) {
       window.localStorage.removeItem(AMR_ATTRIBUTION_STORAGE_KEY);
       return null;
     }
@@ -238,10 +201,6 @@ export function attributedAmrUrl(
     od_entry_source: attribution.sourceDetail,
     od_entry_at: attribution.occurredAt,
   };
-  if (attribution.campaignId) params.od_campaign_id = attribution.campaignId;
-  if (attribution.conversionSource) {
-    params.od_conversion_source = attribution.conversionSource;
-  }
   if (deviceId) params.od_device_id = deviceId;
   try {
     const url = new URL(baseUrl);
@@ -324,10 +283,6 @@ async function mirrorAmrEntryToAmrAnalytics(
           sourceProduct: attribution.sourceProduct,
           sourceDetail: attribution.sourceDetail,
           entryOccurredAt: attribution.occurredAt,
-          ...(attribution.campaignId ? { campaignId: attribution.campaignId } : {}),
-          ...(attribution.conversionSource
-            ? { conversionSource: attribution.conversionSource }
-            : {}),
           // Self-reported onboarding profile (optional). Anchored to entryId on
           // the AMR side for paid-conversion segmentation. Not added to the
           // redirect URL — kept to the consent-gated mirror channel only.

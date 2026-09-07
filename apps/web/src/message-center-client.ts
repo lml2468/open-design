@@ -2,8 +2,6 @@ export type MessageCenterFilter = 'all' | 'unread' | 'read';
 
 export interface MessageCenterMessage {
   id: string;
-  /** Optional stable selector for client-owned special behavior. Ordinary
-   *  messages do not need one and continue through the inbox unchanged. */
   messageKey?: string | null;
   audienceType: 'global' | 'targeted';
   typeName: string;
@@ -15,20 +13,6 @@ export interface MessageCenterMessage {
   readAt: string | null;
 }
 
-/** One-off, client-owned announcement selector. The message center remains a
- * generic inbox: only slugs with this prefix opt into the preset strong dialog. */
-export const GO_PLAN_SUNSET_MESSAGE_KEY_PREFIX = 'go-plan-sunset-2026-08';
-
-export function findGoPlanSunsetMessage(
-  messages: readonly MessageCenterMessage[],
-): MessageCenterMessage | null {
-  return messages.find((message) => (
-    message.audienceType === 'targeted'
-    && message.readAt == null
-    && message.messageKey?.startsWith(GO_PLAN_SUNSET_MESSAGE_KEY_PREFIX)
-  )) ?? null;
-}
-
 interface MessageCenterPage {
   messages: MessageCenterMessage[];
   nextCursor: string | null;
@@ -37,7 +21,6 @@ interface MessageCenterPage {
 
 const ACCOUNT_PROXY = '/api/integrations/vela/message-center';
 const ANONYMOUS_PROXY = '/api/integrations/vela/message-center-public';
-const LEGACY_WINDOW_KEY = 'open-design.message-center.anonymous-started-at.v1';
 const MESSAGES_KEY = 'open-design.message-center.anonymous-messages.v1';
 const READ_KEY = 'open-design.message-center.anonymous-read-ids.v1';
 const MAX_MESSAGE_CENTER_PAGES = 20;
@@ -62,7 +45,6 @@ export function writeAnonymousState(
 export function clearAnonymousState(storage: Storage): void {
   storage.removeItem(MESSAGES_KEY);
   storage.removeItem(READ_KEY);
-  storage.removeItem(LEGACY_WINDOW_KEY);
 }
 
 export async function isAmrLoggedIn(): Promise<boolean> {
