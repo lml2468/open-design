@@ -4,6 +4,8 @@ import { initializePlaywrightRunNamespace } from './lib/playwright/runtime-ident
 
 initializePlaywrightRunNamespace();
 
+const chromiumExecutablePath = process.env.OD_PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+
 function parseWorkerCount(value: string | undefined): number {
   if (value == null || value.length === 0) return 2;
   const parsed = Number(value);
@@ -52,7 +54,12 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(chromiumExecutablePath
+          ? { launchOptions: { executablePath: chromiumExecutablePath } }
+          : {}),
+      },
     },
   ],
 });

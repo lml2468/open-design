@@ -76,7 +76,7 @@ describe('CollaborationServerClient', () => {
       expect(init?.body).toBeInstanceOf(FormData);
       expect(headers.get('authorization')).toBe('Bearer access-token');
       expect(headers.get('idempotency-key')).toBe('publish-key');
-      expect(headers.get('if-match')).toBe('7');
+      expect(headers.get('if-match')).toBe('"project-7"');
       expect(headers.has('content-type')).toBe(false);
       const body = init?.body as FormData;
       expect(body.get('manifest')).toBe('{"schemaVersion":1}');

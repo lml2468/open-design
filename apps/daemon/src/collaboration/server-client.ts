@@ -159,7 +159,7 @@ export class CollaborationServerClient {
         headers: {
           authorization: `Bearer ${accessToken}`,
           'idempotency-key': input.idempotencyKey,
-          'if-match': String(input.projectRevision),
+          'if-match': `"project-${input.projectRevision}"`,
         },
         body,
       },

@@ -431,6 +431,10 @@ async function emitRun(promptText) {
     ], 'end_turn');
     return;
   }
+  if (promptText.includes('Apply the attached collaboration review comments')) {
+    await emitCollaborationFeedbackEditRun(promptText);
+    return;
+  }
   if (promptText.includes('Edit the existing deterministic smoke artifact through the managed project alias')) {
     await emitManagedAliasArtifactEditRun(promptText);
     return;
@@ -801,6 +805,38 @@ async function emitExistingArtifactEditRun(promptText) {
     throw new Error('fake artifact edit write failed: HTTP ' + response.status + ' ' + (await response.text()).slice(0, 500));
   }
   emitSuccess('Updated real-daemon-smoke.html in place with a deterministic follow-up edit.', false, false);
+  process.exitCode = 0;
+  exitSoon(0);
+}
+
+async function emitCollaborationFeedbackEditRun(promptText) {
+  const requiredFeedback = [
+    '<attached-preview-comments>',
+    'Make the primary headline more explicit.',
+    'Reviewer Agent: strengthen the call to action.',
+    'reviewSource: collaboration-agent',
+  ];
+  const missing = requiredFeedback.filter((marker) => !promptText.includes(marker));
+  if (missing.length > 0) {
+    throw new Error('fake collaboration edit is missing review context: ' + missing.join(', '));
+  }
+  const projectId = process.env.OD_PROJECT_ID || projectIdFromPrompt(promptText);
+  const daemonUrl = process.env.OD_DAEMON_URL;
+  if (!projectId || !daemonUrl) {
+    throw new Error('fake collaboration edit requires OD_PROJECT_ID and OD_DAEMON_URL');
+  }
+  const response = await fetch(new URL('/api/projects/' + encodeURIComponent(projectId) + '/files', daemonUrl), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: 'real-daemon-smoke.html',
+      content: '<!doctype html><html><body><main><h1>Collaboration Feedback Applied</h1><p>A stronger team-reviewed call to action.</p></main></body></html>',
+    }),
+  });
+  if (!response.ok) {
+    throw new Error('fake collaboration edit write failed: HTTP ' + response.status + ' ' + (await response.text()).slice(0, 500));
+  }
+  emitSuccess('Applied the attached human and Reviewer Agent feedback to real-daemon-smoke.html.', false, false);
   process.exitCode = 0;
   exitSoon(0);
 }

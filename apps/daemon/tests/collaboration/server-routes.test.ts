@@ -336,7 +336,7 @@ describe('Collaboration Server routes', () => {
       },
     });
     const publishRequest = remoteRequests.find(({ url }) => url.endsWith('/publishes'));
-    expect(publishRequest?.headers.get('if-match')).toBe('1');
+    expect(publishRequest?.headers.get('if-match')).toBe('"project-1"');
     expect(publishRequest?.headers.get('idempotency-key')).toBeTruthy();
   });
 
