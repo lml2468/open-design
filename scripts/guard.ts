@@ -106,13 +106,10 @@ const residualAllowedExactPaths = new Set([
   "scripts/scaffold-html-ppt-skills.mjs",
   "scripts/sync-hyperframes-skill.mjs",
   "scripts/verify-media-models.mjs",
-  // AMR (vela) verifier: ad-hoc dev runner that imports the daemon's compiled
-  // `dist/acp.js` and drives a real `vela agent run` against a live model.
-  // Kept as .mjs so it can be invoked directly via Node without any transform.
-  "apps/daemon/scripts/verify-amr-real-vela.mjs",
   // Fake `vela agent run` ACP stdio stub used by the AMR
   // integration tests. The Vitest test spawns it via `child_process.spawn`,
-  // which needs a directly-executable file (shebang + .mjs).
+  // which needs a directly-executable file (shebang + .mjs). This fixture is
+  // removed with the remaining legacy AMR runtime tests.
   "apps/daemon/tests/fixtures/fake-vela.mjs",
   // Fake ACP agent CLI that answers `initialize` and then rejects
   // `session/new`, used by the ACP handshake-rejection wiring tests. Same
@@ -122,7 +119,7 @@ const residualAllowedExactPaths = new Set([
   // Fake `kimi acp` ACP stdio stub used by the stdio-MCP wiring test. It
   // records the `session/new` params the daemon actually sends, and the test
   // spawns it through a PATH shim, so it must be directly executable by Node
-  // without a transform — same precedent as `fake-vela.mjs` above.
+  // without a transform.
   "apps/daemon/tests/fixtures/fake-kimi-acp-cli.mjs",
   "tools/dev/bin/tools-dev.mjs",
   "tools/dev/esbuild.config.mjs",
