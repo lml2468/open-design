@@ -3792,18 +3792,7 @@ export function ProjectView({
     // post-finalize — bump the refresh key so DESIGN.md staleness
     // recomputes against the new mtimes.
     setDesignMdRefreshKey((n) => n + 1);
-    // Team-share upload badge (recvqghymxqQQq): this fires on the SAME
-    // chokidar-backed `file-changed` event the daemon's collab-publish-watcher
-    // uses to flip `syncState` to 'pending_upload' (markLocalChangePending in
-    // apps/daemon/src/collab/runtime.ts), and that state typically reverts to
-    // 'synced' within one debounce window (~400ms) plus a publish — far
-    // shorter than CollabClient's 5s status-poll cadence. Without checking
-    // status right here, the owner's own tab almost never catches the
-    // transient and the file-tab "uploading" icon never appears to change.
-    // Mirrors the existing `project-metadata-changed` → `checkStatusNow()`
-    // hub-push pattern below, just triggered by the LOCAL watcher instead.
-    collabCheckStatusNow();
-  }, [collabCheckStatusNow, project.id]);
+  }, [project.id]);
   const reconcileFilesWhenProjectEventsBecomeReady = useCallback(async () => {
     // The initial file snapshot and the project-event stream are established
     // independently. Re-read once after the stream handshake to close the

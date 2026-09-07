@@ -392,10 +392,8 @@ describe('createVelaCliResourceAdapter', () => {
   });
 
   it('stops spawning `vela resource push` on the very next attempt once the live context reports the member removed', async () => {
-    // Reproduces the collab-publish-watcher gap: an already-attached file
-    // watcher never re-checks `shouldPublish`, so the ONLY thing standing
-    // between a removed owner's local edits and `vela resource push` is this
-    // adapter re-deriving `hasTeamIdentity` fresh on every publish attempt.
+    // A long-lived client must re-derive `hasTeamIdentity` on every publish
+    // attempt so a removed member cannot keep using a locally valid session.
     const { run, calls } = recordingRun({ push: JSON.stringify({ version: 1 }) });
     let memberStatus: 'active' | 'removed' = 'active';
     const adapter = createVelaCliResourceAdapter({

@@ -432,14 +432,13 @@ export function shouldUseVelaCliResourceTransport(env: NodeJS.ProcessEnv = proce
  * session AMR uses, which does not itself re-derive OD's team membership per
  * call. Without the explicit `memberStatus` check below, a member removed
  * from a team while their daemon keeps running would keep passing this gate
- * on every project they used to own, and the file watcher in
- * `collab-publish-watcher.ts` would keep pushing their local edits to the
- * team's resource hub through a vela session that is still locally valid.
+ * on every project they used to own and could continue publishing through a
+ * Vela session that is still locally valid.
  *
  * `hasTeamIdentity` is re-evaluated fresh on every publish/pull/syncLatest/
  * unpublish attempt. The runtime supplies the immutable principal captured by
- * the request or project watch; it never re-targets through daemon-global
- * active Workspace state.
+ * the request; it never re-targets through daemon-global active Workspace
+ * state.
  */
 export function contextHasTeamIdentity(context: WorkspaceCollabContext | null): boolean {
   return workspaceContextHasTeamIdentity(context) && context?.memberStatus === 'active';

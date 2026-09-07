@@ -954,7 +954,6 @@ import {
 import { createAccountBillingSummaryCache } from './collab/account-billing-summary-cache.js';
 import { createEventRefreshCoordinator } from './collab/event-refresh-coordinator.js';
 import { createWorkspaceExactAuthorityCache } from './collab/workspace-exact-authority-cache.js';
-import { createCollabPublishWatcher } from './collab/collab-publish-watcher.js';
 import {
   isUnmaterializedSharedPlaceholder,
   SHARED_PROJECT_PLACEHOLDER_METADATA_KEY,
@@ -4500,47 +4499,6 @@ export async function startServer({
     );
     return list.find((entry) => entry.projectId === projectId)?.ownerMemberId ?? null;
   };
-  // Author-side publish TRIGGER (C spec §D1): watch the projects THIS daemon's
-  // member owns + has shared, and coalesce every file edit into a debounced
-  // publish. The read-only gate (team-shared AND owner === me) means a member's
-  // pulled copy is never watched, so an inbound pull can't loop into a publish and
-  // a member can't publish edits to someone else's project.
-  const collabPublishWatcher = createCollabPublishWatcher({
-    notifyChanged: (projectId, principal) =>
-      collab.scheduler.notifyChanged(projectId, 'file-change', principal),
-    listProjectIds: () => listProjects(db).map((project: { id: string }) => project.id),
-    shouldPublish: async (projectId) => {
-      if (projectIsUnmaterializedSharedPlaceholder(projectId)) return false;
-      const workspaceId = findTeamWorkspaceIdForProject(db, projectId)?.trim();
-      if (!workspaceId) return false;
-      const directory = await fetchWorkspaceDirectory().catch(() => ({
-        ok: false as const,
-        items: [],
-      }));
-      if (!directory.ok) return false;
-      const scope = teamResourceRequestScopeForWorkspaceId(
-        directory.items,
-        workspaceId,
-      );
-      if (!scope?.canShare) return false;
-      const ownerMemberId = await resolveSharedProjectOwner(projectId, {
-        workspaceId,
-        workspaceMemberId: scope.principal.memberId,
-      });
-      if (ownerMemberId !== scope.principal.memberId) return false;
-      collab.rememberTeamShare(projectId, scope.principal);
-      return scope.principal;
-    },
-    subscribeFiles: (projectId, onChange) => {
-      const watchProject = getProject(db, projectId);
-      const sub = subscribeFileEvents(PROJECTS_DIR, projectId, (evt) => {
-        if (evt.type === 'file-changed') onChange();
-      }, { metadata: watchProject?.metadata });
-      return { unsubscribe: () => sub.unsubscribe() };
-    },
-    onError: (error) => console.warn('[od] collab publish watcher error:', error),
-  });
-  collabPublishWatcher.start();
   const sharedProjectPullProfiling =
     sharedProjectPullProfileEnabled(process.env);
   const verifyProjectWorkspaceContextForRequest = async (

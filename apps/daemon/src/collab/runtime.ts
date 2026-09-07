@@ -155,12 +155,10 @@ export interface CreateCollabRuntimeOptions {
     principal: ResourceHubPrincipal;
   }) => void;
   /**
-   * Gate for SCHEDULER-driven publishes (file watcher, `/collab/changed`,
-   * `/collab/publish`, run boundaries): return false and the flush becomes a
-   * no-op for that project. The second layer of the fresh-install wipe guard
-   * (recvqzaDvUU6B3) — `should-publish.ts` keeps a placeholder from ever
-   * being WATCHED, this keeps an already-scheduled notification (or a direct
-   * HTTP nudge) from publishing one. Deliberately NOT consulted by
+   * Gate for scheduler-driven publishes (`/collab/changed`, `/collab/publish`,
+   * and run boundaries): return false and the flush becomes a no-op for that
+   * project. This keeps a queued notification or direct HTTP nudge from
+   * publishing an unmaterialized placeholder. Deliberately NOT consulted by
    * `requestTeamShare`/`publishNow`: an explicit share is the user saying
    * "publish my local state", which must keep working for brand-new local
    * projects. Defaults to allow.
@@ -534,18 +532,10 @@ export function createCollabRuntime(options: CreateCollabRuntimeOptions = {}): C
             candidate.version > highest.version ? candidate : highest,
           );
         }
-        // No scoped principal on the notification AND no remaining share
-        // principals for this project: every share has been removed, which
-        // is exactly the condition `requestTeamUnshare` uses to mark the
-        // project `unshared`. A file-watcher subscription is only torn down
-        // when a project is deleted locally (see collab-publish-watcher.ts
-        // `reconcile`), never on unshare, so a debounced `notifyChanged` can
-        // still land here well after the unshare completed. Publishing
-        // anyway would durably re-create the resource on the hub under an
-        // unscoped id for the round-trip it takes `onPublished`'s `unshared`
-        // guard to notice and unpublish it again — a real window in which a
-        // status read reports the just-unshared project as shared again.
-        // Refuse outright instead of publish-then-cleanup.
+        // No scoped principal on the notification and no remaining share
+        // principals for this project means every share has been removed.
+        // Refuse stale queued notifications outright instead of briefly
+        // recreating the resource before the unshared guard can clean it up.
         if (unshared.has(projectId)) return null;
       }
       return baseAdapter.publish({

@@ -283,10 +283,9 @@ export interface WorkspaceProjectsReconcileIdentity {
 export interface WorkspaceProjectsReconcilerDeps {
   /** The signed-in team workspace + member this daemon is currently acting
    *  as, or null off-team / signed out / removed. Must gate on active
-   *  membership (`memberStatus === 'active'`), the same defensive check
-   *  `should-publish.ts`'s `createShouldPublish` uses — a context that can
-   *  still ADDRESS a resource hub partition is not proof this member is still
-   *  IN the team (see that file's doc comment). */
+   *  membership (`memberStatus === 'active'`): a context that can still
+   *  address a resource-hub partition is not proof this member is still in
+   *  the team. */
   getWorkspaceIdentity: () => Promise<WorkspaceProjectsReconcileIdentity | null>;
   /** `listTeamProjects()` narrowed to what the planner needs — reuse the
    *  daemon's existing `teamProjectsForDisplay` (server.ts), the exact same

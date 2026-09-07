@@ -671,50 +671,6 @@ describe('collab sync routes', () => {
     expect(teamProjectCatalog.upsert).not.toHaveBeenCalled();
   });
 
-  it('never re-publishes a fully-unshared project when a stale file-watcher notification arrives after unshare', async () => {
-    // Regression for "unshare silently reverts to shared" (recvpTXk3liiya):
-    // the project's chokidar subscription in collab-publish-watcher.ts is
-    // only torn down when the project is deleted locally, never when it is
-    // merely unshared. A file touched after the unshare (autosave, thumbnail
-    // regen, or any write under the project dir) still fires
-    // `scheduler.notifyChanged`. Before the fix, the scheduler adapter found
-    // no remaining principal for the project and fell through to publishing
-    // it anyway under an unscoped resource id — durably re-sharing it for
-    // the window before `onPublished`'s `unshared` guard noticed and issued
-    // a compensating unpublish. A status read landing in that window saw the
-    // project as shared again.
-    const publish = vi.fn(async () => ({ version: 1 }));
-    const unpublish = vi.fn(async () => undefined);
-    runtime = createCollabRuntime({
-      adapter: { publish, unpublish },
-    });
-    const projectId = 'stale-watcher-project';
-    const workspace = {
-      memberId: 'wm-1',
-      teamId: 'ws-1',
-      role: 'member' as const,
-      lifecycleState: 'active' as const,
-    };
-
-    await runtime.requestTeamShare(projectId, workspace);
-    expect(publish).toHaveBeenCalledTimes(1);
-
-    await runtime.requestTeamUnshare(projectId, workspace);
-    publish.mockClear();
-
-    // Simulate the stale file-watcher subscription firing after unshare —
-    // exactly what collab-publish-watcher.ts's leftover `subs` entry does.
-    runtime.scheduler.notifyChanged(projectId, 'file-change');
-    runtime.scheduler.runBoundary(projectId);
-    for (let i = 0; i < 30; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-
-    expect(publish).not.toHaveBeenCalled();
-    expect(runtime.projectOwnerMemberId(projectId, workspace)).toBeNull();
-    expect(runtime.projectSyncState(projectId, workspace)).toBe('local_only');
-  });
-
   it('preserves existing sync state when rememberTeamShare only seeds ownership', () => {
     runtime = createCollabRuntime();
     const workspace = {
