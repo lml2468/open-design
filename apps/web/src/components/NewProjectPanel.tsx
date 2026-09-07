@@ -624,8 +624,16 @@ export function NewProjectPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, mediaSurface, skillIdForTab, videoModelTouched]);
 
+  const selectedMediaModel =
+    mediaSurface === 'image'
+      ? imageModel
+      : mediaSurface === 'video'
+        ? videoModel
+        : audioModel;
   const canCreate =
-    !loading && (tab !== 'template' || templateId != null);
+    !loading
+    && (tab !== 'template' || templateId != null)
+    && (tab !== 'media' || selectedMediaModel.trim().length > 0);
 
   function updateTabScrollState() {
     const el = tabsRef.current;
@@ -1119,6 +1127,8 @@ export function NewProjectPanel({
           title={
             tab === 'template' && templateId == null
               ? t('newproj.createDisabledTitle')
+              : tab === 'media' && selectedMediaModel.trim().length === 0
+                ? t('newproj.modelMissingSub')
               : undefined
           }
         >
@@ -2771,7 +2781,7 @@ function MediaProjectOptions(props:
 
 export function supportedModels(surface: 'image' | 'video' | 'audio', models: MediaModel[]): MediaModel[] {
   const supportedProviders: Record<'image' | 'video' | 'audio', Set<string>> = {
-    image: new Set(['vela', 'openai', 'volcengine', 'grok', 'nanobanana', 'openrouter', 'imagerouter', 'leonardo', 'custom-image', 'aihubmix', 'minimax']),
+    image: new Set(['openai', 'volcengine', 'grok', 'nanobanana', 'openrouter', 'imagerouter', 'leonardo', 'custom-image', 'aihubmix', 'minimax']),
     video: new Set(['volcengine', 'hyperframes', 'grok', 'openrouter', 'imagerouter', 'aihubmix']),
     audio: new Set(['minimax', 'fishaudio', 'senseaudio', 'elevenlabs', 'openai', 'volcengine', 'aihubmix']),
   };

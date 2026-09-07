@@ -30,7 +30,7 @@ describe('ToolCard secondary result disclosures', () => {
             id: 'media-1',
             name: 'Bash',
             input: {
-              command: '"$OD_NODE_BIN" "$OD_BIN" media generate --surface image --model vela/nano-banana-2 --aspect 16:9 --output shoe.png',
+              command: '"$OD_NODE_BIN" "$OD_BIN" media generate --surface image --model gpt-image-2 --aspect 16:9 --output shoe.png',
             },
           }}
           runStreaming
@@ -41,7 +41,7 @@ describe('ToolCard secondary result disclosures', () => {
 
     expect(container.querySelector('.op-title')?.textContent).toBe('media generate');
     expect(container.querySelector('.op-meta')?.textContent).toBe(
-      'image · vela/nano-banana-2 · 16:9 · shoe.png',
+      'image · gpt-image-2 · 16:9 · shoe.png',
     );
   });
 
