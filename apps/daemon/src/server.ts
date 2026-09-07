@@ -126,7 +126,6 @@ import {
   resolveSafePromptImagePaths,
   resolveOdNextRequestUserPrompt,
   excludeAcpImagePathsAlreadyDeliveredAsResources,
-  selectPromptImagePaths,
 } from './runtimes/chat-prompt-inputs.js';
 import {
   writePromptAndEndStdin,
@@ -187,7 +186,6 @@ export {
   resolveSafeProjectAttachments,
   resolveSafePromptImagePaths,
   excludeAcpImagePathsAlreadyDeliveredAsResources,
-  selectPromptImagePaths,
 } from './runtimes/chat-prompt-inputs.js';
 export {
   applyClaudeStreamJsonRunBookkeeping,
@@ -442,7 +440,6 @@ import { runAutoExtractionCleanup } from './memory-cleanup.js';
 import { attachAcpSession } from './agent-protocol/index.js';
 import { attachPiRpcSession } from './agent-protocol/index.js';
 import { attachDshProfileSession } from './agent-protocol/index.js';
-import { stageAmrImagePaths } from './media/amr-image-staging.js';
 import { ingestRoutineConnectorEvolution } from './automation-routine-evolution.js';
 import { createClaudeStreamHandler } from './runtimes/claude-stream.js';
 import { createAgentTitleMarkerStripper } from './title-marker.js';
@@ -489,7 +486,6 @@ import {
   normalizeDeepSeekHarnessFailure,
 } from './runtimes/auth.js';
 import { readOpenCodeServiceFailure } from './runtimes/opencode-log.js';
-import { createAgentStderrVisibilityFilter } from './amr-stderr-filter.js';
 import { createQoderStreamHandler } from './runtimes/qoder-stream.js';
 import { subscribe as subscribeFileEvents } from './project-watchers.js';
 import { importFigmaFromBytes } from './figma/figma-import.js';
@@ -10690,10 +10686,6 @@ export async function startServer({
       );
     }
     const transportSourceImages = odNextTaskInputSnapshot?.imagePaths ?? safeImages;
-    const amrStagedImages =
-      def.id === 'amr' && !odNextTaskInputSnapshot
-        ? await stageAmrImagePaths(cwd ?? PROJECT_ROOT, safeImages, UPLOAD_DIR)
-        : transportSourceImages;
 
     // Project-scoped attachments: project-relative paths inside cwd. Each
     // is run through the same path-traversal guard the file CRUD endpoints
@@ -11459,11 +11451,7 @@ export async function startServer({
       ? OD_NEXT_BUNDLE_ECHO_GUARD_V2
       : ECHO_GUARD;
     const includeStableForPayload = isOdNextRequestStage || includeStableInstructions;
-    const promptImagePaths = selectPromptImagePaths(
-      def.id,
-      transportSourceImages,
-      amrStagedImages,
-    );
+    const promptImagePaths = transportSourceImages;
     const acpPromptImagePaths = odNextTaskInputSnapshot
       ? excludeAcpImagePathsAlreadyDeliveredAsResources(
           promptImagePaths,
@@ -13234,15 +13222,12 @@ export async function startServer({
     let jsonEventStreamHandler: ReturnType<typeof createJsonEventStreamHandler> | null = null;
     let agentStdoutTail = '';
     let agentStderrTail = '';
-    const agentStderrFilter = createAgentStderrVisibilityFilter(agentId);
     const emitVisibleAgentStderr = (chunk: unknown) => {
-      const visibleChunk = agentStderrFilter.write(chunk);
-      if (!visibleChunk) return;
-      agentStderrTail = `${agentStderrTail}${visibleChunk}`.slice(-2000);
-      send('stderr', { chunk: visibleChunk });
-    };
-    const flushVisibleAgentStderr = () => {
-      const visibleChunk = agentStderrFilter.flush();
+      const visibleChunk = chunk === null || chunk === undefined
+        ? ''
+        : typeof chunk === 'string'
+          ? chunk
+          : String(chunk);
       if (!visibleChunk) return;
       agentStderrTail = `${agentStderrTail}${visibleChunk}`.slice(-2000);
       send('stderr', { chunk: visibleChunk });
@@ -13657,7 +13642,6 @@ export async function startServer({
           emitVisibleAgentStderr(chunk);
         });
         child.on('error', (err) => {
-          flushVisibleAgentStderr();
           send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', err.message));
         });
 
@@ -13667,7 +13651,6 @@ export async function startServer({
         // apart from a clean ship and may misclassify failures.
         const childExitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
           child.once('close', (code, signal) => {
-            flushVisibleAgentStderr();
             resolve({ code, signal });
           });
         });
@@ -13707,7 +13690,6 @@ export async function startServer({
             finishStrategyAwarePhysicalRun('failed', 1, null);
           }
         } catch (err) {
-          flushVisibleAgentStderr();
           send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', err instanceof Error ? err.message : String(err)));
           finishStrategyAwarePhysicalRun('failed', 1, null);
         } finally {
@@ -14004,7 +13986,6 @@ export async function startServer({
         // a run failure races the cancel route and can make it return failed.
         if (run.cancelRequested) return;
         if (agentStreamError) return;
-        flushVisibleAgentStderr();
         const failureText = [
           String(ev.message || 'Agent stream error'),
           typeof ev.raw === 'string' ? ev.raw : '',
@@ -14176,7 +14157,6 @@ export async function startServer({
             });
             return;
           }
-          flushVisibleAgentStderr();
           const message = String((ev as any).message || 'Claude Code stream error');
           const failureText = [
             message,
@@ -14371,7 +14351,6 @@ export async function startServer({
           } else if (channel === 'error') {
             if (run.cancelRequested) return;
             if (agentStreamError) return;
-            flushVisibleAgentStderr();
             agentStreamError = String(payload?.message || 'Pi session error');
             agentStreamErrorObservedBeforeCancellation = true;
             acpFatalErrorObservedBeforeCancellation = true;
@@ -14486,7 +14465,6 @@ export async function startServer({
           // progress. Freeze here so the recorded age keeps describing the
           // silence rather than our own teardown.
           if (event === 'error') retireAttemptOnAcpVerdict();
-          if (event === 'error') flushVisibleAgentStderr();
           if (def.id === 'amr' && event === 'error') {
             const failure = classifyAmrAccountFailureSignal({
               details: data?.error?.details,
@@ -14747,7 +14725,6 @@ export async function startServer({
       clearInactivityWatchdog();
       clearFirstOutputWatchdog();
       cleanupPromptFile();
-      flushVisibleAgentStderr();
       revokeToolToken('child_exit');
       if (!attemptStillOwnsRun()) return;
       unregisterChatAgentEventSink();
@@ -14762,7 +14739,6 @@ export async function startServer({
       clearInactivityWatchdog();
       clearFirstOutputWatchdog();
       clearForcedChildShutdown();
-      flushVisibleAgentStderr();
       if (!attemptStillOwnsRun() || watchdogRetryRestarted) {
         // Finalization and event-sink / run-handle ownership (keyed by the
         // shared runId) now belong to another retry generation, so this

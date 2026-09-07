@@ -1034,14 +1034,6 @@ export function resolveSafePromptImagePaths(
   return { safeImages, oversizedImages, failedImages };
 }
 
-export function selectPromptImagePaths(
-  agentId: string | null | undefined,
-  safeImages: string[],
-  amrStagedImages: string[],
-) {
-  return agentId === 'amr' ? amrStagedImages : safeImages;
-}
-
 export function excludeAcpImagePathsAlreadyDeliveredAsResources(
   imagePaths: string[],
   resourcePaths: string[],
