@@ -20,7 +20,7 @@ For the current coverage posture, recent hardening work, grouped-run status, and
 - `lib/vitest/`: Vitest-specific atomic helpers only. Helpers describe actions such as mock servers, HTTP calls, and reports; tools-dev lifecycle belongs in `lib/tools-dev/` and is only composed through `lib/vitest/suite.ts`.
 - `lib/vitest/report.ts`: the report boundary. Specs save curated output through `report.save(<relpath>, <blob>)` or `report.json(<relpath>, value)`; release workflows should consume only the final report path, not its internal file layout.
 - `createSmokeSuite(...).with.*`: suite-owned lifecycle composition from `@/vitest/suite`. Prefer this shape for namespace-bound resources such as `suite.with.toolsDev(...)` so specs keep business workflow code in the foreground.
-- Temporary e2e Vitest env/PATH mutations, AMR fake endpoint URLs, and packaged smoke default namespaces belong behind `@/vitest/suite` helpers such as `suite.with.env(...)`, `suite.with.pathEntry(...)`, `suite.amr`, and `resolvePackagedSmokeNamespace(...)`. Do not hand-roll save/restore blocks or fixed localhost ports in individual specs.
+- Temporary e2e Vitest env/PATH mutations and packaged smoke default namespaces belong behind `@/vitest/suite` helpers such as `suite.with.env(...)`, `suite.with.pathEntry(...)`, and `resolvePackagedSmokeNamespace(...)`. Do not hand-roll save/restore blocks or fixed localhost ports in individual specs.
 - `lib/playwright/`: Playwright-specific fixtures, resource accessors, route helpers, and UI actions.
 - `scripts/playwright.ts`: Playwright auxiliary subcommands such as artifact cleanup; it must not wrap `playwright test`.
 

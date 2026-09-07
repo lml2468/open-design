@@ -408,6 +408,33 @@
   left: auto;
 }
 
+/* A short desktop window leaves only a narrow band between the top-right
+   controls and the home composer. Compact the ready prompt just enough to
+   preserve both interaction targets instead of covering the composer/model
+   picker. Mobile uses the width-specific layout below. */
+@media (max-height: 640px) and (min-width: 561px) {
+  .entry-top-right-cluster > .entry-nav-rail__updater .entry-updater-menu .updater-popup {
+    top: calc(100% - 8px);
+    width: min(400px, calc(100vw - 32px));
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .entry-top-right-cluster .updater-popup__body p {
+    margin-top: 4px;
+    line-height: 1.35;
+  }
+
+  .entry-top-right-cluster .updater-popup__footer {
+    gap: 6px;
+  }
+
+  .entry-top-right-cluster .updater-popup__actions,
+  .entry-top-right-cluster .updater-popup__button {
+    min-height: 30px;
+  }
+}
+
 .updater-popup__body {
   min-width: 0;
 }

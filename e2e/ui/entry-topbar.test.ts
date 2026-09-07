@@ -1,6 +1,6 @@
 import { expect, test } from '@/playwright/suite';
 import { ensureRailOpen } from '@/playwright/rail';
-import { settingsSurface } from '@/playwright/amr';
+import { settingsSurface } from '@/playwright/app';
 import { routeAgents } from '@/playwright/mock-factory';
 import { T } from '@/timeouts';
 import type { Page } from '@playwright/test';

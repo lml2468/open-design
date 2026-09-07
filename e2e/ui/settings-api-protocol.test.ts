@@ -1,6 +1,6 @@
 import { expect, test } from '@/playwright/suite';
 import type { Locator, Page } from '@playwright/test';
-import { openSettingsDialog, settingsSurface } from '../lib/playwright/amr.js';
+import { openSettingsDialog, settingsSurface } from '../lib/playwright/app.js';
 import { routeAgents, suppressWhatsNew } from '../lib/playwright/mock-factory.js';
 import { T } from '@/timeouts';
 

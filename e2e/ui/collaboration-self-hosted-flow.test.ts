@@ -1,12 +1,16 @@
 import type { Page, Request, Response } from '@playwright/test';
 
-import { dismissPrivacyDialog, openSettingsDialog, STORAGE_KEY, waitForLoadingToClear } from '@/playwright/amr';
+import {
+  dismissPrivacyDialog,
+  openSettingsDialog,
+  STORAGE_KEY,
+  waitForLoadingToClear,
+} from '@/playwright/app';
 import {
   createCollabCluster,
   type CollabCluster,
 } from '@/playwright/collab-cluster';
 import { createFakeAgentRuntimes, type FakeAgentRuntime } from '@/playwright/fake-agents';
-import { routeUnavailableVelaStatus } from '@/playwright/mock-factory';
 import {
   selfHostedCollaborationServerAvailable,
   startSelfHostedCollaborationServer,
@@ -50,17 +54,11 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
       await createCollabCluster(browser, testInfo, [
         {
           id: 'owner',
-          env: {
-            ...fakeAgents.codex.env,
-            AMR_HOME: testInfo.outputPath('owner-amr-home'),
-          },
+          env: fakeAgents.codex.env,
         },
         {
           id: 'reviewer',
-          env: {
-            ...fakeAgents.codex.env,
-            AMR_HOME: testInfo.outputPath('reviewer-amr-home'),
-          },
+          env: fakeAgents.codex.env,
         },
       ]));
     const owner = cluster.clients.owner!;
@@ -258,7 +256,6 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
 });
 
 async function prepareClient(page: Page, runtime: FakeAgentRuntime): Promise<void> {
-  await routeUnavailableVelaStatus(page);
   const config = {
     mode: 'daemon',
     apiKey: '',

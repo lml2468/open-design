@@ -1,6 +1,6 @@
 import { expect, test } from '@/playwright/suite';
 import { T } from '@/timeouts';
-import { openSettingsDialog } from '../lib/playwright/amr.js';
+import { openSettingsDialog } from '../lib/playwright/app.js';
 
 // Regression for #4509: the MCP server setup snippet renders inside a dark
 // `<pre><code>` block, but the inner `<code>` used to inherit the global

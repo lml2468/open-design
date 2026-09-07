@@ -1,6 +1,6 @@
 import { expect, test } from '@/playwright/suite';
 import { ensureRailOpen } from '@/playwright/rail';
-import { openSettingsDialog } from '@/playwright/amr';
+import { openSettingsDialog } from '@/playwright/app';
 import {
   captureVisual,
   configureVisualPage,

@@ -5,13 +5,7 @@ import { openAllProjectFiles } from '@/playwright/workspace';
 import { T } from '@/timeouts';
 import type { Locator, Page, Request } from '@playwright/test';
 import { routeAgents, routeSuccessfulRuns } from '../lib/playwright/mock-factory.js';
-import {
-  AMR_PERSONAL_WORKSPACE_CONTEXT,
-  AMR_PERSONAL_WORKSPACE_HEADERS,
-  mockAmrPersonalWorkspace,
-  openSettingsDialog,
-  settingsSurface,
-} from '../lib/playwright/amr.js';
+import { openSettingsDialog, settingsSurface } from '../lib/playwright/app.js';
 
 // The `/projects` view in `EntryShell` renders a `CenteredLoader` until
 // `projectsLoading || skillsLoading || designSystemsLoading` all clear
@@ -322,119 +316,6 @@ test('[P0] projects empty state create action opens the new project flow', async
   await expect(page.locator('.newproj-title')).toContainText('New prototype');
 });
 
-test('[P0] UI-created Personal project recovers preview and write authority after reload', async ({ page }) => {
-  // Create + upload + gated reload needs more than the suite default once the
-  // post-reload waits use the long boot/route budgets under CI contention.
-  test.setTimeout(T.xlong);
-  await mockWritablePersonalProjectScope(page);
-  await stubCatalogsEmpty(page);
-  await page.goto('/');
-  await openNewProjectModal(page);
-  await page.getByTestId('new-project-tab-prototype').click();
-  await page.getByTestId('new-project-name').fill('Reloaded Personal authority');
-  await expect(page.getByTestId('create-project')).toBeEnabled();
-  await page.getByTestId('create-project').click();
-  await expectWorkspaceReady(page);
-
-  const uploadedName = await uploadTinyHtml(
-    page,
-    'reload-personal-authority.html',
-    '<!doctype html><html><body><h1>Reloaded Personal preview</h1></body></html>',
-    { headers: AMR_PERSONAL_WORKSPACE_HEADERS },
-  );
-  await openUploadedHtmlArtifactPreview(page, uploadedName);
-  await expect(artifactPreviewFrame(page).getByRole('heading', {
-    name: 'Reloaded Personal preview',
-  })).toBeVisible();
-
-  let releaseScope = () => {};
-  const scopeGate = new Promise<void>((resolve) => {
-    releaseScope = resolve;
-  });
-  let releaseStatus = () => {};
-  const statusGate = new Promise<void>((resolve) => {
-    releaseStatus = resolve;
-  });
-  await page.route('**/api/projects/*/workspace-scope', async (route) => {
-    await scopeGate;
-    const projectId = getProjectIdFromApiPath(route.request().url());
-    await route.fulfill({
-      json: {
-        scope: {
-          kind: 'personal',
-          projectId,
-          workspaceId: AMR_PERSONAL_WORKSPACE_CONTEXT.workspaceId,
-          visibility: 'personal',
-          context: AMR_PERSONAL_WORKSPACE_CONTEXT,
-        },
-      },
-    });
-  });
-  await page.route('**/api/projects/*/collab/status', async (route) => {
-    await statusGate;
-    await route.fulfill({
-      json: {
-        publishedVersion: null,
-        materializedVersion: null,
-        syncState: 'local_only',
-        ownerMemberId: null,
-      },
-    });
-  });
-
-  const scopeRequested = page.waitForRequest(
-    (request) => new URL(request.url()).pathname.endsWith('/workspace-scope'),
-    { timeout: T.long },
-  );
-  const statusRequested = page.waitForRequest(
-    (request) => new URL(request.url()).pathname.endsWith('/collab/status'),
-    { timeout: T.long },
-  );
-
-  try {
-    // A hard reload drops the module-local same-session creation witness. Keep
-    // both authority reads unresolved long enough to observe the fail-closed
-    // state, then release them independently. The persisted Personal binding —
-    // not that ephemeral witness — must reconnect the already-ready artifact.
-    //
-    // Reload only reaches `domcontentloaded` while the dynamic App boot shell
-    // (`Loading OpenDesign…`) and the project-route workspace-context gate
-    // (`Loading workspace…`) may still own the page. Wait those out with the
-    // suite's long budget before asserting the fail-closed workspace chrome —
-    // the default expect timeout is 10s and is too short under CI contention.
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page
-      .getByText('Loading OpenDesign…')
-      .waitFor({ state: 'hidden', timeout: T.long })
-      .catch(() => {});
-    await expect(page.getByText('Loading workspace…')).toHaveCount(0, { timeout: T.long });
-    await expect(page.getByTestId('file-workspace')).toBeVisible({ timeout: T.long });
-    await scopeRequested;
-    // The content-loading skeleton is intentionally transient: a restored
-    // iframe can become ready before this assertion runs. The authority gate is
-    // the durable user-visible contract while the scope request is unresolved.
-    await expect(page.getByTestId('chat-composer-input')).toHaveAttribute('aria-readonly', 'true');
-    await expect(page.getByRole('button', { name: /^Share$/i })).toBeDisabled();
-
-    releaseScope();
-    // Prevent a second release from the finally if the remaining asserts fail.
-    releaseScope = () => {};
-    await statusRequested;
-    await expect(artifactPreviewFrame(page).getByRole('heading', {
-      name: 'Reloaded Personal preview',
-    })).toBeVisible({ timeout: T.long });
-    await expect(page.getByTestId('chat-composer-input')).toHaveAttribute('aria-readonly', 'true');
-
-    releaseStatus();
-    releaseStatus = () => {};
-    await expect(page.getByTestId('chat-composer-input')).not.toHaveAttribute('aria-readonly', 'true');
-    await expect(page.getByRole('button', { name: /^Share$/i })).toBeEnabled();
-  } finally {
-    releaseScope();
-    releaseStatus();
-  }
-});
-
 test('[P1] design system multi-select stores primary and inspiration metadata', async ({ page }) => {
   await stubEmptyProjectsNewProjectData(page);
   await openNewProjectFromProjectsView(page);
@@ -645,15 +526,8 @@ test('[P0] @critical project detail composer design system switch carries into t
   await page.route('**/api/design-systems', async (route) => {
     await route.fulfill({ json: { designSystems: DESIGN_SYSTEMS } });
   });
-  // This helper creates through APIRequestContext, bypassing the browser-side
-  // same-session creation witness. Pin the scenario to an exact writable
-  // Personal owner so a slow catalog/status read cannot turn it viewer-only.
-  await mockWritablePersonalProjectScope(page);
-
   await page.goto('/');
-  await createProject(page, 'Header design system run context', {
-    headers: AMR_PERSONAL_WORKSPACE_HEADERS,
-  });
+  await createProject(page, 'Header design system run context');
   await expectWorkspaceReady(page);
 
   const trigger = projectDesignSystemTrigger(page);
@@ -1246,257 +1120,6 @@ test('[P1] project detail composer context actions emit analytics event fields',
   expect(raw).toContain('local-code');
 });
 
-const TEAM_RUN_CONTEXT = {
-  workspaceId: 'e2e-team-run-workspace',
-  workspaceName: 'E2E Team Run Workspace',
-  workspaceType: 'team' as const,
-  workspaceMemberId: 'e2e-team-run-member',
-  role: 'owner' as const,
-  memberStatus: 'active' as const,
-  lifecycleState: 'active' as const,
-  billingState: 'active' as const,
-  planId: 'team_plus',
-  seatSummary: {
-    seatLimit: 5,
-    usedSeats: 2,
-    availableSeats: 3,
-    isSeatFull: false,
-  },
-  permissions: {
-    canInviteMembers: true,
-    canManageBilling: true,
-    canViewWorkspaceSettings: true,
-    canManageSharedResources: true,
-    canShareProjects: true,
-    canWriteSyncedFiles: true,
-  },
-  workspaceSettingsUrl: 'https://console.example.test/workspace/e2e-team-run-workspace',
-};
-
-async function wireTeamRunFixtures(page: Page): Promise<void> {
-  await page.route('**/api/app-config', async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      json: {
-        config: {
-          mode: 'daemon',
-          apiKey: '',
-          baseUrl: 'https://api.anthropic.com',
-          model: 'claude-sonnet-4-5',
-          agentId: 'amr',
-          skillId: null,
-          designSystemId: null,
-          onboardingCompleted: true,
-          privacyDecisionAt: 1,
-          telemetry: { metrics: false, content: false, artifactManifest: false },
-          agentModels: {},
-          agentCliEnv: {},
-        },
-      },
-    });
-  });
-  await routeAgents(page, [
-    ...AGENTS,
-    {
-      id: 'amr',
-      name: 'OpenDesign Cloud',
-      bin: 'amr',
-      available: true,
-      version: 'cloud',
-      models: [{ id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' }],
-    },
-  ]);
-  await page.route('**/api/integrations/vela/status', async (route) => {
-    await route.fulfill({
-      json: {
-        loggedIn: true,
-        loginInFlight: false,
-        profile: 'test',
-        user: {
-          id: 'e2e-team-run-user',
-          email: 'team-run@example.com',
-          name: 'Team Run Owner',
-          plan: 'team_plus',
-        },
-        account: { plan: 'free', balanceUsd: '0.00' },
-        configPath: '/tmp/.amr/config.json',
-      },
-    });
-  });
-  await page.route('**/api/workspace/**', async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    const { pathname } = url;
-    if (request.method() !== 'GET') {
-      await route.fallback();
-      return;
-    }
-    if (pathname === '/api/workspace/context') {
-      await route.fulfill({ json: { context: TEAM_RUN_CONTEXT } });
-      return;
-    }
-    if (pathname === '/api/workspace/directory') {
-      await route.fulfill({
-        json: {
-          items: [{
-            workspaceId: TEAM_RUN_CONTEXT.workspaceId,
-            workspaceName: TEAM_RUN_CONTEXT.workspaceName,
-            workspaceType: TEAM_RUN_CONTEXT.workspaceType,
-            workspaceMemberId: TEAM_RUN_CONTEXT.workspaceMemberId,
-            role: TEAM_RUN_CONTEXT.role,
-            memberStatus: TEAM_RUN_CONTEXT.memberStatus,
-            lifecycleState: TEAM_RUN_CONTEXT.lifecycleState,
-          }],
-          activeWorkspaceId: TEAM_RUN_CONTEXT.workspaceId,
-        },
-      });
-      return;
-    }
-    if (pathname === '/api/workspace/projects/team') {
-      await route.fulfill({ json: { projects: [] } });
-      return;
-    }
-    await route.fallback();
-  });
-}
-
-async function createBoundTeamProject(
-  page: Page,
-  projectName: string,
-): Promise<{ projectId: string; conversationId: string }> {
-  const response = await createProjectViaApi(page, projectName);
-  const created = (await response.json()) as {
-    project: Record<string, unknown> & { id: string };
-    conversationId: string;
-  };
-  const bindProject = (project: Record<string, unknown>) => ({
-    ...project,
-    workspaceId: TEAM_RUN_CONTEXT.workspaceId,
-    visibility: 'personal',
-    createdByWorkspaceMemberId: TEAM_RUN_CONTEXT.workspaceMemberId,
-    updatedByWorkspaceMemberId: TEAM_RUN_CONTEXT.workspaceMemberId,
-  });
-
-  await page.route('**/api/projects', async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.fallback();
-      return;
-    }
-    const responseFromDaemon = await route.fetch();
-    const body = (await responseFromDaemon.json()) as {
-      projects?: Array<Record<string, unknown> & { id?: string }>;
-    };
-    await route.fulfill({
-      response: responseFromDaemon,
-      json: {
-        ...body,
-        projects: (body.projects ?? []).map((project) =>
-          project.id === created.project.id ? bindProject(project) : project),
-      },
-    });
-  });
-  await page.route(`**/api/projects/${created.project.id}`, async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      json: { project: bindProject(created.project) },
-    });
-  });
-  await page.route(`**/api/projects/${created.project.id}/collab/status`, async (route) => {
-    await route.fulfill({
-      json: {
-        publishedVersion: 1,
-        materializedVersion: 1,
-        awaitingFirstMaterialization: false,
-        syncState: 'synced',
-        ownerMemberId: TEAM_RUN_CONTEXT.workspaceMemberId,
-        ownerDisplayName: 'Team Run Owner',
-        ownerRole: TEAM_RUN_CONTEXT.role,
-        contentTransferState: null,
-      },
-    });
-  });
-  return {
-    projectId: created.project.id,
-    conversationId: created.conversationId,
-  };
-}
-
-test('[P0] Team project send keeps exact Team run scope through project bootstrap', async ({ page }) => {
-  test.setTimeout(60_000);
-  const prompt = 'Run against the exact Team workspace established during project bootstrap.';
-  await wireTeamRunFixtures(page);
-  const { projectId, conversationId } = await createBoundTeamProject(
-    page,
-    'Exact Team scope run witness',
-  );
-  let scopeRequests = 0;
-  let scopedReadHeaders: Record<string, string> | null = null;
-  await page.route(`**/api/projects/${projectId}/workspace-scope`, async (route) => {
-    scopeRequests += 1;
-    const requestHeaders = await route.request().allHeaders();
-    // Route bootstrap must finish before ProjectView mounts. Capture the first
-    // exact Team read without blocking it, then prove the same witness reaches
-    // the run boundary below.
-    if (
-      scopedReadHeaders === null
-      && requestHeaders['x-od-workspace-id'] === TEAM_RUN_CONTEXT.workspaceId
-      && requestHeaders['x-od-workspace-member-id'] === TEAM_RUN_CONTEXT.workspaceMemberId
-    ) {
-      scopedReadHeaders = requestHeaders;
-    }
-    await route.fulfill({
-      json: {
-        scope: {
-          kind: 'team',
-          projectId,
-          workspaceId: TEAM_RUN_CONTEXT.workspaceId,
-          visibility: 'personal',
-          context: TEAM_RUN_CONTEXT,
-        },
-      },
-    });
-  });
-  const runBodies: Array<Record<string, unknown>> = [];
-  await routeSuccessfulRuns(page, {
-    bodies: runBodies,
-    runIdPrefix: 'pending-team-scope-run',
-    events: false,
-  });
-  const runHeaders: Array<Record<string, string>> = [];
-  await page.route('**/api/runs', async (route) => {
-    if (route.request().method() === 'POST') {
-      runHeaders.push(await route.request().allHeaders());
-    }
-    await route.fallback();
-  });
-
-  await page.goto(`/projects/${projectId}/conversations/${conversationId}`);
-  await expectWorkspaceReady(page);
-  await expect.poll(() => scopeRequests).toBeGreaterThanOrEqual(2);
-  expect(scopedReadHeaders?.['x-od-workspace-id']).toBe(TEAM_RUN_CONTEXT.workspaceId);
-  expect(scopedReadHeaders?.['x-od-workspace-member-id']).toBe(
-    TEAM_RUN_CONTEXT.workspaceMemberId,
-  );
-  await expect(page.getByTestId('chat-composer-input')).toBeEditable();
-  await page.getByTestId('chat-composer-input').fill(prompt);
-  await page.getByTestId('chat-send').click();
-
-  await expect.poll(() => runHeaders.length).toBe(1);
-  expect(runHeaders[0]?.['x-od-workspace-id']).toBe(TEAM_RUN_CONTEXT.workspaceId);
-  expect(runHeaders[0]?.['x-od-workspace-member-id']).toBe(
-    TEAM_RUN_CONTEXT.workspaceMemberId,
-  );
-  // Run scope is an HTTP authority header contract. The daemon intentionally
-  // does not duplicate this mutable principal into ChatRequest JSON.
-  expect(runBodies[0]?.currentPrompt).toBe(prompt);
-});
-
 test('[P0] @critical project detail composer agent menu lets the user switch the model', async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto('/');
@@ -1520,12 +1143,8 @@ test('[P0] project detail composer model switch carries into the next daemon run
   test.setTimeout(60_000);
   const runRequestBodies: Array<Record<string, unknown>> = [];
   await routeSuccessfulRuns(page, { bodies: runRequestBodies, runId: 'agent-model-run' });
-  await mockWritablePersonalProjectScope(page);
-
   await page.goto('/');
-  await createProject(page, 'Composer agent switch run context', {
-    headers: AMR_PERSONAL_WORKSPACE_HEADERS,
-  });
+  await createProject(page, 'Composer agent switch run context');
   await expectWorkspaceReady(page);
 
   await pickComposerModel(page, /^GPT 5\.5$/i);
@@ -2598,15 +2217,8 @@ test('[P1] project detail forks histories larger than the daemon JSON body limit
     .not.toBe(conversationId);
   const forkConversationId = getProjectContextFromUrl(page).conversationId;
   expect(forkConversationId).toBeTruthy();
-  const forkRequestHeaders = forkResponse.request().headers();
-  const workspaceHeaders = Object.fromEntries(
-    ['x-od-workspace-id', 'x-od-workspace-member-id']
-      .map((name) => [name, forkRequestHeaders[name]] as const)
-      .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-  );
   const forkMessagesResponse = await page.request.get(
     `/api/projects/${projectId}/conversations/${forkConversationId}/messages`,
-    { headers: workspaceHeaders },
   );
   expect(
     forkMessagesResponse.ok(),
@@ -2616,62 +2228,6 @@ test('[P1] project detail forks histories larger than the daemon JSON body limit
     messages: Array<{ content: string }>;
   };
   expect(forkMessagesBody.messages.map((message) => message.content)).toEqual(expectedContents);
-});
-
-test('[P1] read-only project viewers do not see conversation fork actions', async ({ page }) => {
-  const { projectId, conversationId } = await seedProjectWithAssistantCompletion(page);
-  const readonlyTeamContext = {
-    ...AMR_PERSONAL_WORKSPACE_CONTEXT,
-    workspaceId: 'workspace-readonly-fork',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-readonly-fork',
-    role: 'member',
-    teamId: 'team-readonly-fork',
-    permissions: {
-      ...AMR_PERSONAL_WORKSPACE_CONTEXT.permissions,
-      canWriteSyncedFiles: false,
-    },
-  };
-  await page.route(`**/api/projects/${projectId}/workspace-scope`, async (route) => {
-    await route.fulfill({
-      json: {
-        scope: {
-          kind: 'team',
-          projectId,
-          workspaceId: readonlyTeamContext.workspaceId,
-          visibility: 'team',
-          context: readonlyTeamContext,
-        },
-      },
-    });
-  });
-  await page.route(`**/api/projects/${projectId}/collab/status`, async (route) => {
-    await route.fulfill({
-      json: {
-        publishedVersion: 1,
-        materializedVersion: 1,
-        syncState: 'synced',
-        ownerMemberId: 'member-project-owner',
-      },
-    });
-  });
-
-  await page.goto(`/projects/${projectId}/conversations/${conversationId}`);
-  await page
-    .getByText('Loading OpenDesign…')
-    .waitFor({ state: 'hidden', timeout: T.long })
-    .catch(() => {});
-  const showChat = page.getByTestId('workspace-focus-toggle');
-  if (await showChat.isVisible()) {
-    await showChat.click();
-  }
-  const expandConversation = page.getByRole('button', { name: 'Expand the conversation pane' });
-  if (await expandConversation.isVisible()) {
-    await expandConversation.click();
-  }
-  await expect(page.getByTestId('chat-composer-input')).toBeVisible({ timeout: T.long });
-  await expect(page.getByTestId('chat-composer-input')).toHaveAttribute('aria-readonly', 'true');
-  await expect(page.getByTestId('assistant-fork-button')).toHaveCount(0);
 });
 
 test('[P1] project detail conversations menu supports new chat, search, counts, and run duration metadata', async ({ page }) => {
@@ -2752,17 +2308,11 @@ test('[P0] project detail share menu copies the current share link for uploaded 
       },
     });
   });
-  await mockWritablePersonalProjectScope(page);
-
   await page.goto('/');
-  await createProject(page, 'Share link copy flow', {
-    headers: AMR_PERSONAL_WORKSPACE_HEADERS,
-  });
+  await createProject(page, 'Share link copy flow');
   await expectWorkspaceReady(page);
 
-  uploadedName = await uploadTinyHtml(page, 'share-link-copy.html', '<!doctype html><html><body><h1>Share link copy</h1></body></html>', {
-    headers: AMR_PERSONAL_WORKSPACE_HEADERS,
-  });
+  uploadedName = await uploadTinyHtml(page, 'share-link-copy.html', '<!doctype html><html><body><h1>Share link copy</h1></body></html>');
   await openUploadedHtmlArtifactPreview(page, uploadedName);
 
   await openShareMenu(page);
@@ -2810,22 +2360,11 @@ test('[P0] project detail share menu opens the current share page for uploaded h
     });
   });
 
-  // This scenario creates through Playwright's APIRequestContext rather than
-  // the browser UI, so the Web cannot inherit its normal same-session creation
-  // witness. Give the page an exact writable Personal/owner identity and bind
-  // the project-scope bootstrap to that same identity. Do not make the share
-  // control writable by weakening the shared-project authority gate.
-  await mockWritablePersonalProjectScope(page);
-
   await page.goto('/');
-  await createProject(page, 'Open share page flow', {
-    headers: AMR_PERSONAL_WORKSPACE_HEADERS,
-  });
+  await createProject(page, 'Open share page flow');
   await expectWorkspaceReady(page);
 
-  uploadedName = await uploadTinyHtml(page, 'share-page-open.html', '<!doctype html><html><body><h1>Open share page</h1></body></html>', {
-    headers: AMR_PERSONAL_WORKSPACE_HEADERS,
-  });
+  uploadedName = await uploadTinyHtml(page, 'share-page-open.html', '<!doctype html><html><body><h1>Open share page</h1></body></html>');
   await openUploadedHtmlArtifactPreview(page, uploadedName);
 
   await openShareMenu(page);
@@ -2856,20 +2395,11 @@ test('[P0] @critical project detail share menu publish action opens the deploy f
       },
     });
   });
-  // Match the other writable share scenarios: APIRequestContext creation does
-  // not register the browser's same-session owner witness, so provide the
-  // exact Personal authority this test intends to exercise.
-  await mockWritablePersonalProjectScope(page);
-
   await page.goto('/');
-  await createProject(page, 'Deploy action flow', {
-    headers: AMR_PERSONAL_WORKSPACE_HEADERS,
-  });
+  await createProject(page, 'Deploy action flow');
   await expectWorkspaceReady(page);
 
-  const uploadedName = await uploadTinyHtml(page, 'deploy-action.html', '<!doctype html><html><body><h1>Deploy action</h1></body></html>', {
-    headers: AMR_PERSONAL_WORKSPACE_HEADERS,
-  });
+  const uploadedName = await uploadTinyHtml(page, 'deploy-action.html', '<!doctype html><html><body><h1>Deploy action</h1></body></html>');
   await openUploadedHtmlArtifactPreview(page, uploadedName);
 
   await openShareMenu(page);
@@ -3474,9 +3004,8 @@ test('[P2] General settings updates the custom companion draft', async ({ page }
 async function createProject(
   page: Page,
   projectName: string,
-  options: { headers?: Readonly<Record<string, string>> } = {},
 ) {
-  const response = await createProjectViaApi(page, projectName, options);
+  const response = await createProjectViaApi(page, projectName);
   const body = (await response.json()) as {
     project: { id: string };
     conversationId: string;
@@ -3487,14 +3016,12 @@ async function createProject(
 async function createProjectViaApi(
   page: Page,
   projectName: string,
-  options: { headers?: Readonly<Record<string, string>> } = {},
 ) {
   // The Playwright suite fixture waits on daemon `/api/health` before handing
   // out a worker. Project create is therefore a single-shot completion signal
   // (the HTTP response), not a call-site retry loop over an unknown race.
   const response = await page.request.post('/api/projects', {
     timeout: 15_000,
-    ...(options.headers ? { headers: { ...options.headers } } : {}),
     data: {
       id: `project-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: projectName,
@@ -3980,7 +3507,6 @@ async function uploadTinyHtml(
   page: Page,
   name: string,
   content: string,
-  options: { headers?: Readonly<Record<string, string>> } = {},
 ): Promise<string> {
   await page.getByTestId('design-files-upload-input').setInputFiles({
     name,
@@ -3991,7 +3517,7 @@ async function uploadTinyHtml(
   let uploadedName = '';
   await expect
     .poll(async () => {
-      const files = await listProjectFiles(page, projectId, options);
+      const files = await listProjectFiles(page, projectId);
       uploadedName = files.find((file) => file.name.endsWith(name))?.name ?? '';
       return uploadedName;
     })
@@ -4114,33 +3640,11 @@ async function listProjectsFromApi(page: Page) {
 async function listProjectFiles(
   page: Page,
   projectId: string,
-  options: { headers?: Readonly<Record<string, string>> } = {},
 ) {
-  const response = await page.request.get(
-    `/api/projects/${projectId}/files`,
-    options.headers ? { headers: { ...options.headers } } : undefined,
-  );
+  const response = await page.request.get(`/api/projects/${projectId}/files`);
   expect(response.ok()).toBeTruthy();
   const body = (await response.json()) as { files: Array<{ name: string }> };
   return body.files;
-}
-
-async function mockWritablePersonalProjectScope(page: Page) {
-  await mockAmrPersonalWorkspace(page);
-  await page.route('**/api/projects/*/workspace-scope', async (route) => {
-    const projectId = getProjectIdFromApiPath(route.request().url());
-    await route.fulfill({
-      json: {
-        scope: {
-          kind: 'personal',
-          projectId,
-          workspaceId: AMR_PERSONAL_WORKSPACE_CONTEXT.workspaceId,
-          visibility: 'personal',
-          context: AMR_PERSONAL_WORKSPACE_CONTEXT,
-        },
-      },
-    });
-  });
 }
 
 function isCreateProjectRequest(request: Request): boolean {

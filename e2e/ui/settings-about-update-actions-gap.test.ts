@@ -1,6 +1,6 @@
 import { expect, test } from '@/playwright/suite';
 import { applyStandardMocks } from '@/playwright/mock-factory';
-import { openSettingsDialog, settingsSurface } from '../lib/playwright/amr.js';
+import { openSettingsDialog, settingsSurface } from '../lib/playwright/app.js';
 import type { Page } from '@playwright/test';
 
 // Regression boundary for the Settings > About update row.

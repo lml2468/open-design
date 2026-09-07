@@ -205,11 +205,10 @@ const packagedOnboardingExpression = `
   (() => {
     const onboardingShell = document.querySelector('.entry-shell--onboarding');
     const onboardingModal = document.querySelector('.entry-onboarding-modal');
-    // Identity is the first gate; runtime selection follows Cloud sign-in.
-    const cloudSignIn = document.querySelector('.onboarding-cloud__primary');
+    const modelSource = document.querySelector('[role="radiogroup"]');
 
     return {
-      cloudSignInVisible: cloudSignIn instanceof HTMLElement,
+      modelSourceVisible: modelSource instanceof HTMLElement,
       href: location.href,
       onboardingVisible: onboardingShell instanceof HTMLElement && onboardingModal instanceof HTMLElement,
       text: onboardingModal?.textContent?.trim().slice(0, 2000) ?? null,
@@ -405,7 +404,7 @@ type UpdaterRecoverySummary = {
 };
 
 type PackagedOnboardingEvalValue = {
-  cloudSignInVisible: boolean;
+  modelSourceVisible: boolean;
   href: string;
   onboardingVisible: boolean;
   text: string | null;
@@ -1139,11 +1138,11 @@ macDescribe('packaged mac runtime smoke', () => {
   }, 360_000);
 });
 
-macOnboardingDescribe('packaged mac onboarding AMR smoke', () => {
+macOnboardingDescribe('packaged mac onboarding smoke', () => {
   let installedAppPath: string | null = null;
   let started = false;
 
-  test('[P0] @electron-smoke starts a fresh packaged app on the Cloud identity gate', async () => {
+  test('[P0] @electron-smoke starts a fresh packaged app on the model-source chooser', async () => {
     const report = await createPackagedSmokeReport('mac');
     let passed = false;
     try {
@@ -1169,11 +1168,11 @@ macOnboardingDescribe('packaged mac onboarding AMR smoke', () => {
       expect(health.health.ok).toBe(true);
 
       const initial = await waitForPackagedOnboarding((snapshot) =>
-        snapshot.onboardingVisible && snapshot.cloudSignInVisible,
-        'fresh packaged onboarding Cloud identity gate',
+        snapshot.onboardingVisible && snapshot.modelSourceVisible,
+        'fresh packaged onboarding model-source chooser',
       );
       expect(initial.href).toMatch(/^(od:\/\/app\/|http:\/\/127\.0\.0\.1:\d+\/)/);
-      expect(initial.cloudSignInVisible).toBe(true);
+      expect(initial.modelSourceVisible).toBe(true);
 
       const onboardingScreenshotPath = join(toolsPackDir, 'screenshots', `${namespace}-onboarding.png`);
       await mkdir(dirname(onboardingScreenshotPath), { recursive: true });
@@ -2774,7 +2773,7 @@ function asHealthEvalValue(value: unknown): HealthEvalValue | null {
 
 function asPackagedOnboardingEvalValue(value: unknown): PackagedOnboardingEvalValue | null {
   if (!isRecord(value)) return null;
-  if (typeof value.cloudSignInVisible !== 'boolean') return null;
+  if (typeof value.modelSourceVisible !== 'boolean') return null;
   if (typeof value.href !== 'string') return null;
   if (typeof value.onboardingVisible !== 'boolean') return null;
   if (value.text != null && typeof value.text !== 'string') return null;
@@ -2846,10 +2845,7 @@ async function fileSizeBytes(filePath: string): Promise<number> {
 }
 
 async function seedPackagedOnboardingComplete(): Promise<void> {
-  // Updater flows need the ordinary signed-out Home shell. Completion alone
-  // is insufficient when the daemon default selects the AMR cloud agent: the
-  // product correctly routes that signed-out identity back to Connect even
-  // though first-run onboarding was completed. Pin a local agent so this
+  // Updater flows need the ordinary Home shell. Pin a local agent so this
   // fixture models the actual post-onboarding state it claims to create.
   await seedPackagedAppConfig({ agentId: 'codex', onboardingCompleted: true });
 }

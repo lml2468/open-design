@@ -11,7 +11,7 @@
 
 import { expect, test } from '@/playwright/suite';
 import type { Page } from '@playwright/test';
-import { applyStandardMocks, routeSignedOutVelaStatus } from '@/playwright/mock-factory';
+import { applyStandardMocks } from '@/playwright/mock-factory';
 import { ensureRailOpen } from '@/playwright/rail';
 import { T } from '@/timeouts';
 
@@ -135,7 +135,6 @@ async function openDeckCommunityCard(page: Page) {
 
 test.beforeEach(async ({ page }) => {
   await applyStandardMocks(page);
-  await routeSignedOutVelaStatus(page);
   await routeMappingFixtures(page);
 });
 

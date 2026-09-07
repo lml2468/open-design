@@ -115,9 +115,7 @@ async function main(argv: string[]): Promise<void> {
   const toolsDev = await createParityToolsDevRuntime();
   let runError: unknown = null;
   try {
-    await toolsDev.startWeb({
-      AMR_HOME: path.join(toolsDev.root, 'scratch', 'amr-home'),
-    });
+    await toolsDev.startWeb();
     const runOptions: RunOptions = { ...options, webUrl: toolsDev.url.web() };
     await mkdir(options.outputDir, { recursive: true });
     const results: CaseResult[] = [];

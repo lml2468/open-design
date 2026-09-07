@@ -71,11 +71,16 @@ function read(relative: string): string {
 
 /** Resolve one `'key': 'value'` entry from the English locale dictionary. */
 function englishLabel(key: string): string {
-  const en = read('apps/web/src/i18n/locales/en.ts');
-  const match = en.match(
-    new RegExp(`^\\s*['"]${key.replace(/\./g, '\\.')}['"]\\s*:\\s*(['"])((?:\\\\.|(?!\\1).)*)\\1`, 'm'),
+  const sources = [
+    read('apps/web/src/i18n/locales/en.ts'),
+    read('apps/web/src/i18n/collaboration-content.ts'),
+  ];
+  const pattern = new RegExp(
+    `^\\s*['"]${key.replace(/\./g, '\\.')}['"]\\s*:\\s*(['"])((?:\\\\.|(?!\\1).)*)\\1`,
+    'm',
   );
-  if (!match) throw new Error(`i18n key ${key} is missing from apps/web/src/i18n/locales/en.ts`);
+  const match = sources.map((source) => source.match(pattern)).find(Boolean);
+  if (!match) throw new Error(`English i18n key ${key} is missing from the locale sources`);
   return match[2]!.replace(/\\(['"\\])/g, '$1');
 }
 

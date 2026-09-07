@@ -2,16 +2,13 @@ import type { Locator } from '@playwright/test';
 
 import { expect, test } from '@/playwright/suite';
 import { T } from '@/timeouts';
-import { mockAmrPersonalWorkspace } from '@/playwright/amr';
 import {
   captureVisual,
   captureVisualTarget,
   configureVisualPage,
   gotoVisualHome,
   gotoVisualWorkspace,
-  mockSignedInVelaAccount,
   prepareVisualSettingsDialog,
-  VISUAL_AMR_AGENT,
   VISUAL_CLI_AGENTS,
   waitForVisualFonts,
 } from '@/playwright/visual';
@@ -49,37 +46,6 @@ test('[P2] captures the settings execution surface', async ({ page }) => {
   await waitForVisualFonts(page);
 
   await captureVisual(page, 'visual-settings-execution');
-});
-
-test('[P1] captures the settings OpenDesign account balance surface', async ({ page }) => {
-  test.setTimeout(T.xlong);
-
-  await configureVisualPage(page, {
-    agents: [VISUAL_AMR_AGENT, ...VISUAL_CLI_AGENTS],
-    config: {
-      agentId: 'amr',
-      agentModels: { amr: { model: 'deepseek-v4-flash', reasoning: 'default' } },
-      agentCliEnv: { amr: { OPEN_DESIGN_AMR_PROFILE: 'test' } },
-    },
-  });
-  await mockSignedInVelaAccount(page);
-  // A signed-in Vela account is not sufficient for the upgrade entry: billing
-  // permissions come from the selected Workspace. Use the same exact Personal
-  // Workspace identity as the AMR runtime tests so directory bootstrap and the
-  // subsequent scoped context lookup agree.
-  await mockAmrPersonalWorkspace(page);
-  await gotoVisualHome(page);
-  await gotoVisualWorkspace(page);
-
-  const dialog = await prepareVisualSettingsDialog(page);
-  const amrCard = dialog.getByTestId('settings-agent-card-amr');
-  await expect(amrCard).toContainText('OpenDesign');
-  await expect(amrCard).toContainText('plus');
-  await expect(amrCard).toContainText('$247.51');
-  await expect(dialog.getByTestId('settings-agent-card-amr-upgrade')).toBeVisible();
-  await waitForVisualFonts(page);
-
-  await captureVisual(page, 'visual-settings-open-design-account');
 });
 
 test('[P2] captures the settings local CLI surface', async ({ page }) => {

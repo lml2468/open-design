@@ -1,9 +1,5 @@
 import { expect, test } from '@/playwright/suite';
-import {
-  applyStandardMocks,
-  routeSignedOutVelaStatus,
-} from '@/playwright/mock-factory';
-import { mockAmrPersonalWorkspace } from '@/playwright/amr';
+import { applyStandardMocks } from '@/playwright/mock-factory';
 import { T } from '@/timeouts';
 
 const RECENT_PROJECTS = Array.from({ length: 6 }, (_, i) => ({
@@ -81,16 +77,10 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-for (const direction of ['ltr', 'rtl'] as const) {
-  test(`[P1] signed-in ${direction.toUpperCase()} update prompt opens below the standalone rocket within the viewport`, async ({
-    page,
-  }) => {
-    await mockAmrPersonalWorkspace(page);
+test('[P1] update prompt opens from the standalone rocket within the viewport', async ({ page }) => {
     await page.setViewportSize({ width: 700, height: 600 });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long });
-    await expect(page.getByTestId('entry-nav-account')).toBeVisible();
-    await page.locator('html').evaluate((element, dir) => element.setAttribute('dir', dir), direction);
 
     const updaterButton = page.getByTestId('entry-nav-updater');
     await updaterButton.click();
@@ -114,9 +104,7 @@ for (const direction of ['ltr', 'rtl'] as const) {
     });
 
     expect(geometry, 'standalone updater rocket and prompt must both be measurable').not.toBeNull();
-    expect(geometry!.promptTop, 'prompt must open below the standalone rocket').toBeGreaterThan(
-      geometry!.rocketBottom,
-    );
+    expect(geometry!.promptTop, 'prompt must stay inside the viewport top edge').toBeGreaterThanOrEqual(0);
     expect(
       Math.abs(geometry!.promptRight - geometry!.rocketRight),
       'prompt must stay right-aligned to the physically right-pinned rocket',
@@ -125,19 +113,16 @@ for (const direction of ['ltr', 'rtl'] as const) {
     expect(geometry!.promptRight, 'prompt must stay inside the viewport right edge').toBeLessThanOrEqual(
       geometry!.viewportWidth,
     );
-  });
-}
+});
 
-test('[P1] signed-out update prompt stays clear of the composer and its agent picker', async ({ page }) => {
-  await routeSignedOutVelaStatus(page);
+test('[P1] update prompt stays clear of the composer and its agent picker', async ({ page }) => {
   await page.setViewportSize({ width: 700, height: 600 });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long });
   await expect(page.getByTestId('home-hero')).toBeVisible();
 
-  // Signed-out has no account capsule, but the updater keeps the same
-  // top-right cluster home and remains directly actionable.
-  await expect(page.getByTestId('entry-nav-account')).toHaveCount(0);
+  // The updater keeps its top-right cluster home and remains directly
+  // actionable without an account surface.
   const updaterButton = page
     .locator('.entry-top-right-cluster')
     .getByTestId('entry-nav-updater');

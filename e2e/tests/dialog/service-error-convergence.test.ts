@@ -137,24 +137,22 @@ describe('dialog service error convergence', () => {
     });
   });
 
-  test('marks a model-not-found failure as MODEL_UNAVAILABLE with switch-model action', { timeout: 180_000 }, async () => {
+  test('marks a model-not-found failure as MODEL_UNAVAILABLE', { timeout: 180_000 }, async () => {
     await assertCodexFailureClassification({
       suiteName: 'dialog-model-unavailable-convergence',
       prompt: 'Return a daemon model-not-found failure',
       expectedCategory: 'model_unavailable',
       expectedDetail: 'model_not_found',
-      expectedAction: 'switch_model',
       expectedMarker: 'retry_suppressed_reason":"non_retryable_category',
     });
   });
 
-  test('marks a provider timeout as TIMEOUT with retry action', { timeout: 180_000 }, async () => {
+  test('marks a provider timeout as TIMEOUT with retry evidence', { timeout: 180_000 }, async () => {
     await assertCodexFailureClassification({
       suiteName: 'dialog-timeout-convergence',
       prompt: 'Return a daemon timeout failure',
       expectedCategory: 'timeout',
       expectedDetail: 'timeout',
-      expectedAction: 'retry',
       expectedMarker: 'retry_reason":"transient_failure',
     });
   });
@@ -165,7 +163,6 @@ async function assertCodexFailureClassification(input: {
   prompt: string;
   expectedCategory: string;
   expectedDetail: string;
-  expectedAction: 'retry' | 'switch_model';
   expectedMarker: string;
 }) {
   const suite = await createSmokeSuite(input.suiteName);
@@ -215,7 +212,7 @@ async function assertCodexFailureClassification(input: {
 
     const terminal = await waitForRunTerminal(webUrl, run.runId, { timeoutMs: 20_000 });
     expect(terminal.status).toBe('failed');
-    expect(terminal.failureAction).toBe(input.expectedAction);
+    expect(terminal.failureCategory).toBe(input.expectedCategory);
     const events = await readRunEvents(webUrl, run.runId);
     expect(events).toContain(input.expectedCategory);
     expect(events).toContain(input.expectedDetail);

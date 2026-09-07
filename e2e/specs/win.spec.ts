@@ -306,11 +306,10 @@ const packagedOnboardingExpression = `
   (() => {
     const onboardingShell = document.querySelector('.entry-shell--onboarding');
     const onboardingModal = document.querySelector('.entry-onboarding-modal');
-    // Identity is the first gate; runtime selection follows Cloud sign-in.
-    const cloudSignIn = document.querySelector('.onboarding-cloud__primary');
+    const modelSource = document.querySelector('[role="radiogroup"]');
 
     return {
-      cloudSignInVisible: cloudSignIn instanceof HTMLElement,
+      modelSourceVisible: modelSource instanceof HTMLElement,
       href: location.href,
       onboardingVisible: onboardingShell instanceof HTMLElement && onboardingModal instanceof HTMLElement,
       text: onboardingModal?.textContent?.trim().slice(0, 2000) ?? null,
@@ -543,7 +542,7 @@ type UpdaterClickEvalValue = {
 };
 
 type PackagedOnboardingEvalValue = {
-  cloudSignInVisible: boolean;
+  modelSourceVisible: boolean;
   href: string;
   onboardingVisible: boolean;
   text: string | null;
@@ -633,12 +632,12 @@ winDescribe('packaged windows runtime smoke', () => {
         );
       }
 
-      // Phase 1 — the genuine first run. A packaged install nobody has signed
-      // into is real product behaviour, not a broken state: since
+      // Phase 1 — the genuine first run. A packaged install that has not been
+      // configured is real product behaviour, not a broken state: since
       // `shouldRouteToFirstRunOnboarding` keys purely on `onboardingCompleted`,
-      // the cloud sign-in landing is its correct terminal surface, and it is
-      // accepted only when it actually rendered its sign-in CTA and both runtime
-      // links. Core-only on purpose — every release workflow defaults there, and
+      // the model-source chooser is its correct terminal surface, and it is
+      // accepted only when it actually renders its runtime choices. Core-only
+      // on purpose — every release workflow defaults there, and
       // the full profile needs its controlled updater environment from first
       // launch, which a plain start before the fixture is wired would bypass.
       if (verifyCoreOnly) {
@@ -736,9 +735,8 @@ winDescribe('packaged windows runtime smoke', () => {
       else expect(value.health.version).toEqual(expect.any(String));
 
       // Establish the data-root postcondition before probing unrelated runtime
-      // capabilities. A healthy auth-first renderer may already be on
-      // od://app/onboarding, but it must still read the completed seed written
-      // into this tools-pack namespace.
+      // capabilities. The renderer must read the completed seed written into
+      // this tools-pack namespace.
       if (!inspect.desktopIpcUnavailable) {
         seededOnboardingCompleted = await measureSmokeStep(timings, 'verify seeded onboarding config', async () =>
           packagedOnboardingCompletedFromProbe(await readPackagedOnboardingConfig()),
@@ -814,9 +812,8 @@ winDescribe('packaged windows runtime smoke', () => {
         // environment — so it is a different daemon, and only it can say what
         // config the surface being asserted on is actually running under.
         // Phase 2 — the completed user. The seed must have been confirmed before
-        // this point; the core auth-first profile may legitimately stop at the
-        // cloud sign-in landing, while the full updater profile still needs
-        // Home. Either way, a cold launch that lost the seed fails first.
+        // this point, and every profile must reach Home. A cold launch that lost
+        // the seed fails first.
         if (seededOnboardingCompleted !== true) {
           throw new Error('reached the completed-user app-shell check without a confirmed seeded onboarding state');
         }
@@ -1326,11 +1323,11 @@ winDescribe('packaged windows runtime smoke', () => {
   }, 720_000);
 });
 
-winOnboardingDescribe('packaged windows onboarding AMR smoke', () => {
+winOnboardingDescribe('packaged windows onboarding smoke', () => {
   let installed = false;
   let started = false;
 
-  test('[P0] @electron-smoke starts a fresh packaged Windows app on the Cloud identity gate', async () => {
+  test('[P0] @electron-smoke starts a fresh packaged Windows app on the model-source chooser', async () => {
     const report = await createPackagedSmokeReport('win');
     const timings: SmokeTiming[] = [];
     let install: WinInstallResult | null = null;
@@ -1357,7 +1354,7 @@ winOnboardingDescribe('packaged windows onboarding AMR smoke', () => {
       const inspect = await measureSmokeStep(timings, 'wait healthy inspect eval', async () => waitForHealthyDesktop());
       expect(inspect.status?.state).toBe('running');
       // A fresh install boots at `od://app/` and the SPA immediately redirects to the dedicated
-      // onboarding route (`od://app/onboarding`, since the #4513 cloud sign-in redesign). Whether
+      // onboarding route (`od://app/onboarding`). Whether
       // the desktop is reported healthy just before or just after that redirect is a race, so the
       // healthy URL/href may be either — match the prefix leniently exactly as the mac smoke and
       // the onboarding-landing assertion below do, instead of pinning the bare root (which flaked
@@ -1369,17 +1366,17 @@ winOnboardingDescribe('packaged windows onboarding AMR smoke', () => {
       expect(health.health.ok).toBe(true);
 
       const initial = await waitForPackagedOnboarding((snapshot) =>
-        snapshot.onboardingVisible && snapshot.cloudSignInVisible,
-        'fresh packaged Windows onboarding Cloud identity gate',
+        snapshot.onboardingVisible && snapshot.modelSourceVisible,
+        'fresh packaged Windows onboarding model-source chooser',
       );
-      // Onboarding lives on a dedicated route since the #4513 cloud sign-in
-      // redesign, so the href is `od://app/onboarding` (packaged) — not the
+      // Onboarding lives on a dedicated route, so the href is
+      // `od://app/onboarding` (packaged) — not the
       // bare app root. Match the prefix the same lenient way the mac smoke
       // does instead of pinning the exact root path. Before the user-data
       // reset fix the app booted to Home and never reached this line, which
       // is why the stale exact-match assertion went unnoticed.
       expect(initial.href).toMatch(/^(od:\/\/app\/|http:\/\/127\.0\.0\.1:\d+\/)/);
-      expect(initial.cloudSignInVisible).toBe(true);
+      expect(initial.modelSourceVisible).toBe(true);
 
       const onboardingScreenshotPath = join(toolsPackDir, 'screenshots', `${namespace}-onboarding.png`);
       await mkdir(dirname(onboardingScreenshotPath), { recursive: true });
@@ -2608,7 +2605,7 @@ function asHealthEvalValue(value: unknown): HealthEvalValue | null {
 
 function asPackagedOnboardingEvalValue(value: unknown): PackagedOnboardingEvalValue | null {
   if (!isRecord(value)) return null;
-  if (typeof value.cloudSignInVisible !== 'boolean') return null;
+  if (typeof value.modelSourceVisible !== 'boolean') return null;
   if (typeof value.href !== 'string') return null;
   if (typeof value.onboardingVisible !== 'boolean') return null;
   if (value.text != null && typeof value.text !== 'string') return null;
@@ -2752,10 +2749,8 @@ async function seedPackagedOnboardingComplete(): Promise<void> {
   // the macOS smoke's seed, which already writes under runtimeNamespaceRoot.
   const configPath = join(runtimeNamespaceRoot, 'data', 'app-config.json');
   await mkdir(dirname(configPath), { recursive: true });
-  // Completion alone is insufficient when the daemon default selects the AMR
-  // cloud agent: a signed-out cloud identity correctly returns to Connect.
-  // Updater acceptance needs the ordinary signed-out Home shell, so pin the
-  // local agent that makes this fixture's postcondition complete.
+  // Updater acceptance needs the ordinary Home shell, so pin the local agent
+  // that makes this fixture's postcondition explicit and reproducible.
   await writeFile(
     configPath,
     `${JSON.stringify({ agentId: 'codex', onboardingCompleted: true }, null, 2)}\n`,

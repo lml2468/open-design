@@ -26,7 +26,8 @@ export type ChatRunStatusBody = {
   conversationId: string | null;
   createdAt: number;
   exitCode?: number | null;
-  failureAction?: string | null;
+  failureCategory?: string | null;
+  failureDetail?: string | null;
   id: string;
   projectId: string | null;
   signal?: string | null;
