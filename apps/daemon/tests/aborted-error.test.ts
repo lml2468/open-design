@@ -2,26 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { isAbortedOperationError } from '../src/integrations/aborted-error.js';
 
-// A cancelled `vela` child is NOT a failure. The proactive team-pull scheduler
-// aborts in-flight pulls on purpose in two places
-// (`collab/proactive-content-pull.ts`):
-//
-//   - `mergeIntentUpdate` aborts the current pull the moment a HIGHER version
-//     arrives, so the newer content is fetched instead of the stale one;
-//   - `clearIntent` aborts when the intent is superseded or already satisfied.
-//
-// `runVelaCommand` marks exactly this case with `name: 'AbortError'` and
-// `code: 'ABORT_ERR'` (and keeps a separate `reason: 'timeout'` path for real
-// deadline breaches). Nothing downstream ever read those markers, so every
-// deliberate cancellation surfaced as `[od] authorized proactive team pull
-// failed closed:` — observed live while investigating a first-open trace, where
-// it sent the investigation after a phantom failure.
-//
-// This predicate is the seam the pull path uses to tell the two apart. It must
-// never classify a real timeout or transport failure as a cancellation, or a
-// genuine fault would be silently swallowed.
+// `runVelaCommand` marks deliberate cancellation with `name: 'AbortError'`
+// and `code: 'ABORT_ERR'`, while timeouts and transport failures remain real
+// errors. This predicate must preserve that distinction for every caller.
 describe('isAbortedOperationError', () => {
-  it('recognizes a deliberately aborted vela command', () => {
+  it('recognizes a deliberately aborted command', () => {
     const error = new Error('vela command aborted', {
       cause: 'This operation was aborted',
     });

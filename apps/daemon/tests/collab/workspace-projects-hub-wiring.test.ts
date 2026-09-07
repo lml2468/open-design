@@ -263,152 +263,6 @@ describe('server.ts wiring (source boundary)', () => {
     )).toEqual(['project-metadata-changed']);
   });
 
-  it('only starts hub missing-project recovery for a targeted project id', () => {
-    const switchBody = extractOnEventSwitchBody();
-    const teamProjectsCase = switchBody
-      .split(/(?=case '[a-z-]+':)/g)
-      .find((chunk) => chunk.startsWith("case 'team-projects-changed':"));
-
-    expect(teamProjectsCase).toContain(
-      'if (event.workspaceId && event.projectId) {',
-    );
-    expect(teamProjectsCase).toContain(
-      'proactiveContentPull.materializeMissingProjects(\n' +
-        '              event.workspaceId,\n' +
-        '              event.projectId,\n' +
-        '            );',
-    );
-  });
-
-  it('logs broad-head cooldown deferrals in catch-up completion diagnostics', () => {
-    // Matched without the closing backtick so the assertion survives further
-    // fields being appended to the same template — it is here to pin that
-    // suppressed/complete are still reported, not to freeze the line's length.
-    expect(source).toContain(
-      'suppressed=${event.suppressed ?? 0} complete=${event.complete === true}',
-    );
-  });
-
-  it('reports background materialization volume in catch-up completion diagnostics', () => {
-    // `candidates` counts projects CONSIDERED, which says nothing about what
-    // actually landed on a member's disk. These totals are the only reading
-    // that makes OD_COLLAB_BACKGROUND_PULL_MAX_CUMULATIVE_ENTRIES choosable
-    // from a diagnostics bundle, so the guard's `volume()` has to reach this
-    // sink — a counter nothing reads is why that ceiling stayed unset.
-    expect(source).toContain('const backgroundVolume = backgroundPullSizeGuard.volume();');
-    expect(source).toContain('processEntries=${backgroundVolume.entries}');
-    expect(source).toContain('processProjects=${backgroundVolume.countedProjects}');
-    expect(source).toContain('processUncounted=${backgroundVolume.uncountedProjects}');
-  });
-
-  it('wires exact-scope recovery pollers through reconciliation and bounded full recovery', () => {
-    const anchor = 'createWorkspaceInvalidationPoller({';
-    const start = source.indexOf(anchor);
-    expect(start, 'expected to find createWorkspaceInvalidationPoller(...) in server.ts').toBeGreaterThan(-1);
-    // Brace-balance from the opening `{` (not a naive `indexOf('});')`, which
-    // would stop at the first NESTED closing brace inside e.g.
-    // `getWorkspaceContext: async () => { ... }`).
-    let depth = 0;
-    let i = start + anchor.length - 1; // position of the opening brace
-    for (; i < source.length; i += 1) {
-      if (source[i] === '{') depth += 1;
-      else if (source[i] === '}') {
-        depth -= 1;
-        if (depth === 0) break;
-      }
-    }
-    expect(depth, 'expected createWorkspaceInvalidationPoller({...}) braces to balance').toBe(0);
-    const configBody = source.slice(start, i + 1);
-    expect(configBody).toContain(
-      'activeTeamWorkspaceIdentity(context)?.workspaceId ?? workspaceId,',
-    );
-    expect(configBody).toContain(
-      'listTeamProjects: (context) => teamProjectsForDisplay(context),',
-    );
-    expect(configBody).not.toContain('polledWorkspaceIdForReconcile');
-    expect(configBody).toContain(
-      'onTeamProjectsObserved: ({ workspaceId: observedWorkspaceId }) =>\n' +
-        '          proactiveContentPull.advanceRecoveryFloor(observedWorkspaceId),',
-    );
-    expect(configBody).not.toContain('activeWorkspace');
-    expect(configBody).toContain(
-      'resolveAuthoritativeTeamWorkspaceContext(workspaceId)',
-    );
-    expect(configBody).not.toContain('collab.workspaceContext.current({})');
-    const emitStart = configBody.indexOf('emit: (payload, context) => {');
-    const emitEnd = configBody.indexOf(
-      'onTeamProjectsObserved:',
-      emitStart,
-    );
-    expect(emitStart).toBeGreaterThan(-1);
-    expect(emitEnd).toBeGreaterThan(emitStart);
-    expect(configBody.slice(emitStart, emitEnd)).not.toContain(
-      'proactiveContentPull.advanceRecoveryFloor',
-    );
-  });
-
-  it('disposes proactive pull retry timers during daemon shutdown', () => {
-    const anchor = 'const cleanupDaemonBackgroundWork = () => {';
-    const start = source.indexOf(anchor);
-    expect(start, 'expected daemon background cleanup in server.ts').toBeGreaterThan(-1);
-    const end = source.indexOf('};', start);
-    expect(end, 'expected daemon background cleanup to close').toBeGreaterThan(start);
-    const cleanupBody = source.slice(start, end + 2);
-    expect(cleanupBody).toContain('proactiveContentPull.dispose();');
-  });
-
-  it('recovers promotion journals before registering collaboration pull routes', () => {
-    const recovery = source.indexOf(
-      'await recoverAuthorizedTeamProjectPromotions({',
-    );
-    const routes = source.indexOf(
-      'const collabSyncRoutes = registerCollabSyncRoutes(app, {',
-    );
-    expect(recovery).toBeGreaterThan(-1);
-    expect(routes).toBeGreaterThan(recovery);
-    expect(source.slice(recovery, routes)).toContain(
-      'allowedProjectsRoot: PROJECTS_DIR',
-    );
-    expect(source.slice(recovery, routes)).toContain(
-      'getTeamProjectMaterialization(',
-    );
-  });
-
-  it('wires the exact proactive invocation and transactional receipt materializer', () => {
-    expect(source).toContain(
-      'materializeAuthorizedTeamMirror: (input, scope, receipt) =>\n' +
-        '        materializePulledTeamMirror(db, input, scope, receipt)',
-    );
-    expect(source).toContain(
-      '}, target.authorizationWitness, expectedVersion, target.authorizedStageInvocation)',
-    );
-    expect(source).not.toContain(
-      'getActiveWorkspaceSnapshot: authorizedActiveWorkspaceSnapshot',
-    );
-    expect(source).toContain(
-      'authorizedTeamProjectPull: {\n' +
-        '      journalDir: teamMirrorPromotionJournalDir,\n' +
-        '    },',
-    );
-  });
-
-  it('authorizes reconnect catch-up from the expected Workspace directory identity', () => {
-    const anchor = 'listSharedProjects: async (workspaceId) => {';
-    const start = source.indexOf(anchor);
-    const end = source.indexOf('hasMaterializedProject:', start);
-    const body = source.slice(start, end);
-    expect(body).not.toContain('activeWorkspace.get()');
-    expect(body).not.toContain('collab.workspaceContext.current({})');
-    expect(body).not.toContain('lastKnown');
-    expect(body).toContain(
-      'resolveAuthoritativeTeamWorkspaceContext(workspaceId)',
-    );
-    expect(
-      body.split('resolveAuthoritativeTeamWorkspaceContext(workspaceId)')
-        .length - 1,
-    ).toBe(2);
-  });
-
   it('does not drop subscribed Workspace A hub data when Workspace B is ambient', () => {
     const start = source.indexOf(
       'const startWorkspaceHubSubscriber = (subscribedWorkspaceId: string) =>',
@@ -663,15 +517,15 @@ describe('server.ts wiring (source boundary)', () => {
       'const resolveSharedProjectOwnerForStatus = async (',
       freshOwnerStart,
     );
-    const presenceStart = source.indexOf(
-      'const authoritativePresenceWorkspaces',
+    const verificationStart = source.indexOf(
+      'const sharedProjectPullProfiling',
       statusOwnerStart,
     );
     expect(freshOwnerStart).toBeGreaterThan(-1);
     expect(statusOwnerStart).toBeGreaterThan(freshOwnerStart);
-    expect(presenceStart).toBeGreaterThan(statusOwnerStart);
+    expect(verificationStart).toBeGreaterThan(statusOwnerStart);
     const freshOwnerBody = source.slice(freshOwnerStart, statusOwnerStart);
-    const statusOwnerBody = source.slice(statusOwnerStart, presenceStart);
+    const statusOwnerBody = source.slice(statusOwnerStart, verificationStart);
 
     expect(statusOwnerBody).toContain(
       'await teamProjectsDisplayCache(explicitScope)',
@@ -694,44 +548,4 @@ describe('server.ts wiring (source boundary)', () => {
     expect(pullBody).not.toContain('teamProjectsDisplayCache');
   });
 
-  it('recognizes an authorized remote mirror from exact version and a real live directory, not a local project manifest', () => {
-    const helperStart = source.indexOf(
-      'const proactiveTeamProjectMaterializedVersion = (',
-    );
-    const configStart = source.indexOf(
-      'const proactiveContentPull = createProactiveContentPull({',
-      helperStart,
-    );
-    expect(helperStart).toBeGreaterThan(-1);
-    expect(configStart).toBeGreaterThan(helperStart);
-    const helperBody = source.slice(helperStart, configStart);
-    expect(helperBody).toContain('getTeamProjectMaterialization(');
-    expect(helperBody).toContain('target.workspaceId');
-    expect(helperBody).toContain(
-      'teamProjectContentResourceId(target.projectId, target)',
-    );
-    expect(helperBody).toContain(
-      'latestTeamProjectMaterializationVersion(',
-    );
-
-    const probeStart = source.indexOf(
-      'hasMaterializedProject: async (projectId, target) => {',
-      configStart,
-    );
-    const probeEnd = source.indexOf(
-      'materializedVersion: proactiveTeamProjectMaterializedVersion,',
-      probeStart,
-    );
-    expect(probeStart).toBeGreaterThan(configStart);
-    expect(probeEnd).toBeGreaterThan(probeStart);
-    const probeBody = source.slice(probeStart, probeEnd);
-    expect(probeBody).toContain('const project = getProject(db, projectId);');
-    expect(probeBody).toContain(
-      'proactiveTeamProjectMaterializedVersion(target)',
-    );
-    expect(probeBody).toContain('fs.promises.lstat(projectDir)');
-    expect(probeBody).toContain('entry.isDirectory()');
-    expect(probeBody).toContain('!entry.isSymbolicLink()');
-    expect(probeBody).not.toContain('readProjectManifest');
-  });
 });

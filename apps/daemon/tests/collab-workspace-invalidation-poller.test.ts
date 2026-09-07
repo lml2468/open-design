@@ -5,7 +5,6 @@ import type {
   WorkspaceCollabContext,
   WorkspaceInvalidationSsePayload,
 } from '@open-design/contracts';
-import { createProactiveContentPull } from '../src/collab/proactive-content-pull.js';
 import { createWorkspaceInvalidationPoller } from '../src/collab/workspace-invalidation-poller.js';
 
 // Minimal team context — `isTeamContext` only reads `workspaceType`/`teamId`,
@@ -38,7 +37,6 @@ function member(id: string, extra: Partial<CollabCloudMemberDirectoryEntry> = {}
 
 interface Harness {
   emitted: WorkspaceInvalidationSsePayload[];
-  observed: Array<{ workspaceId: string; projectIds: string[] }>;
   types: () => string[];
   context: WorkspaceCollabContext | null;
   projects: TeamProject[] | null; // null simulates a transient read failure
@@ -58,17 +56,11 @@ function harness(initial: {
   members?: CollabCloudMemberDirectoryEntry[] | null;
   pollIntervalMs?: number;
   realtimePollFloorMs?: number;
-  recoveryFloorIntervalMs?: number;
   now?: () => number;
-  onTeamProjectsObserved?: (input: {
-    workspaceId: string;
-    projects: readonly TeamProject[];
-  }) => void | Promise<void>;
   onPollSuppressed?: () => void;
 }): Harness {
   const h: Harness = {
     emitted: [],
-    observed: [],
     types: () => h.emitted.map((e) => e.type),
     context: initial.context === undefined ? teamContext() : initial.context,
     projects: initial.projects === undefined ? [] : initial.projects,
@@ -111,18 +103,7 @@ function harness(initial: {
     ...(initial.realtimePollFloorMs != null
       ? { realtimePollFloorMs: initial.realtimePollFloorMs }
       : {}),
-    ...(initial.recoveryFloorIntervalMs != null
-      ? { recoveryFloorIntervalMs: initial.recoveryFloorIntervalMs }
-      : {}),
     ...(initial.now ? { now: initial.now } : {}),
-    onTeamProjectsObserved:
-      initial.onTeamProjectsObserved ??
-      ((input) => {
-        h.observed.push({
-          workspaceId: input.workspaceId,
-          projectIds: input.projects.map((candidate) => candidate.projectId),
-        });
-      }),
   });
   return h;
 }
@@ -254,218 +235,6 @@ describe('workspace invalidation poller', () => {
     expect(h.types()).toEqual(['members-changed']);
   });
 
-  it('runs the missing-project recovery floor immediately, then every 30s despite a stable catalog', async () => {
-    let now = 0;
-    const h = harness({
-      projects: [project('p1')],
-      recoveryFloorIntervalMs: 30_000,
-      now: () => now,
-    });
-
-    await h.poller.pollOnce();
-    await h.poller.pollOnce();
-    now = 29_999;
-    await h.poller.pollOnce();
-    now = 30_000;
-    await h.poller.pollOnce();
-
-    expect(h.emitted).toEqual([]);
-    expect(h.observed).toEqual([
-      { workspaceId: 'ws-1', projectIds: ['p1'] },
-      { workspaceId: 'ws-1', projectIds: ['p1'] },
-    ]);
-  });
-
-  it('uses stable recovery ticks to continue bounded full-head rotation after reconnect', async () => {
-    let now = 0;
-    const sharedProjects = Array.from({ length: 10 }, (_, index) => ({
-      projectId: `p${index}`,
-      ownerMemberId: 'wm-owner',
-    }));
-    const headCalls: string[] = [];
-    const proactivePull = createProactiveContentPull({
-      getLocalBinding: () => ({ workspaceId: 'ws-1', visibility: 'team' }),
-      getWorkspaceIdentity: async () => ({
-        workspaceId: 'ws-1',
-        resourceTeamId: 'team-1',
-        workspaceMemberId: 'wm-1',
-      }),
-      resolveSharedProjectOwner: async () => 'wm-owner',
-      listSharedProjects: async () => sharedProjects,
-      hasMaterializedProject: () => true,
-      publishedHead: async (target) => {
-        headCalls.push(target.projectId);
-        return null;
-      },
-      pullSharedProject: async () => ({ status: 'pulled', version: null }),
-    });
-    const h = harness({
-      projects: sharedProjects.map((candidate) =>
-        project(candidate.projectId, {
-          ownerMemberId: candidate.ownerMemberId,
-        })),
-      recoveryFloorIntervalMs: 30_000,
-      now: () => now,
-      onTeamProjectsObserved: ({ workspaceId }) =>
-        proactivePull.advanceRecoveryFloor(workspaceId),
-    });
-
-    // Hub connect/reconnect starts one bounded full batch.
-    await proactivePull.catchUpPublishedHeads('ws-1');
-    expect(headCalls).toEqual(['p0', 'p1', 'p2', 'p3']);
-
-    // The existing poller cadence, rather than a new timer, advances the same
-    // full cursor through stale existing projects.
-    await h.poller.pollOnce();
-    await vi.waitFor(() => expect(headCalls).toHaveLength(8));
-    expect(headCalls.slice(4)).toEqual(['p4', 'p5', 'p6', 'p7']);
-
-    now = 30_000;
-    await h.poller.pollOnce();
-    await vi.waitFor(() => expect(headCalls).toHaveLength(12));
-    expect(headCalls.slice(8, 10)).toEqual(['p8', 'p9']);
-    expect(new Set(headCalls.slice(0, 10))).toEqual(
-      new Set(sharedProjects.map((candidate) => candidate.projectId)),
-    );
-    proactivePull.dispose();
-  });
-
-  it('materializes an absent local project through the bounded full recovery floor', async () => {
-    const pullCalls: string[] = [];
-    const proactivePull = createProactiveContentPull({
-      getLocalBinding: () => null,
-      getWorkspaceIdentity: async () => ({
-        workspaceId: 'ws-1',
-        resourceTeamId: 'team-1',
-        workspaceMemberId: 'wm-1',
-      }),
-      resolveSharedProjectOwner: async () => 'wm-owner',
-      listSharedProjects: async () => [
-        { projectId: 'missing-project', ownerMemberId: 'wm-owner' },
-      ],
-      hasMaterializedProject: () => false,
-      publishedHead: async () => 1,
-      pullSharedProject: async (target) => {
-        pullCalls.push(target.projectId);
-        return { status: 'pulled', version: 1 };
-      },
-    });
-    const h = harness({
-      projects: [
-        project('missing-project', { ownerMemberId: 'wm-owner' }),
-      ],
-      onTeamProjectsObserved: ({ workspaceId }) =>
-        proactivePull.advanceRecoveryFloor(workspaceId),
-    });
-
-    await h.poller.pollOnce();
-    await vi.waitFor(() => expect(pullCalls).toEqual(['missing-project']));
-    proactivePull.dispose();
-  });
-
-  it('does not run the recovery floor off-team or after a failed catalog read', async () => {
-    const personal = harness({
-      context: personalContext(),
-      projects: [project('p1')],
-    });
-    await personal.poller.pollOnce();
-    expect(personal.observed).toEqual([]);
-
-    const failed = harness({
-      context: teamContext(),
-      projects: null,
-    });
-    await failed.poller.pollOnce();
-    expect(failed.observed).toEqual([]);
-  });
-
-  it.each([
-    ['personal context with stale team id', { workspaceType: 'personal' }],
-    ['removed member', { memberStatus: 'removed' }],
-    ['past-due workspace', { lifecycleState: 'billing_past_due' }],
-    ['locked workspace', { lifecycleState: 'locked' }],
-    ['deleting workspace', { lifecycleState: 'deleting' }],
-    ['deleted workspace', { lifecycleState: 'deleted' }],
-    ['missing workspace id', { workspaceId: ' ' }],
-    ['missing resource team id', { teamId: ' ' }],
-    ['missing workspace member id', { workspaceMemberId: ' ' }],
-  ] satisfies Array<[string, Partial<WorkspaceCollabContext>]>)(
-    'does not run broad recovery for %s',
-    async (_label, overrides) => {
-      const h = harness({
-        context: teamContext(overrides),
-        projects: [project('p1')],
-      });
-
-      await h.poller.pollOnce();
-
-      expect(h.observed).toEqual([]);
-    },
-  );
-
-  it('schedules immediately after a workspace switch inside the same throttle window', async () => {
-    let now = 0;
-    const h = harness({
-      context: teamContext({ workspaceId: 'ws-1' }),
-      projects: [project('p1')],
-      recoveryFloorIntervalMs: 30_000,
-      now: () => now,
-    });
-    await h.poller.pollOnce();
-
-    now = 1_000;
-    h.context = teamContext({ workspaceId: 'ws-2' });
-    h.projects = [project('p2')];
-    await h.poller.pollOnce();
-
-    expect(h.observed).toEqual([
-      { workspaceId: 'ws-1', projectIds: ['p1'] },
-      { workspaceId: 'ws-2', projectIds: ['p2'] },
-    ]);
-  });
-
-  it('does not let a hanging recovery block polls, duplicate scheduling, or leak timers', async () => {
-    vi.useFakeTimers();
-    let releaseObservation!: () => void;
-    const observationGate = new Promise<void>((resolve) => {
-      releaseObservation = resolve;
-    });
-    const onTeamProjectsObserved = vi.fn(async () => observationGate);
-    const h = harness({
-      projects: [project('p1')],
-      pollIntervalMs: 100,
-      recoveryFloorIntervalMs: 30_000,
-      onTeamProjectsObserved,
-    });
-
-    try {
-      h.poller.start();
-      h.poller.start();
-      expect(vi.getTimerCount()).toBe(1);
-      await vi.advanceTimersByTimeAsync(100);
-      expect(onTeamProjectsObserved).toHaveBeenCalledTimes(1);
-      expect(h.contextCalls).toBe(1);
-      expect(h.teamListCalls).toBe(1);
-      expect(h.memberListCalls).toBe(1);
-
-      await vi.advanceTimersByTimeAsync(300);
-      expect(onTeamProjectsObserved).toHaveBeenCalledTimes(1);
-      expect(h.contextCalls).toBe(4);
-      expect(h.teamListCalls).toBe(4);
-      expect(h.memberListCalls).toBe(4);
-
-      h.poller.stop();
-      expect(vi.getTimerCount()).toBe(0);
-      await vi.advanceTimersByTimeAsync(300);
-      expect(onTeamProjectsObserved).toHaveBeenCalledTimes(1);
-      expect(h.contextCalls).toBe(4);
-    } finally {
-      h.poller.stop();
-      releaseObservation();
-      vi.useRealTimers();
-    }
-  });
-
   it('uses the realtime poll floor only while healthy and resumes immediately on disconnect', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
@@ -497,16 +266,4 @@ describe('workspace invalidation poller', () => {
     }
   });
 
-  it('reports an asynchronous recovery rejection without rejecting the poll', async () => {
-    const failure = new Error('recovery failed');
-    const h = harness({
-      projects: [project('p1')],
-      onTeamProjectsObserved: async () => {
-        throw failure;
-      },
-    });
-
-    await expect(h.poller.pollOnce()).resolves.toBeUndefined();
-    await vi.waitFor(() => expect(h.errors).toContain(failure));
-  });
 });

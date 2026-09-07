@@ -104,25 +104,6 @@ function migrate(db: SqliteDb): void {
     CREATE INDEX IF NOT EXISTS idx_workspace_projects_workspace_visibility
       ON workspace_projects(workspace_id, visibility, updated_at DESC);
 
-    CREATE TABLE IF NOT EXISTS team_project_materializations (
-      workspace_id TEXT NOT NULL,
-      resource_team_id TEXT NOT NULL,
-      viewer_member_id TEXT NOT NULL,
-      owner_member_id TEXT NOT NULL,
-      project_id TEXT NOT NULL,
-      resource_id TEXT NOT NULL,
-      ref TEXT NOT NULL CHECK (ref = 'published'),
-      version INTEGER NOT NULL,
-      version_id TEXT NOT NULL,
-      manifest_digest TEXT NOT NULL,
-      lifecycle_state TEXT NOT NULL CHECK (lifecycle_state = 'active'),
-      authorized_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (workspace_id, project_id),
-      FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
-    );
-
     -- The generic workspace-binding table for resource types that do NOT get
     -- their own dedicated table (plugin today; skill / design system are
     -- planned follow-ups — see specs/current for the phased rollout). Same

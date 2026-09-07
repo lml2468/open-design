@@ -45,17 +45,6 @@ export interface WorkspaceInvalidationPollerDeps {
   /** While the exact-workspace realtime stream is proven healthy, keep a
    *  bounded authoritative poll floor instead of running every base tick. */
   realtimePollFloorMs?: number;
-  /** Ask the daemon recovery coordinator to inspect locally missing team
-   * projects. This is a fire-and-forget request: a slow recovery must never
-   * block workspace context, catalog, or member polling. `projects` is the
-   * display-cache observation, not pull authorization: the recovery coordinator
-   * must independently re-read authoritative identity + catalog state. */
-  onTeamProjectsObserved?: (input: {
-    workspaceId: string;
-    projects: readonly TeamProject[];
-  }) => void | Promise<void>;
-  /** Minimum cadence for the missing-project recovery request. */
-  recoveryFloorIntervalMs?: number;
   /** Injectable wall clock for deterministic recovery-floor tests. */
   now?: () => number;
   /** Bounded observability hook; one callback equals one upstream poll cycle
@@ -65,7 +54,6 @@ export interface WorkspaceInvalidationPollerDeps {
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 15_000;
-const DEFAULT_RECOVERY_FLOOR_INTERVAL_MS = 30_000;
 
 /** Stable signature of the workspace context — any change to these fields is a
  *  meaningful `workspace-context-changed`. Whole-object stringify is fine here:
@@ -82,26 +70,6 @@ function isTeamContext(
   if (!context) return false;
   if (context.workspaceType === 'team') return true;
   return typeof context.teamId === 'string' && context.teamId.trim().length > 0;
-}
-
-/** Fail-closed prefilter for broad recovery. Keep this identity boundary
- * aligned with `activeTeamWorkspaceIdentity` in proactive-content-pull.ts
- * without changing `isTeamContext`'s existing invalidation/read semantics. */
-function activeRecoveryWorkspaceId(context: WorkspaceCollabContext): string | null {
-  const workspaceId = context.workspaceId?.trim() ?? '';
-  const resourceTeamId = context.teamId?.trim() ?? '';
-  const workspaceMemberId = context.workspaceMemberId?.trim() ?? '';
-  if (
-    context.workspaceType !== 'team' ||
-    context.memberStatus !== 'active' ||
-    context.lifecycleState !== 'active' ||
-    !workspaceId ||
-    !resourceTeamId ||
-    !workspaceMemberId
-  ) {
-    return null;
-  }
-  return workspaceId;
 }
 
 function teamProjectsSignature(projects: TeamProject[]): string {
@@ -143,15 +111,11 @@ export function createWorkspaceInvalidationPoller(
     pollIntervalMs,
     deps.realtimePollFloorMs ?? 60_000,
   );
-  const recoveryFloorIntervalMs =
-    deps.recoveryFloorIntervalMs ?? DEFAULT_RECOVERY_FLOOR_INTERVAL_MS;
   const now = deps.now ?? Date.now;
   let timer: NodeJS.Timeout | null = null;
   let running = false;
   let realtimeHealthy = false;
   let lastPollStartedAt: number | null = null;
-  let recoveryWorkspaceId: string | null = null;
-  let recoveryRequestedAt: number | null = null;
 
   // `undefined` = never observed (first cycle establishes the baseline WITHOUT
   // emitting, so a fresh daemon does not spam a synthetic "changed" on boot).
@@ -169,32 +133,6 @@ export function createWorkspaceInvalidationPoller(
     return next;
   };
 
-  const requestMissingProjectRecovery = (
-    context: WorkspaceCollabContext,
-    projects: readonly TeamProject[],
-    at: number,
-  ): void => {
-    if (!deps.onTeamProjectsObserved) return;
-    const workspaceId = activeRecoveryWorkspaceId(context);
-    if (!workspaceId) return;
-    if (
-      recoveryWorkspaceId === workspaceId &&
-      recoveryRequestedAt != null &&
-      at - recoveryRequestedAt < recoveryFloorIntervalMs
-    ) {
-      return;
-    }
-    recoveryWorkspaceId = workspaceId;
-    recoveryRequestedAt = at;
-    try {
-      void Promise.resolve(
-        deps.onTeamProjectsObserved({ workspaceId, projects }),
-      ).catch((error) => deps.onError?.(error));
-    } catch (error) {
-      deps.onError?.(error);
-    }
-  };
-
   async function pollOnce(): Promise<void> {
     const observedAt = now();
     lastPollStartedAt = observedAt;
@@ -208,8 +146,6 @@ export function createWorkspaceInvalidationPoller(
     }, context);
 
     if (!isTeamContext(context)) {
-      recoveryWorkspaceId = null;
-      recoveryRequestedAt = null;
       // Off-team: fold team projects / members to empty so RE-entering a team
       // re-emits, but never spawn the team reads for a personal user.
       teamProjectsSig = emitIfChanged(teamProjectsSig, teamProjectsSignature([]), {
@@ -240,7 +176,6 @@ export function createWorkspaceInvalidationPoller(
         type: 'team-projects-changed',
         at: observedAt,
       }, context);
-      requestMissingProjectRecovery(context, projects, observedAt);
     }
     if (members) {
       membersSig = emitIfChanged(membersSig, membersSignature(members), {

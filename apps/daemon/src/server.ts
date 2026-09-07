@@ -255,16 +255,11 @@ import {
   plainStdoutFromRunEvents,
 } from './runtimes/plain-stream.js';
 import { resolveAmrProfile } from './integrations/vela.js';
-import { isAbortedOperationError } from './integrations/aborted-error.js';
 import { projectResourceIdFor } from './integrations/vela-team-projects.js';
 import {
-  getTeamProjectMaterialization,
-  latestTeamProjectMaterializationVersion,
   materializePulledTeamMirror,
-  teamProjectMaterializationMatches,
-  teamProjectMaterializationSupersedes,
+  parseTeamProjectMaterializationVersion,
 } from './collab/team-mirror-materializer.js';
-import { recoverAuthorizedTeamProjectPromotions } from './collab/team-mirror-promotion.js';
 import { migrateLegacyDataDirSync } from './migration/index.js';
 import {
   consumedImportNonces,
@@ -904,19 +899,6 @@ import {
   createWorkspaceHubSubscriptionManager,
   type WorkspaceHubSubscriptionManager,
 } from './collab/workspace-hub-subscriptions.js';
-import {
-  activeTeamWorkspaceIdentity,
-  createProactiveContentPull,
-  type ProactiveContentPullTarget,
-} from './collab/proactive-content-pull.js';
-import {
-  backgroundPullMaxEntriesFromEnv,
-  backgroundPullMaxCumulativeEntriesFromEnv,
-  createBackgroundPullSizeGuard,
-} from './collab/background-pull-size-guard.js';
-import {
-  inspectAuthorizedTeamProjectPull,
-} from './collab/authorized-team-project-pull.js';
 import { createProjectContentTransferStateStore } from './collab/project-content-transfer-state.js';
 import {
   emitSharedProjectPullTiming,
@@ -3363,33 +3345,6 @@ export async function startServer({
     };
   };
   const activeWorkspace = createActiveWorkspaceSelectionStore(RUNTIME_DATA_DIR);
-  const teamMirrorPromotionJournalDir = path.join(
-    RUNTIME_DATA_DIR,
-    'team-mirror-promotions',
-  );
-  await recoverAuthorizedTeamProjectPromotions({
-    journalDir: teamMirrorPromotionJournalDir,
-    allowedProjectsRoot: PROJECTS_DIR,
-    isCommitted: (entry) => {
-      const stored = getTeamProjectMaterialization(
-        db,
-        entry.receipt.workspaceId,
-        entry.receipt.projectId,
-      );
-      return teamProjectMaterializationMatches(stored, entry.receipt);
-    },
-    isSuperseded: (entry) => {
-      const stored = getTeamProjectMaterialization(
-        db,
-        entry.receipt.workspaceId,
-        entry.receipt.projectId,
-      );
-      return teamProjectMaterializationSupersedes(stored, entry.receipt);
-    },
-    onError: (error) => {
-      console.warn('[od] failed to recover authorized team mirror promotion:', error);
-    },
-  });
   // What this daemon has learned about each workspace's type, memoized from
   // exact directory/context reads it already performs. It is the
   // second witness behind the team-share invariant: a team share may only be
@@ -4665,11 +4620,6 @@ export async function startServer({
         });
       },
     });
-  let observeLegacyTeamProjectPull = async (
-    _projectId: string,
-    _scope: TeamMirrorPullScope,
-    _version: number,
-  ): Promise<void> => {};
   const collabSyncRoutes = registerCollabSyncRoutes(app, {
     collab,
     publicFilePublicationStore: createSqlitePublicFilePublicationStore(db),
@@ -4718,9 +4668,7 @@ export async function startServer({
       },
       materializeTeamMirror: (input, scope) => materializePulledTeamMirror(db, input, scope),
       materializeTeamPlaceholder: (input, scope) =>
-        materializePulledTeamMirror(db, input, scope, undefined, { placeholder: true }),
-      materializeAuthorizedTeamMirror: (input, scope, receipt) =>
-        materializePulledTeamMirror(db, input, scope, receipt),
+        materializePulledTeamMirror(db, input, scope, { placeholder: true }),
     },
     resolveProjectDir: async (projectId) => {
       const project = getProject(db, projectId);
@@ -4728,26 +4676,14 @@ export async function startServer({
       return resolveProjectShareDir(PROJECTS_DIR, projectId, project, resolveProjectDir);
     },
     resolvePullDir: (projectId) => resolveProjectDir(PROJECTS_DIR, projectId),
-    readMaterializedVersion: (projectId, scope) => {
-      const authorized = getTeamProjectMaterialization(
-        db,
-        scope.workspaceId,
-        projectId,
-      );
-      return latestTeamProjectMaterializationVersion(
-        authorized,
+    readMaterializedVersion: (projectId, scope) =>
+      parseTeamProjectMaterializationVersion(
         teamResourceVersions.get(
           scope.workspaceId,
           'project-content',
           teamProjectContentResourceId(projectId, scope),
         ),
-        projectId,
-        scope,
-      );
-    },
-    authorizedTeamProjectPull: {
-      journalDir: teamMirrorPromotionJournalDir,
-    },
+      ),
     writeMaterializedVersion: (projectId, scope, version) =>
       teamResourceVersions.set(
         scope.workspaceId,
@@ -4755,8 +4691,6 @@ export async function startServer({
         teamProjectContentResourceId(projectId, scope),
         String(version),
       ),
-    onLegacyPullMaterialized: (projectId, scope, version) =>
-      observeLegacyTeamProjectPull(projectId, scope, version),
     resolveSharedProject,
     resolveSharedProjectOwner,
     resolveSharedProjectOwnerForStatus,
@@ -4786,19 +4720,6 @@ export async function startServer({
       // project — see SYNC_KEEPS_UPDATED_AT. This is the flag that made a
       // member's very first open of a shared project read 「刚刚更新」.
       updateProject(db, projectId, { metadata, updatedAt: SYNC_KEEPS_UPDATED_AT });
-    },
-    // Retracted-share heal (飞书 recvqA6qhV7St1): delete a placeholder record
-    // whose backing hub resource turned out to be tombstoned. Re-checks the
-    // placeholder stamp HERE — deletion is only ever legal for a record the
-    // stamp proves contentless, so a pull that materialized real content
-    // between the heal's decision and this call is never destroyed. The
-    // `workspace_projects` binding (if any) goes with it via ON DELETE
-    // CASCADE, and the empty content directory is removed best-effort.
-    retireUnmaterializedSharedPlaceholder: (projectId: string) => {
-      const project = getProject(db, projectId);
-      if (!isUnmaterializedSharedPlaceholder(project)) return;
-      dbDeleteProject(db, projectId);
-      void removeProjectDir(PROJECTS_DIR, projectId).catch(() => {});
     },
     invalidateTeamProjectCatalog: () => {
       teamProjectsDisplayCache.invalidate();
@@ -4842,248 +4763,6 @@ export async function startServer({
         }
       : {}),
   });
-  // Hub push-channel consumer for 'project-content-changed' (recvqmKQRiIlYf):
-  // when a teammate publishes new content for a shared project, pull it NOW —
-  // daemon-side, no open tab required — through the SAME flow the member
-  // web's POST /collab/pull runs (collabSyncRoutes.pullSharedProject, which
-  // also coalesces the two when they race). Every guard is fail-closed and
-  // every failure degrades silently to the web's ~5s status polling, which
-  // stays running untouched as the fallback; see
-  // collab/proactive-content-pull.ts for the guard boundary (never pull a
-  // project this member owns; an unbound first share requires an exact
-  // event-workspace/active-workspace match; dedupe by hub version).
-  const proactiveTeamProjectMaterializedVersion = (
-    target: ProactiveContentPullTarget,
-  ) => {
-    const authorized = getTeamProjectMaterialization(
-      db,
-      target.workspaceId,
-      target.projectId,
-    );
-    const version = latestTeamProjectMaterializationVersion(
-      authorized,
-      teamResourceVersions.get(
-        target.workspaceId,
-        'project-content',
-        teamProjectContentResourceId(target.projectId, target),
-      ),
-      target.projectId,
-      target,
-    );
-    return version == null ? null : String(version);
-  };
-  // Background pull size guard (issue #6518, incident #6512): before any
-  // background lane downloads a published version, an authorize-only Vela
-  // probe reads the manifest entry count; oversized versions are deferred to
-  // the foreground open-project pull. Fail-closed here means PULL AS BEFORE —
-  // an old CLI, a countless output, or a probe failure keeps today's
-  // behavior. See collab/background-pull-size-guard.ts.
-  const backgroundPullSizeGuard = createBackgroundPullSizeGuard({
-    maxEntries: backgroundPullMaxEntriesFromEnv(),
-    maxCumulativeEntries: backgroundPullMaxCumulativeEntriesFromEnv(),
-    inspect: (scope, version) =>
-      inspectAuthorizedTeamProjectPull({
-        projectId: scope.projectId,
-        scope: {
-          workspaceId: scope.workspaceId,
-          resourceTeamId: scope.resourceTeamId,
-          viewerMemberId: scope.viewerMemberId,
-          ownerMemberId: scope.ownerMemberId,
-        },
-        expectedVersion: version,
-      }),
-    onDeferred: (info) => {
-      console.info(
-        `[od] background shared-project pull deferred (${info.reason}): ` +
-          `projectId=${info.projectId} workspaceId=${info.workspaceId} ` +
-          `version=${info.version} entries=${info.entryCount} ` +
-          `maxEntries=${info.maxEntries}; opening the project pulls it on demand`,
-      );
-    },
-    onError: (error) =>
-      console.warn(
-        '[od] background pull size probe failed open (pulling as before):',
-        String(error),
-      ),
-  });
-  const proactiveContentPull = createProactiveContentPull({
-    assessBackgroundContentPull: (target, version) =>
-      backgroundPullSizeGuard.assess(target, version),
-    getLocalBinding: (projectId) => {
-      const row = getWorkspaceProjectByProjectId(db, projectId) as
-        | { workspaceId: string; visibility: 'personal' | 'team' }
-        | null;
-      if (!row) return null;
-      return { workspaceId: row.workspaceId, visibility: row.visibility };
-    },
-    // Resolve the event/binding Workspace itself. Global active Workspace is
-    // control-plane selection only and cannot retarget or cancel this pull.
-    getWorkspaceIdentity: async (workspaceId) =>
-      activeTeamWorkspaceIdentity(
-        await resolveAuthoritativeTeamWorkspaceContext(workspaceId),
-      ),
-    // A witness may skip the route's pre-transport catalog gate, so only this
-    // uncached authoritative lookup is allowed to mint one. The display SWR
-    // owner cache remains wired everywhere else.
-    resolveSharedProjectOwner: async (projectId, workspaceId) => {
-      const context =
-        await resolveAuthoritativeTeamWorkspaceContext(workspaceId);
-      const identity = activeTeamWorkspaceIdentity(context);
-      if (!context || !identity) return null;
-      return resolveSharedProjectOwner(projectId, {
-        workspaceId: identity.workspaceId,
-        workspaceMemberId: identity.workspaceMemberId,
-      });
-    },
-    // Catch-up reads the rich catalog exactly once per verified connection
-    // (or missing-project floor). Re-check the same exact directory scope
-    // after the CLI await; changing global active Workspace is irrelevant.
-    listSharedProjects: async (workspaceId) => {
-      if (!velaCliWorkspaceTeamProjectCatalog) return [];
-      const beforeContext =
-        await resolveAuthoritativeTeamWorkspaceContext(workspaceId);
-      if (!beforeContext) return [];
-      const principal = contextToResourceHubPrincipal(beforeContext);
-      if (!principal || principal.teamId !== workspaceId) return [];
-      const projects = await velaCliWorkspaceTeamProjectCatalog.list(principal);
-      const afterContext =
-        await resolveAuthoritativeTeamWorkspaceContext(workspaceId);
-      if (!afterContext) return [];
-      const afterPrincipal = contextToResourceHubPrincipal(afterContext);
-      if (
-        !afterPrincipal
-        || afterPrincipal.teamId !== principal.teamId
-        || afterPrincipal.memberId !== principal.memberId
-      ) {
-        return [];
-      }
-      return projects
-        .filter((project) => project.workspaceId === workspaceId && project.access.canView)
-        .map((project) => ({
-          projectId: project.projectId,
-          ownerMemberId: project.ownerMemberId,
-        }));
-    },
-    hasMaterializedProject: async (projectId, target) => {
-      const project = getProject(db, projectId);
-      if (!project) return false;
-      // Authorized Vela mirrors contain the shared project files, not the
-      // local-only `.open-design/project.json`. Their exact-scope receipt is
-      // the durable version proof; the live directory proves the promoted
-      // namespace still exists. Both are required so a deleted tree heals,
-      // while another workspace/owner's receipt can never satisfy this pull.
-      if (proactiveTeamProjectMaterializedVersion(target) == null) {
-        return false;
-      }
-      const projectDir = resolveProjectShareDir(
-        PROJECTS_DIR,
-        projectId,
-        project,
-        resolveProjectDir,
-      );
-      const entry = await fs.promises.lstat(projectDir).catch(() => null);
-      return Boolean(
-        entry &&
-        entry.isDirectory() &&
-        !entry.isSymbolicLink(),
-      );
-    },
-    materializedVersion: proactiveTeamProjectMaterializedVersion,
-    // The resource is owner-scoped; the same captured team/owner principal is
-    // used by the shared pull below. The member session remains the transport
-    // credential, while Vela authorizes this explicit target principal.
-    publishedHead: (target) =>
-      collab.publishedHead(target.projectId, {
-        teamId: target.resourceTeamId,
-        memberId: target.ownerMemberId,
-        role: 'member',
-        lifecycleState: 'active',
-        workspaceType: 'team',
-      }),
-    pullSharedProject: (target, expectedVersion) =>
-      collabSyncRoutes.pullSharedProject(target.projectId, {
-        workspaceId: target.workspaceId,
-        resourceTeamId: target.resourceTeamId,
-        viewerMemberId: target.viewerMemberId,
-        ownerMemberId: target.ownerMemberId,
-      }, target.authorizationWitness, expectedVersion, target.authorizedStageInvocation),
-    // All Projects is a list-level surface and does not subscribe to every
-    // project-scoped SSE. Once an inbound pull has actually materialized the
-    // tree, nudge that surface so its failed pre-pull cover scan runs again
-    // immediately instead of waiting for the 15s refresh floor.
-    onPulled: async (target, version) => {
-      emitWorkspaceEvent(target.workspaceId, {
-        type: 'team-project-content-ready',
-        projectId: target.projectId,
-        workspaceId: target.workspaceId,
-        at: Date.now(),
-      });
-    },
-    ...(sharedProjectPullProfiling
-      ? {
-          onTiming: emitSharedProjectPullTiming,
-        }
-      : {}),
-    // A cancelled `vela` child is this scheduler's own doing, not a fault: it
-    // aborts the in-flight pull when a higher published version supersedes it
-    // (`mergeIntentUpdate`) or when the intent is cleared (`clearIntent`).
-    // Reporting those as failures put a fault-shaped warning in the log on
-    // ordinary version churn. `proactive-content-pull.ts` stays dependency-free
-    // by design, so the distinction is drawn here, at its only error sink.
-    onError: (error) => {
-      if (isAbortedOperationError(error)) return;
-      console.warn('[od] proactive shared-project pull failed (web polling remains the fallback):', String(error));
-    },
-    onCatchUp: (event) => {
-      if (
-        event.phase === 'retry-scheduled' ||
-        event.phase === 'retry-exhausted'
-      ) {
-        console.info(
-          `[od] shared-project content catch-up ${event.phase} mode=${event.mode} lane=${event.lane} ` +
-            `workspaceId=${event.workspaceId ?? 'unknown'} ` +
-            `projectId=${event.projectId ?? 'all'} attempt=${event.attempt ?? event.failures ?? 0} ` +
-            `delayMs=${event.delayMs ?? 0}`,
-        );
-        return;
-      }
-      if (event.phase === 'skipped') {
-        console.info(
-          `[od] shared-project content catch-up skipped mode=${event.mode} lane=${event.lane} reason=${event.reason ?? 'unknown'}`,
-        );
-        return;
-      }
-      if (event.phase === 'started') {
-        console.info(
-          `[od] shared-project content catch-up started mode=${event.mode} lane=${event.lane} workspaceId=${event.workspaceId ?? 'unknown'}`,
-        );
-        return;
-      }
-      // `candidates` counts projects CONSIDERED, which is not what the
-      // background lanes cost a member: a sweep with candidates=25 says
-      // nothing about whether 25 files or 25,000 landed on their disk. The
-      // `process*` fields below are this daemon process's running totals (not
-      // this sweep's), and they are the reading that makes
-      // OD_COLLAB_BACKGROUND_PULL_MAX_CUMULATIVE_ENTRIES choosable from a
-      // diagnostics bundle instead of from a synthetic workspace.
-      const backgroundVolume = backgroundPullSizeGuard.volume();
-      console.info(
-        `[od] shared-project content catch-up completed mode=${event.mode} lane=${event.lane} ` +
-          `workspaceId=${event.workspaceId ?? 'unknown'} scanned=${event.scanned ?? 0} ` +
-          `candidates=${event.candidates ?? 0} headChecks=${event.headChecks ?? 0} ` +
-          `heads=${event.heads ?? 0} ` +
-          `suppressed=${event.suppressed ?? 0} complete=${event.complete === true} ` +
-          `processEntries=${backgroundVolume.entries} ` +
-          `processProjects=${backgroundVolume.countedProjects} ` +
-          `processUncounted=${backgroundVolume.uncountedProjects}`,
-      );
-    },
-  });
-  observeLegacyTeamProjectPull = (projectId, scope, version) =>
-    proactiveContentPull.observeMaterialized(
-      { projectId, ...scope },
-      version,
-    );
   // Stale-while-revalidate the member directory by explicit Workspace scope.
   // The web shell re-reads members on every navigation (and several mounted
   // consumers fetch it at once); the underlying collab-cloud read is ~1.5s, so
@@ -5353,12 +5032,10 @@ export async function startServer({
             (scopedPayload) =>
               emitWorkspaceEvent(workspaceId, scopedPayload),
             () => reconcileWorkspaceProjectsFromRemote(
-              activeTeamWorkspaceIdentity(context)?.workspaceId ?? workspaceId,
+              context?.workspaceId ?? workspaceId,
             ),
           );
         },
-        onTeamProjectsObserved: ({ workspaceId: observedWorkspaceId }) =>
-          proactiveContentPull.advanceRecoveryFloor(observedWorkspaceId),
         onPollSuppressed: () => recordWorkspaceAuthoritySuppressedRequest({
           mode: workspaceAuthorityCacheMode,
           source: 'directory',
@@ -5635,8 +5312,7 @@ export async function startServer({
       );
       handleHubVerifiedConnection(
         verifiedWorkspaceId,
-        (exactWorkspaceId) =>
-          proactiveContentPull.catchUpPublishedHeads(exactWorkspaceId),
+        undefined,
         (exactWorkspaceId) => {
           // A reconnect is closed exactly once by onReconnect below. Keep
           // this initial-connect hook from scheduling a duplicate catch-up.
@@ -5739,17 +5415,6 @@ export async function startServer({
             ),
             hubEventRefreshToken(event),
           );
-          // Hub catalog writes carry the affected project id on current Vela
-          // deployments, so keep the latency-sensitive recovery targeted. An
-          // older/unscoped event still refreshes and reconciles the catalog;
-          // the poller's throttled 30s bounded full recovery remains its
-          // safety floor.
-          if (event.workspaceId && event.projectId) {
-            void proactiveContentPull.materializeMissingProjects(
-              event.workspaceId,
-              event.projectId,
-            );
-          }
           break;
         }
         case 'project-metadata-changed': {
@@ -5813,36 +5478,8 @@ export async function startServer({
           break;
         }
         case 'project-content-changed': {
-          // A teammate published a new version. Pull it daemon-side NOW so
-          // the local mirror stays fresh even with no tab open; after the
-          // pull lands, the existing post-pull signals (`file-changed` +
-          // `project-metadata-changed`) reach any open view over the same
-          // SSE path a web-triggered pull uses. All ownership/binding guards
-          // live in collab/proactive-content-pull.ts — an owner daemon
-          // receiving its own publish echo never pulls over its working
-          // tree, and failures degrade silently to the web's status polling.
-          if (sharedProjectPullProfiling) {
-            const profileReceivedAtMs = Date.now();
-            emitSharedProjectPullTiming({
-              phase: 'event-received',
-              projectId: event.projectId ?? 'unknown',
-              ...(event.version != null ? { version: event.version } : {}),
-              receivedAtMs: profileReceivedAtMs,
-              atMs: profileReceivedAtMs,
-            });
-            void proactiveContentPull.handleContentChanged({
-              ...event,
-              workspaceId: eventWorkspaceId,
-              profileReceivedAtMs,
-            });
-          } else {
-            void proactiveContentPull.handleContentChanged({
-              ...event,
-              workspaceId: eventWorkspaceId,
-            });
-          }
-          // Keep the thin nudge for an OPEN project view so its status/banner
-          // refreshes immediately rather than on the next ~5s poll tick.
+          // Content is fetched only by an explicit client pull. Keep the thin
+          // metadata nudge for an open legacy view so it can refresh status.
           if (event.projectId && activeProjectEventSinks.has(event.projectId)) {
             emitProjectEvent(event.projectId, {
               type: 'project-metadata-changed',
@@ -6030,8 +5667,6 @@ export async function startServer({
         .catch(() => undefined);
       void reconcileWorkspaceProjectsFromRemote(subscribedWorkspaceId)
         .catch(() => undefined);
-      void proactiveContentPull.catchUpPublishedHeads(subscribedWorkspaceId)
-        .catch(() => undefined);
       void collabCloud?.pollOnce().catch(() => undefined);
       workspaceBillingRuntime.reconnect(subscribedWorkspaceId);
       // Same catch-up principle for the design-system/plugin/skill resource
@@ -6062,8 +5697,6 @@ export async function startServer({
         .then(() => pollWorkspaceInvalidationForWorkspace(exactWorkspaceId))
         .catch(() => undefined);
       void reconcileWorkspaceProjectsFromRemote(exactWorkspaceId)
-        .catch(() => undefined);
-      void proactiveContentPull.catchUpPublishedHeads(exactWorkspaceId)
         .catch(() => undefined);
       workspaceBillingRuntime.reconnect(exactWorkspaceId);
       void collabCloud?.pollOnce().catch(() => undefined);
@@ -16192,7 +15825,6 @@ export async function startServer({
       hubEventRefreshes.dispose();
       workspaceDirectoryRefreshes.dispose();
       workspaceBillingRuntime.dispose();
-      proactiveContentPull.dispose();
       collabCloud?.dispose();
     };
     const shutdownDaemonRuns = async () => {

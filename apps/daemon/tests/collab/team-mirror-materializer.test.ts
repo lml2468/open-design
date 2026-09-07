@@ -13,13 +13,9 @@ import {
   updateProject,
 } from '../../src/db.js';
 import {
-  getTeamProjectMaterialization,
-  latestTeamProjectMaterializationVersion,
   materializePulledTeamMirror,
-  teamProjectMaterializationSupersedes,
+  parseTeamProjectMaterializationVersion,
 } from '../../src/collab/team-mirror-materializer.js';
-import type { AuthorizedTeamProjectPullReceipt } from '../../src/collab/authorized-team-project-pull.js';
-import { projectResourceIdFor } from '../../src/integrations/vela-team-projects.js';
 
 const roots: string[] = [];
 
@@ -29,30 +25,6 @@ const scope = {
   viewerMemberId: 'viewer-1',
   ownerMemberId: 'owner-1',
 };
-const resourceId = projectResourceIdFor('project-1', {
-  teamId: scope.resourceTeamId,
-  memberId: scope.ownerMemberId,
-  role: 'member',
-  lifecycleState: 'active',
-  workspaceType: 'team',
-});
-
-function receipt(): AuthorizedTeamProjectPullReceipt {
-  return {
-    schemaVersion: 1,
-    ...scope,
-    projectId: 'project-1',
-    resourceId,
-    ref: 'published',
-    version: 7,
-    versionId: 'version-7',
-    manifestDigest: `sha256:${'a'.repeat(64)}`,
-    lifecycleState: 'active',
-    authorizedAt: '2026-07-26T10:00:00.000Z',
-    expiresAt: '2026-07-26T10:00:02.000Z',
-  };
-}
-
 const input = {
   id: 'project-1',
   name: 'Pulled project',
@@ -75,98 +47,21 @@ async function database() {
   return openDatabase(root, { dataDir: root });
 }
 
-describe('authorized team mirror SQLite materialization', () => {
-  it('reads a newer legacy cursor after an authorized materialization', () => {
-    expect(
-      latestTeamProjectMaterializationVersion(
-        { ...receipt(), version: 5 },
-        '6',
-        input.id,
-        scope,
-      ),
-    ).toBe(6);
-  });
-
-  it('keeps a newer authorized cursor ahead of the legacy store', () => {
-    expect(
-      latestTeamProjectMaterializationVersion(
-        receipt(),
-        '6',
-        input.id,
-        scope,
-      ),
-    ).toBe(7);
-  });
-
-  it('ignores an authorized cursor with a mismatched scope or resource binding', () => {
-    expect(
-      latestTeamProjectMaterializationVersion(
-        { ...receipt(), viewerMemberId: 'other-viewer', version: 9 },
-        '6',
-        input.id,
-        scope,
-      ),
-    ).toBe(6);
-    expect(
-      latestTeamProjectMaterializationVersion(
-        { ...receipt(), resourceId: 'non-canonical', version: 9 },
-        null,
-        input.id,
-        scope,
-      ),
-    ).toBeNull();
-  });
-
-  it('rejects malformed, negative, fractional, and unsafe legacy cursors', () => {
-    for (const legacy of ['', '-1', '1.5', '01', '9007199254740992']) {
-      expect(
-        latestTeamProjectMaterializationVersion(null, legacy, input.id, scope),
-      ).toBeNull();
+describe('team mirror SQLite materialization', () => {
+  it('reads only canonical explicit-pull cursors', () => {
+    expect(parseTeamProjectMaterializationVersion('0')).toBe(0);
+    expect(parseTeamProjectMaterializationVersion('6')).toBe(6);
+    for (const stored of [null, '', '-1', '1.5', '01', '9007199254740992']) {
+      expect(parseTeamProjectMaterializationVersion(stored)).toBeNull();
     }
   });
 
-  it('classifies only a newer receipt with the same canonical binding as superseding', () => {
-    const previous = { ...receipt(), version: 5, versionId: 'version-5' };
-
-    expect(teamProjectMaterializationSupersedes(receipt(), previous)).toBe(true);
-    expect(
-      teamProjectMaterializationSupersedes(
-        {
-          ...previous,
-          authorizedAt: '2026-07-26T10:00:01.000Z',
-          expiresAt: '2026-07-26T10:00:03.000Z',
-        },
-        previous,
-      ),
-    ).toBe(true);
-    expect(
-      teamProjectMaterializationSupersedes(
-        { ...receipt(), viewerMemberId: 'other-viewer' },
-        previous,
-      ),
-    ).toBe(false);
-    expect(
-      teamProjectMaterializationSupersedes(
-        { ...receipt(), resourceId: 'non-canonical' },
-        previous,
-      ),
-    ).toBe(false);
-    expect(
-      teamProjectMaterializationSupersedes(
-        { ...receipt(), version: 5, versionId: 'other-version-5' },
-        previous,
-      ),
-    ).toBe(false);
-  });
-
-  it('commits metadata, binding, and the full authorization receipt together', async () => {
+  it('commits project metadata and its read-only binding together', async () => {
     const db = await database();
 
-    materializePulledTeamMirror(db, input, scope, receipt());
+    materializePulledTeamMirror(db, input, scope);
 
     expect(getProject(db, input.id)?.name).toBe('Pulled project');
-    expect(getTeamProjectMaterialization(db, scope.workspaceId, input.id))
-      .toEqual(receipt());
   });
 
   it('keeps an owner first-open placeholder creator-less until real content commits', async () => {
@@ -180,7 +75,6 @@ describe('authorized team mirror SQLite materialization', () => {
       db,
       { ...input, name: '共享项目' },
       ownerScope,
-      undefined,
       { placeholder: true },
     );
 
@@ -210,7 +104,6 @@ describe('authorized team mirror SQLite materialization', () => {
       db,
       { ...input, name: '共享项目', updatedAt: 20_000 },
       scope,
-      undefined,
       { placeholder: true },
     );
 
@@ -232,13 +125,13 @@ describe('authorized team mirror SQLite materialization', () => {
 
   it('refreshes an existing foreign mirror name when the owner metadata is newer', async () => {
     const db = await database();
-    materializePulledTeamMirror(db, input, scope, receipt());
+    materializePulledTeamMirror(db, input, scope);
 
     materializePulledTeamMirror(db, {
       ...input,
       name: 'Renamed by owner',
       updatedAt: input.updatedAt + 10,
-    }, scope, { ...receipt(), version: 8, versionId: 'version-8' });
+    }, scope);
 
     expect(getProject(db, input.id)).toMatchObject({
       name: 'Renamed by owner',
@@ -270,18 +163,14 @@ describe('authorized team mirror SQLite materialization', () => {
   it('creates one stable local-only comment anchor without copying owner chat', async () => {
     const db = await database();
 
-    materializePulledTeamMirror(db, input, scope, receipt());
+    materializePulledTeamMirror(db, input, scope);
     const first = listConversations(db, input.id);
 
     expect(first).toHaveLength(1);
     expect(first[0]?.messageCount).toBe(0);
     expect(listMessages(db, first[0]!.id)).toEqual([]);
 
-    materializePulledTeamMirror(db, input, scope, {
-      ...receipt(),
-      version: 8,
-      versionId: 'version-8',
-    });
+    materializePulledTeamMirror(db, input, scope);
     const second = listConversations(db, input.id);
 
     expect(second.map((conversation) => conversation.id))
@@ -289,37 +178,6 @@ describe('authorized team mirror SQLite materialization', () => {
     expect(listMessages(db, second[0]!.id)).toEqual([]);
   });
 
-  it('rolls back metadata and binding when the exact receipt cursor cannot commit', async () => {
-    const db = await database();
-    db.exec(`
-      CREATE TRIGGER reject_team_materialization
-      BEFORE INSERT ON team_project_materializations
-      BEGIN
-        SELECT RAISE(ABORT, 'cursor unavailable');
-      END;
-    `);
-
-    expect(() =>
-      materializePulledTeamMirror(db, input, scope, receipt()),
-    ).toThrow('cursor unavailable');
-
-    expect(getProject(db, input.id)).toBeNull();
-    expect(getTeamProjectMaterialization(db, scope.workspaceId, input.id))
-      .toBeNull();
-  });
-
-  it('rejects a non-canonical but non-empty receipt resource id before mutation', async () => {
-    const db = await database();
-
-    expect(() =>
-      materializePulledTeamMirror(db, input, scope, {
-        ...receipt(),
-        resourceId: 'resource-1',
-      }),
-    ).toThrow('receipt resource conflict');
-
-    expect(getProject(db, input.id)).toBeNull();
-  });
 });
 
 /**
@@ -350,7 +208,7 @@ describe('a team-mirror pull reports the origin content time, not the pull clock
   it('does not advance the card time on a first pull', async () => {
     const db = await database();
 
-    materializePulledTeamMirror(db, input, scope, receipt());
+    materializePulledTeamMirror(db, input, scope);
 
     expect(getProject(db, input.id)?.updatedAt).toBe(input.updatedAt);
     expect(displayedUpdatedAt(db)).toBe(input.updatedAt);
@@ -359,12 +217,8 @@ describe('a team-mirror pull reports the origin content time, not the pull clock
   it('does not advance the card time on a re-pull of an already-bound mirror', async () => {
     const db = await database();
 
-    materializePulledTeamMirror(db, input, scope, receipt());
-    materializePulledTeamMirror(db, input, scope, {
-      ...receipt(),
-      version: 8,
-      versionId: 'version-8',
-    });
+    materializePulledTeamMirror(db, input, scope);
+    materializePulledTeamMirror(db, input, scope);
 
     expect(getProject(db, input.id)?.updatedAt).toBe(input.updatedAt);
     expect(displayedUpdatedAt(db)).toBe(input.updatedAt);
