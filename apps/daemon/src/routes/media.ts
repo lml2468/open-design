@@ -136,7 +136,7 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       : null;
   const { orbitService } = ctx.orbit;
   const { openBrowser, openNativeFolderDialog } = ctx.nativeDialogs;
-  const { getWorkspaceProjectByProjectId, getProject } = ctx.projectStore;
+  const { getProject } = ctx.projectStore;
   const { resolveProjectDir } = ctx.projectFiles;
   const { insertConversation, upsertMessage } = ctx.conversations;
   const { searchResearch, ResearchError } = ctx.research;
@@ -256,12 +256,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       });
       task.status = 'running';
       persistMediaTask(task);
-      // Media billing follows the project's Workspace binding, not its sharing
-      // visibility. A private project inside a team Workspace must still spend
-      // that Workspace's balance; `findTeamWorkspaceIdForProject` deliberately
-      // answers the narrower collaboration question and excludes it.
-      const workspaceId =
-        getWorkspaceProjectByProjectId(db, projectId)?.workspaceId?.trim() || undefined;
       generateMedia({
         projectRoot: PROJECT_ROOT,
         projectsRoot: PROJECTS_DIR,
@@ -271,8 +265,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
         prompt: req.body?.prompt,
         output: req.body?.output,
         aspect: req.body?.aspect,
-        quality: typeof req.body?.quality === 'string' ? req.body.quality : undefined,
-        resolution: typeof req.body?.resolution === 'string' ? req.body.resolution : undefined,
         length:
           typeof req.body?.length === 'number' ? req.body.length : undefined,
         duration:
@@ -289,7 +281,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
         compositionDir: req.body?.compositionDir,
         image: req.body?.image,
         images: Array.isArray(req.body?.images) ? req.body.images : undefined,
-        workspaceId,
         onProgress: (line: any) => appendTaskProgress(task, line),
         requestInit: proxyDispatcher.requestInit,
         onProviderRequestSettled: (summary: ImageGenerationRequestSummary & { providerId: string }) => {

@@ -261,7 +261,7 @@ const SCENARIOS: ReadonlyArray<[name: string, input: ComposeInput]> = [
     'codex-image-dispatcher',
     {
       agentId: 'codex',
-      metadata: { kind: 'image', imageModel: 'vela/gpt-image-2' },
+      metadata: { kind: 'image', imageModel: 'gpt-image-2' },
       executionProfile: 'filesystem',
     },
   ],

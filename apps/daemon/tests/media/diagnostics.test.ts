@@ -10,8 +10,8 @@ describe('formatMediaTaskDiagnostic', () => {
       runId: 'run-456',
       projectId: 'project-789',
       surface: 'image',
-      model: 'vela/gpt-image-2',
-      providerId: 'vela',
+      model: 'gpt-image-2',
+      providerId: 'openai',
       status: 503,
       code: 'provider_error',
       elapsedMs: 1_234.4,
@@ -22,8 +22,8 @@ describe('formatMediaTaskDiagnostic', () => {
 
     expect(line).toContain('"task_id":"media-task-123"');
     expect(line).toContain('"run_id":"run-456"');
-    expect(line).toContain('"model_id":"vela/gpt-image-2"');
-    expect(line).toContain('"provider_id":"vela"');
+    expect(line).toContain('"model_id":"gpt-image-2"');
+    expect(line).toContain('"provider_id":"openai"');
     expect(line).toContain('"code":"provider_error"');
     expect(line).toContain('"elapsed_ms":1234');
     expect(line).toContain('"reference_image_count":2');
