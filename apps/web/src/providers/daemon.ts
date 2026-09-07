@@ -10,14 +10,6 @@
  *                 non-zero (tail appended to the error message).
  */
 import type { AgentEvent, ChatCommentAttachment, ChatMessage } from '../types';
-import type { AmrEntryAttribution } from '../analytics/amr-attribution';
-import type {
-  AmrAuthErrorKind,
-  AmrAuthNetworkPath,
-  AmrAuthStage,
-  AmrAuthStageResult,
-  AmrAuthStageSource,
-} from '@open-design/contracts/analytics';
 import type {
   ApiErrorResponse,
   ChatAnalyticsHints,
@@ -30,8 +22,6 @@ import type {
   ChatSseEvent,
   ChatSseStartPayload,
   DaemonAgentPayload,
-  AmrModelsResponse,
-  AmrWalletSnapshot,
   ByokChatProviderConfig,
   MediaExecutionPolicy,
   ResearchOptions,
@@ -42,7 +32,6 @@ import type {
 } from '@open-design/contracts';
 import type { StreamHandlers } from './anthropic';
 import { workspaceProjectHeaders } from '../state/projects';
-import { setRuntimeAmrConsoleOrigin } from '../runtime/amr-guidance';
 
 /**
  * Returns the front-end carrier that's about to send this request:
@@ -936,246 +925,6 @@ export async function launchAntigravityOauth(): Promise<LaunchAntigravityOauthRe
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     };
-  }
-}
-
-export interface VelaUser {
-  id: string;
-  email: string;
-  name?: string;
-  image?: string | null;
-  plan?: string;
-  /** Wallet balance (USD, string) from the live `/api/v1/me` projection; `null` when unknown. */
-  balanceUsd?: string | null;
-}
-
-/**
- * Format a raw wallet `balanceUsd` string (e.g. "12.3") into a display string
- * (e.g. "$12.30"). Returns `null` when the balance is unknown/unparseable so
- * callers can simply hide the balance area.
- */
-export function formatVelaBalanceUsd(raw?: string | null): string | null {
-  if (raw == null || raw === '') return null;
-  const amount = Number(raw);
-  if (!Number.isFinite(amount)) return null;
-  // Sign before the currency symbol: an overdrawn wallet reads "-$1.25",
-  // never the malformed "$-1.25".
-  const sign = amount < 0 ? '-' : '';
-  return `${sign}$${Math.abs(amount).toFixed(2)}`;
-}
-
-/** Top subscription tier — no upgrade affordance is shown at/above this. */
-export const VELA_TOP_PLAN_TIER = 'max';
-
-/**
- * Whether to surface an "Upgrade" affordance for the given plan tier. True for
- * a KNOWN tier below the top (free/plus/pro); false at the top tier AND when
- * the plan is unknown. The unknown case matters: a signed-in session whose live
- * billing summary has not resolved yet has no plan, and treating that as
- * upgradeable would flash an Upgrade CTA at top-tier users until billing loads.
- */
-export function canUpgradeVelaPlan(plan?: string | null): boolean {
-  const normalized = plan?.trim().toLowerCase();
-  if (!normalized) return false;
-  return normalized !== VELA_TOP_PLAN_TIER;
-}
-
-/**
- * Live billing projection (plan tier + wallet balance) for the signed-in
- * account, surfaced on its OWN field rather than on {@link VelaUser} so
- * env-backed sessions (where `user` is null) can show plan/balance without a
- * fabricated identity. Absent means unknown → hide the fields.
- */
-export interface VelaLiveAccount {
-  plan?: string;
-  balanceUsd?: string | null;
-}
-
-export interface VelaLoginStatus {
-  loggedIn: boolean;
-  sessionState?: import('@open-design/contracts').AmrSessionState;
-  credentialRevision?: string;
-  loginInFlight?: boolean;
-  profile: string;
-  user: VelaUser | null;
-  account?: VelaLiveAccount;
-  configPath: string;
-  // Device-authorization details parsed from `vela login` output while a login
-  // is in flight, so the UI can offer a manual sign-in link when the browser
-  // did not auto-open. See parseVelaLoginActivation in the daemon's vela.ts.
-  activationUrl?: string;
-  userCode?: string;
-  browserOpenFailed?: boolean;
-  // Origin of the vela web console this runtime talks to, when the daemon was
-  // given one (OD_VELA_WEB_URL, baked into packaged builds from a CI secret).
-  // The client builds wallet / plans / upgrade links from it; internal AMR
-  // environments therefore need no hostname literal in this public bundle.
-  // Absent for prod and fork builds.
-  consoleOrigin?: string;
-  authAttemptId?: string;
-  authStages?: VelaLoginAuthStage[];
-  authRoute?: AmrAuthNetworkPath;
-  fallbackUsed?: boolean;
-}
-
-export interface VelaLoginAuthStage {
-  sequence: number;
-  stage: AmrAuthStage;
-  result: AmrAuthStageResult;
-  source: AmrAuthStageSource;
-  occurredAt: string;
-  route: AmrAuthNetworkPath;
-  errorKind?: AmrAuthErrorKind;
-}
-
-// AMR (vela) login surfaces three thin endpoints on the daemon:
-//   GET  /api/integrations/vela/status   — read ~/.amr/config.json projection
-//   POST /api/integrations/vela/login    — spawn `vela login` (vela opens browser itself)
-//   POST /api/integrations/vela/login/cancel — terminate a still-pending login
-//   POST /api/integrations/vela/logout   — clear ~/.amr auth and Settings-backed AMR auth env
-// The Settings UI polls /status after kicking off /login to detect completion.
-export async function fetchVelaLoginStatus(options: { refresh?: boolean } = {}): Promise<VelaLoginStatus | null> {
-  try {
-    const query = options.refresh ? '?refresh=1' : '';
-    const resp = await fetch(`/api/integrations/vela/status${query}`, { cache: 'no-store' });
-    if (!resp.ok) return null;
-    const status = (await resp.json()) as VelaLoginStatus;
-    // Every AMR status read refreshes the runtime console origin, so the console
-    // links stay correct no matter which surface (login pill, model switcher,
-    // avatar menu, low-balance dialog) triggered the fetch. Doing it here rather
-    // than in each caller is what keeps the origin out of web source: no caller
-    // needs to know the hostname of the environment it is pointed at.
-    setRuntimeAmrConsoleOrigin(status.consoleOrigin);
-    return status;
-  } catch {
-    return null;
-  }
-}
-
-export async function fetchAmrWalletSnapshot(options: { refresh?: boolean } = {}): Promise<AmrWalletSnapshot | null> {
-  try {
-    const query = options.refresh ? '?refresh=1' : '';
-    const resp = await fetch(`/api/integrations/vela/wallet${query}`, { cache: 'no-store' });
-    if (!resp.ok) return null;
-    return (await resp.json()) as AmrWalletSnapshot;
-  } catch {
-    return null;
-  }
-}
-
-export async function fetchAmrModels(): Promise<AmrModelsResponse | null> {
-  try {
-    const resp = await fetch('/api/amr/models', { cache: 'no-store' });
-    if (!resp.ok) return null;
-    return (await resp.json()) as AmrModelsResponse;
-  } catch {
-    return null;
-  }
-}
-
-export interface StartVelaLoginResult {
-  ok: boolean;
-  status: number;
-  pid?: number;
-  alreadyRunning?: boolean;
-  error?: string;
-  authAttemptId?: string;
-  authStages?: VelaLoginAuthStage[];
-  authRoute?: AmrAuthNetworkPath;
-  fallbackUsed?: boolean;
-}
-
-export async function startVelaLogin(
-  attribution?: AmrEntryAttribution | null,
-  odDeviceId?: string | null,
-  authAttemptId?: string,
-): Promise<StartVelaLoginResult> {
-  try {
-    const loginAttribution =
-      attribution && odDeviceId ? { ...attribution, odDeviceId } : attribution;
-    const canonicalAuthAttemptId = authAttemptId
-      && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(authAttemptId)
-      ? authAttemptId
-      : null;
-    const authRequestId = authAttemptId
-      && /^pending-amr-auth-[a-z0-9]+-[a-z0-9]+$/.test(authAttemptId)
-      ? authAttemptId
-      : null;
-    const payload = {
-      ...(loginAttribution ? { attribution: loginAttribution } : {}),
-      ...(canonicalAuthAttemptId ? { authAttemptId: canonicalAuthAttemptId } : {}),
-      ...(authRequestId ? { authRequestId } : {}),
-    };
-    const resp = await fetch('/api/integrations/vela/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const body = (await resp.json().catch(() => null)) as Omit<
-      StartVelaLoginResult,
-      'ok' | 'status' | 'alreadyRunning'
-    > | null;
-    if (resp.ok) {
-      return { ok: true, status: resp.status, ...(body ?? {}) };
-    }
-    return {
-      ok: false,
-      status: resp.status,
-      alreadyRunning: resp.status === 409,
-      error: body?.error ?? '',
-      ...(body?.authAttemptId ? { authAttemptId: body.authAttemptId } : {}),
-      ...(body?.authStages ? { authStages: body.authStages } : {}),
-      ...(body?.authRoute ? { authRoute: body.authRoute } : {}),
-      ...(body?.fallbackUsed !== undefined
-        ? { fallbackUsed: body.fallbackUsed }
-        : {}),
-    };
-  } catch (err) {
-    return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-export async function cancelVelaLogin(
-  authAttemptId?: string,
-): Promise<{ ok: boolean; canceled?: boolean }> {
-  const hasTarget = authAttemptId !== undefined;
-  const canonicalAuthAttemptId = authAttemptId
-    && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(authAttemptId)
-    ? authAttemptId
-    : null;
-  const authRequestId = authAttemptId
-    && /^pending-amr-auth-[a-z0-9]+-[a-z0-9]+$/.test(authAttemptId)
-    ? authAttemptId
-    : null;
-  if (hasTarget && !canonicalAuthAttemptId && !authRequestId) {
-    return { ok: false };
-  }
-  try {
-    const resp = await fetch('/api/integrations/vela/login/cancel', {
-      method: 'POST',
-      ...(hasTarget
-        ? {
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(canonicalAuthAttemptId
-              ? { authAttemptId: canonicalAuthAttemptId }
-              : { authRequestId }),
-          }
-        : {}),
-    });
-    if (!resp.ok) return { ok: false };
-    const body = (await resp.json().catch(() => null)) as { canceled?: boolean } | null;
-    return { ok: true, canceled: body?.canceled };
-  } catch {
-    return { ok: false };
-  }
-}
-
-export async function velaLogout(): Promise<{ ok: boolean }> {
-  try {
-    const resp = await fetch('/api/integrations/vela/logout', { method: 'POST' });
-    return { ok: resp.ok };
-  } catch {
-    return { ok: false };
   }
 }
 

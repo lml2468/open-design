@@ -45,10 +45,6 @@ import {
   type WorkspaceDirectoryItem,
   type WorkspaceDirectoryResponse,
 } from '@open-design/contracts';
-import {
-  fetchVelaLoginStatus,
-  formatVelaBalanceUsd,
-} from '../providers/daemon';
 import { Icon } from './Icon';
 import { GITHUB_STARS_FALLBACK_LABEL, formatStars, useGithubStars } from './useGithubStars';
 import { PlanWordmark, planBadgeTierForWorkspace } from './PlanWordmark';
@@ -103,6 +99,14 @@ const DISCORD_URL = 'https://discord.gg/mHAjSMV6gz';
 const X_URL = 'https://x.com/OpenDesignHQ';
 const CONTACT_EMAIL_URL = 'mailto:support@open-design.ai';
 const externalLinkProps = { target: '_blank', rel: 'noreferrer noopener' } as const;
+
+function formatBalanceUsd(raw?: string | null): string | null {
+  if (raw == null || raw === '') return null;
+  const amount = Number(raw);
+  if (!Number.isFinite(amount)) return null;
+  const sign = amount < 0 ? '-' : '';
+  return `${sign}$${Math.abs(amount).toFixed(2)}`;
+}
 
 // Last directory this shell successfully read. `coalescedGet` only collapses
 // CONCURRENT reads, so without this every open of the switcher started from an
@@ -814,7 +818,7 @@ export function EntryTopRightCluster({
     : isTeam
       ? t('entry.billingTierTeam')
       : t('entry.billingTierFree');
-  const balanceLabel = formatVelaBalanceUsd(balanceUsd);
+  const balanceLabel = formatBalanceUsd(balanceUsd);
   // A subscriber's $0.00 is a healthy state (their popular models are
   // unlimited), so the pill stays out of the way instead of alarming them.
   const showCreditsBalance = shouldShowCreditsBalance({
@@ -864,25 +868,6 @@ export function EntryTopRightCluster({
   }, [accountOpen, analytics.track, page, workspaceDimensions.workspace_key]);
   const accountTriggerRef = useRef<HTMLButtonElement | null>(null);
   const githubStars = useGithubStars();
-  // Signed-in account email for the menu head (#5517 shows it under the
-  // display name). The workspace context carries no email, so lazily read the
-  // vela login-status projection the first time the menu opens — never on
-  // mount, so shells without an open menu spend zero requests on it.
-  const [accountEmail, setAccountEmail] = useState<string | null>(null);
-  useEffect(() => {
-    if (!accountOpen) return;
-    // Refetch on EVERY open (the previous value stays visible while the read
-    // is in flight, so there is no flicker). A fetch-once cache here went
-    // stale the moment the user switched vela accounts mid-session — the menu
-    // kept showing the first account's email (#102).
-    let cancelled = false;
-    void fetchVelaLoginStatus().then((status) => {
-      if (!cancelled) setAccountEmail(status?.user?.email?.trim() || '');
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [accountOpen]);
   // Hover-open for the account menu (#5517 interaction). The popover floats
   // below the trigger, so closing is delayed just long enough for the pointer
   // to cross the gap; re-entering the container (menu included — it's a DOM
@@ -1077,9 +1062,6 @@ export function EntryTopRightCluster({
                     <div className="entry-nav-rail__account-head">
                       <span className="entry-nav-rail__account-head-avatar" aria-hidden>{accountInitial}</span>
                       <span className="entry-nav-rail__account-head-name">{accountName}</span>
-                      {accountEmail ? (
-                        <span className="entry-nav-rail__account-head-email">{accountEmail}</span>
-                      ) : null}
                     </div>
                     {/* #5517 billing card: plan (+badge) + 升级 CTA + USD balance.
                         The balance row links out to B's console. It receives

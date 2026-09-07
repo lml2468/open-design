@@ -37,8 +37,6 @@ const listActiveChatRuns = vi.fn();
 const listProjectRuns = vi.fn();
 const reattachDaemonRun = vi.fn();
 const publishDaemonRunFinishedEvent = vi.fn();
-const fetchVelaLoginStatus = vi.fn();
-const fetchAmrWalletSnapshot = vi.fn();
 const launchAntigravityOauth = vi.fn();
 const streamViaDaemon = vi.fn();
 const streamMessage = vi.fn();
@@ -227,9 +225,6 @@ vi.mock('../../src/providers/daemon', () => ({
   GENERIC_DAEMON_DISCONNECT_CODE: 'GENERIC_DAEMON_DISCONNECT',
   GENERIC_DAEMON_DISCONNECT_MESSAGE: 'daemon stream disconnected before run completed',
   fetchChatRunStatus: (...args: unknown[]) => fetchChatRunStatus(...args),
-  fetchVelaLoginStatus: (...args: unknown[]) => fetchVelaLoginStatus(...args),
-  fetchAmrWalletSnapshot: (...args: unknown[]) => fetchAmrWalletSnapshot(...args),
-  formatVelaBalanceUsd: (raw: string | null | undefined) => (raw == null ? null : `$${raw}`),
   launchAntigravityOauth: (...args: unknown[]) => launchAntigravityOauth(...args),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
@@ -920,17 +915,6 @@ describe('ProjectView conversation run isolation', () => {
       signal: null,
     });
     reattachDaemonRun.mockImplementation(async () => new Promise<void>(() => {}));
-    fetchVelaLoginStatus.mockResolvedValue({ loggedIn: false });
-    fetchAmrWalletSnapshot.mockResolvedValue({
-      status: 'available',
-      profile: 'prod',
-      user: null,
-      balanceUsd: '10.00',
-      updatedAt: null,
-      fetchedAt: '2026-07-02T00:00:00.000Z',
-      stale: false,
-      source: 'vela_api',
-    });
     stubAuthoritativePersonalWorkspaceBalance('10.00');
     launchAntigravityOauth.mockResolvedValue({ ok: true });
     streamViaDaemon.mockImplementation(async () => {});
@@ -1097,7 +1081,6 @@ describe('ProjectView conversation run isolation', () => {
       fireEvent.click(screen.getByTestId('send-message'));
 
       await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
-      expect(fetchAmrWalletSnapshot).not.toHaveBeenCalled();
       expect(streamViaDaemon).toHaveBeenCalledWith(
         expect.objectContaining({
           agentId: expectedAgentId,
@@ -1230,7 +1213,6 @@ describe('ProjectView conversation run isolation', () => {
     expect(screen.getByTestId('send-message')).toHaveProperty('disabled', false);
     fireEvent.click(screen.getByTestId('send-message'));
     await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
-    expect(fetchAmrWalletSnapshot).not.toHaveBeenCalled();
     expect(streamViaDaemon).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceContext: null }),
     );
@@ -1378,16 +1360,6 @@ describe('ProjectView conversation run isolation', () => {
 
   it('lets Vela decide a selected Personal model when the wallet is empty', async () => {
     conversationAMessages = [];
-    fetchAmrWalletSnapshot.mockResolvedValue({
-      status: 'available',
-      profile: 'prod',
-      user: null,
-      balanceUsd: '0',
-      updatedAt: null,
-      fetchedAt: '2026-07-02T00:00:00.000Z',
-      stale: false,
-      source: 'vela_api',
-    });
     stubAuthoritativePersonalWorkspaceBalance('0');
     renderProjectView(
       { ...config, agentId: 'amr' },
@@ -1413,16 +1385,6 @@ describe('ProjectView conversation run isolation', () => {
 
   it('does not guess whether a selected Personal model is metered at low balance', async () => {
     conversationAMessages = [];
-    fetchAmrWalletSnapshot.mockResolvedValue({
-      status: 'available',
-      profile: 'prod',
-      user: { id: 'u-paid', plan: 'plus' },
-      balanceUsd: '1.20',
-      updatedAt: null,
-      fetchedAt: '2026-07-02T00:00:00.000Z',
-      stale: false,
-      source: 'vela_api',
-    });
     stubAuthoritativePersonalWorkspaceBalance('1.20');
     renderProjectView(
       { ...config, agentId: 'amr' },
@@ -1451,16 +1413,6 @@ describe('ProjectView conversation run isolation', () => {
 
   it('does not soft-block a Free user with a low AMR wallet', async () => {
     conversationAMessages = [];
-    fetchAmrWalletSnapshot.mockResolvedValue({
-      status: 'available',
-      profile: 'prod',
-      user: { id: 'u-free', plan: 'free' },
-      balanceUsd: '1.20',
-      updatedAt: null,
-      fetchedAt: '2026-07-13T00:00:00.000Z',
-      stale: false,
-      source: 'vela_api',
-    });
     stubAuthoritativePersonalWorkspaceBalance('1.20');
     renderProjectView(
       { ...config, agentId: 'amr' },

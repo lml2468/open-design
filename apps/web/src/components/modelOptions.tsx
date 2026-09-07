@@ -59,18 +59,6 @@ export function renderModelOptions(models: AgentModelOption[]) {
   );
 }
 
-export function orderModelOptionsByAvailability(
-  models: AgentModelOption[],
-): AgentModelOption[] {
-  const enabled: AgentModelOption[] = [];
-  const disabled: AgentModelOption[] = [];
-  for (const model of models) {
-    if (model.enabled === false) disabled.push(model);
-    else enabled.push(model);
-  }
-  return [...enabled, ...disabled];
-}
-
 // Canonical company/provider display names for the two-level model picker.
 // Keyed by the model id's leading token (before the first `-`, or before a
 // BYOK `provider/model` slash).

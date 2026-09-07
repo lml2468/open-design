@@ -8,7 +8,6 @@ import {
   CUSTOM_MODEL_SENTINEL,
   isCustomModel,
   modelVersionLabel,
-  orderModelOptionsByAvailability,
   renderModelOptions,
   SearchableModelSelect,
 } from '../../src/components/modelOptions';
@@ -113,19 +112,6 @@ describe('isCustomModel', () => {
   it('returns true for unlisted custom ids and the custom sentinel', () => {
     expect(isCustomModel('local/my-model', models)).toBe(true);
     expect(isCustomModel(CUSTOM_MODEL_SENTINEL, models)).toBe(true);
-  });
-});
-
-describe('orderModelOptionsByAvailability', () => {
-  it('keeps available models before unavailable models without reordering within each group', () => {
-    expect(
-      orderModelOptionsByAvailability([
-        { id: 'locked-a', label: 'Locked A', enabled: false },
-        { id: 'ready-a', label: 'Ready A' },
-        { id: 'locked-b', label: 'Locked B', enabled: false },
-        { id: 'ready-b', label: 'Ready B', enabled: true },
-      ]).map((model) => model.id),
-    ).toEqual(['ready-a', 'ready-b', 'locked-a', 'locked-b']);
   });
 });
 

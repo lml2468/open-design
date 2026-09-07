@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { getResolvedDeviceId } from '../analytics/client';
-import { amrHandoffDeviceId, attributedAmrUrl, recordAmrEntry } from '../analytics/amr-attribution';
-import { useAnalytics } from '../analytics/provider';
 import { useT } from '../i18n';
 import { AgentIcon } from './AgentIcon';
 import { modelProviderIconSrc } from './modelProviderIcon';
@@ -12,7 +9,6 @@ import {
   defaultAgentModelId,
   effectiveAgentModelChoice,
 } from './agentModelSelection';
-import { orderModelOptionsByAvailability } from './modelOptions';
 import {
   mergeProviderModelOptions,
   providerModelsCacheKey,
@@ -21,24 +17,7 @@ import { KNOWN_PROVIDERS } from '../state/config';
 import { SUGGESTED_MODELS_BY_PROTOCOL } from '../state/apiProtocols';
 import { fetchProviderModels } from '../providers/provider-models';
 import type { AgentInfo, AppConfig, ExecMode, ProviderModelOption } from '../types';
-import {
-  canUpgradeVelaPlan,
-  fetchVelaLoginStatus,
-  type VelaLoginStatus,
-} from '../providers/daemon';
-import { openExternalUrl } from '../providers/registry';
-import { amrPlansUrlForWorkspace } from '../runtime/amr-guidance';
 import { isMacPlatform } from '../utils/platform';
-import {
-  useWorkspaceBillingResponse,
-  useWorkspaceContext,
-  workspaceBillingSnapshotForContext,
-} from '../collab/useWorkspaceContext';
-import {
-  projectWorkspaceContext,
-  projectWorkspaceScopeReady,
-  type ProjectWorkspaceScopeState,
-} from '../collab/useProjectWorkspaceScope';
 
 interface Props {
   config: AppConfig;
@@ -58,12 +37,6 @@ interface Props {
   placement?: 'down' | 'up';
   /** Fired when the dropdown transitions from closed to open. */
   onOpen?: () => void;
-  /**
-   * Project detail supplies its daemon-authoritative persisted workspace
-   * scope. Other surfaces omit it and continue using the ambient navigation
-   * workspace.
-   */
-  projectWorkspaceScope?: ProjectWorkspaceScopeState;
 }
 
 /**
@@ -84,35 +57,8 @@ export function AvatarMenu({
   onBack,
   placement = 'down',
   onOpen,
-  projectWorkspaceScope,
 }: Props) {
   const t = useT();
-  const analytics = useAnalytics();
-  // recvqfYKutwWlQ: gate the AMR upgrade entry on billing permission below,
-  // not just plan tier — a team member without `canManageBilling` (owner-only)
-  // can't act on an upgrade even when the tier itself is upgradeable.
-  const {
-    context: ambientWorkspaceContext,
-    loading: ambientWorkspaceContextLoading,
-  } = useWorkspaceContext();
-  const workspaceContext = projectWorkspaceScope
-    ? projectWorkspaceContext(projectWorkspaceScope.scope)
-    : ambientWorkspaceContext;
-  const workspaceContextLoading = projectWorkspaceScope
-    ? projectWorkspaceScope.loading ||
-      !projectWorkspaceScopeReady(projectWorkspaceScope.scope)
-    : ambientWorkspaceContextLoading;
-  const workspaceBillingResponse = useWorkspaceBillingResponse(
-    projectWorkspaceScope
-      ? {
-          context: workspaceContext,
-          loading: workspaceContextLoading,
-          revision: `${projectWorkspaceScope.scope?.projectId ?? 'unknown'}:${
-            projectWorkspaceScope.scope?.workspaceId ?? 'unbound'
-          }`,
-        }
-      : undefined,
-  );
   const [open, setOpen] = useState(false);
   // Toggle that reports the closed→open transition (for analytics) without
   // firing on close.
@@ -212,95 +158,7 @@ export function AvatarMenu({
     () => agents.find((a) => a.id === config.agentId) ?? null,
     [agents, config.agentId],
   );
-  const currentAgentModelOptions = useMemo(() => {
-    const models = currentAgent?.models ?? [];
-    if (currentAgent?.id !== 'amr') return models;
-    return orderModelOptionsByAvailability(models);
-  }, [currentAgent]);
-
-  const amrAgent = useMemo(
-    () => agents.find((a) => a.id === 'amr' && a.available) ?? null,
-    [agents],
-  );
-  const amrAvailable = amrAgent !== null;
-  const amrProfile = config.agentCliEnv?.amr?.OPEN_DESIGN_AMR_PROFILE;
-
-  // Fetch the live login status when the popover opens so plan-gated model
-  // rows route to the signed-in profile's workspace-scoped plans page (see
-  // openAmrUpgrade).
-  const [amrAccount, setAmrAccount] = useState<VelaLoginStatus | null>(null);
-  useEffect(() => {
-    if (!open || !amrAvailable) {
-      setAmrAccount(null);
-      return;
-    }
-    let cancelled = false;
-    setAmrAccount(null);
-    void fetchVelaLoginStatus()
-      .then((status) => {
-        if (!cancelled) setAmrAccount(status);
-      })
-      .catch(() => {
-        if (!cancelled) setAmrAccount(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, amrAvailable]);
-  const exactWorkspaceSnapshot = workspaceBillingSnapshotForContext(
-    workspaceBillingResponse,
-    workspaceContext,
-  );
-  const scopedPlanId =
-    workspaceContext?.workspaceType === 'team'
-      ? exactWorkspaceSnapshot?.billing.planId?.trim() || null
-      : workspaceContext?.workspaceType === 'personal'
-        ? workspaceBillingResponse?.summary?.membershipTier?.trim() || null
-        : null;
-  const amrPlanId = projectWorkspaceScope
-    ? scopedPlanId
-    : scopedPlanId ?? (amrAccount?.loggedIn
-      ? amrAccount.account?.plan?.trim() || null
-      : null);
-  const amrResolvedProfile = amrAccount?.profile ?? amrProfile;
-  const financialWorkspaceId =
-    !workspaceContextLoading && workspaceContext?.workspaceId.trim()
-      ? workspaceContext.workspaceId
-      : null;
-  const amrPlansUrl = amrPlansUrlForWorkspace(
-    amrResolvedProfile,
-    financialWorkspaceId,
-  );
-  // Personal workspaces always resolve `canManageBilling` true (the user is
-  // their own owner), so this does not affect the personal-workspace upgrade
-  // path.
-  const amrCanUpgrade =
-    !!amrAccount?.loggedIn &&
-    canUpgradeVelaPlan(amrPlanId?.replace(/^team[_-]/i, '')) &&
-    Boolean(workspaceContext?.permissions?.canManageBilling) &&
-    amrPlansUrl !== null;
-  const openAmrTarget = (
-    targetUrl: string | null,
-    source: 'avatar_amr_upgrade',
-  ) => {
-    if (!targetUrl) return;
-    const attribution = recordAmrEntry(analytics.track, source, new Date(), {
-      metricsConsent: config.telemetry?.metrics === true,
-    });
-    const deviceId = amrHandoffDeviceId({
-      metricsConsent: config.telemetry?.metrics === true,
-      resolvedDeviceId: getResolvedDeviceId(),
-      installationId: config.installationId,
-    });
-    setOpen(false);
-    void openExternalUrl(attributedAmrUrl(targetUrl, attribution, deviceId));
-  };
-  // Plan-gated models stay visible but are not selectable; clicking one routes
-  // to the plans page instead of silently choosing a model the run would reject.
-  const openAmrUpgrade = () => {
-    if (!amrCanUpgrade) return;
-    openAmrTarget(amrPlansUrl, 'avatar_amr_upgrade');
-  };
+  const currentAgentModelOptions = currentAgent?.models ?? [];
 
   // Resolve the user's model + reasoning pick for the active agent. Falls
   // back to the agent's declared default when the saved effort is absent or
@@ -429,8 +287,7 @@ export function AvatarMenu({
         : null;
   const triggerModelIconSrc = modelProviderIconSrc(triggerModelId);
   // Whether the daemon-mode popover can offer a real model radio list. When it
-  // can't (agent unavailable, or its model catalog is empty — e.g. the AMR
-  // member account before the vela catalog resolves), the popover falls back
+  // can't (agent unavailable or its model catalog is empty), the popover falls back
   // to a static current-model row so it never opens as an empty shell.
   const hasSelectableModels = Boolean(
     currentAgent &&
@@ -524,20 +381,13 @@ export function AvatarMenu({
                               role="radio"
                               aria-checked={active}
                               aria-disabled={locked ? 'true' : undefined}
-                              title={
-                                locked
-                                  ? t('settings.amrModelUpgradeHint')
-                                  : undefined
-                              }
+                              disabled={locked}
                               className={`avatar-model-option${active ? ' is-active' : ''}${
                                 locked ? ' is-locked' : ''
                               }`}
                               data-testid={`avatar-model-option-${model.id}`}
                               onClick={() => {
-                                if (locked) {
-                                  openAmrUpgrade();
-                                  return;
-                                }
+                                if (locked) return;
                                 onAgentModelChange(currentAgent.id, {
                                   model: model.id,
                                   serviceTier: undefined,

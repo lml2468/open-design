@@ -11108,7 +11108,6 @@ export function ProjectView({
         onOpenSettings={onOpenSettings}
         onRefreshAgents={onRefreshAgents}
         placement="up"
-        projectWorkspaceScope={projectWorkspaceScopeState}
       />
     </>
   );
