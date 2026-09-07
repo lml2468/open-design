@@ -1,28 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../src/integrations/vela-errors.js', () => ({
-  classifyAmrAccountFailure(text: string) {
-    const value = String(text || '').toLowerCase();
-    // Mirror the real detector's signals exercised by these tests, including
-    // the Chinese vela pre-charge text (see integrations/vela-errors.test.ts).
-    if (
-      value.includes('insufficient balance') ||
-      value.includes('预扣费额度失败') ||
-      value.includes('余额不足') ||
-      value.includes('额度不足')
-    ) {
-      return { code: 'AMR_INSUFFICIENT_BALANCE' as const };
-    }
-    if (value.includes('authentication required') || value.includes('not authenticated') || value.includes('unauthorized')) {
-      return { code: 'AMR_AUTH_REQUIRED' as const };
-    }
-    if (value.includes('tier_model_not_entitled') || value.includes('tier_request_kind_not_entitled')) {
-      return { code: 'AMR_TIER_UPGRADE_REQUIRED' as const };
-    }
-    return null;
-  },
-}));
-
 vi.mock('../src/runtimes/auth.js', () => ({
   classifyAgentServiceFailure(text: string) {
     const value = String(text || '').toLowerCase();
@@ -195,20 +172,6 @@ describe('classifyRunFailure', () => {
     });
   });
 
-  it('prefers structured model-unavailable codes over timeout-like free text', () => {
-    expect(
-      classify(
-        'AMR_MODEL_UNAVAILABLE',
-        'Model selection timed out while the provider reported the model was unavailable.',
-      ),
-    ).toMatchObject({
-      failure_category: 'model_unavailable',
-      failure_stage: 'model_select',
-      retryable: false,
-      user_action: 'switch_model',
-    });
-  });
-
   it('prefers prompt-too-large codes over empty-output fallback text', () => {
     expect(
       classify(
@@ -275,7 +238,7 @@ describe('classifyRunFailure', () => {
 
   it('recognizes model-not-found text even when the outer error code is generic', () => {
     expect(
-      classify('AGENT_EXECUTION_FAILED', 'Model not found: vela/deepseek-v3-2'),
+      classify('AGENT_EXECUTION_FAILED', 'Model not found: provider/example-model'),
     ).toMatchObject({
       failure_category: 'model_unavailable',
       failure_detail: 'model_not_found',
@@ -422,7 +385,7 @@ describe('classifyRunFailure', () => {
     });
   });
 
-  it('promotes AMR exit 130 connection resets into upstream stream disconnects', () => {
+  it('promotes ACP exit 130 connection resets into upstream stream disconnects', () => {
     expect(
       classify(
         'AGENT_EXIT_130',
@@ -499,68 +462,6 @@ describe('classifyRunFailure', () => {
       failure_stage: 'first_token_wait',
       retryable: false,
       user_action: 'none',
-    });
-  });
-
-  it('maps AMR model catalog outages to provider routing failures', () => {
-    expect(
-      classify(
-        'AGENT_EXIT_130',
-        'json-rpc id 2: AMR model catalog is unavailable.',
-      ),
-    ).toMatchObject({
-      failure_category: 'upstream_unavailable',
-      failure_detail: 'provider_routing_error',
-      failure_stage: 'first_token_wait',
-      retryable: true,
-      user_action: 'retry',
-    });
-  });
-
-  it('maps AMR model catalog credential failures to auth instead of retryable routing', () => {
-    expect(
-      classify(
-        'AGENT_EXECUTION_FAILED',
-        [
-          'json-rpc id 2: AMR model catalog is unavailable.',
-          'Error: list Link models: API request failed with status 401: invalid_api_key',
-        ].join('\n'),
-      ),
-    ).toMatchObject({
-      failure_category: 'auth',
-      failure_detail: 'auth_required',
-      failure_stage: 'session_init',
-      retryable: false,
-      user_action: 'login',
-    });
-  });
-
-  it('maps AMR insufficient balance to recharge guidance', () => {
-    expect(
-      classify('AMR_INSUFFICIENT_BALANCE', 'insufficient wallet balance'),
-    ).toMatchObject({
-      failure_category: 'insufficient_balance',
-      failure_detail: 'amr_insufficient_balance',
-      retryable: false,
-      user_action: 'recharge',
-    });
-  });
-
-  it('maps unavailable model errors to switch-model guidance', () => {
-    expect(classify('AMR_MODEL_UNAVAILABLE', 'model is not available')).toMatchObject({
-      failure_category: 'model_unavailable',
-      failure_detail: 'model_not_found',
-      failure_stage: 'model_select',
-      retryable: false,
-      user_action: 'switch_model',
-    });
-  });
-
-  it('records a direct AMR insufficient-balance code as structured evidence', () => {
-    expect(classify('AMR_INSUFFICIENT_BALANCE')).toMatchObject({
-      failure_category: 'insufficient_balance',
-      failure_detail: 'amr_insufficient_balance',
-      evidence_level: 'structured_code',
     });
   });
 
@@ -1123,19 +1024,6 @@ describe('classifyRunFailure — signal and interrupt attribution', () => {
     expect(
       classify(
         null,
-        'Your workspace is out of credits. Ask your workspace owner to refill in order to continue.',
-      ),
-    ).toMatchObject({
-      failure_category: 'rate_limit',
-      failure_detail: 'workspace_credits_exhausted',
-      failure_stage: 'session_init',
-      retryable: false,
-      user_action: 'recharge',
-    });
-
-    expect(
-      classify(
-        null,
         'Agent "Claude Code" (`claude`) is not installed or not on PATH. Install it and refresh the agent list (GET /api/agents) before retrying.',
       ),
     ).toMatchObject({
@@ -1213,16 +1101,6 @@ describe('classifyRunFailure — signal and interrupt attribution', () => {
       user_action: 'retry',
     });
 
-    expect(
-      classify(null, 'json-rpc id 2: AMR model catalog is temporarily unavailable. Please retry.'),
-    ).toMatchObject({
-      failure_category: 'upstream_unavailable',
-      failure_detail: 'provider_routing_error',
-      failure_stage: 'first_token_wait',
-      retryable: true,
-      user_action: 'retry',
-    });
-
     expect(classify(null, 'Qoder run failed: stop_sequence')).toMatchObject({
       failure_category: 'process_exit',
       failure_detail: 'qoder_stop_sequence',
@@ -1272,18 +1150,6 @@ describe('classifyRunFailure — signal and interrupt attribution', () => {
       failure_detail: 'upstream_client_error',
       retryable: false,
       user_action: 'none',
-    });
-
-    expect(
-      classify(
-        'AGENT_EXECUTION_FAILED',
-        'No payment method. Add a payment method here: https://opencode.ai/workspace/wrk_123/billing',
-      ),
-    ).toMatchObject({
-      failure_category: 'rate_limit',
-      failure_detail: 'workspace_credits_exhausted',
-      retryable: false,
-      user_action: 'recharge',
     });
 
     expect(
@@ -1474,12 +1340,10 @@ function runtimeCloseEvent(reason: string): RunEventForFailureClassification {
 }
 
 describe('cpu_unsupported (AVX2) crash classification', () => {
-  // Windows AMR failure shape from Langfuse: the bundled opencode.exe is a Bun
-  // build requiring AVX2; on CPUs without it the child dies with an illegal
-  // instruction BEFORE readiness, vela surfaces an ACP fatal, and the daemon
-  // stamps runtime_close: fatal_rpc_error. The crash text must win over the
-  // fatal_rpc_error close-reason promotion — retrying the same binary on the
-  // same CPU deterministically fails again.
+  // A managed opencode.exe can be a Bun build requiring AVX2. On CPUs without
+  // it the child dies with an illegal instruction before readiness and an ACP
+  // wrapper can surface a fatal close. The crash text must win over the close
+  // reason because retrying the same binary on the same CPU fails again.
   it('classifies a Bun illegal-instruction crash under an ACP fatal close as cpu_unsupported', () => {
     const stderr = [
       '============================================================',
@@ -1506,7 +1370,7 @@ describe('cpu_unsupported (AVX2) crash classification', () => {
     // Production shape (Langfuse trace 266a5706, 0.15.0 stable): on a CPU with
     // AVX but not AVX2 (Sandy/Ivy Bridge era), Bun panics on an illegal
     // instruction, panics again during the panic, and abort()s — so the exit
-    // status vela reports is 3, not STATUS_ILLEGAL_INSTRUCTION. Only the
+    // reported status is 3, not STATUS_ILLEGAL_INSTRUCTION. Only the
     // stderr banner carries the truth.
     const stderr = [
       '============================================================',
@@ -1541,7 +1405,7 @@ describe('cpu_unsupported (AVX2) crash classification', () => {
   });
 
   it('classifies a bare STATUS_ILLEGAL_INSTRUCTION exit under an ACP fatal close as cpu_unsupported', () => {
-    // No Bun crash banner — vela only reports the raw Windows exit status
+    // No Bun crash banner — the wrapper only reports the raw Windows exit status
     // (0xC000001D, decimal 3221225501 in Go/Node exit-status text).
     expect(
       classify(
@@ -1575,8 +1439,8 @@ describe('cpu_unsupported (AVX2) crash classification', () => {
 
   it('keeps a STATUS_ILLEGAL_INSTRUCTION exit outside the opencode startup context retryable', () => {
     // The raw status code is generic Windows SIGILL — any agent binary can die
-    // with it for reasons that have nothing to do with AVX2. Without vela's
-    // bundled-opencode startup wrapper text it must stay on the existing
+    // with it for reasons that have nothing to do with AVX2. Without the
+    // managed-opencode startup wrapper text it must stay on the existing
     // fatal_rpc_error path instead of surfacing the processor-support card.
     const message = 'codex acp bridge exited: exit status 3221225501';
     expect(
@@ -1659,31 +1523,8 @@ describe('execution_failed close-reason refinement', () => {
     });
   });
 
-  it('classifies an AMR membership concurrency limit before fatal close promotion', () => {
-    const message =
-      '[code=tier_limit_exceeded] membership concurrency limit exceeded: 3/2 resets 2026-08-25T10:42:00Z';
-    expect(
-      classifyForAgent('amr', 'AGENT_EXECUTION_FAILED', message, [
-        errorEvent('AGENT_EXECUTION_FAILED', message, true),
-        runtimeCloseEvent('fatal_rpc_error'),
-      ]),
-    ).toMatchObject({
-      failure_category: 'rate_limit',
-      failure_detail: 'membership_concurrency_limit',
-      failure_stage: 'session_init',
-      failure_mechanism: 'policy_rejection',
-      failure_domain: 'policy_admission',
-      evidence_level: 'structured_code',
-      repair_owner: 'policy_owner',
-      admission_status: 'unknown',
-      classifier_version: 'run-failure-v3',
-      retryable: false,
-      user_action: 'none',
-    });
-  });
-
   it('does not exclude an ordinary provider 429 as a pre-run policy rejection', () => {
-    expect(classifyForAgent('amr', 'RATE_LIMITED', 'HTTP 429: too many requests')).toMatchObject({
+    expect(classifyForAgent('kilo', 'RATE_LIMITED', 'HTTP 429: too many requests')).toMatchObject({
       failure_category: 'rate_limit',
       failure_detail: 'rate_limit_429',
       failure_domain: 'provider_control_plane',
@@ -1693,7 +1534,7 @@ describe('execution_failed close-reason refinement', () => {
     });
   });
 
-  it('keeps a non-AMR membership concurrency envelope retryable', () => {
+  it('keeps a provider membership concurrency envelope retryable', () => {
     const message =
       '[code=tier_limit_exceeded] membership concurrency limit exceeded: 3/2 resets 2026-08-25T10:42:00Z';
     expect(
@@ -1712,7 +1553,7 @@ describe('execution_failed close-reason refinement', () => {
   it('classifies an oversized ACP input frame as a local product protocol failure', () => {
     const message = 'ACP input line exceeds maximum size (1048576 bytes)';
     expect(
-      classifyForAgent('amr', 'AGENT_EXECUTION_FAILED', message, [
+      classifyForAgent('kilo', 'AGENT_EXECUTION_FAILED', message, [
         errorEvent('AGENT_EXECUTION_FAILED', message, false),
         runtimeCloseEvent('fatal_rpc_error'),
       ]),
@@ -1731,7 +1572,7 @@ describe('execution_failed close-reason refinement', () => {
   it('keeps a wrapped oversized ACP input frame non-retryable without a retry hint', () => {
     const message =
       'json-rpc id 4: failed to parse request: ACP input line exceeds maximum size (1048576 bytes)';
-    expect(classifyForAgent('amr', 'AGENT_EXECUTION_FAILED', message, [])).toMatchObject({
+    expect(classifyForAgent('kilo', 'AGENT_EXECUTION_FAILED', message, [])).toMatchObject({
       failure_category: 'process_exit',
       failure_detail: 'acp_frame_too_large',
       failure_mechanism: 'frame_too_large',
@@ -1743,7 +1584,7 @@ describe('execution_failed close-reason refinement', () => {
 
   it('classifies a missing bundled OpenCode binary as a local product packaging failure', () => {
     const message = 'bundled OpenCode binary is missing';
-    expect(classifyForAgent('amr', 'AGENT_EXECUTION_FAILED', message)).toMatchObject({
+    expect(classifyForAgent('kilo', 'AGENT_EXECUTION_FAILED', message)).toMatchObject({
       failure_category: 'process_exit',
       failure_detail: 'bundled_binary_missing',
       failure_mechanism: 'child_exit',
@@ -1755,7 +1596,7 @@ describe('execution_failed close-reason refinement', () => {
 
   it('keeps host policy blocks separate from client product failures', () => {
     const message = 'OpenCode launch was blocked by Windows Application Control policy';
-    expect(classifyForAgent('amr', 'AGENT_EXECUTION_FAILED', message)).toMatchObject({
+    expect(classifyForAgent('kilo', 'AGENT_EXECUTION_FAILED', message)).toMatchObject({
       failure_detail: 'host_policy_block',
       failure_domain: 'client_environment',
       failure_mechanism: 'child_exit',
@@ -1857,54 +1698,7 @@ describe('execution_failed close-reason refinement', () => {
   });
 });
 
-// Reclassify AMR/vela upstream failures that currently fall into the opaque
-// `execution_failed` bucket. These carry the generic `AGENT_EXECUTION_FAILED`
-// error code, and the real cause is only in the (often Chinese) upstream error
-// text, so the English-only detectors miss them. Real production texts were
-// sampled from Langfuse (#3408 P1). Each must land in its true product-view
-// category instead of the engineering-view opaque bucket.
-describe('classifyRunFailure — AMR/vela reclassification out of execution_failed', () => {
-  it('classifies a vela Chinese pre-charge (insufficient balance) failure as insufficient_balance', () => {
-    const result = classify(
-      'AGENT_EXECUTION_FAILED',
-      '预扣费额度失败, 用户[141283]剩余额度: 💰0.040000, 需要预扣费额度: 💰0.060000 (request id: B202606220543379765673248268d9d6vVKaiRPCMA)',
-    );
-    expect(result?.failure_category).toBe('insufficient_balance');
-    expect(result?.failure_detail).toBe('amr_insufficient_balance');
-    expect(result?.user_action).toBe('recharge');
-  });
-
-  it('classifies structured AMR tier entitlement failures as upgrade-required analytics', () => {
-    const result = classify(
-      'AMR_TIER_UPGRADE_REQUIRED',
-      'AMR tier upgrade required',
-    );
-
-    expect(result).toMatchObject({
-      failure_category: 'entitlement_required',
-      failure_detail: 'amr_tier_upgrade_required',
-      failure_stage: 'session_init',
-      evidence_level: 'structured_code',
-      retryable: false,
-      user_action: 'upgrade',
-    });
-  });
-
-  it('classifies raw AMR tier entitlement texts as upgrade-required analytics', () => {
-    const result = classify(
-      'AGENT_EXECUTION_FAILED',
-      'HTTP 403 [code=tier_model_not_entitled] model access denied for current tier',
-    );
-
-    expect(result).toMatchObject({
-      failure_category: 'entitlement_required',
-      failure_detail: 'amr_tier_upgrade_required',
-      failure_stage: 'session_init',
-      retryable: false,
-      user_action: 'upgrade',
-    });
-  });
-
+describe('classifyRunFailure — provider reclassification out of execution_failed', () => {
   it('classifies a Chinese 429 rate-limit text as a retryable rate_limit_429', () => {
     const result = classify(
       'AGENT_EXECUTION_FAILED',
@@ -1915,24 +1709,7 @@ describe('classifyRunFailure — AMR/vela reclassification out of execution_fail
     expect(result?.retryable).toBe(true);
   });
 
-  // vela's rolling 5-hour model window (`model_limit_exceeded`, link
-  // handlers/openai.go) is NOT a hard quota: the window resets on its own at
-  // `reset_at`, the request was never charged, and retrying after that instant
-  // succeeds. Reading it as `hard_quota` both mislabels the cause and marks the
-  // run non-retryable, which pollutes the reliability numerator.
-  it('classifies vela 5-hour model window limits as a retryable model_window_limit', () => {
-    const result = classifyForAgent(
-      'amr',
-      'RATE_LIMITED',
-      'You have reached the 5-hour usage limit for Kimi K2.6. Try again after 2026-08-12T06:34:47Z. This request was not charged to Wallet Credits.',
-    );
-    expect(result?.failure_category).toBe('rate_limit');
-    expect(result?.failure_detail).toBe('model_window_limit');
-    expect(result?.retryable).toBe(true);
-  });
-
-  // A genuine quota exhaustion must keep its existing hard_quota reading — the
-  // window-limit branch above must not swallow the whole `usage limit` family.
+  // A genuine quota exhaustion keeps its existing hard_quota reading.
   it('keeps a genuine session-limit exhaustion on hard_quota', () => {
     const result = classify(
       'RATE_LIMITED',
@@ -1942,7 +1719,7 @@ describe('classifyRunFailure — AMR/vela reclassification out of execution_fail
     expect(result?.retryable).toBe(false);
   });
 
-  it('classifies a vela "model not in allowed list" rejection as model_unavailable', () => {
+  it('classifies a provider "model not in allowed list" rejection as model_unavailable', () => {
     const result = classify(
       'AGENT_EXECUTION_FAILED',
       'API Error: 400 model deepseek-v4-pro-202606 not in allowed list',
@@ -2173,7 +1950,7 @@ describe('classifyRunFailure — batch A reclassification out of execution_faile
     expect(result?.user_action).toBe('reduce_context');
   });
 
-  it('classifies AMR request body limits as prompt_too_large', () => {
+  it('classifies ACP request body limits as prompt_too_large', () => {
     const result = classify(
       'AGENT_EXECUTION_FAILED',
       'json-rpc id 4: opencode event stream: {"properties":{"error":{"data":{"message":"[code=request_too_large] request body exceeds configured limit"}}}}',
@@ -2192,7 +1969,7 @@ describe('classifyRunFailure — batch A reclassification out of execution_faile
     expect(result?.failure_detail).toBe('agent_protocol_error');
   });
 
-  it('classifies a vela "login fail: carry the API secret key" as an auth failure', () => {
+  it('classifies a provider "login fail: carry the API secret key" as an auth failure', () => {
     const result = classify(
       'AGENT_EXECUTION_FAILED',
       "login fail: Please carry the API secret key in the 'Authorization' field of the request header (1004)",
@@ -2444,7 +2221,7 @@ describe('classifyRunFailure — custom Anthropic endpoint disconnects', () => {
   });
 });
 
-describe('classifyRunFailure — AMR sampled failures', () => {
+describe('classifyRunFailure — ACP managed runtime samples', () => {
   it('classifies Windows opencode readiness crash status as process_crashed', () => {
     const result = classify(
       'AGENT_SIGNAL_SIGTERM',
@@ -2458,7 +2235,7 @@ describe('classifyRunFailure — AMR sampled failures', () => {
     });
   });
 
-  it('classifies AMR stream idle timeout as a disconnected upstream stream', () => {
+  it('classifies an ACP stream idle timeout as a disconnected upstream stream', () => {
     const result = classify(
       'AGENT_EXECUTION_FAILED',
       'json-rpc id 4: opencode event stream: {"properties":{"error":{"data":{"message":"[code=upstream_error] stream idle timeout: no data received within configured window"}}}}',

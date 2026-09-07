@@ -13,12 +13,6 @@ import type {
   TrackingRunRepairOwner,
   TrackingRunTerminalTrigger,
 } from '@open-design/contracts/analytics';
-import {
-  isMembershipConcurrencyLimitFailure,
-  isModelWindowLimitFailure,
-} from '@open-design/contracts';
-
-import { classifyAmrAccountFailure } from './integrations/vela-errors.js';
 import { runFailureEvidence } from './services/run-failure-evidence.js';
 import { summarizeRunToolProgress } from './run-diagnostics.js';
 import { isAcpHandshakeRpcErrorText } from './runtimes/acp-handshake-id.js';
@@ -208,16 +202,10 @@ function isHardQuotaText(text: string): boolean {
     .test(text);
 }
 
-// A transient, retryable rate limit (distinct from a hard quota). vela/upstream
-// returns this in Chinese ("速率限制" / "请求频率"), which the English-only
-// quota check above misses, so it currently leaks into execution_failed.
+// A transient, retryable rate limit (distinct from a hard quota). Some
+// providers return this in Chinese ("速率限制" / "请求频率").
 function isRateLimitText(text: string): boolean {
   return /(速率限制|控制请求频率|请求(?:过于)?频繁|rate[ _-]?limit|too many requests)/i
-    .test(text);
-}
-
-function isWorkspaceCreditsText(text: string): boolean {
-  return /\b(?:your )?workspace is out of credits\b|\badd credits to continue\b|\bask your workspace owner to refill\b|\bno payment method\b|\brequires more credits\b/i
     .test(text);
 }
 
@@ -369,7 +357,7 @@ function clientRequestFailureDetail(text: string): TrackingRunFailureDetail | nu
 
 function isUpstreamDetailText(text: string): boolean {
   return isUpstreamClientErrorText(text) ||
-    /\b(stream disconnected before completion|(?:stream|upstream) idle timeout|no data received within configured window|response\.completed|Transport error: network error|Upstream request failed|websocket closed|socket connection was closed unexpectedly|tls handshake eof|Connection reset by (?:peer|server)|TLS close_notify|Broken pipe|remote host|远程主机强迫关闭|No route to host|Connection refused|ConnectionRefused|error sending request|Provider returned error|high demand|model is at capacity|selected model is at capacity|temporarily unavailable|upstream_error|http2: response body closed|peer closed connection|incomplete chunked read|Client network socket disconnected before secure TLS connection|Connection failed repeatedly|lost its connection to (?:the Anthropic API|the configured custom Anthropic endpoint)|Server error mid-response|empty or malformed response|Unexpected server error|Streaming response failed|Failed to process error response|AMR model catalog is (?:temporarily )?unavailable)\b/i
+    /\b(stream disconnected before completion|(?:stream|upstream) idle timeout|no data received within configured window|response\.completed|Transport error: network error|Upstream request failed|websocket closed|socket connection was closed unexpectedly|tls handshake eof|Connection reset by (?:peer|server)|TLS close_notify|Broken pipe|remote host|远程主机强迫关闭|No route to host|Connection refused|ConnectionRefused|error sending request|Provider returned error|high demand|model is at capacity|selected model is at capacity|temporarily unavailable|upstream_error|http2: response body closed|peer closed connection|incomplete chunked read|Client network socket disconnected before secure TLS connection|Connection failed repeatedly|lost its connection to (?:the Anthropic API|the configured custom Anthropic endpoint)|Server error mid-response|empty or malformed response|Unexpected server error|Streaming response failed|Failed to process error response)\b/i
       .test(text);
 }
 
@@ -460,7 +448,7 @@ function authDetail(text: string): TrackingRunFailureDetail {
 }
 
 function upstreamDetail(text: string): TrackingRunFailureDetail {
-  if (/\b(AMR model catalog is (?:temporarily )?unavailable|no endpoints found that support tool use|provider routing)\b/i.test(text)) {
+  if (/\b(no endpoints found that support tool use|provider routing)\b/i.test(text)) {
     return 'provider_routing_error';
   }
   if (/\bhigh demand|temporary errors|model is at capacity|selected model is at capacity\b/i.test(text)) return 'provider_high_demand';
@@ -583,12 +571,11 @@ function isProcessCrashText(text: string): boolean {
  * True when the failure text is an agent CLI reporting that a runtime IT
  * manages failed to start — not a statement about the CLI's own build.
  *
- * vela wraps every bundled-OpenCode startup failure this way before answering
- * `session/new` / `session/load` (`acp_runtime.go`: `start opencode server:
- * %v`, over `opencode_process.go`'s `opencode exited before readiness`), so the
- * text arrives inside a handshake-numbered JSON-RPC frame while describing a
- * CHILD OF THE CLI that never came up: a port collision, an OOM kill, a
- * half-written config, a binary the release package is missing.
+ * An ACP CLI can wrap a managed OpenCode startup failure before answering
+ * `session/new` / `session/load`, so the text arrives inside a
+ * handshake-numbered JSON-RPC frame while describing a child process that
+ * never came up: a port collision, an OOM kill, a half-written config, or a
+ * missing binary.
  *
  * The distinction the classifier needs from this is which variable the user can
  * move. An agent CLI that answered `initialize` and then refused to open a
@@ -613,11 +600,10 @@ function isManagedRuntimeStartupFailureText(text: string): boolean {
 // - `no_avx2`: the CPU-feature line Bun's crash banner prints on such
 //   machines. Unconditional — the feature line itself is the proof.
 // - Windows STATUS_ILLEGAL_INSTRUCTION (hex 0xC000001D or Go/Node's decimal
-//   exit-status rendering 3221225501), but ONLY inside vela's bundled-opencode
+//   exit-status rendering 3221225501), but ONLY inside a managed OpenCode
 //   startup wrapper text (`isManagedRuntimeStartupFailureText`). The raw status
 //   code is a generic Windows SIGILL that any agent binary could die with for
-//   unrelated reasons; every bannerless production trace carries the vela
-//   wrapper, so the gate costs no recall.
+//   unrelated reasons; the wrapper context prevents false attribution.
 // A bare "Illegal instruction" line is deliberately NOT matched: any
 // unrelated SIGILL (a runtime bug on an AVX2-capable machine) would then be
 // mislabeled as a processor limitation and lose its retry. The same binary on
@@ -721,11 +707,6 @@ function classification(
 ): RunFailureClassification {
   const policy = [
     'hard_quota',
-    'model_window_limit',
-    'membership_concurrency_limit',
-    'workspace_credits_exhausted',
-    'amr_insufficient_balance',
-    'amr_tier_upgrade_required',
   ].includes(failure_detail) || failure_category === 'entitlement_required';
   const localModel = [
     'cli_version_incompatible',
@@ -865,7 +846,6 @@ function classifyRunFailureBase(
   // Compute once; used both for the early empty_output guard below and for the
   // fatal_rpc_error promotion later in this function.
   const runtimeCloseReason = readRuntimeCloseReason(events);
-  const amrFailure = classifyAmrAccountFailure(text);
   const byokOpenCodeProviderNotFound = isByokOpenCodeProviderNotFoundText(
     input.agentId,
     text,
@@ -882,42 +862,8 @@ function classifyRunFailureBase(
   }
 
   if (
-    errorCode === 'AMR_INSUFFICIENT_BALANCE' ||
-    amrFailure?.code === 'AMR_INSUFFICIENT_BALANCE'
-  ) {
-    return classification(
-      'insufficient_balance',
-      'amr_insufficient_balance',
-      'session_init',
-      false,
-      'recharge',
-      errorCode === 'AMR_INSUFFICIENT_BALANCE'
-        ? { evidenceLevel: 'structured_code' }
-        : {},
-    );
-  }
-
-  if (
-    errorCode === 'AMR_TIER_UPGRADE_REQUIRED' ||
-    amrFailure?.code === 'AMR_TIER_UPGRADE_REQUIRED'
-  ) {
-    return classification(
-      'entitlement_required',
-      'amr_tier_upgrade_required',
-      'session_init',
-      false,
-      'upgrade',
-      errorCode === 'AMR_TIER_UPGRADE_REQUIRED'
-        ? { evidenceLevel: 'structured_code' }
-        : {},
-    );
-  }
-
-  if (
-    errorCode === 'AMR_AUTH_REQUIRED' ||
     errorCode === 'AGENT_AUTH_REQUIRED' ||
-    errorCode === 'UNAUTHORIZED' ||
-    amrFailure?.code === 'AMR_AUTH_REQUIRED'
+    errorCode === 'UNAUTHORIZED'
   ) {
     return classification(
       'auth',
@@ -926,7 +872,6 @@ function classifyRunFailureBase(
       false,
       'login',
       [
-        'AMR_AUTH_REQUIRED',
         'AGENT_AUTH_REQUIRED',
         'UNAUTHORIZED',
       ].includes(errorCode ?? '')
@@ -949,9 +894,7 @@ function classifyRunFailureBase(
     );
   }
 
-  const modelDetail = errorCode === 'AMR_MODEL_UNAVAILABLE'
-    ? 'model_not_found'
-    : modelUnavailableDetail(text);
+  const modelDetail = modelUnavailableDetail(text);
   if (modelDetail) {
     return classification(
       'model_unavailable',
@@ -962,7 +905,7 @@ function classifyRunFailureBase(
         : 'model_select',
       false,
       'switch_model',
-      { structuredProviderEvidence: errorCode === 'AMR_MODEL_UNAVAILABLE' },
+      {},
     );
   }
 
@@ -1108,47 +1051,15 @@ function classifyRunFailureBase(
     );
   }
 
-  // Vela reports a full membership concurrency policy through an ACP fatal
-  // envelope. Claim the named policy limit before fatal close promotion. Even
-  // when the envelope says retryable, an immediate automatic replay only hits
-  // the same occupied slots, so leave retry to the user after the reset time.
-  if (input.agentId === 'amr' && isMembershipConcurrencyLimitFailure(text)) {
-    return classification(
-      'rate_limit',
-      'membership_concurrency_limit',
-      'session_init',
-      false,
-      'none',
-    );
-  }
-
   if (errorCode === 'RATE_LIMITED' || serviceFailure === 'RATE_LIMITED' || isHardQuotaText(text) || isRateLimitText(text)) {
-    // Checked BEFORE the hard-quota reading: vela phrases its rolling per-model
-    // window as "…usage limit…", which `isHardQuotaText` matches, so without
-    // this branch a self-resetting window is reported as an exhausted quota —
-    // non-retryable, and counted against reliability as a real failure.
-    if (isModelWindowLimitFailure(text)) {
-      return classification(
-        'rate_limit',
-        'model_window_limit',
-        'session_init',
-        true,
-        'retry',
-      );
-    }
     const hardQuota = isHardQuotaText(text);
-    const workspaceCredits = isWorkspaceCreditsText(text);
     const retryable = hardQuota ? false : (retryableHint ?? true);
     return classification(
       'rate_limit',
-      workspaceCredits
-        ? 'workspace_credits_exhausted'
-        : hardQuota
-          ? 'hard_quota'
-          : 'rate_limit_429',
+      hardQuota ? 'hard_quota' : 'rate_limit_429',
       'session_init',
       retryable,
-      retryable ? 'retry' : workspaceCredits ? 'recharge' : 'none',
+      retryable ? 'retry' : 'none',
       { structuredProviderEvidence: errorCode === 'RATE_LIMITED' },
     );
   }
@@ -1212,8 +1123,8 @@ function classifyRunFailureBase(
     // `ACP <stage> timed out after <n>ms` and then kills the child, so the run
     // surfaces the child's exit code instead of a stall code. Without this
     // trigger the terminal reads as a bare AGENT_EXIT_130 — indistinguishable
-    // from a user interrupt, which is how the 2026-07-28 AMR stall got
-    // attributed to the wrong watchdog and the wrong 15-minute window.
+    // from a user interrupt, which previously caused a stalled ACP run to be
+    // attributed to the wrong watchdog window.
     const acpStageTimeout = /\bACP\b[^\n]*timed out after \d+\s*ms/i.test(text);
     const terminalTrigger: TrackingRunTerminalTrigger | undefined =
       /without emitting a first output/i.test(text)
@@ -1270,7 +1181,7 @@ function classifyRunFailureBase(
 
   // Must be checked BEFORE the fatal_rpc_error close-reason promotion below:
   // when the bundled agent binary dies of an illegal instruction before
-  // readiness, vela surfaces an ACP fatal and the close reason alone would
+  // readiness, an ACP wrapper may surface a fatal and the close reason alone would
   // classify this as a retryable fatal_rpc_error — but the retry re-runs the
   // same binary on the same CPU and deterministically fails again.
   if (isCpuUnsupportedCrashText(text)) {
@@ -1307,8 +1218,8 @@ function classifyRunFailureBase(
   //   that DIED; `signalInterruptClassification` below owns that reading, the
   //   same reason `isCpuUnsupportedCrashText` is checked above.
   // - A managed runtime that never became ready describes a child that never
-  //   STARTED. AMR is the population this reaches — vela reports its bundled
-  //   OpenCode's startup failures from inside `session/new` — and a startup
+  //   STARTED. ACP wrappers may report managed OpenCode startup failures from
+  //   inside `session/new`, and a startup
   //   race is exactly the shape the fatal_rpc_error path below recovers by
   //   retrying. Filing it here would tell that user to replace a healthy CLI
   //   and take the recovery away at the same time.

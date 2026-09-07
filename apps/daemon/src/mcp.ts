@@ -49,7 +49,6 @@ import {
   OPEN_DESIGN_BRIEF_APP_HTML,
   OPEN_DESIGN_BRIEF_APP_VERSION,
 } from './mcp-apps/brief-resource.js';
-import { DEFAULT_AMR_RECHARGE_URL } from './integrations/vela-errors.js';
 import {
   type ExternalPluginContext,
   logicalPluginRequestDigest,
@@ -763,11 +762,6 @@ export const TOOL_DEFS = [
           type: 'string',
           description:
             'Stable canonical UUID or ULID for this confirmed generation action. Generate it once before calling start_run and reuse it verbatim if the tool response is lost or retried; a different payload with the same id is rejected.',
-        },
-        resume: {
-          type: 'boolean',
-          description:
-            'Set true only after the user has topped up a paused OpenDesign Cloud run. Reuse the exact original requestId and payload; OpenDesign resumes the same logical run.',
         },
         pluginWorkflowId: PLUGIN_WORKFLOW_ID_ARG,
       },
@@ -1834,9 +1828,6 @@ export async function runMcpStdio(options: RunMcpOptions): Promise<void> {
         '    user action and reuse the exact same value after a timeout/lost',
         '    response. Do not call',
         '    start_run again while get_run reports the original run in flight.',
-        '    If get_run returns failureAction:"recharge", show rechargeUrl;',
-        '    after the user confirms top-up, call the exact original start_run',
-        '    once with the same requestId and resume:true.',
         '    OpenDesign spawns its own agent to do the work.',
         ' - get_run(runId) polls until status is succeeded/failed/canceled;',
         '    on success it returns a previewUrl you can open in a browser',
@@ -2501,10 +2492,6 @@ async function startRun(
       briefState: options.briefState ?? 'not_applicable',
     };
   }
-  if (args.resume !== undefined) {
-    if (typeof args.resume !== 'boolean') throw new Error('resume must be a boolean');
-    body.resume = args.resume;
-  }
   if (typeof args.prompt === 'string' && args.prompt.length > 0) {
     body.message = args.prompt;
     body.currentPrompt = args.prompt;
@@ -2588,15 +2575,8 @@ async function getRun(
     const studioUrl = buildStudioUrl(webBase, status.projectId, status.conversationId, null);
     const enriched: JsonObject = { ...status };
     if (studioUrl) enriched.studioUrl = studioUrl;
-    if (status.failureAction === 'recharge') {
-      enriched.rechargeUrl = DEFAULT_AMR_RECHARGE_URL;
-      enriched.hint =
-        'OpenDesign Cloud paused this logical run because the account balance is insufficient. Preserve the brief and project, show rechargeUrl to the user, and do not switch modes. After the user confirms the top-up, call start_run once with the exact original payload, the same requestId, and resume:true; OpenDesign Cloud will resume the existing run and billing operation. Do not expose internal runtime or tool identifiers.';
-    }
     if (typeof status.eventsLogPath === 'string' && status.eventsLogPath.length > 0) {
-      if (status.failureAction !== 'recharge') {
-        enriched.hint = 'Run still in flight. Tail eventsLogPath in your own shell (e.g. `tail -n 50 -f "' + status.eventsLogPath + '"`) to see live text_delta / tool_use events from the inner agent — that is your in-flight progress signal. Keep polling get_run every 30–60s; do not cancel because file mtimes look static, that is the agent thinking between writes.';
-      }
+      enriched.hint = 'Run still in flight. Tail eventsLogPath in your own shell (e.g. `tail -n 50 -f "' + status.eventsLogPath + '"`) to see live text_delta / tool_use events from the inner agent — that is your in-flight progress signal. Keep polling get_run every 30–60s; do not cancel because file mtimes look static, that is the agent thinking between writes.';
       if (studioUrl) {
         enriched.hint += ` While the run is in flight, studioUrl can be used as an optional workspace progress link — render it as \`[Watch progress in OpenDesign studio](${studioUrl})\` if you choose to show it. This URL is valid for the current OpenDesign runtime; call get_run again after OpenDesign restarts.`;
       }
