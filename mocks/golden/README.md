@@ -56,5 +56,5 @@ Other agents are not golden-tested here for different reasons:
 - The retained Gemini parser emits structured `tool_use` / `tool_result`
   events and is covered by `apps/daemon/tests/runtimes/json-event-stream.test.ts`,
   but has no committed golden.
-- ACP / vela use JSON-RPC over stdio rather than streamed stdout and need a
+- ACP agents use JSON-RPC over stdio rather than streamed stdout and need a
   different harness; see `apps/daemon/tests/acp.test.ts`.
