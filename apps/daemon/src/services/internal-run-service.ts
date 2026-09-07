@@ -57,7 +57,6 @@ export interface InternalRunRegistry<
     | { kind: 'created'; run: TRun }
     | { kind: 'reused'; run: TRun }
     | { kind: 'conflict'; run: TRun };
-  prepareRestart(run: TRun): TRun | null;
   get(id: string): TRun | null;
   drop(run: TRun): void;
   start(run: TRun, starter: () => Promise<unknown>): TRun;
@@ -65,7 +64,6 @@ export interface InternalRunRegistry<
 }
 
 export interface AssistantRunClaimOptions {
-  status?: string;
   beforeClaimCommit?: () => void;
   isRunActive?: (runId: string) => boolean;
 }
@@ -83,17 +81,12 @@ export interface PrepareInternalRunInput<TMeta extends InternalRunCreateInput, T
    * id before either record becomes visible.
    */
   beforeClaimCommit?: (run: TRun) => void;
-  resume?: {
-    requested: boolean;
-    canResume: (run: TRun) => boolean;
-  };
 }
 
 export type PreparedInternalRunResult<TRun> =
-  | { kind: 'ready'; run: TRun; creationKind: 'created' | 'reused'; resumed: boolean }
+  | { kind: 'ready'; run: TRun }
   | { kind: 'reused'; run: TRun }
   | { kind: 'idempotency_conflict'; run: TRun }
-  | { kind: 'resume_not_allowed'; run: TRun }
   | { kind: 'assistant_claim_conflict'; run: TRun; reason?: 'active' | 'scope' };
 
 export interface InternalRunCreationService<
@@ -140,24 +133,7 @@ export function createInternalRunCreationService<
 
     const run = creation.run;
     if (creation.kind === 'reused') {
-      if (!input.resume?.requested) return { kind: 'reused', run };
-      if (!input.resume.canResume(run)) return { kind: 'resume_not_allowed', run };
-
-      const claim = deps.claimAssistantMessage(run, {
-        status: 'queued',
-        isRunActive,
-      });
-      if (!claim.ok) {
-        return {
-          kind: 'assistant_claim_conflict',
-          run,
-          ...(claim.reason ? { reason: claim.reason } : {}),
-        };
-      }
-      if (!deps.runs.prepareRestart(run)) {
-        return { kind: 'resume_not_allowed', run };
-      }
-      return { kind: 'ready', run, creationKind: 'reused', resumed: true };
+      return { kind: 'reused', run };
     }
 
     let claim: AssistantRunClaimResult;
@@ -182,7 +158,7 @@ export function createInternalRunCreationService<
         ...(claim.reason ? { reason: claim.reason } : {}),
       };
     }
-    return { kind: 'ready', run, creationKind: 'created', resumed: false };
+    return { kind: 'ready', run };
   };
 
   return {

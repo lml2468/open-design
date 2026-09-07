@@ -530,7 +530,6 @@ export function pinAssistantMessageOnRunCreate(
   db: SqliteDb,
   run: ChatRunMessageState,
   opts?: {
-    status?: string;
     beforeFreshInsert?: () => void;
     beforeClaimCommit?: () => void;
     isRunActive?: (runId: string) => boolean;
@@ -539,10 +538,7 @@ export function pinAssistantMessageOnRunCreate(
   // Headless / omit-pin runs with no assistant message have nothing to claim.
   if (!run.conversationId || !run.assistantMessageId) return { ok: true };
 
-  // A resume claim writes the post-restart intent (queued) while the run
-  // object is still terminal (failed) — prepareRestart flips it afterwards
-  // (#6418).
-  const claimStatus = opts?.status ?? run.status;
+  const claimStatus = run.status;
 
   // Atomic ownership claim (#6418). The claim is a single conditional UPDATE
   // inside an immediate transaction: the create -> claim stretch is synchronous

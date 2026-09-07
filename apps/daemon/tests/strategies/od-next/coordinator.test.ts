@@ -960,7 +960,7 @@ describe('OD Next planning coordinator', () => {
           capturedMeta = input.meta;
           const run = { id: 'run-production', status: 'queued' };
           input.beforeClaimCommit?.(run);
-          return { kind: 'ready', run, creationKind: 'created', resumed: false };
+          return { kind: 'ready', run };
         },
         start(run) { return run; },
       },
@@ -997,7 +997,7 @@ describe('OD Next planning coordinator', () => {
           capturedMeta = input.meta;
           const run = { id: 'run-production-live', status: 'queued' };
           db.transaction(() => input.beforeClaimCommit?.(run)).immediate();
-          return { kind: 'ready', run, creationKind: 'created', resumed: false };
+          return { kind: 'ready', run };
         },
         start(run) { return run; },
       },
@@ -1050,7 +1050,7 @@ describe('OD Next planning coordinator', () => {
         prepare(input) {
           const run = { id: 'must-rollback', status: 'queued' };
           db.transaction(() => input.beforeClaimCommit?.(run)).immediate();
-          return { kind: 'ready', run, creationKind: 'created', resumed: false };
+          return { kind: 'ready', run };
         },
         start(run) { return run; },
       },
@@ -1086,7 +1086,7 @@ describe('OD Next planning coordinator', () => {
         prepare(input) {
           const run = { id: 'must-not-start', status: 'queued' };
           db.transaction(() => input.beforeClaimCommit?.(run)).immediate();
-          return { kind: 'ready', run, creationKind: 'created', resumed: false };
+          return { kind: 'ready', run };
         },
         start(run) { return run; },
       },
@@ -1124,7 +1124,7 @@ describe('OD Next planning coordinator', () => {
         prepare(input) {
           const run = { id: 'run-contract-repair-live', status: 'queued' };
           db.transaction(() => input.beforeClaimCommit?.(run)).immediate();
-          return { kind: 'ready', run, creationKind: 'created', resumed: false };
+          return { kind: 'ready', run };
         },
         start(run) { return run; },
       },

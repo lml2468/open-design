@@ -191,7 +191,7 @@ describe('run analytics lifecycle', () => {
           lateTerminalCount: 1,
         },
       }),
-      body: { agentId: 'amr' },
+      body: { agentId: 'kilo' },
       requestAnalyticsContext: CONTEXT as never,
     });
     await settled(h, 'run_created');
@@ -270,11 +270,11 @@ describe('run analytics lifecycle', () => {
     const run = runs.create({
       projectId: null,
       conversationId: null,
-      agentId: 'amr',
+      agentId: 'kilo',
     });
     lifecycle.install({
       run: run as never,
-      body: { agentId: 'amr' },
+      body: { agentId: 'kilo' },
       requestAnalyticsContext: CONTEXT as never,
     });
     await vi.waitFor(() => {
@@ -298,7 +298,7 @@ describe('run analytics lifecycle', () => {
     const h = harness();
     h.lifecycle.install({
       run: fakeRun({
-        agentId: 'amr',
+        agentId: 'kilo',
         events: [{
           event: 'agent',
           data: {
@@ -322,7 +322,7 @@ describe('run analytics lifecycle', () => {
           },
         }],
       }),
-      body: { agentId: 'amr' },
+      body: { agentId: 'kilo' },
       requestAnalyticsContext: CONTEXT as never,
     });
     await settled(h, 'run_created');
@@ -369,33 +369,33 @@ describe('run analytics lifecycle', () => {
 
   it('publishes current-attempt admission evidence with legacy failure fields intact', async () => {
     const h = harness();
-    const message = '[code=model_limit_exceeded] model usage limit exceeded';
+    const message = 'Provider quota exceeded for this billing period.';
     h.lifecycle.install({
-      run: fakeRun({ agentId: 'amr', events: [
+      run: fakeRun({ agentId: 'kilo', events: [
         { event: 'start', data: { model: 'example-chat-model', streamFormat: 'acp-json-rpc' } },
         { event: 'agent', data: { type: 'status', label: 'waiting_for_first_output' } },
         { event: 'agent', data: { type: 'text_delta', delta: 'Example output' } },
         { event: 'error', data: { error: { code: 'RATE_LIMITED', message } } },
       ] }),
-      body: { agentId: 'amr' }, requestAnalyticsContext: CONTEXT as never,
+      body: { agentId: 'kilo' }, requestAnalyticsContext: CONTEXT as never,
     });
     await settled(h, 'run_created');
     h.settle({ status: 'failed', errorCode: 'RATE_LIMITED' });
     const finished = await settled(h, 'run_finished');
     expect(finished.properties).toMatchObject({
       result: 'failed', error_code: 'RATE_LIMITED',
-      failure_category: 'rate_limit', failure_detail: 'model_window_limit',
-      classifier_version: 'run-failure-v3', policy_reason: 'model_window_limit',
+      failure_category: 'rate_limit', failure_detail: 'hard_quota',
+      classifier_version: 'run-failure-v3', policy_reason: 'hard_quota',
       admission_phase: 'during_execution', admission_status: 'admitted',
     });
     expect(h.recoveries.at(-1)?.properties).toMatchObject({ classifier_version: 'run-failure-v3', admission_status: 'admitted' });
   });
 
-  it('preserves early AMR admission evidence beyond the event ring-buffer cap', async () => {
+  it('preserves early ACP admission evidence beyond the event ring-buffer cap', async () => {
     const h = harness();
-    const message = '[code=model_limit_exceeded] model usage limit exceeded';
+    const message = 'Provider quota exceeded for this billing period.';
     const fullEvents = [
-      { event: 'start', data: { agentId: 'amr', model: 'example-chat-model', streamFormat: 'acp-json-rpc' } },
+      { event: 'start', data: { agentId: 'kilo', model: 'example-chat-model', streamFormat: 'acp-json-rpc' } },
       { event: 'agent', data: { type: 'status', label: 'waiting_for_first_output' } },
       { event: 'agent', data: { type: 'text_delta', delta: 'Example output' } },
       ...Array.from({ length: 2_001 }, (_, index) => ({
@@ -407,22 +407,22 @@ describe('run analytics lifecycle', () => {
     for (const event of fullEvents) foldEventIntoRunSideEffectLedger(sideEffectLedger, event);
     h.lifecycle.install({
       run: fakeRun({
-        agentId: 'amr', sideEffectLedger, events: fullEvents.slice(-2_000),
+        agentId: 'kilo', sideEffectLedger, events: fullEvents.slice(-2_000),
       }),
-      body: { agentId: 'amr' }, requestAnalyticsContext: CONTEXT as never,
+      body: { agentId: 'kilo' }, requestAnalyticsContext: CONTEXT as never,
     });
     await settled(h, 'run_created');
     h.settle({ status: 'failed', errorCode: 'AGENT_EXECUTION_FAILED' });
     const finished = await settled(h, 'run_finished');
     expect(finished.properties).toMatchObject({
-      policy_reason: 'model_window_limit', admission_phase: 'during_execution',
+      policy_reason: 'hard_quota', admission_phase: 'during_execution',
       admission_status: 'admitted',
     });
   });
 
-  it('does not count replayed non-AMR ACP history when the start is truncated', async () => {
+  it('does not count replayed ACP history when the start is truncated', async () => {
     const h = harness();
-    const message = '[code=model_limit_exceeded] model usage limit exceeded';
+    const message = 'Provider quota exceeded for this billing period.';
     const fullEvents = [
       { event: 'start', data: { agentId: 'hermes', model: 'example-chat-model', streamFormat: 'acp-json-rpc' } },
       ...Array.from({ length: 10 }, (_, index) => ({
@@ -449,7 +449,7 @@ describe('run analytics lifecycle', () => {
     h.settle({ status: 'failed', errorCode: 'AGENT_EXECUTION_FAILED' });
     const finished = await settled(h, 'run_finished');
     expect(finished.properties).toMatchObject({
-      policy_reason: 'model_window_limit', admission_phase: 'unknown',
+      policy_reason: 'hard_quota', admission_phase: 'unknown',
       admission_status: 'unknown',
     });
   });

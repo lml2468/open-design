@@ -66,10 +66,10 @@ describe('admission and attribution v3', () => {
       admission_status: 'unknown', admission_phase: 'unknown',
     });
   });
-  it.each(['run_retry_attempted', 'run_resume_attempted'])('does not inherit admission or cause when %s preflight fails before a new start', (boundary) => {
+  it('does not inherit admission or cause when an automatic retry fails before a new start', () => {
     expect(classify('agent terminated', [start, prompt, text,
       { event: 'error', data: { message: hardQuotaError } },
-      { event: boundary, data: { retry_attempt_index: 1 } },
+      { event: 'run_retry_attempted', data: { retry_attempt_index: 1 } },
     ])).toMatchObject({ admission_status: 'unknown', admission_phase: 'unknown',
       policy_reason: 'none', failure_domain: 'cross_boundary' });
   });

@@ -697,7 +697,7 @@ describe('OD Next complex production enforcement', () => {
         prepare(input) {
           const run = { id: PRODUCTION_RUN_ID, status: 'queued' };
           db.transaction(() => input.beforeClaimCommit?.(run)).immediate();
-          return { kind: 'ready', run, creationKind: 'created', resumed: false };
+          return { kind: 'ready', run };
         },
         start(run) { return run; },
       },
@@ -753,7 +753,7 @@ describe('OD Next complex production enforcement', () => {
         prepare(input) {
           const run = { id: PRODUCTION_RUN_ID, status: 'queued' };
           db.transaction(() => input.beforeClaimCommit?.(run)).immediate();
-          return { kind: 'ready', run, creationKind: 'created', resumed: false };
+          return { kind: 'ready', run };
         },
         start(run) { return run; },
       },
@@ -786,7 +786,7 @@ describe('OD Next complex production enforcement', () => {
         prepare(input) {
           const run = { id: PRODUCTION_RUN_ID, status: 'queued' };
           db.transaction(() => input.beforeClaimCommit?.(run)).immediate();
-          return { kind: 'ready', run, creationKind: 'created', resumed: false };
+          return { kind: 'ready', run };
         },
         start(run) { return run; },
       },

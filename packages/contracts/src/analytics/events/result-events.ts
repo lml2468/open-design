@@ -441,11 +441,7 @@ export interface RunCreatedProps extends RunTaskLineageProps {
   logical_request_digest_version?: 1;
   mcp_session_id?: string;
   brief_state?: 'confirmed' | 'skipped' | 'not_applicable';
-  deduplicated?: boolean;
-  resume?: boolean;
-  attempt_count?: number;
   generation_slo_window_ms?: number;
-  recharge_wait_duration_ms?: number;
   /**
    * Which harness actually produced this run.
    *

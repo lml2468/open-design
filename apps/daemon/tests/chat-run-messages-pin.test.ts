@@ -106,7 +106,7 @@ describe('pinAssistantMessageOnRunCreate generation boundary (#6418)', () => {
     expect(m.startedAt).toBe(300);
   });
 
-  it('keeps the transcript when re-pinning the same run (resume)', () => {
+  it('keeps the transcript when re-pinning the same active run', () => {
     const db = createDb();
     db.prepare(`INSERT INTO conversations (id) VALUES ('conv-a')`).run();
     seedMessage(db, {
@@ -136,8 +136,7 @@ describe('pinAssistantMessageOnRunCreate generation boundary (#6418)', () => {
     expect(m.content).toBe('partial');
     expect(m.lastRunEventId).toBe('evt-5');
     expect(m.startedAt).toBe(100);
-    // The prior failure's end timestamp must be cleared so the resumed
-    // completion records a fresh terminal time (nettee P2 on #6418).
+    // Reclaiming the same active row clears an obsolete terminal timestamp.
     expect(m.endedAt).toBeNull();
   });
 
@@ -292,39 +291,6 @@ describe('pinAssistantMessageOnRunCreate generation boundary (#6418)', () => {
     expect(
       db.prepare(`SELECT COUNT(*) AS count FROM messages WHERE id = 'user-seed'`).get(),
     ).toMatchObject({ count: 0 });
-  });
-
-  it('writes the overridden status when resuming a same run (recharge resume)', () => {
-    // A recharge resume claims with an explicit `queued` status override while
-    // the run object is still terminal (failed); the message row must take the
-    // override, keep its transcript, and clear the prior ended_at.
-    const db = createDb();
-    db.prepare(`INSERT INTO conversations (id) VALUES ('conv-a')`).run();
-    seedMessage(db, {
-      id: 'msg-1',
-      conversationId: 'conv-a',
-      content: 'partial',
-      events: [{ kind: 'text', text: 'partial' }],
-      runId: 'run-a',
-      runStatus: 'failed',
-      lastRunEventId: 'evt-5',
-      startedAt: 100,
-      endedAt: 200,
-    });
-
-    pinAssistantMessageOnRunCreate(
-      db,
-      { id: 'run-a', conversationId: 'conv-a', assistantMessageId: 'msg-1', status: 'failed', createdAt: 300 },
-      { status: 'queued' },
-    );
-
-    const m = readMessage(db, 'msg-1');
-    expect(m.runId).toBe('run-a');
-    expect(m.runStatus).toBe('queued');
-    expect(m.content).toBe('partial');
-    expect(m.eventsJson).not.toBeNull();
-    expect(m.startedAt).toBe(100);
-    expect(m.endedAt).toBeNull();
   });
 
   it('does not touch a message in another conversation', () => {

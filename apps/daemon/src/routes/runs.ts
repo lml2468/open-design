@@ -401,7 +401,6 @@ interface ChatRunService {
     | { kind: 'created'; run: ChatRun }
     | { kind: 'reused'; run: ChatRun }
     | { kind: 'conflict'; run: ChatRun };
-  prepareRestart(run: ChatRun): ChatRun | null;
   get(id: string): ChatRun | null;
   findByPluginWorkflowId(pluginWorkflowId: string): ChatRun | null;
   list(filters: RunListFilters): ChatRun[];
@@ -747,7 +746,6 @@ function runRequestFingerprint(
   const logicalRequest = { ...meta } as JsonRecord;
   delete logicalRequest.clientRequestId;
   delete logicalRequest.requestFingerprint;
-  delete logicalRequest.resume;
   delete logicalRequest.analyticsHints;
   delete logicalRequest.userMessageId;
   delete logicalRequest.assistantMessageId;
@@ -2503,7 +2501,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         'clientRequestId is already associated with a different logical run request',
       );
     }
-    if (preparedRun.kind === 'ready' && preparedRun.creationKind === 'created') {
+    if (preparedRun.kind === 'ready') {
       const blockingRun = activeRunBlockingDesignSystemEnrichment(design.runs, {
         conversationId: meta.conversationId,
         analyticsHints: meta.analyticsHints,
@@ -2528,7 +2526,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     }
     const run = preparedRun.run;
     const analyticsAttributionMismatch =
-      (preparedRun.kind !== 'ready' || preparedRun.creationKind === 'reused')
+      preparedRun.kind !== 'ready'
       && externalPluginAttributionMismatch(
         run.externalPluginAnalytics,
         meta.analyticsHints,
@@ -2560,7 +2558,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         assistantMessageId: run.assistantMessageId ?? null,
         clientRequestId: run.clientRequestId ?? null,
         reused: true,
-        resumed: false,
         ...(analyticsAttributionMismatch
           ? { analyticsAttributionMismatch: true }
           : {}),
@@ -2572,14 +2569,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         ...(strategyTask ? { strategyTask } : {}),
       });
     }
-    if (preparedRun.kind === 'resume_not_allowed') {
-      return sendApiError(
-        res,
-        409,
-        'RUN_NOT_RECHARGE_RESUMABLE',
-        'Only a failed OpenDesign Cloud run waiting for recharge can be resumed with the same request',
-      );
-    }
     if (preparedRun.kind === 'assistant_claim_conflict') {
       return sendApiError(
         res,
@@ -2588,7 +2577,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         'assistantMessageId is already bound to an active run',
       );
     }
-    const resumed = preparedRun.resumed;
     const declaredClient = String(req.get('x-od-client') ?? '').toLowerCase();
     if (requestAnalyticsContext?.clientType === 'external_mcp') {
       run.clientType = 'external_mcp';
@@ -2631,7 +2619,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         assistantMessageId: run.assistantMessageId ?? null,
         clientRequestId: run.clientRequestId ?? null,
         reused: false,
-        resumed: false,
       });
     }
     if (strategyTask) run.strategyTask = strategyTask;
@@ -2640,8 +2627,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       conversationId: run.conversationId ?? null,
       assistantMessageId: run.assistantMessageId ?? null,
       clientRequestId: run.clientRequestId ?? null,
-      reused: preparedRun.creationKind === 'reused',
-      resumed,
+      reused: false,
       ...(analyticsAttributionMismatch
         ? { analyticsAttributionMismatch: true }
         : {}),
@@ -2655,7 +2641,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     res.status(202).json(body);
     if (
       !clarificationTask
-      && !resumed
       && resolvedSnapshot?.ok
       && resolvedSnapshot.snapshot.pipeline
     ) {
@@ -2694,9 +2679,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         // described the request. See `harnessAnalyticsFromRolloutDecision`,
         // which deliberately reads the Run instead.
         rolloutDecision: strategyRolloutDecision,
-        creationKind: preparedRun.creationKind,
-        resumed,
-        attributionMismatch: analyticsAttributionMismatch,
       },
       () => startChatRun(executionMeta, run),
     );
@@ -3247,7 +3229,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         'clientRequestId is already associated with a different logical run request',
       );
     }
-    if (preparedRun.kind === 'ready' && preparedRun.creationKind === 'created') {
+    if (preparedRun.kind === 'ready') {
       const blockingRun = activeRunBlockingDesignSystemEnrichment(design.runs, {
         conversationId: meta.conversationId,
         analyticsHints: meta.analyticsHints,
@@ -3302,14 +3284,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         409,
         'RUN_IN_PROGRESS',
         'assistantMessageId is already bound to an active run',
-      );
-    }
-    if (preparedRun.kind === 'resume_not_allowed') {
-      return sendApiError(
-        res,
-        409,
-        'RUN_NOT_RECHARGE_RESUMABLE',
-        'Only a failed Open Design Cloud run waiting for recharge can be resumed with the same request',
       );
     }
     if (clarificationContinuation) {

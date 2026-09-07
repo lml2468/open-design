@@ -1362,8 +1362,7 @@ export function classifyRunFailure(
   let evidenceEvents = terminalAttemptEvents(input.events);
   let pendingRetry = -1;
   for (let index = evidenceEvents.length - 1; index >= 0; index -= 1) {
-    if (evidenceEvents[index]?.event === 'run_retry_attempted'
-      || evidenceEvents[index]?.event === 'run_resume_attempted') {
+    if (evidenceEvents[index]?.event === 'run_retry_attempted') {
       pendingRetry = index;
       break;
     }

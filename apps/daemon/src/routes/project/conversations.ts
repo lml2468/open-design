@@ -377,11 +377,11 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
       incomingStatus !== stored.runStatus;
     const daemonRun = stored.runId ? design.runs.get(stored.runId) : null;
     const daemonKnown = daemonRun !== null && daemonRun !== undefined;
-    // After a same-run resume the stored row is non-terminal, so a terminal
-    // `failed` snapshot may be a stale copy from BEFORE the resume. Accept it
+    // During a same-run post-tool recovery the stored row is non-terminal, so
+    // a terminal `failed` snapshot may be a stale copy from before recovery. Accept it
     // only when the daemon confirms the run genuinely failed (it writes that
     // via reconcileAssistantMessageOnRunEnd); otherwise discard it so the
-    // resumed run does not relatch the old failure (nettee on #6418).
+    // the recovered run does not relatch the old failure (nettee on #6418).
     // Terminal-write arbitration across ALL client terminal statuses, keyed on
     // what the daemon positively knows (nettee 8/10 on #6418):
     //   1. Daemon has no record of the run (mock/client-owned row) -> the

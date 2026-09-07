@@ -584,12 +584,6 @@ function durableRunState(run) {
     ...(typeof run.retryAttemptCount === 'number'
       ? { retryAttemptCount: run.retryAttemptCount }
       : {}),
-    ...(typeof run.manualResumeAttemptCount === 'number'
-      ? { manualResumeAttemptCount: run.manualResumeAttemptCount }
-      : {}),
-    ...(typeof run.rechargeWaitDurationMs === 'number'
-      ? { rechargeWaitDurationMs: run.rechargeWaitDurationMs }
-      : {}),
     ...(typeof run.artifactOriginStatus === 'string'
       ? { artifactOriginStatus: run.artifactOriginStatus }
       : {}),
@@ -972,8 +966,6 @@ export function createChatRunService({
       eventsLogClosed: false,
       cleanupGeneration: 0,
       cumulativeRetryAttemptCount: 0,
-      manualResumeAttemptCount: 0,
-      rechargeWaitDurationMs: 0,
     };
     if (
       meta.odNextTaskInputSnapshot
@@ -1037,7 +1029,6 @@ export function createChatRunService({
     run.terminalLifecycle = terminalLifecycleSnapshot({
       cumulativeRetryAttemptCount: run.cumulativeRetryAttemptCount,
       retryAttemptCount: run.retryAttemptCount,
-      manualResumeAttemptCount: run.manualResumeAttemptCount,
       runtimeGenerationId: run.runtimeGenerationId,
       cancelOrigin: run.cancelOrigin ?? null,
       terminalTrigger: run.terminalTrigger ?? null,
@@ -1054,7 +1045,6 @@ export function createChatRunService({
       run.terminalLifecycle = terminalLifecycleSnapshot({
         cumulativeRetryAttemptCount: run.cumulativeRetryAttemptCount,
         retryAttemptCount: run.retryAttemptCount,
-        manualResumeAttemptCount: run.manualResumeAttemptCount,
         runtimeGenerationId: run.runtimeGenerationId,
         cancelOrigin: run.cancelOrigin ?? null,
         terminalTrigger: run.terminalTrigger ?? null,
@@ -1185,79 +1175,6 @@ export function createChatRunService({
     }, ttlMs).unref?.();
   };
 
-  const prepareRestart = (run) => {
-    if (!run || !TERMINAL_RUN_STATUSES.has(run.status)) return null;
-    const resumedAt = Date.now();
-    const rechargeWaitDurationMs = Math.max(0, resumedAt - run.updatedAt);
-    // Invalidate the cleanup timer scheduled for the prior terminal attempt.
-    run.cleanupGeneration = (run.cleanupGeneration ?? 0) + 1;
-    run.status = 'queued';
-    run.updatedAt = resumedAt;
-    run.terminalAt = null;
-    run.exitCode = null;
-    run.signal = null;
-    run.error = null;
-    run.errorCode = null;
-    run.failureCategory = null;
-    run.failureDetail = null;
-    run.failureAction = null;
-    run.resumable = false;
-    run.cancelRequested = false;
-    run.cancelOrigin = null;
-    run.terminalTrigger = null;
-    run.runtimeFailureObservedBeforeCancellation = false;
-    run.retryRestartTimer = null;
-    run.cumulativeRetryAttemptCount = (run.cumulativeRetryAttemptCount ?? 0)
-      + (run.retryAttemptCount ?? 0);
-    run.retryAttemptCount = 0;
-    run.retryFinalResult = undefined;
-    run.retrySuppressedReason = undefined;
-    run.retryOriginFailure = null;
-    run.retryOriginErrorCode = null;
-    run.artifactCount = undefined;
-    run.artifactPaths = undefined;
-    run.artifactOutcome = undefined;
-    run.deliverableValid = undefined;
-    run.deliverableValidation = undefined;
-    run.deliverableEntryFile = undefined;
-    run.deliverableArtifactKind = undefined;
-    run.endedWithUnfinishedWork = false;
-    run.child = null;
-    run.acpSession = null;
-    run.childPid = null;
-    run.processGroupId = null;
-    run.childExitObservedAt = null;
-    run.stdinOpen = false;
-    run.eventsLogStream = null;
-    run.eventsLogClosed = false;
-    run.runtimeGenerationId = null;
-    run.terminalIntegrity = null;
-    run.terminalLifecycle = undefined;
-    // A resumed attempt is a fresh execution, so it must not inherit the prior
-    // attempt's lifecycle marks. Keeping them makes every phase boundary
-    // measure from before the recharge pause, putting the wait time inside the
-    // new attempt's model-active window. Only the logical run start survives,
-    // so queue time is still measured from when the user asked for the run.
-    run.analyticsTelemetry = {
-      ...(run.analyticsTelemetry?.startRequestedAt !== undefined
-        ? { startRequestedAt: run.analyticsTelemetry.startRequestedAt }
-        : {}),
-      attemptStartedAt: resumedAt,
-      attemptIndex: 0,
-    };
-    run.manualResumeAttemptCount = (run.manualResumeAttemptCount ?? 0) + 1;
-    run.rechargeWaitDurationMs =
-      (run.rechargeWaitDurationMs ?? 0) + rechargeWaitDurationMs;
-    persistState(run);
-    emit(run, 'run_resume_attempted', {
-      runId: run.id,
-      attempt: run.manualResumeAttemptCount,
-      reason: 'recharge',
-      rechargeWaitDurationMs: run.rechargeWaitDurationMs,
-    });
-    return run;
-  };
-
   // Lazily open the per-run event log on first emit. The directory may
   // not exist yet; mkdir is recursive so it's safe to call repeatedly.
   // Disk failures are best-effort — if we can't write, the run still
@@ -1375,12 +1292,6 @@ export function createChatRunService({
     ...(typeof run.clientType === 'string' ? { clientType: run.clientType } : {}),
     ...(run.externalPluginAnalytics
       ? { externalPluginAnalytics: run.externalPluginAnalytics }
-      : {}),
-    ...(typeof run.manualResumeAttemptCount === 'number'
-      ? { manualResumeAttemptCount: run.manualResumeAttemptCount }
-      : {}),
-    ...(typeof run.rechargeWaitDurationMs === 'number'
-      ? { rechargeWaitDurationMs: run.rechargeWaitDurationMs }
       : {}),
     ...(typeof run.artifactOriginStatus === 'string'
       ? { artifactOriginStatus: run.artifactOriginStatus }
@@ -1519,7 +1430,6 @@ export function createChatRunService({
         lifecycle: terminalLifecycleSnapshot({
           cumulativeRetryAttemptCount: run.cumulativeRetryAttemptCount,
           retryAttemptCount: run.retryAttemptCount,
-          manualResumeAttemptCount: run.manualResumeAttemptCount,
           runtimeGenerationId: run.runtimeGenerationId,
           cancelOrigin: run.cancelOrigin ?? null,
           terminalTrigger: run.terminalTrigger ?? null,
@@ -2046,7 +1956,6 @@ export function createChatRunService({
   return {
     create,
     createOrReuse,
-    prepareRestart,
     start,
     get,
     findByPluginWorkflowId,

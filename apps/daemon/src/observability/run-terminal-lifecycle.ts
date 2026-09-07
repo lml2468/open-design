@@ -29,11 +29,9 @@ function normalizedAttemptCount(value: unknown): number {
 export function runAttemptForTerminalLifecycle(input: {
   cumulativeRetryAttemptCount?: unknown;
   retryAttemptCount?: unknown;
-  manualResumeAttemptCount?: unknown;
 }): number {
   return normalizedAttemptCount(input.cumulativeRetryAttemptCount)
-    + normalizedAttemptCount(input.retryAttemptCount)
-    + normalizedAttemptCount(input.manualResumeAttemptCount);
+    + normalizedAttemptCount(input.retryAttemptCount);
 }
 
 export function boundedRuntimeGenerationId(value: unknown): string | null {
@@ -81,7 +79,6 @@ export function terminalPersistenceErrorType(
 export function terminalLifecycleSnapshot(input: {
   cumulativeRetryAttemptCount?: unknown;
   retryAttemptCount?: unknown;
-  manualResumeAttemptCount?: unknown;
   runtimeGenerationId?: unknown;
   cancelOrigin?: TrackingRunCancelOrigin | null;
   terminalTrigger?: TrackingRunTerminalTrigger | null;

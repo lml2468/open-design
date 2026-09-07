@@ -407,7 +407,6 @@ export interface McpRunCreateRequest {
   pluginInputs?: Record<string, unknown>;
   mediaExecution?: MediaExecutionPolicy;
   toolBundle?: RunScopedToolBundle;
-  resume?: boolean;
   analyticsHints?: ChatAnalyticsHints;
 }
 

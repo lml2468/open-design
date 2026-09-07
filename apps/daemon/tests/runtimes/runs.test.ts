@@ -412,149 +412,6 @@ describe('chat run service shutdown', () => {
     });
   });
 
-  it('clears the prior attempt\'s lifecycle marks when reopening for recharge', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-08-20T00:00:00.000Z'));
-    const runs = createRuns();
-    const run = runs.create({
-      projectId: 'project-1',
-      conversationId: 'conv-1',
-      clientRequestId: 'brief-recharge-marks',
-      requestFingerprint: 'same-logical-request',
-      agentId: 'amr',
-    });
-    const runStartedAt = Date.now();
-    (run as any).analyticsTelemetry = {
-      startRequestedAt: runStartedAt,
-      startChatRunStartedAt: runStartedAt + 10,
-      processSpawnedAt: runStartedAt + 100,
-      stdinWriteEndAt: runStartedAt + 150,
-      firstModelEventAt: runStartedAt + 400,
-      firstModelEventType: 'text_delta',
-      firstTokenAt: runStartedAt + 400,
-      attemptStartedAt: runStartedAt,
-      attemptIndex: 0,
-    };
-    (run as any).failureAction = 'recharge';
-    runs.finish(run, 'failed', 1, null);
-    vi.advanceTimersByTime(600_000);
-
-    runs.prepareRestart(run);
-
-    // The resumed attempt is a fresh execution. Keeping attempt 1's marks
-    // makes every phase boundary measure from before the recharge pause, so
-    // the wait time lands inside the new attempt's model-active window.
-    const telemetry = (run as any).analyticsTelemetry ?? {};
-    expect(telemetry.firstModelEventAt).toBeUndefined();
-    expect(telemetry.firstTokenAt).toBeUndefined();
-    expect(telemetry.stdinWriteEndAt).toBeUndefined();
-    expect(telemetry.processSpawnedAt).toBeUndefined();
-    // The logical run start survives -- queue time is still measured from
-    // when the user asked for this run, not from the resume.
-    expect(telemetry.startRequestedAt).toBe(runStartedAt);
-    // The attempt boundary moves to the resume, which is what scopes
-    // outstanding tool spans to the current attempt.
-    expect(telemetry.attemptStartedAt).toBe(runStartedAt + 600_000);
-  });
-
-  it('reopens the same logical run for an explicit recharge recovery attempt', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-27T00:00:00.000Z'));
-    const runs = createRuns();
-    const run = runs.create({
-      projectId: 'project-1',
-      conversationId: 'conv-1',
-      clientRequestId: 'brief-1-cloud',
-      requestFingerprint: 'same-logical-request',
-      agentId: 'amr',
-    });
-    (run as any).failureAction = 'recharge';
-    runs.emit(run, 'error', {
-      error: {
-        code: 'AMR_INSUFFICIENT_BALANCE',
-        message: 'insufficient balance',
-        retryable: false,
-      },
-    });
-    runs.finish(run, 'failed', 1, null);
-    vi.advanceTimersByTime(12_345);
-
-    const resumed = runs.prepareRestart(run);
-
-    expect(resumed).toBe(run);
-    expect(runs.get(run.id)).toBe(run);
-    expect(runs.statusBody(run)).toMatchObject({
-      id: run.id,
-      clientRequestId: 'brief-1-cloud',
-      status: 'queued',
-      error: null,
-      errorCode: null,
-      failureAction: null,
-    });
-    expect(run.manualResumeAttemptCount).toBe(1);
-    expect(run.rechargeWaitDurationMs).toBe(12_345);
-    expect(run.events.at(-1)).toMatchObject({
-      event: 'run_resume_attempted',
-      data: {
-        runId: run.id,
-        attempt: 1,
-        reason: 'recharge',
-        rechargeWaitDurationMs: 12_345,
-      },
-    });
-    vi.useRealTimers();
-  });
-
-  it('starts resumed terminal delivery from a fresh attempt-scoped lifecycle', () => {
-    const runs = createRuns();
-    const run = runs.create({
-      projectId: 'project-1',
-      conversationId: 'conv-1',
-      agentId: 'amr',
-    }) as any;
-    run.runtimeGenerationId = '0f2d4d9e-f034-4ed5-8330-314bd1d525cc';
-
-    runs.finish(run, 'failed', 1, null);
-    runs.beginAnalyticsDelivery(run);
-    runs.finalizeAnalyticsDelivery(run, {
-      status: 'queued',
-      acknowledgement: 'local_buffer',
-      errorType: null,
-    });
-    runs.finish(run, 'succeeded', 0, null);
-    expect(runs.statusBody(run).terminalLifecycle).toMatchObject({
-      posthogDelivery: { status: 'queued', attemptCount: 1 },
-      lateTerminalCount: 1,
-    });
-
-    runs.prepareRestart(run);
-    expect(run.runtimeGenerationId).toBeNull();
-    expect(runs.statusBody(run)).not.toHaveProperty('terminalLifecycle');
-
-    runs.finish(run, 'succeeded', 0, null);
-    expect(runs.statusBody(run).terminalLifecycle).toMatchObject({
-      runAttempt: 1,
-      runtimeGenerationId: null,
-      terminalIntegrity: 'canonical',
-      posthogDelivery: {
-        status: 'unknown',
-        acknowledgement: 'unknown',
-        attemptCount: 0,
-        errorType: null,
-      },
-      duplicateTerminalCount: 0,
-      lateTerminalCount: 0,
-    });
-
-    runs.beginAnalyticsDelivery(run);
-    expect(runs.statusBody(run).terminalLifecycle.posthogDelivery).toMatchObject({
-      status: 'in_flight',
-      acknowledgement: 'none',
-      attemptCount: 1,
-      errorType: null,
-    });
-  });
-
   it('keeps the first accepted plugin attribution immutable across request reuse', () => {
     const runs = createRuns();
     const request = {
@@ -1512,16 +1369,15 @@ describe('run event log persistence', () => {
     expect(failedDeliveryState.telemetryDelivery).not.toHaveProperty('finalizedAt');
   });
 
-  it('persists attempt-scoped terminal lifecycle facts before publishing the terminal event', () => {
+  it('persists retry-scoped terminal lifecycle facts before publishing the terminal event', () => {
     const runs = createRunsWithLog(tmpDir);
     const run = runs.create({
       projectId: 'p1',
       conversationId: 'c1',
-      agentId: 'amr',
+      agentId: 'kilo',
     });
     Object.assign(run, {
       retryAttemptCount: 1,
-      manualResumeAttemptCount: 1,
       terminalTrigger: 'inactivity_watchdog',
     });
 
@@ -1532,7 +1388,7 @@ describe('run event log persistence', () => {
     );
     expect(state.terminalLifecycle).toEqual({
       version: 1,
-      runAttempt: 2,
+      runAttempt: 1,
       runtimeGenerationId: null,
       terminationOrigin: 'watchdog_cleanup',
       terminalIntegrity: 'canonical',
@@ -1551,39 +1407,6 @@ describe('run event log persistence', () => {
       lateTerminalCount: 0,
     });
     expect(runs.statusBody(run).terminalLifecycle).toEqual(state.terminalLifecycle);
-  });
-
-  it('advances the durable terminal attempt after an automatic retry and manual resume', () => {
-    const runs = createRunsWithLog(tmpDir);
-    const run = runs.create({
-      projectId: 'p1',
-      conversationId: 'c1',
-      agentId: 'amr',
-    });
-    Object.assign(run, { retryAttemptCount: 1 });
-
-    runs.finish(run, 'failed', 1, null);
-    expect(runs.statusBody(run).terminalLifecycle?.runAttempt).toBe(1);
-
-    const runsAfterRestart = createRunsWithLog(tmpDir);
-    const runAfterRestart = runsAfterRestart.get(run.id);
-    expect(runAfterRestart).toMatchObject({ retryAttemptCount: 1 });
-
-    runsAfterRestart.prepareRestart(runAfterRestart);
-    const resumedState = JSON.parse(
-      fs.readFileSync(path.join(tmpDir, run.id, 'state.json'), 'utf8'),
-    );
-    expect(resumedState).toMatchObject({
-      status: 'queued',
-      cumulativeRetryAttemptCount: 1,
-      manualResumeAttemptCount: 1,
-    });
-
-    runsAfterRestart.finish(runAfterRestart, 'succeeded', 0, null);
-    const terminalState = JSON.parse(
-      fs.readFileSync(path.join(tmpDir, run.id, 'state.json'), 'utf8'),
-    );
-    expect(terminalState.terminalLifecycle.runAttempt).toBe(2);
   });
 
   it('retains a bounded terminal persistence failure when the durable terminal write fails', () => {

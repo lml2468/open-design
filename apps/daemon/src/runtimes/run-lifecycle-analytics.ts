@@ -201,12 +201,12 @@ function foldEventIntoRunAdmissionEvidence(
 ): void {
   const event = record.event;
   const data = isRecord(record.data) ? record.data : null;
-  if (event === 'run_retry_attempted' || event === 'run_resume_attempted') {
+  if (event === 'run_retry_attempted') {
     ledger.admissionEvidence = emptyRunAdmissionEvidence();
     return;
   }
   if (event === 'start') {
-    const acp = data?.agentId === 'amr' || data?.streamFormat === 'acp-json-rpc';
+    const acp = data?.streamFormat === 'acp-json-rpc';
     ledger.admissionEvidence = {
       attemptStarted: true,
       acp,

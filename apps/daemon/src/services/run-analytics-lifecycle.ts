@@ -278,9 +278,6 @@ export interface RunAnalyticsFacts {
    * replay both read.
    */
   rolloutDecision?: OdNextRolloutDecision | null;
-  creationKind?: 'created' | 'reused';
-  resumed?: boolean;
-  attributionMismatch?: boolean;
 }
 
 /** The facts plus the Run they describe. */
@@ -359,9 +356,9 @@ export function createRunAnalyticsLifecycle(
         && typeof (run.analyticsRecovery as { context?: unknown }).context === 'object'
           ? ((run.analyticsRecovery as { context: AnalyticsContext }).context)
           : null;
-      // Source/identity is first-write immutable for a logical run. A retry or
-      // recharge resume cannot relabel a prior ordinary request as Plugin (or
-      // vice versa) by changing analytics-only headers.
+      // Source/identity is first-write immutable for a logical run. An
+      // idempotent request cannot relabel a prior ordinary request as Plugin
+      // (or vice versa) by changing analytics-only headers.
       const analyticsContext =
         run.analyticsContext
         ?? recoveredAnalyticsContext
@@ -659,14 +656,6 @@ export function createRunAnalyticsLifecycle(
                   run.externalPluginAnalytics.briefState,
                 generation_slo_window_ms:
                   run.externalPluginAnalytics.generationSloWindowMs,
-                deduplicated: input.creationKind === 'reused',
-                resume: input.resumed === true,
-                attempt_count: (run.manualResumeAttemptCount ?? 0) + 1,
-                recharge_wait_duration_ms:
-                  run.rechargeWaitDurationMs ?? 0,
-                ...(input.attributionMismatch
-                  ? { source_metadata_mismatch: true }
-                  : {}),
               }
             : {}),
         };
@@ -1016,10 +1005,6 @@ export function createRunAnalyticsLifecycle(
                     ...(run.artifactVersionId
                       ? { artifact_version_id: run.artifactVersionId }
                       : {}),
-                    resume: (run.manualResumeAttemptCount ?? 0) > 0,
-                    attempt_count: (run.manualResumeAttemptCount ?? 0) + 1,
-                    recharge_wait_duration_ms:
-                      run.rechargeWaitDurationMs ?? 0,
                   }
                 : {}),
               ...(artifactsCreated !== undefined ? { artifacts_created: artifactsCreated } : {}),
