@@ -96,9 +96,6 @@ import {
   listProjectRuns,
 } from './providers/daemon';
 import { CollabDemoView } from './collab/CollabDemoView';
-import {
-  WorkspaceMemberDirectoryPreloader,
-} from './collab/WorkspaceMemberDirectoryPreloader';
 import { useWorkspaceInvalidation } from './collab/workspace-events';
 import { useWorkspaceSnapshotActivation } from './collab/workspace-snapshot-activation';
 import {
@@ -523,7 +520,6 @@ export function App() {
   return (
     <MotionConfig reducedMotion="user">
       <IframeKeepAliveProvider>
-        <WorkspaceMemberDirectoryPreloader />
         <AppInner />
       </IframeKeepAliveProvider>
     </MotionConfig>
