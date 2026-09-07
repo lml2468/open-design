@@ -5,7 +5,6 @@ import { basename } from 'node:path';
 import { runDaemonCliStartup, startDaemonRuntime } from './daemon-startup.js';
 import { runLiveArtifactsMcpServer } from './mcp-live-artifacts-server.js';
 import { runArtifactsCli } from './artifacts-cli.js';
-import { runResource } from './resource-cli.js';
 import { runProjectHandoff } from './handoff-cli.js';
 import { runConnectorsToolCli } from './tools-connectors-cli.js';
 import { runDesignSystemsToolCli } from './tools-design-systems-cli.js';
@@ -410,7 +409,6 @@ const SUBCOMMAND_MAP = {
   skill: runSkills,
   skills: runSkills,
   'design-systems': runDesignSystems,
-  resource: runResource,
   craft: runCraft,
   diagnostics: runDiagnostics,
   export: runExport,
@@ -846,8 +844,8 @@ if (first && SUBCOMMAND_MAP[first]) {
   const idx = argv.indexOf(first);
   const rest = [...argv.slice(0, idx), ...argv.slice(idx + 1)];
   await SUBCOMMAND_MAP[first](rest);
-  // Respect a non-zero exit code a handler set via process.exitCode (e.g. a
-  // failed `od resource get`); default to 0 when it left it unset.
+  // Respect a non-zero exit code a handler set via process.exitCode; default
+  // to 0 when it left it unset.
   process.exit(process.exitCode ?? 0);
 }
 
