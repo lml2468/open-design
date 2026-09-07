@@ -170,13 +170,9 @@ describe('i18n locales', () => {
     }
   });
 
-  it('keeps Chinese workspace wallet and pre-run gate copy on the 额度 terminology', () => {
+  it('keeps Chinese workspace wallet and run-error copy on the 额度 terminology', () => {
     const keys: Array<keyof Dict> = [
       'chat.amrError.balanceMessage',
-      'chat.amrBalanceGate.message',
-      'chat.amrBalanceGate.watchingWallet',
-      'chat.amrLowBalance.title',
-      'chat.amrLowBalance.message',
       'chat.runError.title.balance',
       'entry.creditsAria',
       'entry.creditsAriaWithBalance',

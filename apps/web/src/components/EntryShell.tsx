@@ -25,7 +25,6 @@ import {
 import {
   automaticStrategyTaskProfileForProjectMetadata,
   defaultScenarioPluginIdForProjectMetadata,
-  type AmrWalletSnapshot,
   type ChatSessionMode,
   type ConnectorDetail,
   type CreateProjectExampleReference,
@@ -112,16 +111,7 @@ import { LibrarySection } from './LibrarySection';
 import { UpdaterPopup } from './UpdaterPopup';
 import { WhatsNewPopup } from './WhatsNewPopup';
 import { DeepSeekHarnessSetupDialog } from './DeepSeekHarnessSetupDialog';
-import { AmrBalanceDialog } from './AmrBalanceDialog';
 import { installDeepSeekHarnessCompanion } from '../providers/agent-companion';
-import { AmrLowBalanceDialog, type AmrLowBalanceDecision } from './AmrLowBalanceDialog';
-import {
-  amrBalanceGateScopeForWorkspaceContext,
-  checkAmrBalanceGate,
-  retryUnavailableAmrBalanceGate,
-  type AmrBalanceGateScope,
-} from '../runtime/amr-balance-gate';
-import { isPaidAmrPlan, resolveAmrPlan } from '../runtime/amr-low-balance-plan';
 import { HomeView, seedHomeComposerPrompt } from './HomeView';
 import { entryStrategyRoutingFields } from './entry-strategy-routing';
 import { EntryBlankState } from './EntryBlankState';
@@ -140,7 +130,6 @@ import { Button } from '@open-design/components';
 import {
   defaultAgentModelId,
   effectiveAgentModelChoice,
-  effectiveAgentModelId,
 } from './agentModelSelection';
 import { AgentIcon } from './AgentIcon';
 import { CommunityView } from './CommunityView';
@@ -336,8 +325,6 @@ type EntryCreateProjectInput = Omit<CreateInput, 'metadata'> & {
   initialRunContext?: RunContextSelection | null;
   conversationMode?: ChatSessionMode;
   autoSendFirstMessage?: boolean;
-  /** Exact workspace/member authority checked by the Home AMR preflight. */
-  amrGatePrecheckWitness?: AmrBalanceGateScope;
   requestId?: string;
   pendingFiles?: File[];
   userWorkingDirToken?: string;
@@ -1060,28 +1047,6 @@ export function EntryShell({
     }
   }, [workspaceLoading, isWorkspaceOnlyView, hasWorkspaceContext]);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
-  // Hard block from the pre-run balance gate on a home submit (empty wallet
-  // or signed out); non-null renders the AmrBalanceDialog on the home page —
-  // the project is never created, so the composer draft stays put. The dialog
-  // resolves the promise the submit handler is awaiting: 'retry' (sign-in
-  // completed / recharge landed) re-runs the gate and continues the very same
-  // create-and-run; 'dismiss' hands the composer back to the user.
-  const [amrBalanceGateBlock, setAmrBalanceGateBlock] = useState<
-    {
-      reason: 'insufficient' | 'signed_out';
-      snapshot: AmrWalletSnapshot;
-      resolve: (decision: 'retry' | 'dismiss') => void;
-    } | null
-  >(null);
-  // Soft low-balance warning holding a pending home submit: the dialog
-  // resolves the promise the submit handler is awaiting ('proceed' continues
-  // the very same create-and-run).
-  const [amrLowBalanceWarn, setAmrLowBalanceWarn] = useState<
-    {
-      snapshot: AmrWalletSnapshot;
-      resolve: (decision: AmrLowBalanceDecision) => void;
-    } | null
-  >(null);
   // The entry nav rail is collapsed by default (Manus-style) so the entry
   // view opens clean and full-width; the panel toggle in the topbar opens it
   // as an overlay that dismisses on selection / backdrop click / Escape.
@@ -1332,86 +1297,6 @@ export function EntryShell({
       navigate({ kind: 'home', view: 'onboarding' }, { replace: true });
       return 'blocked' as const;
     }
-    // OpenDesign Cloud pre-run balance gate: hard blocks (empty wallet or
-    // signed out) and the soft low-balance reminder both fire BEFORE the
-    // project is created, so the dialog appears right here on the home page
-    // and the composer keeps its draft. In-project sends are gated separately
-    // in ProjectView.handleSend.
-    let amrGatePrecheckWitness: AmrBalanceGateScope | undefined;
-    let amrGatePrecheckPassed = false;
-    if (config.mode === 'daemon' && config.agentId === 'amr') {
-      const amrModelId = effectiveAgentModelId(
-        agents.find((agent) => agent.id === 'amr'),
-        config.agentModels?.amr,
-      );
-      // PRODUCT INVARIANT: Send never starts Workspace identity discovery.
-      // Billing consumes the shell's current in-memory snapshot; if it has not
-      // arrived yet, the existing account-scoped gate is used. The daemon's
-      // ordinary project-create route is local and does not need live Workspace
-      // authority. Account/scope generation checks below only prevent a result
-      // from being reused after the user switches identity while the balance
-      // request or dialog is in flight.
-      for (let scopeAttempt = 0; scopeAttempt < 2; scopeAttempt += 1) {
-        const gateAccountGeneration = currentWorkspaceAccountGeneration();
-        const gateWorkspaceState = workspaceContextStateRef.current;
-        const gateWorkspaceContext = gateWorkspaceState.failure === 'unsupported'
-          ? null
-          : workspaceResourceReadContext(gateWorkspaceState);
-        const gateWorkspaceIdentity = workspaceIdentityCacheKey(gateWorkspaceContext);
-        const gateScope = amrBalanceGateScopeForWorkspaceContext(gateWorkspaceContext);
-        let gate = await retryUnavailableAmrBalanceGate(
-          () => checkAmrBalanceGate(gateScope, amrModelId),
-        );
-        // Hard blocks hold THIS submit open: the dialog resolves 'retry' when
-        // its blocking condition clears (sign-in completed, recharge landed)
-        // and the gate re-runs, so the task auto-continues through the normal
-        // accept path. Still hard after the re-check (e.g. signed in but the
-        // wallet is empty) → the dialog re-shows with the fresh snapshot.
-        while (gate.kind === 'hard') {
-          const blocked = gate;
-          const decision = await new Promise<'retry' | 'dismiss'>((resolve) => {
-            setAmrBalanceGateBlock({
-              reason: blocked.reason,
-              snapshot: blocked.snapshot,
-              resolve,
-            });
-          });
-          setAmrBalanceGateBlock(null);
-          if (decision === 'dismiss') return 'blocked' as const;
-          gate = await retryUnavailableAmrBalanceGate(
-            () => checkAmrBalanceGate(gateScope, amrModelId),
-          );
-        }
-        if (gate.kind === 'unavailable') return false;
-        if (gate.kind === 'soft') {
-          // Hold THIS submit while the reminder waits for a decision; 'proceed'
-          // resumes the same create-and-run below, so HomeView's normal accept
-          // path (draft clearing, context consumption) still applies.
-          const plan = await resolveAmrPlan(gate.snapshot);
-          if (isPaidAmrPlan(plan)) {
-            const decision = await new Promise<AmrLowBalanceDecision>((resolve) => {
-              setAmrLowBalanceWarn({ snapshot: gate.snapshot, resolve });
-            });
-            setAmrLowBalanceWarn(null);
-            if (decision !== 'proceed') return 'blocked' as const;
-          }
-        }
-        if (
-          currentWorkspaceAccountGeneration() !== gateAccountGeneration
-          || workspaceIdentityCacheKey(
-            workspaceContextStateRef.current.failure === 'unsupported'
-              ? null
-              : workspaceResourceReadContext(workspaceContextStateRef.current),
-          ) !== gateWorkspaceIdentity
-        ) {
-          continue;
-        }
-        amrGatePrecheckWitness = gateScope;
-        amrGatePrecheckPassed = true;
-        break;
-      }
-      if (!amrGatePrecheckPassed) return false;
-    }
     const summarizedName = summarizeProjectNameFromPrompt(payload.prompt);
     const head = payload.prompt.trim().split(/\s+/).slice(0, 8).join(' ');
     const firstAttachmentName = payload.attachments?.[0]?.name ?? '';
@@ -1490,7 +1375,6 @@ export function EntryShell({
       // not need the desktop main-process trust token that baseDir imports
       // require for write access.
       autoSendFirstMessage: true,
-      ...(amrGatePrecheckWitness ? { amrGatePrecheckWitness } : {}),
     };
     const create = () => Promise.resolve(onCreateProject(createInput));
     try {
@@ -1658,28 +1542,6 @@ export function EntryShell({
               lives in the rail footer, and everything below is fixed-position
               or portalled so it occupies no layout space here. */}
           <WhatsNewPopup active={view === 'home'} />
-          {amrBalanceGateBlock ? (
-            <AmrBalanceDialog
-              reason={amrBalanceGateBlock.reason}
-              balanceUsd={amrBalanceGateBlock.snapshot.balanceUsd}
-              profile={amrBalanceGateBlock.snapshot.profile}
-              entrySource="home_balance_gate_upgrade"
-              metricsConsent={config.telemetry?.metrics === true}
-              installationId={config.installationId}
-              onClose={() => amrBalanceGateBlock.resolve('dismiss')}
-              onResolved={() => amrBalanceGateBlock.resolve('retry')}
-            />
-          ) : null}
-          {amrLowBalanceWarn ? (
-            <AmrLowBalanceDialog
-              balanceUsd={amrLowBalanceWarn.snapshot.balanceUsd}
-              profile={amrLowBalanceWarn.snapshot.profile}
-              entrySource="home_low_balance_warn_recharge"
-              metricsConsent={config.telemetry?.metrics === true}
-              installationId={config.installationId}
-              onDecision={amrLowBalanceWarn.resolve}
-            />
-          ) : null}
           <div
             className={[
               'entry-main__inner',

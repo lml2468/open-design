@@ -171,11 +171,6 @@ import { randomUUID } from './utils/uuid';
 import { summarizeProjectNameFromPrompt } from './utils/projectName';
 import { armCompletionFeedbackOnFirstGesture } from './utils/notifications';
 import {
-  amrBalanceGateScopeForWorkspaceContext,
-  amrBalanceGateScopesMatch,
-  type AmrBalanceGateScope,
-} from './runtime/amr-balance-gate';
-import {
   AMR_AUTH_RETRY_CONTINUATION_TTL_MS,
   routeStillMatchesAmrAuthRetryContinuation,
   type AmrAuthRetryContinuation,
@@ -253,8 +248,6 @@ type AppCreateProjectInput = Omit<CreateInput, 'metadata'> & {
   initialRunContext?: RunContextSelection | null;
   conversationMode?: ChatSessionMode;
   autoSendFirstMessage?: boolean;
-  /** Exact workspace/member authority checked by the Home AMR preflight. */
-  amrGatePrecheckWitness?: AmrBalanceGateScope;
   requestId?: string;
   pendingFiles?: File[];
   userWorkingDirToken?: string;
@@ -2918,16 +2911,7 @@ function AppInner() {
         createWorkspaceContext = createWorkspaceState.failure === 'unsupported'
           ? null
           : workspaceResourceReadContext(createWorkspaceState);
-        if (
-          input.amrGatePrecheckWitness &&
-          !amrBalanceGateScopesMatch(
-            input.amrGatePrecheckWitness,
-            amrBalanceGateScopeForWorkspaceContext(createWorkspaceContext),
-          )
-        ) {
-          throw new Error('AMR_WORKSPACE_GATE_STALE');
-        }
-        // Home already accepted the run (including its balance gate), so move
+        // Home already accepted the run, so move
         // into the project frame immediately. The id is client-owned and the
         // daemon already accepts that exact id for idempotent retries. Keep the
         // real ProjectView unmounted until the response settles; the pending
@@ -3178,19 +3162,6 @@ function AppInner() {
                 `od:auto-send-prompt:${result.project.id}`,
               );
             }
-            if (input.amrGatePrecheckWitness) {
-              window.sessionStorage.setItem(
-                `od:auto-send-amr-gate-witness:${result.project.id}`,
-                JSON.stringify(input.amrGatePrecheckWitness),
-              );
-            } else {
-              window.sessionStorage.removeItem(
-                `od:auto-send-amr-gate-witness:${result.project.id}`,
-              );
-            }
-            window.sessionStorage.removeItem(
-              `od:auto-send-amr-gate-ok:${result.project.id}`,
-            );
             if (firstMessageAttachments.length > 0) {
               window.sessionStorage.setItem(
                 `od:auto-send-attachments:${result.project.id}`,

@@ -51,7 +51,6 @@ const entryViewCapture = vi.hoisted(() => ({
   firstRefreshAgents: null as null | ((
     options?: { throwOnError?: boolean; agentCliEnv?: AppConfig['agentCliEnv'] },
   ) => unknown),
-  activeSignOut: null as null | (() => void | Promise<void>),
 }));
 
 const settingsCapture = vi.hoisted(() => ({
@@ -82,7 +81,6 @@ vi.mock('../../src/components/EntryView', () => ({
     onAgentChange,
     onCompleteOnboarding,
     onRefreshAgents,
-    onSignedOut,
   }: {
     config: AppConfig;
     onAgentChange: (agentId: string) => void;
@@ -90,12 +88,10 @@ vi.mock('../../src/components/EntryView', () => ({
     onRefreshAgents: (
       options?: { throwOnError?: boolean; agentCliEnv?: AppConfig['agentCliEnv'] },
     ) => unknown;
-    onSignedOut: () => void | Promise<void>;
   }) => {
     entryViewCapture.firstAgentChange ??= onAgentChange;
     entryViewCapture.firstCompleteOnboarding ??= onCompleteOnboarding;
     entryViewCapture.firstRefreshAgents ??= onRefreshAgents;
-    entryViewCapture.activeSignOut = onSignedOut;
     return (
       <>
         <div data-testid="onboarding-completed">{String(config.onboardingCompleted)}</div>
@@ -260,7 +256,6 @@ describe('App onboarding completion persistence', () => {
     entryViewCapture.firstAgentChange = null;
     entryViewCapture.firstCompleteOnboarding = null;
     entryViewCapture.firstRefreshAgents = null;
-    entryViewCapture.activeSignOut = null;
     settingsCapture.resetOnboarding = null;
     mockedDaemonIsLive.mockResolvedValue(true);
     mockedFetchAgentsStream.mockResolvedValue([]);
@@ -367,59 +362,6 @@ describe('App onboarding completion persistence', () => {
       designSystemId: 'keep-design-system',
       telemetry: { metrics: false, content: false },
     });
-  });
-
-  it('persists the Cloud reset without discarding BYOK and returns to onboarding', async () => {
-    mockedLoadConfig.mockReturnValue({
-      ...returningUserConfig(),
-      mode: 'api',
-      apiKey: 'persisted-key',
-      apiProtocol: 'openai',
-      baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-5',
-      apiProviderBaseUrl: 'https://api.openai.com/v1',
-      apiProtocolConfigs: {
-        openai: {
-          apiKey: 'persisted-key',
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5',
-        },
-      },
-    });
-    mockedFetchDaemonConfig.mockResolvedValue({ onboardingCompleted: true });
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(entryViewCapture.activeSignOut).toEqual(expect.any(Function));
-    });
-    await act(async () => {
-      await entryViewCapture.activeSignOut?.();
-    });
-
-    expect(screen.getByTestId('onboarding-completed').textContent).toBe('false');
-    expect(screen.getByTestId('agent-id').textContent).toBe('none');
-    expect(screen.getByTestId('api-key').textContent).toBe('persisted-key');
-    expect(screen.getByTestId('api-model').textContent).toBe('gpt-5');
-    expect(mockedSyncConfigToDaemon).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        onboardingCompleted: false,
-        mode: 'daemon',
-        agentId: null,
-        apiKey: 'persisted-key',
-        model: 'gpt-5',
-        agentModels: {},
-        apiProtocolConfigs: {
-          openai: {
-            apiKey: 'persisted-key',
-            baseUrl: 'https://api.openai.com/v1',
-            model: 'gpt-5',
-          },
-        },
-      }),
-      { allowOnboardingReset: true },
-    );
-    expect(await navigatedToOnboarding()).toBe(true);
   });
 
   it('keeps a completed user out of onboarding when the daemon copy still says false', async () => {

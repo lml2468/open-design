@@ -59,8 +59,8 @@ describe('teamConsoleUrl', () => {
 // for a PERSONAL workspace too, so "console URL present" must never be the
 // team/personal axis — `workspaceType` is. One helper decides for all five
 // upgrade entry points (EntryNavRail credits chip + invite dialog,
-// AmrBalanceDialog, RecentProjectsStrip invite dialog, SettingsDialog AMR
-// cards), so the three states cannot drift apart per entry point.
+// RecentProjectsStrip invite dialog, SettingsDialog AMR cards), so the three
+// states cannot drift apart per entry point.
 describe('workspaceUpgradeUrl', () => {
   const settingsUrl = 'https://web.example/settings?workspaceId=ws-1';
   const baseContext: WorkspaceCollabContext = {

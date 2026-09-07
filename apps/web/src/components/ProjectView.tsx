@@ -61,7 +61,6 @@ import {
   strategySettledMessageFields,
 } from '../runtime/strategy-question-continuation';
 import {
-  type AmrWalletSnapshot,
   type ByokChatProviderConfig,
   type ByokMediaDefaults,
   type ByokChatProtocol,
@@ -143,16 +142,6 @@ import {
 } from '../runtime/design-delivery';
 import { notifyArtifactDelivered } from './experience-survey-trigger';
 import { RESUME_CONTINUE_PROMPT } from '../runtime/resume';
-import {
-  amrBalanceGateScopeForWorkspaceContext,
-  amrBalanceGateScopesMatch,
-  checkAmrBalanceGate,
-  isAmrBalanceGateScope,
-  type AmrBalanceGateScope,
-} from '../runtime/amr-balance-gate';
-import { isPaidAmrPlan, resolveAmrPlan } from '../runtime/amr-low-balance-plan';
-import { AmrBalanceDialog } from './AmrBalanceDialog';
-import { AmrLowBalanceDialog, type AmrLowBalanceDecision } from './AmrLowBalanceDialog';
 import {
   cancelBrandExtraction,
   continueBrandExtraction,
@@ -270,7 +259,6 @@ import {
   workspaceIdentityCanBillAmr,
 } from '../collab/useWorkspaceContext';
 import {
-  projectWorkspaceContext,
   projectWorkspaceScopeAuthorizesAmr,
   projectWorkspaceScopeReady,
   runWorkspaceIdentity,
@@ -339,7 +327,7 @@ import { buildContinueInCliToast } from '../lib/build-continue-in-cli-toast';
 import { buildClipboardPrompt } from '../lib/build-clipboard-prompt';
 import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { effectiveMaxTokens } from '../state/maxTokens';
-import { effectiveAgentModelChoice, effectiveAgentModelId } from './agentModelSelection';
+import { effectiveAgentModelChoice } from './agentModelSelection';
 import { mediaExecutionPolicyForProjectMetadata } from '../media/execution-policy';
 import { mediaModelProviderId } from '../media/models';
 import { byokProviderRequiresApiKey } from '../utils/byokProvider';
@@ -378,14 +366,6 @@ type ProjectChatSendMeta = ChatSendMeta & {
    *  can emit design_system_enrich_result + flag the DS as ai_refined on
    *  success (tracking spec C14/C15). Daemon mode only. */
   dsEnrichment?: boolean;
-  /** Marks a send replayed from the queued-sends drain. Its payload already
-   *  lives in the queue item, so a pre-run block (e.g. the AMR balance gate)
-   *  must NOT re-queue it — only pause further drains. */
-  queueDrain?: boolean;
-  /** The OpenDesign Cloud balance gate already ran for this exact send at
-   *  the home submit (with any soft warning answered there); skip re-gating
-   *  so the user is never double-prompted for one task. */
-  amrGatePrechecked?: boolean;
   /** The caller owns a payload that must be consumed exactly once — the Home
    *  handoff's separately persisted prompt, an inline question form's single
    *  answer. Once the payload is durably parked in this view's queue, report
@@ -1201,15 +1181,6 @@ function autoSendContextKey(projectId: string): string {
   return `od:auto-send-context:${projectId}`;
 }
 
-/** Exact workspace/member authority checked by the Home AMR preflight. */
-function autoSendAmrGateWitnessKey(projectId: string): string {
-  return `od:auto-send-amr-gate-witness:${projectId}`;
-}
-
-function legacyAutoSendAmrGateOkKey(projectId: string): string {
-  return `od:auto-send-amr-gate-ok:${projectId}`;
-}
-
 function designSystemAuditAutoRepairKey(projectId: string): string {
   return `od:design-system-audit-auto-repair:${projectId}`;
 }
@@ -1248,22 +1219,6 @@ function readAutoSendContext(projectId: string): RunContextSelection | null {
   }
 }
 
-function readAutoSendAmrGateWitness(
-  projectId: string,
-): AmrBalanceGateScope | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    const raw = window.sessionStorage.getItem(
-      autoSendAmrGateWitnessKey(projectId),
-    );
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as unknown;
-    return isAmrBalanceGateScope(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function clearAutoSendSession(projectId: string): void {
   if (typeof window === 'undefined') return;
   try {
@@ -1271,8 +1226,6 @@ function clearAutoSendSession(projectId: string): void {
     window.sessionStorage.removeItem(autoSendPromptKey(projectId));
     window.sessionStorage.removeItem(autoSendAttachmentsKey(projectId));
     window.sessionStorage.removeItem(autoSendContextKey(projectId));
-    window.sessionStorage.removeItem(autoSendAmrGateWitnessKey(projectId));
-    window.sessionStorage.removeItem(legacyAutoSendAmrGateOkKey(projectId));
   } catch {
     /* ignore */
   }
@@ -1994,22 +1947,6 @@ export function ProjectView({
   projectResourceAuthorityRef.current = projectResourceAuthority;
   const projectRunWorkspaceContextRef = useRef(projectRunWorkspaceContext);
   projectRunWorkspaceContextRef.current = projectRunWorkspaceContext;
-  // The AMR pre-run balance gate uses the project's resolved scope, or the one
-  // narrow adoption witness returned above: an exact active Personal caller
-  // for an explicitly unbound historical project. When no safe witness exists,
-  // handleSend skips the local balance preflight and lets the daemon return its
-  // explicit authorization/adoption decision. It must never inspect an
-  // unrelated account wallet just because project scope is inconclusive.
-  const projectRunBillingContext = projectWorkspaceContext(
-    projectWorkspaceScopeState.scope,
-  );
-  // A pending first scope read may use the exact ambient caller only when
-  // runWorkspaceIdentity has already proven it matches project.workspaceId.
-  // That same safe witness is valid for the balance preflight. Settled
-  // unavailable/forbidden states produce no run identity and therefore no
-  // preflight context; they must never fall through to the Personal wallet.
-  const projectRunPreflightContext =
-    projectRunBillingContext ?? projectRunWorkspaceContext;
   const cloudModelSelected = config.mode === 'daemon' && config.agentId === 'amr';
   const projectRunRequiresWorkspaceScope = cloudModelSelected;
   // An OpenDesign Cloud run needs a wallet, and the ONLY client-side veto is
@@ -2527,33 +2464,6 @@ export function ProjectView({
   const autoOpenedBrandDesignSystemRef = useRef<string | null>(null);
   const brandEmptyTranscriptRetriesRef = useRef<Map<string, number>>(new Map());
   const [chatSeed, setChatSeed] = useState<{ id: string; value: string } | null>(null);
-  // Hard block from the pre-run balance gate (empty wallet or signed out);
-  // non-null renders the AmrBalanceDialog. `conversationId` remembers whose
-  // queue to resume when the dialog resolves (sign-in done / recharge landed).
-  const [amrBalanceGateBlock, setAmrBalanceGateBlock] = useState<
-    {
-      reason: 'insufficient' | 'signed_out';
-      snapshot: AmrWalletSnapshot;
-      conversationId: string;
-    } | null
-  >(null);
-  // Soft low-balance warning holding a pending send: the dialog resolves the
-  // promise the gate is awaiting ('proceed' continues the very same send).
-  const [amrLowBalanceWarn, setAmrLowBalanceWarn] = useState<
-    {
-      snapshot: AmrWalletSnapshot;
-      resolve: (decision: AmrLowBalanceDecision) => void;
-    } | null
-  >(null);
-  // Conversations with a balance-gate check currently in flight. Sends that
-  // arrive during the check queue instead of racing a duplicate run through
-  // the not-yet-busy window the gate's await opens.
-  const amrGateInFlightConversationsRef = useRef<Set<string>>(new Set());
-  // Conversations whose queue auto-drain is paused because the balance gate
-  // blocked a send. Without the pause, every unrelated re-run of the drain
-  // effect would re-hit the wallet endpoint and re-pop the dialog. Lifted by
-  // the next send that passes the gate.
-  const amrGatePausedQueueConversationsRef = useRef<Set<string>>(new Set());
   const [autoAuditRepairSeed, setAutoAuditRepairSeed] =
     useState<{ id: string; value: string } | null>(null);
   const [chatPanelWidth, setChatPanelWidth] = useState(readSavedChatPanelWidth);
@@ -6986,163 +6896,12 @@ export function ProjectView({
         });
         return meta?.acceptDurableQueue === true;
       }
-      // OpenDesign Cloud pre-run balance gate: a definitively insufficient
-      // wallet blocks the run BEFORE any message is persisted or a daemon run
-      // spawned, surfacing the subscription dialog instead of a mid-run
-      // AMR_INSUFFICIENT_BALANCE failure. Sends the home submit already gated
-      // (amrGatePrechecked) pass straight through — the user answered there.
-      if (config.mode === 'daemon' && config.agentId === 'amr' && !meta?.amrGatePrechecked) {
-        const gateConversationId = activeConversationId;
-        // The gate's await opens a window where the conversation is not yet
-        // marked busy. A second send arriving during that window behaves like
-        // a busy conversation: it queues instead of racing a duplicate run.
-        if (amrGateInFlightConversationsRef.current.has(gateConversationId)) {
-          if (retryTarget) return false;
-          queueChatSendForCurrentConversation({
-            conversationId: gateConversationId,
-            prompt,
-            attachments: effectiveAttachments,
-            commentAttachments,
-            meta: { ...(meta ?? {}), sessionMode: runSessionMode, taskAnalytics },
-          });
-          return meta?.acceptDurableQueue === true;
-        }
-        amrGateInFlightConversationsRef.current.add(gateConversationId);
-        try {
-          // A persisted project Workspace is the spawn billing address even
-          // when the local membership/scope read is temporarily unavailable.
-          // In that state there is no trustworthy member-scoped wallet for a
-          // client preflight, so defer authorization and billing to the daemon
-          // and Vela backend. Passing `undefined` here would instead inspect
-          // the Personal/account wallet and could block a valid Team run (or
-          // present a Personal recharge prompt) before the backend sees the
-          // project's persisted Workspace id. An unbound project uses an exact
-          // Personal preflight only when runWorkspaceIdentity supplied the
-          // active Personal adoption witness. Team/absent witnesses skip the
-          // account preflight and let the daemon explicitly reject adoption.
-          // A resolved Personal or Team scope keeps its exact member-scoped
-          // preflight.
-          const persistedWorkspaceId = project.workspaceId?.trim() ?? '';
-          const deferAmrPreflightToDaemon =
-            !projectRunPreflightContext
-            && (
-              persistedWorkspaceId.length > 0
-              || projectWorkspaceScopeState.scope?.kind === 'unbound'
-            );
-          const amrModelId = effectiveAgentModelId(
-            agentsById.get('amr'),
-            config.agentModels?.amr,
-          );
-          const gate =
-            deferAmrPreflightToDaemon
-              ? { kind: 'allow' as const }
-              : await checkAmrBalanceGate(
-                  projectRunPreflightContext
-                    ? {
-                        workspaceType: projectRunPreflightContext.workspaceType,
-                        workspaceId: projectRunPreflightContext.workspaceId,
-                        workspaceMemberId:
-                          projectRunPreflightContext.workspaceMemberId,
-                      }
-                    : undefined,
-                  amrModelId,
-                );
-          // A blocked send parks in the conversation queue with its FULL
-          // payload (prompt, attachments, comment context) — the composer
-          // already cleared itself, and a text-only draft restore would
-          // silently drop staged attachments. Retries keep their error card
-          // and queue drains already have their queue item, so both skip the
-          // re-queue. The pause keeps queued items from re-hitting the gate
-          // (and re-popping a dialog) on every unrelated state change; any
-          // later send that passes the gate lifts it, and a manual "run now"
-          // on a queued item bypasses it deliberately.
-          const queueGateSend = (): boolean => {
-            if (!retryTarget && !meta?.queueDrain) {
-              queueChatSendForCurrentConversation({
-                conversationId: gateConversationId,
-                prompt,
-                attachments: effectiveAttachments,
-                commentAttachments,
-                meta: { ...(meta ?? {}), sessionMode: runSessionMode, taskAnalytics },
-              });
-              return true;
-            }
-            return false;
-          };
-          const parkBlockedSend = (): boolean => {
-            const queued = queueGateSend();
-            amrGatePausedQueueConversationsRef.current.add(gateConversationId);
-            return queued;
-          };
-          const acceptedDurableQueue = (queued: boolean): boolean => {
-            return queued && meta?.acceptDurableQueue === true;
-          };
-          // The await may have raced a conversation switch; re-run the entry
-          // guard before touching any state so this stale closure can't write
-          // the old conversation's messages into the now-visible view. The
-          // composer has already cleared, so keep the full payload queued for
-          // the original conversation instead of dropping it.
-          if (messagesConversationIdRef.current !== activeConversationId) {
-            return acceptedDurableQueue(queueGateSend());
-          }
-          if (gate.kind === 'hard') {
-            const recoveryActionInstanceId = `blocked:${taskAnalytics.taskExecutionId}`;
-            trackRunStartBlockedSurfaceView(analytics.track, {
-              page_name: 'chat_panel',
-              area: 'chat_composer',
-              element: 'run_start_blocked',
-              task_execution_id: taskAnalytics.taskExecutionId,
-              recovery_action_instance_id: recoveryActionInstanceId,
-              block_reason: gate.reason,
-              agent_provider_id: 'amr',
-              model_id: config.agentModels?.amr?.model?.trim() || 'default',
-            });
-            taskAnalytics = {
-              ...taskAnalytics,
-              recoveryActionType: 'manual_retry',
-              recoveryActionInstanceId,
-            };
-            setAmrBalanceGateBlock({
-              reason: gate.reason,
-              snapshot: gate.snapshot,
-              conversationId: gateConversationId,
-            });
-            return acceptedDurableQueue(parkBlockedSend());
-          }
-          if (gate.kind === 'unavailable') {
-            return acceptedDurableQueue(parkBlockedSend());
-          }
-          if (gate.kind === 'soft') {
-            // Low balance: pause THIS send while the reminder dialog waits
-            // for a decision. 'proceed' resumes the very same send below —
-            // a continuation, not a re-submit.
-            const plan = await resolveAmrPlan(gate.snapshot);
-            if (messagesConversationIdRef.current !== activeConversationId) {
-              return acceptedDurableQueue(queueGateSend());
-            }
-            if (isPaidAmrPlan(plan)) {
-              const decision = await new Promise<AmrLowBalanceDecision>((resolve) => {
-                setAmrLowBalanceWarn({ snapshot: gate.snapshot, resolve });
-              });
-              setAmrLowBalanceWarn(null);
-              // Same conversation-switch guard for the dialog-open window; the
-              // payload is parked (not sent) so nothing is lost either way.
-              if (decision !== 'proceed' || messagesConversationIdRef.current !== activeConversationId) {
-                return acceptedDurableQueue(parkBlockedSend());
-              }
-            }
-          }
-          amrGatePausedQueueConversationsRef.current.delete(gateConversationId);
-        } finally {
-          amrGateInFlightConversationsRef.current.delete(gateConversationId);
-        }
-      }
       if (resumesBlockedTask) blockedRunTaskRef.current = null;
       // First genuine send in a recommendation-started project — the
       // send-through half of the onboarding funnel. Fires once per project (the
       // guard is project-scoped so it survives ProjectView remounts), on the
       // first message of the conversation (not retries). Placed AFTER the
-      // queue-only / busy / AMR balance gates above: those can abort the send
+      // queue-only / busy gates above: those can abort the send
       // without creating a run, so emitting earlier would over-count blocked
       // attempts and then suppress the real retry via the once-only guard. By
       // here the send is committed to creating a run.
@@ -8697,7 +8456,6 @@ export function ProjectView({
       byokImageModelOptionsPV,
       byokVideoModelOptionsPV,
       byokSpeechModelOptionsPV,
-      projectRunPreflightContext,
       projectRunWorkspaceContext,
       projectRunHasBillableAmrPrincipal,
       projectMutationReadOnly,
@@ -8859,7 +8617,7 @@ export function ProjectView({
         item.prompt,
         item.attachments,
         item.commentAttachments,
-        { ...(item.meta ?? {}), queueDrain: true },
+        item.meta,
       );
       if (started) removeQueuedChatSend(id);
     })();
@@ -8873,17 +8631,6 @@ export function ProjectView({
     if (startingQueuedChatSendIdRef.current) return;
     if (!activeConversationId) return;
     if (messagesConversationIdRef.current !== activeConversationId) return;
-    // Queue paused by the balance gate: don't re-drain (and re-pop the
-    // dialog) on unrelated state churn while AMR is still the agent. The
-    // manual "run now" path below bypasses this deliberately, and switching
-    // agents makes the pause irrelevant.
-    if (
-      config.mode === 'daemon' &&
-      config.agentId === 'amr' &&
-      amrGatePausedQueueConversationsRef.current.has(activeConversationId)
-    ) {
-      return;
-    }
     const next = queuedChatSendsRef.current.find(
       (item) => item.conversationId === activeConversationId,
     );
@@ -8895,7 +8642,7 @@ export function ProjectView({
         next.prompt,
         next.attachments,
         next.commentAttachments,
-        { ...(next.meta ?? {}), queueDrain: true },
+        next.meta,
       );
       if (!started) {
         if (startingQueuedChatSendIdRef.current === next.id) {
@@ -10641,24 +10388,16 @@ export function ProjectView({
   const autoSendAttachmentsRef = useRef<ChatAttachment[] | null>(null);
   const autoSendContextRef = useRef<RunContextSelection | null>(null);
   const autoSendFirstMessageRef = useRef(false);
-  const autoSendAmrGateWitnessRef = useRef<AmrBalanceGateScope | undefined>(
-    undefined,
-  );
   if (autoSendSeedRef.current === null) {
     let isAutoSend = false;
-    let amrGateWitness: AmrBalanceGateScope | undefined;
     try {
       isAutoSend = Boolean(
         window.sessionStorage.getItem(autoSendFirstMessageKey(project.id)),
       );
-      amrGateWitness = readAutoSendAmrGateWitness(project.id);
     } catch {
       /* sessionStorage may be unavailable; treat as manual flow. */
     }
     autoSendFirstMessageRef.current = isAutoSend;
-    autoSendAmrGateWitnessRef.current = isAutoSend
-      ? amrGateWitness
-      : undefined;
     autoSendSeedRef.current = isAutoSend
       ? (readAutoSendPrompt(project.id) ?? project.pendingPrompt ?? '')
       : '';
@@ -11320,20 +11059,11 @@ export function ProjectView({
     if (!seed && attachments.length === 0) {
       return;
     }
-    const autoSendGateStillMatches =
-      autoSendAmrGateWitnessRef.current !== undefined &&
-      amrBalanceGateScopesMatch(
-        autoSendAmrGateWitnessRef.current,
-        amrBalanceGateScopeForWorkspaceContext(projectRunPreflightContext),
-      );
     autoSendInFlightRef.current = true;
     void handleSend(seed, attachments, [], {
         ...(context ? { context } : {}),
         ...homeAutoSendIdentity(project.id),
         acceptDurableQueue: true,
-        // Only reuse Home's decision for the exact persisted project scope.
-        // A workspace/member mismatch falls through to handleSend's normal gate.
-        ...(autoSendGateStillMatches ? { amrGatePrechecked: true } : {}),
       })
       .then((accepted) => {
         if (!accepted) {
@@ -11369,8 +11099,6 @@ export function ProjectView({
     initialDraft,
     project.pendingPrompt,
     projectRunHasBillableAmrPrincipal,
-    projectRunBillingContext,
-    projectRunPreflightContext,
     handleSend,
   ]);
 
@@ -11951,37 +11679,6 @@ export function ProjectView({
           and burn its once-ever localStorage budget outside the intended flow. */}
       {onboardingEntryRef.current && hasPreviewableArtifact && !currentConversationStreaming ? (
         <FirstArtifactHint />
-      ) : null}
-      {amrBalanceGateBlock ? (
-        <AmrBalanceDialog
-          reason={amrBalanceGateBlock.reason}
-          balanceUsd={amrBalanceGateBlock.snapshot.balanceUsd}
-          profile={amrBalanceGateBlock.snapshot.profile}
-          entrySource="chat_balance_gate_upgrade"
-          metricsConsent={config.telemetry?.metrics === true}
-          installationId={config.installationId}
-          onClose={() => setAmrBalanceGateBlock(null)}
-          onResolved={() => {
-            // Sign-in completed or the recharge landed: lift the balance
-            // pause and kick the drain so the parked send starts on its own
-            // (it still re-gates, so a half-measure recharge surfaces the
-            // soft reminder rather than silently failing mid-run).
-            const conversationId = amrBalanceGateBlock.conversationId;
-            setAmrBalanceGateBlock(null);
-            amrGatePausedQueueConversationsRef.current.delete(conversationId);
-            setQueuedAutoStartTick((tick) => tick + 1);
-          }}
-        />
-      ) : null}
-      {amrLowBalanceWarn ? (
-        <AmrLowBalanceDialog
-          balanceUsd={amrLowBalanceWarn.snapshot.balanceUsd}
-          profile={amrLowBalanceWarn.snapshot.profile}
-          entrySource="chat_low_balance_warn_recharge"
-          metricsConsent={config.telemetry?.metrics === true}
-          installationId={config.installationId}
-          onDecision={amrLowBalanceWarn.resolve}
-        />
       ) : null}
       <AnimatePresence>
         {projectActionsToast && !projectActionsToastInChatPane ? projectActionsToastNode : null}
