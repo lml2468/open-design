@@ -419,9 +419,6 @@ export const zhTW: Dict = {
   "settings.modeDaemonOfflineMeta": "守護程序未執行",
   "settings.modeDaemonInstalledMeta": "已安裝 {count} 個",
   "settings.modeApi": "API 提供方",
-  "settings.cloudCalloutTitle": "使用 OpenDesign Cloud",
-  "settings.cloudCalloutBody": "登入雲端版本後可啟用團隊空間、共享專案、成員權限和稽核儀表板。",
-  "settings.cloudCalloutButton": "登入 / 註冊",
   "settings.modeApiMeta": "API 供應商",
   "settings.byokNoFileToolsNotice":
     "BYOK 無法讀取、寫入或編輯專案檔案。需要變更程式碼時，請使用 Local CLI。",

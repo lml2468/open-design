@@ -504,9 +504,6 @@ export const zhCN: Dict = {
   "settings.modeDaemonOfflineMeta": "守护进程未运行",
   "settings.modeDaemonInstalledMeta": "已安装 {count} 个",
   "settings.modeApi": "API 提供方",
-  "settings.cloudCalloutTitle": "使用 OpenDesign Cloud",
-  "settings.cloudCalloutBody": "登录云端版本后可启用团队空间、共享项目、成员权限和审计大盘。",
-  "settings.cloudCalloutButton": "登录 / 注册",
   "settings.modeApiMeta": "API 提供商",
   "settings.byokNoFileToolsNotice":
     "BYOK 无法读写或修改项目文件；需要改代码时请使用本机 CLI。",

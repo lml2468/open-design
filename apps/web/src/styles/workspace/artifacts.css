@@ -1183,65 +1183,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.settings-cloud-signin-callout {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, var(--brand, #87ea5c) 22%, var(--border-soft));
-  border-radius: 14px;
-  background: var(--brand-soft, #ebffde);
-}
-.settings-cloud-signin-callout strong {
-  display: block;
-  color: var(--text-strong);
-  font-size: 14px;
-  font-weight: 600;
-}
-.settings-cloud-signin-callout p {
-  margin: 4px 0 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-/* Solid pill mirroring the community selected-tab treatment: black fill,
-   green ink (icon + label share currentColor). */
-.settings-cloud-signin-callout__button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  min-height: 34px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-large, 8px);
-  background: var(--text-strong);
-  color: var(--brand, #87ea5c);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.settings-cloud-signin-callout__button:hover {
-  background: color-mix(in srgb, var(--text-strong) 88%, var(--brand, #87ea5c));
-}
-/* The pill wrapper (AmrLoginPill's .amr-account-control root) carries the
-   callout button's border + fill; the inner action <button> would otherwise
-   add the global button primitive's own border/fill as a second box around
-   the label. Flatten it so only the outer shell paints. */
-.settings-cloud-signin-callout__button .amr-account-control__action,
-.settings-cloud-signin-callout__button .amr-account-control__action:hover:not(:disabled) {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: auto;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-}
 .settings-language-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -1616,9 +1557,7 @@ button.agent-group-rescan-btn:hover:not(:disabled) {
   /* Borderless: the panel fill + grid gaps delineate cards (transparent 1px
      keeps geometry stable across states). */
   border: 1px solid transparent;
-  /* Corner radius matches the cloud sign-in callout above the list
-     (.settings-cloud-signin-callout, 14px) so the whole 本机 CLI column
-     reads as one card family. */
+  /* Keep every local-agent card in the same rounded family. */
   border-radius: 14px;
   cursor: pointer;
   text-align: left;

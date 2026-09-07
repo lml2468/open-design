@@ -637,8 +637,8 @@ describe('AmrLoginPill', () => {
     expect(screen.queryByText('Signing in…')).toBeNull();
   });
 
-  // This pill is what Settings' "Sign in / Register" cloud callout and the
-  // OpenDesign agent card's "Authorize" action both render (SettingsDialog
+  // This pill is what the OpenDesign agent card's "Authorize" action renders
+  // (SettingsDialog
   // renders it from a full-page `/settings` route, so the entry rail — and
   // its `useWorkspaceContext` hook — is unmounted the whole time the user is
   // on that page). Besides notifyAmrLoginStatusChanged(), it also fires
