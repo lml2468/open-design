@@ -474,12 +474,6 @@ export type TrackingLangfuseDropReason =
   | 'relay_5xx'
   | 'langfuse_4xx'
   | 'langfuse_5xx'
-  | 'vela_400'
-  | 'vela_401'
-  | 'vela_403'
-  | 'vela_413'
-  | 'vela_429'
-  | 'vela_5xx'
   | 'network_error';
 export type TrackingLangfuseReportResult =
   | 'accepted'

@@ -19,7 +19,7 @@ import {
 } from '@open-design/contracts/analytics';
 import type { OdNextRolloutDecision, SafeRunQualityV1 } from '@open-design/contracts';
 
-import { agentCliEnvForAgent, readAppConfig, type TelemetryPrefs } from './app-config.js';
+import { readAppConfig, type TelemetryPrefs } from './app-config.js';
 import type { AppVersionInfo } from './app-version.js';
 import { listMessages } from './db.js';
 import {
@@ -1184,8 +1184,6 @@ export async function reportRunCompletedFromDaemon(
       return deriveLangfuseDeliveryState(prefs, null);
     }
     const installationId = cfg.installationId ?? null;
-    const configuredAmrEnv = agentCliEnvForAgent(cfg.agentCliEnv, 'amr');
-
     let messageContent = '';
     let producedFilesRaw: unknown = undefined;
     let traceObjectFilesRaw: unknown = undefined;
@@ -1380,36 +1378,10 @@ export async function reportRunCompletedFromDaemon(
       ...objectManifestOptions,
       uploadMode: 'manifest-only',
     });
-    const finalTelemetryConfig = readRunTelemetrySinkConfig(
-      process.env,
-      configuredAmrEnv,
-    );
-    let uploadedManifests: TraceObjectUploadManifests | undefined;
-    let finalObjectManifests = registrationManifests;
-
-    if (registrationManifests && finalTelemetryConfig?.kind === 'vela') {
-      // Only Vela's signed service path can establish object authority. An
-      // anonymous relay/direct client must not create a content-free Langfuse
-      // registration trace or obtain upload permission from self-reported
-      // object metadata.
-      await reportRunCompleted(
-        buildContext(mergeTraceSafeManifests(manifests, registrationManifests)),
-        {
-          config: finalTelemetryConfig,
-          deliveryPurpose: 'object-registration',
-          ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
-        },
-      );
-      uploadedManifests = await buildTraceObjectManifests(objectManifestOptions);
-      finalObjectManifests = uploadedManifests ?? registrationManifests;
-    }
-
-    const finalManifests = mergeTraceSafeManifests(manifests, finalObjectManifests);
+    const finalTelemetryConfig = readRunTelemetrySinkConfig(process.env);
+    const finalManifests = mergeTraceSafeManifests(manifests, registrationManifests);
     return await reportRunCompleted(
-      buildContext(finalManifests, buildTraceObjectSummary({
-        traceObjectFilesRaw,
-        ...(uploadedManifests ? { uploaded: uploadedManifests } : {}),
-      })),
+      buildContext(finalManifests, buildTraceObjectSummary({ traceObjectFilesRaw })),
       {
         config: finalTelemetryConfig,
         deliveryIdempotencyKey:
@@ -1472,8 +1444,7 @@ export async function reportRunFeedbackFromDaemon(
   // Pre-resolve the sink before claiming `accepted`. Avoids advertising a
   // successful enqueue to callers when there's no Langfuse endpoint
   // configured to ship the score to.
-  const configuredAmrEnv = agentCliEnvForAgent(cfg.agentCliEnv, 'amr');
-  const sink = readFeedbackTelemetrySinkConfig(process.env, configuredAmrEnv);
+  const sink = readFeedbackTelemetrySinkConfig(process.env);
   if (!sink) {
     return { status: 'skipped_no_sink' };
   }
@@ -1494,7 +1465,6 @@ export async function reportRunFeedbackFromDaemon(
   void reportRunFeedback(
     ctx,
     {
-      configuredEnv: configuredAmrEnv,
       ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
     },
   ).catch((err) => {

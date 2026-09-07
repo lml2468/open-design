@@ -1,13 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const readAppConfigMock = vi.fn();
-const agentCliEnvForAgentMock = vi.fn();
 const listMessagesMock = vi.fn();
 const reportRunCompletedMock = vi.fn();
 const readRunTelemetrySinkConfigMock = vi.fn();
 
 vi.mock('../src/app-config.js', () => ({
-  agentCliEnvForAgent: agentCliEnvForAgentMock,
   readAppConfig: readAppConfigMock,
 }));
 
@@ -71,8 +69,6 @@ function makeRun(overrides: Record<string, unknown> = {}) {
 
 describe('langfuse-bridge non-blocking behavior', () => {
   beforeEach(() => {
-    agentCliEnvForAgentMock.mockReset();
-    agentCliEnvForAgentMock.mockReturnValue({});
     readAppConfigMock.mockResolvedValue({
       installationId: 'install-1',
       telemetry: { metrics: true, content: true },
@@ -85,20 +81,16 @@ describe('langfuse-bridge non-blocking behavior', () => {
     });
     readRunTelemetrySinkConfigMock.mockReset();
     readRunTelemetrySinkConfigMock.mockReturnValue({
-      kind: 'vela',
-      apiUrl: 'https://vela.example.test',
-      controlKey: 'ck_profile',
+      kind: 'langfuse',
+      baseUrl: 'https://langfuse.example.test',
+      publicKey: 'pk_test',
+      secretKey: 'sk_test',
       timeoutMs: 1_000,
       retries: 0,
     });
   });
 
-  it('resolves the completed-run sink once from the configured AMR env', async () => {
-    const configuredEnv = {
-      VELA_CONTROL_KEY: 'ck_profile',
-      VELA_API_URL: 'https://vela.example.test',
-    };
-    agentCliEnvForAgentMock.mockReturnValue(configuredEnv);
+  it('resolves the completed-run sink once from the process environment', async () => {
     listMessagesMock.mockReturnValue([]);
 
     await reportRunCompletedFromDaemon({
@@ -108,14 +100,13 @@ describe('langfuse-bridge non-blocking behavior', () => {
       fetchImpl: vi.fn() as any,
     });
 
-    expect(agentCliEnvForAgentMock).toHaveBeenCalledWith(undefined, 'amr');
-    expect(readRunTelemetrySinkConfigMock).toHaveBeenCalledWith(process.env, configuredEnv);
+    expect(readRunTelemetrySinkConfigMock).toHaveBeenCalledWith(process.env);
     expect(reportRunCompletedMock).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
         config: expect.objectContaining({
-          kind: 'vela',
-          apiUrl: 'https://vela.example.test',
+          kind: 'langfuse',
+          baseUrl: 'https://langfuse.example.test',
         }),
       }),
     );

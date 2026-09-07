@@ -15,11 +15,9 @@ import {
   HARD_BATCH_MAX_BYTES,
   describeRunTelemetrySink,
   postLegacyTelemetryBatch,
-  readTelemetrySinkConfig,
   readTaskTelemetrySinkConfig,
   type LangfuseDeliveryState,
   type RunTelemetrySinkConfig,
-  type TelemetrySinkConfig,
 } from '../langfuse-trace.js';
 import {
   scanRunEventsForUsageAnalytics,
@@ -666,11 +664,6 @@ export function createTaskObservationRolloutService(
     return sink ? capSinkRetries(sink) : null;
   };
 
-  const effectiveFallbackSink = (): TelemetrySinkConfig | null => {
-    const sink = readTelemetrySinkConfig(env);
-    return sink ? capSinkRetries(sink) : null;
-  };
-
   const persistInitialDecision = (
     taskExecutionId: string,
     status: 'observed' | 'compatibility' | 'pending' | 'not_expected',
@@ -995,7 +988,6 @@ export function createTaskObservationRolloutService(
     aggregate: StrategyTaskObservationAggregateV1,
     context: TaskObservationExportContextV1,
     prefs: TelemetryPrefs,
-    installationId: string | null | undefined,
     sink: RunTelemetrySinkConfig,
     idempotencyKey: string,
     onAttempt: () => void,
@@ -1038,11 +1030,8 @@ export function createTaskObservationRolloutService(
     }
     let attemptCount = 0;
     const result = await postLegacyTelemetryBatch(sink, batch, {
-      ...(installationId !== undefined ? { installationId } : {}),
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
       deliveryIdempotencyKey: idempotencyKey,
-      fallbackConfig: effectiveFallbackSink(),
-      maxTotalAttempts: 2,
       onAttempt: () => {
         attemptCount += 1;
         onAttempt();
@@ -1274,7 +1263,6 @@ export function createTaskObservationRolloutService(
             aggregate,
             exportContext,
             telemetry.prefs,
-            telemetry.installationId,
             sink,
             claim.row.idempotencyKey!,
             () => recordAttempt(task.taskExecutionId),

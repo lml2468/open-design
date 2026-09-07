@@ -7448,7 +7448,7 @@ export async function startServer({
   console.info(
     '[telemetry] effective run sink',
     describeRunTelemetrySink(
-      readRunTelemetrySinkConfig(process.env, configuredAmrEnv()),
+      readRunTelemetrySinkConfig(process.env),
     ),
   );
   const design = {
