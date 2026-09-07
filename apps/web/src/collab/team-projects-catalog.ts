@@ -5,23 +5,9 @@
 // owned together. `coalescedGet` is keyed by a bare string and hands the stored
 // entry back through an unchecked `as Entry<T>` cast, so `T` is chosen
 // independently by each call site and TypeScript cannot see a disagreement.
-// Two call sites used to share the `workspace-team-projects` key while
-// returning different shapes — the project page cached the response OBJECT
-// (`{ projects: [...] }`), the home/community shell cached the ARRAY — and
-// whichever fetch started first inside the 1s share window handed its shape to
-// the other. When the project page won, `useTeamProjects` stored an object as
-// its project array (its own `body.projects ?? []` normalisation never ran,
-// because the coalescer short-circuits before `run()`), and the next
-// `.map()` over it threw `teamProjects.map is not a function` out of a
-// render-phase `useMemo` — a white screen, reproduced by switching between a
-// project page and the Community tab.
-//
-// The invariant this module exists to hold: **every reader of the team-shared
-// catalog goes through `fetchTeamProjectsCatalog()` and receives a
-// `TeamProject[]`, always.** The key is deliberately module-private so no other
-// call site can name it, and the return is array-checked so a malformed or
-// mis-shaped payload degrades to an empty catalog instead of poisoning every
-// consumer downstream.
+// Every remaining reader goes through this module and receives a
+// `TeamProject[]`. The key is deliberately module-private, and the return is
+// array-checked so malformed transport data cannot poison callers.
 
 import type {
   TeamProject,

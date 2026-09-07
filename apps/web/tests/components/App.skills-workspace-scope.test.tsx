@@ -40,7 +40,6 @@ import {
 import { listProjects, listTemplates } from '../../src/state/projects';
 import {
   notifyWorkspaceContextRefresh,
-  resetTeamProjectsCache,
   resetWorkspaceContextCache,
 } from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
@@ -226,7 +225,6 @@ function deferred<T>() {
 describe('App skills list — workspace scope', () => {
   beforeEach(() => {
     resetWorkspaceContextCache();
-    resetTeamProjectsCache();
     resetCoalescedGet();
     workspaceInvalidationHarness.handlers.length = 0;
     window.history.replaceState(null, '', '/');
@@ -251,7 +249,6 @@ describe('App skills list — workspace scope', () => {
     vi.clearAllMocks();
     resetWorkspaceContextCache();
     workspaceInvalidationHarness.handlers.length = 0;
-    resetTeamProjectsCache();
     resetCoalescedGet();
   });
 

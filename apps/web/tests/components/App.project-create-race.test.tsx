@@ -48,7 +48,6 @@ import {
 import {
   WORKSPACE_CONTEXT_REFRESH_EVENT,
   notifyWorkspaceContextRefresh,
-  resetTeamProjectsCache,
   resetWorkspaceContextCache,
   currentWorkspaceAccountGeneration,
 } from '../../src/collab/useWorkspaceContext';
@@ -712,7 +711,6 @@ describe('App project creation routing', () => {
   beforeEach(() => {
     resetCoalescedGet();
     resetWorkspaceContextCache();
-    resetTeamProjectsCache();
     resetProjectDisplaySnapshots();
     workspaceInvalidationHarness.handlers.length = 0;
     workspaceInvalidationHarness.onActive.length = 0;
@@ -787,7 +785,6 @@ describe('App project creation routing', () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     resetWorkspaceContextCache();
-    resetTeamProjectsCache();
     resetProjectDisplaySnapshots();
     resetCoalescedGet();
     workspaceInvalidationHarness.handlers.length = 0;

@@ -134,10 +134,6 @@ vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
       ? { failure: workspaceScopeMocks.ambientFailure }
       : {}),
   }),
-  // This suite exercises run/conversation isolation, not remote collaboration.
-  // An authoritative empty catalog proves the fixture project is unshared so
-  // the collab status request's initial unknown window does not disable Chat.
-  lastResolvedTeamProjects: () => [],
   lastResolvedWorkspaceContext: () => workspaceScopeMocks.ambientContext,
   useWorkspaceBilling: () => null,
 }));

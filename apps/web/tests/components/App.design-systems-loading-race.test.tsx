@@ -26,7 +26,6 @@ import { listProjects, listTemplates } from '../../src/state/projects';
 import type { AppConfig } from '../../src/types';
 import {
   notifyWorkspaceContextRefresh,
-  resetTeamProjectsCache,
   resetWorkspaceContextCache,
 } from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
@@ -201,7 +200,6 @@ function deferred<T>() {
 
 beforeEach(() => {
   resetWorkspaceContextCache();
-  resetTeamProjectsCache();
   resetCoalescedGet();
   workspaceInvalidationHarness.handlers.length = 0;
   vi.mocked(daemonIsLive).mockResolvedValue(true);
@@ -233,7 +231,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   resetWorkspaceContextCache();
   workspaceInvalidationHarness.handlers.length = 0;
-  resetTeamProjectsCache();
   resetCoalescedGet();
 });
 

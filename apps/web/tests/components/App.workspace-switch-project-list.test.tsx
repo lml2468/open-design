@@ -52,7 +52,6 @@ import {
 import { listProjects, listTemplates } from '../../src/state/projects';
 import {
   notifyWorkspaceContextRefresh,
-  resetTeamProjectsCache,
   resetWorkspaceContextCache,
 } from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
@@ -298,7 +297,6 @@ function deferred<T>() {
 describe('App project list across a workspace switch', () => {
   beforeEach(() => {
     resetWorkspaceContextCache();
-    resetTeamProjectsCache();
     resetCoalescedGet();
     resetProjectDisplaySnapshots();
     window.localStorage.clear();
@@ -325,7 +323,6 @@ describe('App project list across a workspace switch', () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     resetWorkspaceContextCache();
-    resetTeamProjectsCache();
     resetCoalescedGet();
     resetProjectDisplaySnapshots();
   });

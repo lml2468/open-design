@@ -6,25 +6,15 @@ import type {
   WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { resolveCollabSession } from './collab-session';
-import {
-  lastResolvedTeamProjects as cachedTeamProjects,
-} from './useWorkspaceContext';
 import { useCollab } from './useCollab';
 import { workspaceIdentityCacheKey } from './workspace-identity';
 
 // Workspace-scoped project ids the current viewer created in THIS browser
-// session, tracked at module scope like `lastResolvedWorkspaceContext` /
-// `lastResolvedTeamProjects` above. `createProject()` (`state/projects.ts`)
+// session. `createProject()` (`state/projects.ts`)
 // calls `markProjectCreatedByViewer` with the exact context used for the create
-// request — before the team catalog or this project's own `/collab/status`
-// have had any chance to answer. The marker only relaxes that initial UNKNOWN
-// window; an explicit daemon status always remains authoritative.
-//
-// This is the residual case #99's `knownOwnedByViewer` fix did not cover
-// (recvpZzWYQrhZQ): #99 relaxes the window once the project is already IN the
-// team catalog as owned-by-viewer, but a brand-new project is never in that
-// catalog (it was only just created, not shared), so `knownUnshared` stayed
-// false — and therefore fail-closed — until the catalog happened to load.
+// request — before this project's `/collab/status` has answered. The marker
+// only relaxes that initial UNKNOWN window; an explicit daemon status always
+// remains authoritative.
 const projectScopesCreatedByViewerThisSession = new Set<string>();
 
 function projectCreationScopeKey(
@@ -244,7 +234,6 @@ export function resolveProjectWriterAuthority(options: {
   lostAccessAfterUnshare: boolean;
   shared: boolean;
   isOwner: boolean;
-  knownOwnedByViewer: boolean;
   createdByViewerThisSession: boolean;
   materializationPending?: boolean;
   syncState: ProjectCollab['syncState'];
@@ -262,7 +251,7 @@ export function resolveProjectWriterAuthority(options: {
   if (options.syncState === 'local_only') return 'allowed';
   if (
     options.syncState === null
-    && (options.knownOwnedByViewer || options.createdByViewerThisSession)
+    && options.createdByViewerThisSession
   ) {
     return 'allowed';
   }
@@ -343,50 +332,7 @@ export function useProjectCollab(
     && workspaceContextLoading
     && !isOwner
     && !createdByViewerThisSession;
-  // A project the hub catalog does not list cannot be shared, so the unknown
-  // window does not have to fail closed for it. That window is why a member's
-  // OWN fresh private draft flashed the "这是共享项目" read-only banner before
-  // `/collab/status` answered (acceptance #27).
-  //
-  // `null` means the catalog was never read, which is NOT "nothing is shared" —
-  // that case keeps failing closed. This only relaxes the UNKNOWN window; once
-  // a status arrives, `shared && !isOwner` decides as before.
-  const knownCatalog = options.fetch || options.baseUrl ? null : cachedTeamProjects(context);
-  const knownUnshared =
-    knownCatalog !== null
-    && Boolean(projectId)
-    && !knownCatalog.some((entry) => entry.projectId === projectId);
-  // The hub catalog records each shared project's `ownerMemberId` — the same id
-  // `/collab/status` later confirms as the single writer. When it already names
-  // the current member as the owner, the viewer IS the owner regardless of
-  // whether the (seconds-long) status poll has answered yet. Trusting it here is
-  // what stops an owner's OWN shared project from flashing the "这是共享项目"
-  // read-only banner for 1-2s on open, before `ownerMemberId` arrives and
-  // `isOwner` flips (issue #99, rec:recvpZwaJNpVai). Same production-only cache
-  // the unshared relaxation reads; an injected-fetch test pointing at its own
-  // daemon gets `null` and keeps failing closed. Ownership never transfers (the
-  // sharer is always the writer), so this catalog fact cannot go stale-wrong.
-  const knownOwnedByViewer =
-    knownCatalog !== null
-    && Boolean(projectId)
-    && context?.workspaceMemberId != null
-    && knownCatalog.some(
-      (entry) => entry.projectId === projectId && entry.ownerMemberId === context.workspaceMemberId,
-    );
-  // Catalog names a different member as the single writer — usable before
-  // `/collab/status` confirms ownerMemberId (mirror of knownOwnedByViewer).
-  const knownOwnedBySomeoneElse =
-    knownCatalog !== null
-    && Boolean(projectId)
-    && context?.workspaceMemberId != null
-    && knownCatalog.some(
-      (entry) =>
-        entry.projectId === projectId
-        && entry.ownerMemberId != null
-        && entry.ownerMemberId !== context.workspaceMemberId,
-    );
-  // Status-confirmed ownership OR catalog/session shortcuts (issue #99 path).
-  const isEffectiveOwner = isOwner || knownOwnedByViewer || createdByViewerThisSession;
+  const isEffectiveOwner = isOwner || createdByViewerThisSession;
   const statusNamedDifferentOwner =
     collab.ownerMemberId != null
     && context?.workspaceMemberId != null
@@ -411,27 +357,18 @@ export function useProjectCollab(
   ) {
     confirmedOwnedBySomeoneElseRef.current = null;
   }
-  if (
-    projectId
-    && (
-      knownOwnedBySomeoneElse
-      || (shared && statusNamedDifferentOwner)
-    )
-  ) {
+  if (projectId && shared && statusNamedDifferentOwner) {
     confirmedOwnedBySomeoneElseRef.current = relationshipScopeKey;
   }
   const lostAccessAfterUnshare =
     confirmedOwnedBySomeoneElseRef.current === relationshipScopeKey
     && collab.syncState === 'local_only'
     && !isOwner;
-  // The project-level (single-writer) gate. Catalog ownership and the
-  // same-session creation marker are provisional evidence used only while
-  // status is UNKNOWN, removing the on-open flash. Once daemon status resolves,
-  // its shared/owner facts win even if either provisional signal is stale.
+  // The project-level (single-writer) gate. Same-session creation is the only
+  // provisional browser-side evidence used while status is unknown. Once
+  // daemon status resolves, its shared/owner facts win.
   const unknownStatusReadOnly =
     statusUnknown
-    && !knownUnshared
-    && !knownOwnedByViewer
     && !createdByViewerThisSession;
   const sharedReadOnly =
     unknownStatusReadOnly || (shared && !isOwner) || lostAccessAfterUnshare;
@@ -448,7 +385,6 @@ export function useProjectCollab(
     lostAccessAfterUnshare,
     shared,
     isOwner,
-    knownOwnedByViewer,
     createdByViewerThisSession,
     materializationPending,
     syncState: collab.syncState,
@@ -458,8 +394,7 @@ export function useProjectCollab(
   // an otherwise-shared status payload for the real owner.
   const isSharedNonOwner =
     !isEffectiveOwner
-    && (knownOwnedBySomeoneElse
-      || (shared && statusNamedDifferentOwner)
+    && ((shared && statusNamedDifferentOwner)
       || lostAccessAfterUnshare);
 
   // Member content auto-sync (the last link): when a read-only member sees the

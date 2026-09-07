@@ -31,18 +31,12 @@ import { I18nProvider } from '../../src/i18n';
 import { writeHomeGuideStage } from '../../src/components/home-hero/firstRunGuide';
 
 let workspaceContextForTest: WorkspaceCollabContext | null = null;
-const reloadTeamProjects = vi.fn();
 
 vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
   useWorkspaceContext: () => ({
     context: workspaceContextForTest,
     loading: false,
-  }),
-  useTeamProjects: () => ({
-    projects: [],
-    loading: false,
-    reload: reloadTeamProjects,
   }),
 }));
 
@@ -332,7 +326,6 @@ afterEach(() => {
   window.localStorage.clear();
   workspaceContextForTest = null;
   postedPluginInputs.length = 0;
-  reloadTeamProjects.mockReset();
 });
 
 describe('community template Use lands a sendable composer', () => {

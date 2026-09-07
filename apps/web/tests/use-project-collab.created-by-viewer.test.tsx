@@ -2,14 +2,9 @@
 //
 // recvpZzWYQrhZQ: a freshly created project flashed the "共享项目不能编辑"
 // read-only banner for ~3s before flipping to editable. Issue #99's
-// `knownOwnedByViewer` fix (see use-project-collab.context-seed.test.tsx) only
-// relaxes the single-writer gate once the hub catalog already lists the
-// project. A project the viewer just created is never in that catalog yet —
-// it was only just created, not shared — so `knownUnshared` stayed false and
-// the project-level gate kept failing closed until the catalog and/or
-// `/collab/status` happened to answer. `markProjectCreatedByViewer` gives the
-// hook a same-session signal it can trust immediately, independent of either
-// network read.
+// A newly created project can open before `/collab/status` answers.
+// `markProjectCreatedByViewer` gives the hook a same-session signal it can
+// trust immediately without consulting the retired Team project catalog.
 
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import {
@@ -36,8 +31,6 @@ import {
   useProjectWorkspaceScope,
 } from '../src/collab/useProjectWorkspaceScope';
 import {
-  lastResolvedTeamProjects,
-  resetTeamProjectsCache,
   resetWorkspaceContextCache,
   useWorkspaceContext,
 } from '../src/collab/useWorkspaceContext';
@@ -89,10 +82,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-/** Resolves the workspace context only; the team catalog and collab status
- *  both hang forever — modeling the residual window where a brand-new
- *  project's own project view mounts before the (separate, shell-owned)
- *  catalog request has come back. */
+/** Resolves the workspace context while collab status remains pending. */
 function installContextOnlyResolvingFetch() {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const pathname = new URL(String(input), 'http://d.local').pathname;
@@ -107,13 +97,12 @@ function installContextOnlyResolvingFetch() {
       return { ok: true, status: 200, json: async () => ({ context: teamContext() }) } as unknown as Response;
     }
     return new Promise<Response>(() => {
-      /* team catalog + collab status never resolve */
+      /* collab status never resolves */
     });
   }) as typeof fetch;
 }
 
-/** Seeds the module-level workspace-context cache without ever warming the
- *  team-catalog cache, so `lastResolvedTeamProjects()` stays null. */
+/** Seeds the module-level workspace-context cache. */
 async function warmContextOnly() {
   installContextOnlyResolvingFetch();
   const ctx = renderHook(() => useWorkspaceContext());
@@ -182,7 +171,6 @@ const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
   resetWorkspaceContextCache();
-  resetTeamProjectsCache();
   resetProjectsCreatedByViewerCache();
 });
 
@@ -190,7 +178,6 @@ afterEach(() => {
   cleanup();
   globalThis.fetch = originalFetch;
   resetWorkspaceContextCache();
-  resetTeamProjectsCache();
   resetProjectsCreatedByViewerCache();
   vi.restoreAllMocks();
 });
@@ -203,16 +190,13 @@ describe('useProjectCollab: project created by the viewer this session', () => {
       lostAccessAfterUnshare: false,
       shared: true,
       isOwner: false,
-      knownOwnedByViewer: true,
       createdByViewerThisSession: true,
       syncState: 'synced',
     })).toBe('denied');
   });
 
-  it('still fails closed for an unmarked project while the team catalog has not loaded yet', async () => {
-    // Sanity check the scenario: the catalog genuinely never warmed.
+  it('still fails closed for an unmarked project while status has not loaded yet', async () => {
     await warmContextOnly();
-    expect(lastResolvedTeamProjects(DEFAULT_TEAM_CONTEXT)).toBeNull();
 
     installFullyHangingFetch();
     const project = renderHook(() => useProjectCollab('p-unmarked', {
@@ -223,9 +207,8 @@ describe('useProjectCollab: project created by the viewer this session', () => {
     expect(project.result.current.writerAuthority).toBe('pending');
   });
 
-  it('does not fail closed for a project the viewer created this session, even before the team catalog loads', async () => {
+  it('does not fail closed for a project the viewer created this session before status loads', async () => {
     await warmContextOnly();
-    expect(lastResolvedTeamProjects(DEFAULT_TEAM_CONTEXT)).toBeNull();
 
     installFullyHangingFetch();
     markProjectCreatedByViewer('p-new', DEFAULT_TEAM_CONTEXT);

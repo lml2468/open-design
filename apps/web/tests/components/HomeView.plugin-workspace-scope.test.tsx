@@ -44,7 +44,6 @@ vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
   return {
     ...actual,
     useWorkspaceContext: () => workspaceMock.state,
-    useTeamProjects: () => ({ projects: [], loading: false, reload: vi.fn() }),
   };
 });
 
