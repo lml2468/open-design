@@ -6,11 +6,6 @@
 // dependency entirely. All glyphs share the 24x24 viewBox and render with
 // fill: currentColor.
 export const REMIX_ICON_PATHS: Record<string, string> = {
-  // Message Center's archive / restore pair (remixicon Business set).
-  'inbox-archive-line':
-    'M20 3L22 7V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V7.00353L4 3H20ZM20 9H4V19H20V9ZM13 10V14H16L12 18L8 14H11V10H13ZM18.7639 5H5.23656L4.23744 7H19.7639L18.7639 5Z',
-  'inbox-unarchive-line':
-    'M20 3L22 7V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V7.00353L4 3H20ZM20 9H4V19H20V9ZM12 10L16 14H13V18H11V14H8L12 10ZM18.764 5H5.236L4.237 7H19.764L18.764 5Z',
   // Social-share glyphs are referenced through SocialShareGrid's PLATFORM_ICON
   // map instead of direct RemixIcon name props, so keep the complete set here.
   'twitter-x-line':

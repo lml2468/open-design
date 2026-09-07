@@ -60,7 +60,6 @@ import { RemixIcon } from './RemixIcon';
 import { InviteDialog } from './InviteDialog';
 import { RailRecentRow } from './entry-nav-rail/RailRecentRow';
 import { useProjectRunSummaries } from '../hooks/useProjectRunStatuses';
-import { MessageCenter } from './MessageCenter';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
 import type { Project } from '../types';
 import { isRtlLocale, useI18n } from '../i18n';
@@ -873,13 +872,6 @@ export function EntryTopRightCluster({
       ...workspaceDimensions,
     });
   }, [accountOpen, analytics.track, page, workspaceDimensions.workspace_key]);
-  // Message-center panel (opened from the account menu's 消息中心 row) and its
-  // unread count, which drives the red dot on the account avatar.
-  const [messageCenterOpen, setMessageCenterOpen] = useState(false);
-  const [messageUnreadCount, setMessageUnreadCount] = useState(0);
-  // Where the message-center panel returns keyboard focus on close. The
-  // 消息中心 row cannot be it: the account menu unmounts the row before the
-  // panel opens, so the account trigger it hangs off is the stable control.
   const accountTriggerRef = useRef<HTMLButtonElement | null>(null);
   // Sign-out confirm gate (recvqgMWpJZqhL): the menu item only ARMS the
   // confirmation dialog; the real logout chain runs on explicit confirm.
@@ -1087,9 +1079,6 @@ export function EntryTopRightCluster({
               >
                 <span className="entry-nav-rail__account-avatar" aria-hidden>
                   {accountInitial}
-                  {messageUnreadCount > 0 ? (
-                    <span className="entry-nav-rail__account-avatar-dot" data-testid="account-avatar-unread-dot" />
-                  ) : null}
                 </span>
               </button>
               {accountOpen ? (
@@ -1166,24 +1155,6 @@ export function EntryTopRightCluster({
                       }}
                     >
                       <Icon name="settings" size={15} /> {t('entry.accountSettings')}
-                    </button>
-                    <button
-                      type="button"
-                      className="entry-nav-rail__menu-item"
-                      role="menuitem"
-                      aria-haspopup="dialog"
-                      aria-expanded={messageCenterOpen}
-                      data-testid="account-menu-message-center"
-                      onClick={() => {
-                        trackAccountAction('message_center');
-                        closeAccountMenu();
-                        setMessageCenterOpen(true);
-                      }}
-                    >
-                      <Icon name="bell" size={15} /> {t('messageCenter.title')}
-                      {messageUnreadCount > 0 ? (
-                        <span className="entry-nav-rail__menu-item-dot" aria-hidden />
-                      ) : null}
                     </button>
                     {/* #5517's account menu goes 设置 → GitHub 帮助 → 功能建议 → 社交行,
                         with no theme row, no language submenu, and no divider in
@@ -1280,21 +1251,6 @@ export function EntryTopRightCluster({
         </div>,
         chromeActionsHost,
       )}
-      {/* Panel + unread polling live here (outside the hover menu, which
-          unmounts when closed); the 消息中心 menu row above just opens it.
-          Signed-out shells have no account module — `EntryNavRail` mounts its
-          own MessageCenter for that branch, so this one is context-gated to
-          keep exactly one instance (and one unread poller) alive. */}
-      {context ? (
-        <MessageCenter
-          hideTrigger
-          returnFocusRef={accountTriggerRef}
-          open={messageCenterOpen}
-          onOpenChange={setMessageCenterOpen}
-          onUnreadCountChange={setMessageUnreadCount}
-          onOpenNotificationSettings={onOpenSettings ? () => onOpenSettings('notifications') : undefined}
-        />
-      ) : null}
     </>
   );
 }
@@ -1466,12 +1422,6 @@ export function EntryNavRail({
   const canAccessInviteFlow = canAccessWorkspaceInviteFlow(context);
   const workspaceSettingsUrl = context?.workspaceSettingsUrl?.trim() || null;
 
-  // Message-center panel for the SIGNED-OUT shell only (its rail item under
-  // 设置 is the one opener there). The signed-in panel — plus the unread badge
-  // on the avatar — lives inside `EntryTopRightCluster` with the account menu.
-  const [messageCenterOpen, setMessageCenterOpen] = useState(false);
-  const [messageUnreadCount, setMessageUnreadCount] = useState(0);
-  const messageCenterRailRef = useRef<HTMLButtonElement | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
   useEffect(() => {
     if (!teamOpen) return;
@@ -2054,23 +2004,6 @@ export function EntryNavRail({
             >
               <Icon name="settings" size={16} />
             </NavButton>
-            {/* Signed-out has no account menu (where the 消息中心 row lives when
-                signed in), which left the message panel with no opener at all.
-                It rides here as the rail item under 设置. */}
-            <NavButton
-              ariaLabel={t('messageCenter.title')}
-              label={t('messageCenter.title')}
-              onClick={() => setMessageCenterOpen(true)}
-              testId="entry-nav-message-center"
-              buttonRef={messageCenterRailRef}
-              ariaHasPopup="dialog"
-              ariaExpanded={messageCenterOpen}
-            >
-              <Icon name="bell" size={16} />
-              {messageUnreadCount > 0 ? (
-                <span className="entry-nav-rail__btn-dot" aria-hidden />
-              ) : null}
-            </NavButton>
           </>
         )}
       </div>
@@ -2082,21 +2015,6 @@ export function EntryNavRail({
         <RailSocialRow page={analyticsPage} dimensions={workspaceDimensions} />
       </div>
       </div>
-
-      {/* Signed-out message-center panel + unread polling (the rail's bell
-          item above is its opener). Signed-in mounts move into
-          `EntryTopRightCluster` — context-gating both sides is what keeps
-          exactly one panel (and one unread poller) alive. */}
-      {context ? null : (
-        <MessageCenter
-          hideTrigger
-          returnFocusRef={messageCenterRailRef}
-          open={messageCenterOpen}
-          onOpenChange={setMessageCenterOpen}
-          onUnreadCountChange={setMessageUnreadCount}
-          onOpenNotificationSettings={onOpenSettings ? () => onOpenSettings('notifications') : undefined}
-        />
-      )}
 
       <InviteDialog
         open={inviteOpen}

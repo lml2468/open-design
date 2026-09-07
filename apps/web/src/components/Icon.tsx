@@ -33,8 +33,6 @@ export type IconName =
   | 'file'
   | 'file-code'
   | 'file-text'
-  | 'inbox-archive'
-  | 'inbox-unarchive'
   | 'folder'
   | 'folder-2'
   | 'folder-transfer'
@@ -163,8 +161,6 @@ const REMIX_ICON: Partial<Record<IconName, string>> = {
   file: 'file-line',
   'file-code': 'file-code-line',
   'file-text': 'file-text-line',
-  'inbox-archive': 'inbox-archive-line',
-  'inbox-unarchive': 'inbox-unarchive-line',
   folder: 'folder-line',
   'folder-2': 'folder-2-line',
   'folder-transfer': 'folder-transfer-line',

@@ -58,7 +58,6 @@ export interface AccountMenuClickProps extends TrackingWorkspaceDimensions {
     | 'upgrade'
     | 'credits'
     | 'settings'
-    | 'message_center'
     | 'github_help'
     | 'feature_request'
     | 'github'
