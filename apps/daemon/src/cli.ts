@@ -6779,9 +6779,6 @@ async function runProject(args) {
                                           Restore the daemon-selected default
                                           scenario with a snapshot CAS guard.
   od project delete <id>                  Delete a project.
-  od project revoke-public-link <id> --path <file> --url <public-url>
-                    Revoke a public file link whose local publication record
-                    was lost during an older daemon restart or upgrade.
   od project editors                      List locally-installed editors that
                                           can open a project (hand-off targets).
   od project open-in <id> --editor <slug> Open the project's working directory
@@ -7034,40 +7031,6 @@ Common options:
         `[project] automatic scenario ${data.changed ? 'restored' : 'already active'} `
         + `${data.scenarioBinding?.pluginId ?? '-'}@${data.scenarioBinding?.snapshotId ?? '-'}`,
       );
-      return;
-    }
-    case 'revoke-public-link': {
-      const id = positionalArgs(rest, PROJECT_RESOURCE_STRING_FLAGS)[0];
-      const filePath = typeof flags.path === 'string' ? flags.path.trim() : '';
-      const publicUrl = typeof flags.url === 'string' ? flags.url.trim() : '';
-      let slug = '';
-      try {
-        const parsed = new URL(publicUrl);
-        const match = parsed.pathname.match(
-          /^\/api\/v1\/public\/snapshots\/([^/]+)(?:\/|$)/u,
-        );
-        slug = match?.[1] ? decodeURIComponent(match[1]) : '';
-      } catch {
-        slug = '';
-      }
-      if (!id || !filePath || !slug) {
-        console.error(
-          'Usage: od project revoke-public-link <id> --path <file> --url <public-url> [--json]',
-        );
-        process.exit(2);
-      }
-      const resp = await fetch(
-        `${base}/api/projects/${encodeURIComponent(id)}/files/${encodeURIComponent(filePath)}/publish-public`,
-        {
-          method: 'DELETE',
-          headers: { 'content-type': 'application/json', ...workspaceHeaders },
-          body: JSON.stringify({ slug }),
-        },
-      );
-      if (!resp.ok) return structuredHttpFailure(resp);
-      const data = await resp.json();
-      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-      console.log(`[project] revoked public link ${slug} for ${filePath}`);
       return;
     }
     case 'create': {

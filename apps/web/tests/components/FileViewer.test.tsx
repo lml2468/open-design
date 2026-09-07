@@ -5260,7 +5260,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-downloads');
   });
 
-  it('disables React component sharing controls for viewer-only shared projects', async () => {
+  it('disables React component export controls for viewer-only shared projects', async () => {
     const file = baseFile({
       name: 'Card.jsx',
       path: 'Card.jsx',
@@ -5285,9 +5285,9 @@ describe('FileViewer SVG artifacts', () => {
 
     render(<FileViewer projectId="project-1" projectKind="prototype" file={file} viewerOnly />);
 
-    const shareButton = await screen.findByRole('button', { name: 'Share' });
-    expect(shareButton).toBeDisabled();
-    expect(shareButton).toHaveAttribute(
+    const exportButton = await screen.findByRole('button', { name: 'Export' });
+    expect(exportButton).toBeDisabled();
+    expect(exportButton).toHaveAttribute(
       'title',
       'Shared project is read-only: you can comment, but cannot edit or export.',
     );
@@ -6733,16 +6733,11 @@ describe('FileViewer SVG artifacts', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /share/i }));
 
-    // Share panel: everything that produces a link or reusable asset —
-    // publish, deploy, social share, save as template. No file formats.
+    // Share panel: deploy, social share, and save as template. No file formats.
     expect(await screen.findByRole('menu')).toBeTruthy();
-    expect(await screen.findByText('Get a share link')).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /Get a share link/i })).toBeTruthy();
     expect(screen.getByText('SHARE ON YOUR OWN HOSTING')).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: /Deploy to Vercel/i })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: /Deploy to Cloudflare Pages/i })).toBeTruthy();
-    // The "publish online first" guide row is gone — the publish button above
-    // IS that step now.
     expect(screen.queryByRole('menuitem', { name: /Publish online above to enable share/i })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Export as PDF/i })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Export as image/i })).toBeNull();
@@ -6773,19 +6768,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(menuItems).not.toContain('Screenshot');
   });
 
-  // The per-file "Publish" entry point (a single file → a backend link) is
-  // gated on HAVING A WORKSPACE, not on having a TEAM one.
-  //
-  // It was briefly team-only, on the premise that a public link is a hub
-  // snapshot keyed by teamId and a personal session had nothing to publish
-  // under. B's control-key auth path stopped refusing non-team callers — it now
-  // mints a principal whose teamId IS the workspace id, and its access check
-  // only compares that id against the resource's own — so a personal workspace
-  // publishes into its own partition of one. The daemon's `publicFilePrincipal`
-  // was widened to match, and these two tests pin both halves of the rule: the
-  // card renders for a personal workspace, and is still gone with no workspace
-  // at all (where the daemon really does answer 409).
-  function publicPublishFile() {
+  function versionedHtmlFile() {
     return baseFile({
       name: 'index.html',
       path: 'index.html',
@@ -6802,291 +6785,6 @@ describe('FileViewer SVG artifacts', () => {
     });
   }
 
-  it('offers the public publish entry to a personal workspace', async () => {
-    const context: WorkspaceCollabContext = {
-      ...teamWorkspaceContext(),
-      workspaceType: 'personal',
-      teamId: undefined,
-    };
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    // The single-file publish card — the thing the dogfood report said was
-    // missing — is back for a personal workspace.
-    expect(await screen.findByText('Get a share link')).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /Get a share link/i })).toBeTruthy();
-  });
-
-  // recvq56lzckGtE: publishing a file from a real team workspace 403'd against
-  // the daemon's `canShareProjectsForRequest` gate (daemon routes,
-  // collab-sync.ts), which reads `x-od-workspace-can-share-projects` etc. and
-  // falls back to a headerless context re-read (often false/denied) when those
-  // headers are missing. `publishProjectFilePublic`/`fetchProjectFilePublicPublication`/
-  // `unpublishProjectFilePublic` never attached `workspaceProjectHeaders`, unlike
-  // every other workspace-scoped mutation in state/projects.ts — so a team
-  // member's publish request always looked headerless to the daemon.
-  it('attaches the workspace identity headers to every publish-public request', async () => {
-    const context = teamWorkspaceContext();
-    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/workspace/context')) {
-          return new Response(JSON.stringify({ context }), { status: 200 });
-        }
-        if (url.includes('publish-public')) {
-          calls.push({ url, headers: (init?.headers as Record<string, string>) ?? {} });
-          return new Response(JSON.stringify({ url: 'https://pub.example/x', slug: 'x', fileName: 'index.html' }), {
-            status: 200,
-          });
-        }
-        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-      }),
-    );
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Get a share link/i }));
-
-    await waitFor(() => expect(calls.some((call) => call.url.includes('publish-public'))).toBe(true));
-    const publishCall = calls.find((call) => call.url.includes('publish-public'));
-    expect(publishCall?.headers['x-od-workspace-id']).toBe(context.workspaceId);
-    expect(publishCall?.headers['x-od-workspace-member-id']).toBe(context.workspaceMemberId);
-    expect(publishCall?.headers['x-od-workspace-can-share-projects']).toBe(
-      String(context.permissions.canShareProjects),
-    );
-  });
-
-  it('exposes Stop sharing when publication persistence and compensation both fail', async () => {
-    const context = teamWorkspaceContext();
-    const publicUrl =
-      'https://hub.example.test/api/v1/public/snapshots/manual-revoke-slug/files/index.html';
-    const unpublishBodies: unknown[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/workspace/context')) {
-          return new Response(JSON.stringify({ context }), { status: 200 });
-        }
-        if (url.includes('publish-public')) {
-          const method = (init?.method ?? 'GET').toUpperCase();
-          if (method === 'GET') {
-            return new Response(JSON.stringify({ publication: null }), { status: 200 });
-          }
-          if (method === 'DELETE') {
-            unpublishBodies.push(JSON.parse(String(init?.body)));
-            return new Response(
-              JSON.stringify({ ok: true, slug: 'manual-revoke-slug', fileName: 'index.html' }),
-              { status: 200 },
-            );
-          }
-          return new Response(
-            JSON.stringify({
-              error: {
-                code: 'PUBLIC_FILE_MANUAL_REVOKE_REQUIRED',
-                message: `The public link remains active at ${publicUrl}.`,
-                data: {
-                  projectId: 'project-1',
-                  url: publicUrl,
-                  slug: 'manual-revoke-slug',
-                  fileName: 'index.html',
-                },
-              },
-            }),
-            { status: 502 },
-          );
-        }
-        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-      }),
-    );
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Get a share link/i }));
-
-    expect(await screen.findByText(publicUrl)).toBeTruthy();
-    const stopSharing = screen.getByRole('button', { name: /Stop sharing/i });
-    fireEvent.click(stopSharing);
-
-    await waitFor(() => expect(unpublishBodies).toEqual([{ slug: 'manual-revoke-slug' }]));
-    expect(await screen.findByRole('menuitem', { name: /Get a share link/i })).toBeTruthy();
-  });
-
-  // Reading the help must never publish. The publish row's trailing "?" carries
-  // the reach + single-file limitation copy, i.e. exactly what a user wants to
-  // read BEFORE committing — but it used to be nested inside the same
-  // `role="menuitem"` button whose onClick calls `publishCurrentFilePublic()`
-  // unconditionally, so activating it created a public link. Touch devices have
-  // no hover path at all, so pressing was the only way to read it. The "?" now
-  // lives on the section label instead, outside the actionable row.
-  //
-  // The invariant: activating the publish help emits no publish-public request,
-  // in both viewer chromes.
-  function publishHelpCase(fileFor: () => ProjectFile, label: string) {
-    it(`reads the publish help without publishing (${label})`, async () => {
-      const context = teamWorkspaceContext();
-      // Only the mutating POST counts — the viewer GETs the same path on mount
-      // to read the current publication state, which is not a publish.
-      const publishCalls: string[] = [];
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-          const url = typeof input === 'string' ? input : input.toString();
-          if (url.includes('/api/workspace/context')) {
-            return new Response(JSON.stringify({ context }), { status: 200 });
-          }
-          if (url.includes('publish-public')) {
-            if ((init?.method ?? 'GET').toUpperCase() !== 'GET') {
-              publishCalls.push(`${init?.method} ${url}`);
-            }
-            return new Response(
-              JSON.stringify({ url: 'https://pub.example/x', slug: 'x', fileName: 'index.html' }),
-              { status: 200 },
-            );
-          }
-          return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-        }),
-      );
-
-      renderWithProjectWorkspace(
-        <FileViewer projectId="project-1" projectKind="prototype" file={fileFor()}
-          liveHtml="<html><body><h1>Hello</h1></body></html>"
-        />,
-        context,
-      );
-
-      fireEvent.click(await screen.findByRole('button', { name: /share/i }));
-      expect(await screen.findByRole('menu')).toBeTruthy();
-
-      // Located by the explanation it carries, not by a testid the fix added —
-      // so this spec still finds the pre-fix help (nested in the publish row)
-      // and goes red on the behavior rather than on a missing hook.
-      const help = await screen.findByLabelText(/Only a single file can be shared for now/i);
-      // It is NOT inside the actionable publish row.
-      expect(help.closest('[role="menuitem"]')).toBeNull();
-
-      // It must be a real focusable control, not a decorative span: the tooltip
-      // layer discloses on `focusin`, which only a focusable element receives,
-      // and touch devices have no hover path at all. A <span> leaves the
-      // single-file limitation unreadable for keyboard and touch users.
-      expect(help.tagName).toBe('BUTTON');
-      expect(help).toHaveProperty('type', 'button');
-      help.focus();
-      expect(document.activeElement).toBe(help);
-
-      fireEvent.click(help);
-
-      // No public link was created by a help-discovery gesture.
-      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
-      expect(publishCalls).toEqual([]);
-      // The publish row is still sitting there unactivated.
-      expect(screen.getByRole('menuitem', { name: /Get a share link/i })).toBeTruthy();
-    });
-  }
-
-  publishHelpCase(publicPublishFile, 'HtmlViewer');
-  publishHelpCase(
-    () =>
-      baseFile({
-        name: 'Widget.tsx',
-        path: 'Widget.tsx',
-        mime: 'text/plain',
-        kind: 'code',
-        artifactManifest: {
-          version: 1,
-          kind: 'react-component',
-          title: 'Widget',
-          entry: 'Widget.tsx',
-          renderer: 'react-component',
-          exports: ['jsx'],
-        },
-      }),
-    'ReactComponentViewer',
-  );
-
-  // A personal workspace that can already publish must show only the publish
-  // card, with no unrelated team-creation bridge in the file share menu.
-  it('does not show a create-team CTA for a personal workspace that can already publish', async () => {
-    const context: WorkspaceCollabContext = {
-      ...teamWorkspaceContext(),
-      workspaceType: 'personal',
-      teamId: undefined,
-      workspaceSettingsUrl: 'https://web.example.com/console/settings?workspaceId=ws-1',
-    };
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    await screen.findByText('Get a share link');
-    expect(screen.queryByText('Nothing to share yet')).toBeNull();
-    expect(screen.queryByRole('link', { name: /create team/i })).toBeNull();
-  });
-
-  it('hides the public publish entry when there is no workspace at all', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/workspace/context')) {
-        return new Response(JSON.stringify({ context: null }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    // Gone, not merely disabled — a signed-out caller has no id to publish
-    // under and the daemon answers 409 WORKSPACE_IDENTITY_REQUIRED.
-    expect(screen.queryByText('Get a share link')).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: /Get a share link/i })).toBeNull();
-    // With no publish identity, the share tab stays empty and does not offer a
-    // workspace-creation detour.
-    expect(screen.queryByText('Nothing to share yet')).toBeNull();
-    expect(screen.queryByRole('link', { name: /create team/i })).toBeNull();
-
-    // And nothing may probe the endpoint on behalf of a caller it will refuse.
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const requested = fetchMock.mock.calls.map(([input]) =>
-      typeof input === 'string' ? input : String(input),
-    );
-    expect(requested.some((url) => url.includes('publish-public'))).toBe(false);
-  });
-
   // The version-history entry carries the same disabled contract as the Share
   // button beside it in the same toolbar: `viewerOnly`, with
   // `fileViewer.readonlySharedNoExport` as the reason.
@@ -7100,7 +6798,7 @@ describe('FileViewer SVG artifacts', () => {
   // daemon side fixed in 5f34ae655). An entry that can only ever open an empty
   // panel is not a read affordance worth keeping.
   it('disables the version-history entry for a viewer-only shared project, like Share', async () => {
-    const file = publicPublishFile(); // an .html file, so versioningAvailable is true
+    const file = versionedHtmlFile();
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 

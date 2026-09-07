@@ -1,38 +1,16 @@
-import type { Express, Request, Response } from 'express';
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import type { Express } from 'express';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
-  PUBLIC_FILE_MANUAL_REVOKE_REQUIRED,
-  workspaceContextHasWorkspaceIdentity,
-  type PublicFileManualRevokeRequiredResponse,
-  type PublicProjectFilePublication,
   type ProjectMetadata,
   type TeamProject,
-  type WorkspaceCollabContext,
 } from '@open-design/contracts';
 import type {
   ProjectContentTransferToken,
 } from '../collab/project-content-transfer-state.js';
-import type {
-  VerifiedWorkspaceRequestContextResult,
-} from '../collab/request-workspace-context.js';
 import type { CollabRuntime } from '../collab/runtime.js';
-import {
-  contextToResourceHubPrincipal,
-  type ResourceHubPrincipal,
-} from '../collab/resource-principal.js';
+import type { ResourceHubPrincipal } from '../collab/resource-principal.js';
 import { isUnmaterializedSharedPlaceholder } from '../collab/shared-project-placeholder.js';
-import {
-  parseVelaResourceSnapshot,
-  runVelaResourceCommand,
-} from '../collab/vela-cli-resource-adapter.js';
-import {
-  createInMemoryPublicFilePublicationStore,
-  type PublicFilePublicationScope,
-  type PublicFilePublicationStore,
-} from '../collab/public-file-publication-store.js';
-import { readVelaControlApiContext } from '../integrations/vela.js';
 import { readProjectManifest } from '../project-locations.js';
 import { redactSecrets } from '../redact.js';
 import { findRealElementRange, HTML_TAG_PATTERNS } from '@open-design/contracts/runtime/html-injection-points';
@@ -91,20 +69,6 @@ export interface RegisterCollabSyncRoutesDeps {
     scope?: TeamMirrorPullScope | null,
   ) => Promise<TeamProject | null>;
   /**
-   * Authorize the request's explicit Workspace selector against the signed-in
-   * account's authoritative membership directory, then return the directory-
-   * derived context. Client-supplied role/permission headers are never
-   * authority. Null is a fail-closed denial.
-   */
-  verifyWorkspaceRequest?: (
-    req: Request,
-    projectId?: string,
-  ) => Promise<
-    | VerifiedWorkspaceRequestContextResult
-    | WorkspaceCollabContext
-    | null
-  >;
-  /**
    * Revalidate one already-captured Team pull scope against the authoritative
    * membership directory. This must address `scope.workspaceId` +
    * `scope.viewerMemberId` directly; it must not compare against the daemon's
@@ -124,9 +88,6 @@ export interface RegisterCollabSyncRoutesDeps {
    */
   markSharedProjectPlaceholder?: (projectId: string, placeholder: boolean) => void;
   projectStore?: PulledProjectStore;
-  resolveProjectDir?: (projectId: string) => string | Promise<string>;
-  /** Durable publication metadata used to restore public links after restart. */
-  publicFilePublicationStore?: PublicFilePublicationStore;
   resolvePullDir?: (projectId: string) => string;
   /** Begin one exact-scope transfer generation after authorization resolves. */
   beginContentTransfer?: (
@@ -221,8 +182,6 @@ export interface CollabSyncRoutesHandle {
 }
 
 const PULLED_PROJECT_PLACEHOLDER_NAME = '共享项目';
-const PUBLIC_FILE_RESOURCE_KIND = 'project';
-const PUBLIC_FILE_REF = 'published';
 
 const MAX_ERROR_LOG_FIELD_LENGTH = 2_048;
 
@@ -318,197 +277,13 @@ async function resolvePulledProjectName(
     ?? PULLED_PROJECT_PLACEHOLDER_NAME;
 }
 
-function normalizePublicFilePath(raw: string): string | null {
-  if (raw.includes('\\')) return null;
-  let decoded: string;
-  try {
-    decoded = raw
-      .split('/')
-      .map((part) => decodeURIComponent(part))
-      .join('/');
-  } catch {
-    return null;
-  }
-  if (decoded.includes('\\')) return null;
-  const normalized = decoded.replace(/^\/+/, '').replace(/\/+/g, '/');
-  if (
-    !normalized ||
-    normalized.includes('\0') ||
-    normalized.split('/').some((part) => part === '' || part === '.' || part === '..')
-  ) {
-    return null;
-  }
-  return normalized;
-}
-
-async function resolvePublicSourceFile(projectDir: string, filePath: string): Promise<string> {
-  const [projectRoot, candidate] = await Promise.all([
-    realpath(projectDir),
-    realpath(path.join(projectDir, filePath)),
-  ]);
-  const relative = path.relative(projectRoot, candidate);
-  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
-    return candidate;
-  }
-  const error = new Error('public file path escapes project root') as NodeJS.ErrnoException;
-  error.code = 'EACCES';
-  throw error;
-}
-
-function publicFileResourceIdFor(
-  projectId: string,
-  filePath: string,
-  principal: ResourceHubPrincipal,
-): string {
-  const scoped = Buffer.from(
-    JSON.stringify([principal.teamId, principal.memberId, projectId, filePath]),
-    'utf8',
-  ).toString('base64url');
-  return `project-file-${scoped}`;
-}
-
-function publicFilePublicationScope(
-  projectId: string,
-  filePath: string,
-  principal: ResourceHubPrincipal,
-): PublicFilePublicationScope {
-  return {
-    resourceTeamId: principal.teamId,
-    ownerMemberId: principal.memberId,
-    projectId,
-    filePath,
-  };
-}
-
-function encodePublicFileUrlPath(filePath: string): string {
-  return filePath.split('/').map((part) => encodeURIComponent(part)).join('/');
-}
-
-/**
- * The 409 body for a public-file request that has no team workspace behind it.
- *
- * Public links are snapshots in the workspace resource hub, which only a team
- * workspace can address (`workspaceContextHasTeamIdentity`). A personal or
- * signed-out session — and a team session whose context read momentarily fails —
- * lands here. Ship a sentence alongside the code so every surface that is not
- * the web UI (the `od` CLI, embedding agents) states the reason instead of
- * echoing `WORKSPACE_IDENTITY_REQUIRED` at a human. The web UI localizes the
- * code itself; see `publicFilePublishFailureKey` in apps/web.
- */
-function workspaceIdentityRequiredBody() {
-  return {
-    error: 'WORKSPACE_IDENTITY_REQUIRED',
-    message:
-      'Publishing a public link needs a signed-in workspace. Sign in to OpenDesign Cloud, ' +
-      'or use Deploy to publish this file without one.',
-  };
-}
-
-/**
- * Resource-hub principal for the PUBLIC SINGLE-FILE publish routes.
- *
- * These routes deliberately do NOT use `contextToResourceHubPrincipal`, which
- * requires `workspaceContextHasTeamIdentity` and is still exactly right for team
- * project sharing (a shared project needs teammates to share WITH).
- *
- * A public file link needs no such thing. The hub addresses purely by workspace
- * id, and B stopped refusing a personal workspace on its control-key auth path:
- * `authenticateSession` now mints a principal whose `teamId` IS the workspace id
- * — "a partition of one" — and `resolveAccess` only ever compares that id with
- * the resource's own. So the real requirement here is A workspace, not a TEAM
- * workspace: an id to publish under and a member id to own the resource with.
- *
- * A signed-out session still has neither, and is still refused — this widens the
- * gate, it does not remove it. The web UI must gate its entry point on the SAME
- * rule (`canPublishPublicFile` in apps/web/src/collab/public-file-publish.ts);
- * a button that renders where this returns 409 is the bug this pair exists to
- * prevent.
- */
-function publicFilePrincipal(context: WorkspaceCollabContext | null): ResourceHubPrincipal | null {
-  if (!workspaceContextHasWorkspaceIdentity(context) || !context) return null;
-  // The predicate above already proved both ids are present; this is the type
-  // narrowing TS needs, not a second copy of the rule.
-  const { workspaceId, workspaceMemberId } = context;
-  if (!workspaceId || !workspaceMemberId) return null;
-  return {
-    memberId: workspaceMemberId,
-    // Personal workspaces carry no `teamId`; the workspace id is the scope.
-    teamId: context.teamId ?? workspaceId,
-    role: context.role,
-    lifecycleState: context.lifecycleState,
-    workspaceType: context.workspaceType,
-  };
-}
-
-function publicResourceHubBaseUrl(): string | null {
-  return readVelaControlApiContext()?.apiUrl?.trim() || process.env.OD_RESOURCE_HUB_URL?.trim() || null;
-}
-
-function publicSnapshotFileUrl(baseUrl: string, slug: string, filePath: string): string {
-  const relative = `/api/v1/public/snapshots/${encodeURIComponent(slug)}/files/${encodePublicFileUrlPath(filePath)}`;
-  return new URL(relative, baseUrl).toString();
-}
-
-async function resolveSharedProjectForPublicFile(
-  resolveSharedProject: RegisterCollabSyncRoutesDeps['resolveSharedProject'],
-  projectId: string,
-  context: WorkspaceCollabContext,
-  principal: ResourceHubPrincipal,
-): Promise<{ ok: true; project: TeamProject | null } | { ok: false }> {
-  try {
-    return {
-      ok: true,
-      project: await resolveSharedProject?.(projectId, {
-        workspaceId: context.workspaceId,
-        resourceTeamId: principal.teamId,
-        viewerMemberId: principal.memberId,
-        // This is an ownership lookup, not a pull authorization witness. The
-        // catalog result below supplies the authoritative owner.
-        ownerMemberId: '',
-      }) ?? null,
-    };
-  } catch (error) {
-    console.warn('[od] failed to resolve public file project ownership:', error);
-    return { ok: false };
-  }
-}
-
-type RouteWorkspaceVerification =
-  | { ok: true; context: WorkspaceCollabContext | null }
-  | Exclude<VerifiedWorkspaceRequestContextResult, { ok: true }>;
-
-function normalizeWorkspaceVerification(
-  value:
-    | VerifiedWorkspaceRequestContextResult
-    | WorkspaceCollabContext
-    | null,
-): RouteWorkspaceVerification {
-  if (value && 'ok' in value) return value;
-  if (value) return { ok: true, context: value };
-  // Legacy injected test adapters used null as a route-specific denial.
-  // Production supplies the structured verifier result above.
-  return { ok: true, context: null };
-}
-
-function sendWorkspaceVerificationFailure(
-  res: Response,
-  verification: Exclude<RouteWorkspaceVerification, { ok: true }>,
-) {
-  return res.status(verification.status).json({
-    error: verification.code,
-    message: verification.message,
-    ...(verification.retryable ? { retryable: true } : {}),
-  });
-}
-
 export function registerCollabSyncRoutes(
-  app: Express,
+  _app: Express,
   deps: RegisterCollabSyncRoutesDeps,
 ): CollabSyncRoutesHandle {
   const { pullLatest } = deps.collab;
   const {
     projectStore,
-    resolveProjectDir,
     resolvePullDir,
     resolveSharedProject,
     markTeamProjectRevoked,
@@ -517,9 +292,6 @@ export function registerCollabSyncRoutes(
     notifyProjectMetadataChanged,
   } = deps;
   const readManifest = deps.readManifest ?? readProjectManifest;
-  const publicFilePublicationStore =
-    deps.publicFilePublicationStore
-    ?? createInMemoryPublicFilePublicationStore();
   const reportPullTiming = (
     event: Parameters<NonNullable<RegisterCollabSyncRoutesDeps['onPullTiming']>>[0],
   ): void => {
@@ -529,52 +301,6 @@ export function registerCollabSyncRoutes(
       // Diagnostics are observational and must never affect pull behavior.
     }
   };
-
-  async function verifyWorkspaceContextForRequest(
-    req: Request,
-    projectId?: string,
-    verifier = deps.verifyWorkspaceRequest,
-  ): Promise<RouteWorkspaceVerification> {
-    if (!verifier) {
-      return { ok: true, context: null };
-    }
-    try {
-      return normalizeWorkspaceVerification(
-        await verifier(req, projectId),
-      );
-    } catch {
-      return {
-        ok: false,
-        status: 503,
-        code: 'WORKSPACE_AUTHORITY_UNAVAILABLE',
-        message: 'workspace membership authority is temporarily unavailable',
-        retryable: true,
-      };
-    }
-  }
-
-  function verifiedWorkspaceContextForRequest(
-    req: Request,
-    projectId?: string,
-  ): Promise<RouteWorkspaceVerification> {
-    return verifyWorkspaceContextForRequest(
-      req,
-      projectId,
-      deps.verifyWorkspaceRequest,
-    );
-  }
-
-  async function canShareProjectsForRequest(
-    req: Request,
-    verifiedContext?: WorkspaceCollabContext | null,
-  ): Promise<boolean> {
-    const verification =
-      verifiedContext === undefined
-        ? await verifiedWorkspaceContextForRequest(req)
-        : { ok: true as const, context: verifiedContext };
-    const context = verification.ok ? verification.context : null;
-    return context?.permissions.canShareProjects === true;
-  }
 
   async function capturedScopeIsStillAuthorized(scope: TeamMirrorPullScope): Promise<boolean> {
     try {
@@ -667,232 +393,6 @@ export function registerCollabSyncRoutes(
     projectStore.register(input);
     return true;
   }
-
-  app.post(/^\/api\/projects\/([^/]+)\/files\/(.+)\/publish-public$/u, async (req, res) => {
-    const params = req.params as unknown as { 0?: string; 1?: string };
-    const projectId = String(params[0] ?? '');
-    const filePath = normalizePublicFilePath(String(params[1] ?? ''));
-    if (!projectId || !filePath) {
-      return res.status(400).json({ error: 'invalid_file_path' });
-    }
-    const verification = await verifiedWorkspaceContextForRequest(req, projectId);
-    if (!verification.ok) {
-      return sendWorkspaceVerificationFailure(res, verification);
-    }
-    const verifiedContext = verification.context;
-    const principal = publicFilePrincipal(verifiedContext);
-    if (!verifiedContext || !principal) {
-      return res.status(409).json(workspaceIdentityRequiredBody());
-    }
-    if (!await canShareProjectsForRequest(req, verifiedContext)) {
-      return res.status(403).json({ error: 'WORKSPACE_PROJECT_SHARE_DENIED' });
-    }
-    const sharedProjectResult = await resolveSharedProjectForPublicFile(
-      resolveSharedProject,
-      projectId,
-      verifiedContext,
-      principal,
-    );
-    if (!sharedProjectResult.ok) {
-      return res.status(503).json({ error: 'WORKSPACE_PROJECT_OWNERSHIP_UNAVAILABLE' });
-    }
-    const sharedProject = sharedProjectResult.project;
-    if (sharedProject?.ownerMemberId && sharedProject.ownerMemberId !== principal.memberId) {
-      return res.status(403).json({ error: 'WORKSPACE_PROJECT_PUBLISH_DENIED' });
-    }
-    const baseUrl = publicResourceHubBaseUrl();
-    if (!baseUrl) {
-      return res.status(502).json({ error: 'PUBLIC_FILE_URL_UNAVAILABLE' });
-    }
-    if (!resolveProjectDir) {
-      return res.status(500).json({ error: 'PROJECT_DIR_UNAVAILABLE' });
-    }
-
-    const projectDir = await resolveProjectDir(projectId);
-    let data: Buffer;
-    try {
-      const sourceFile = await resolvePublicSourceFile(projectDir, filePath);
-      data = await readFile(sourceFile);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException)?.code;
-      return res.status(code === 'ENOENT' ? 404 : 400).json({
-        error: code === 'ENOENT' ? 'FILE_NOT_FOUND' : 'FILE_UNAVAILABLE',
-      });
-    }
-
-    const resourceId = publicFileResourceIdFor(projectId, filePath, principal);
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'od-public-file-'));
-    try {
-      const targetFile = path.join(tempDir, filePath);
-      await mkdir(path.dirname(targetFile), { recursive: true });
-      await writeFile(targetFile, data);
-      const metadata = {
-        source: 'open-design',
-        projectId,
-        fileName: filePath,
-      };
-      await runVelaResourceCommand([
-        'push',
-        PUBLIC_FILE_RESOURCE_KIND,
-        resourceId,
-        tempDir,
-        '--ref',
-        PUBLIC_FILE_REF,
-        '--metadata-json',
-        JSON.stringify(metadata),
-        '--json',
-      ], principal.teamId);
-      const snapshot = parseVelaResourceSnapshot(await runVelaResourceCommand([
-        'snapshot',
-        resourceId,
-        '--ref',
-        PUBLIC_FILE_REF,
-        '--name',
-        path.basename(filePath),
-        '--json',
-      ], principal.teamId));
-      if (!snapshot) {
-        return res.status(502).json({ error: 'PUBLIC_SNAPSHOT_UNAVAILABLE' });
-      }
-      const publication: PublicProjectFilePublication = {
-        url: publicSnapshotFileUrl(baseUrl, snapshot.slug, filePath),
-        slug: snapshot.slug,
-        fileName: filePath,
-      };
-      try {
-        publicFilePublicationStore.set(
-          publicFilePublicationScope(projectId, filePath, principal),
-          publication,
-        );
-      } catch (persistenceError) {
-        try {
-          await runVelaResourceCommand([
-            'snapshot-redact',
-            resourceId,
-            snapshot.slug,
-            '--json',
-          ], principal.teamId);
-        } catch (redactionError) {
-          console.warn(
-            '[od] failed to persist public project file publication; snapshot compensation also failed:',
-            { persistenceError, redactionError },
-          );
-          const recoveryResponse = {
-            error: {
-              code: PUBLIC_FILE_MANUAL_REVOKE_REQUIRED,
-              message:
-                `The public link remains active at ${publication.url}. `
-                + 'Run od project revoke-public-link with this project, file path, and URL.',
-              data: {
-                projectId,
-                ...publication,
-              },
-            },
-          } satisfies PublicFileManualRevokeRequiredResponse;
-          return res.status(502).json(recoveryResponse);
-        }
-        throw persistenceError;
-      }
-      return res.json(publication);
-    } catch (error) {
-      console.warn('[od] failed to publish public project file:', error);
-      return res.status(502).json({ error: 'PUBLIC_FILE_PUBLISH_UNAVAILABLE' });
-    } finally {
-      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    }
-  });
-
-  app.delete(/^\/api\/projects\/([^/]+)\/files\/(.+)\/publish-public$/u, async (req, res) => {
-    const params = req.params as unknown as { 0?: string; 1?: string };
-    const projectId = String(params[0] ?? '');
-    const filePath = normalizePublicFilePath(String(params[1] ?? ''));
-    const slug = typeof (req.body as { slug?: unknown } | undefined)?.slug === 'string'
-      ? (req.body as { slug: string }).slug.trim()
-      : '';
-    if (!projectId || !filePath || !slug) {
-      return res.status(400).json({ error: 'invalid_public_file' });
-    }
-    const verification = await verifiedWorkspaceContextForRequest(req, projectId);
-    if (!verification.ok) {
-      return sendWorkspaceVerificationFailure(res, verification);
-    }
-    const verifiedContext = verification.context;
-    const principal = publicFilePrincipal(verifiedContext);
-    if (!verifiedContext || !principal) {
-      return res.status(409).json(workspaceIdentityRequiredBody());
-    }
-    if (!await canShareProjectsForRequest(req, verifiedContext)) {
-      return res.status(403).json({ error: 'WORKSPACE_PROJECT_SHARE_DENIED' });
-    }
-    const sharedProjectResult = await resolveSharedProjectForPublicFile(
-      resolveSharedProject,
-      projectId,
-      verifiedContext,
-      principal,
-    );
-    if (!sharedProjectResult.ok) {
-      return res.status(503).json({ error: 'WORKSPACE_PROJECT_OWNERSHIP_UNAVAILABLE' });
-    }
-    const sharedProject = sharedProjectResult.project;
-    if (sharedProject?.ownerMemberId && sharedProject.ownerMemberId !== principal.memberId) {
-      return res.status(403).json({ error: 'WORKSPACE_PROJECT_PUBLISH_DENIED' });
-    }
-    const resourceId = publicFileResourceIdFor(projectId, filePath, principal);
-    try {
-      await runVelaResourceCommand([
-        'snapshot-redact',
-        resourceId,
-        slug,
-        '--json',
-      ], principal.teamId);
-      publicFilePublicationStore.delete(
-        publicFilePublicationScope(projectId, filePath, principal),
-      );
-      return res.json({ ok: true, slug, fileName: filePath });
-    } catch (error) {
-      console.warn('[od] failed to unpublish public project file:', error);
-      return res.status(502).json({ error: 'PUBLIC_FILE_UNPUBLISH_UNAVAILABLE' });
-    }
-  });
-
-  app.get(/^\/api\/projects\/([^/]+)\/files\/(.+)\/publish-public$/u, async (req, res) => {
-    const params = req.params as unknown as { 0?: string; 1?: string };
-    const projectId = String(params[0] ?? '');
-    const filePath = normalizePublicFilePath(String(params[1] ?? ''));
-    if (!projectId || !filePath) {
-      return res.status(400).json({ error: 'invalid_file_path' });
-    }
-    const verification = await verifiedWorkspaceContextForRequest(req, projectId);
-    if (!verification.ok) {
-      return sendWorkspaceVerificationFailure(res, verification);
-    }
-    const verifiedContext = verification.context;
-    const principal = publicFilePrincipal(verifiedContext);
-    if (!verifiedContext || !principal) {
-      return res.status(409).json(workspaceIdentityRequiredBody());
-    }
-    if (!await canShareProjectsForRequest(req, verifiedContext)) {
-      return res.status(403).json({ error: 'WORKSPACE_PROJECT_SHARE_DENIED' });
-    }
-    const sharedProjectResult = await resolveSharedProjectForPublicFile(
-      resolveSharedProject,
-      projectId,
-      verifiedContext,
-      principal,
-    );
-    if (!sharedProjectResult.ok) {
-      return res.status(503).json({ error: 'WORKSPACE_PROJECT_OWNERSHIP_UNAVAILABLE' });
-    }
-    const sharedProject = sharedProjectResult.project;
-    if (sharedProject?.ownerMemberId && sharedProject.ownerMemberId !== principal.memberId) {
-      return res.status(403).json({ error: 'WORKSPACE_PROJECT_PUBLISH_DENIED' });
-    }
-    return res.json({
-      publication: publicFilePublicationStore.get(
-        publicFilePublicationScope(projectId, filePath, principal),
-      ),
-    });
-  });
 
   /** Shared explicit-pull flow used by the HTTP route and local materialization. */
   async function pullSharedProjectOnce(

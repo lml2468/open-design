@@ -3798,40 +3798,12 @@ export interface Dict extends CollaborationSettingsDict {
   'fileViewer.shareMenuPresentation': string;
   'fileViewer.shareMenuSourceFiles': string;
   'fileViewer.shareMenuSave': string;
-  'fileViewer.shareMenuPublishViaOd': string;
   'fileViewer.unifiedShareAria': string;
   'fileViewer.unifiedShareTab': string;
   'fileViewer.unifiedExportTab': string;
   'fileViewer.unifiedSendTab': string;
   'fileViewer.openFileForHistory': string;
-  'fileViewer.publishSingleFileTitle': string;
-  'fileViewer.publishSingleFileDescription': string;
   'fileViewer.openFileRequired': string;
-  'fileViewer.publishFile': string;
-  /** Shown on the publish button in place of `publishFile` while the publish
-   *  request is in flight (it takes several seconds server-side) — feedback
-   *  for the "no loading state, looks like nothing happened" report
-   *  (recvqae7v8yMlk). */
-  'fileViewer.publishingFile': string;
-  'fileViewer.unpublishFile': string;
-  /** @deprecated Orphaned (recvqgif6Xa7Wb): rendered the "no team to share
-   *  with yet" bridge card with its create-team CTA in the share panel.
-   *  Product ruled that card out entirely — it was never a designed surface,
-   *  just a stopgap added for recvqae3pK5hyx/recvq6W8GX8NaH to avoid a blank
-   *  tab. A personal workspace's share tab is now allowed to show only the
-   *  cards that legitimately apply (or nothing, if none do). */
-  'fileViewer.shareEmptyStateTitle': string;
-  /** @deprecated Orphaned (recvqgif6Xa7Wb): see `shareEmptyStateTitle`. */
-  'fileViewer.shareEmptyStateDescription': string;
-  /** @deprecated Orphaned (recvqgif6Xa7Wb): see `shareEmptyStateTitle`. */
-  'fileViewer.shareEmptyStateCreateTeam': string;
-  /** @deprecated Orphaned (recvqgif6Xa7Wb): see `shareEmptyStateTitle`. */
-  'fileViewer.shareTeamMissingTitle': string;
-  /** @deprecated Orphaned: the public-file gate is no longer team-scoped.
-   *  `fileViewer.publishFileRequiresWorkspace` replaced it. */
-  'fileViewer.publishFileRequiresTeam': string;
-  'fileViewer.publishFileRequiresWorkspace': string;
-  'fileViewer.publishFileFailed': string;
   'fileViewer.readonlySharedNoExport': string;
   'fileViewer.copyShareLink': string;
   'fileViewer.openSharePage': string;

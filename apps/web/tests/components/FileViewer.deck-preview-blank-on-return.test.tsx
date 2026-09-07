@@ -101,8 +101,8 @@ type FilesRequestLog = { url: string }[];
 function installFetchMock(projectId: string, filesRequests: FilesRequestLog) {
   const filesUrl = `/api/projects/${encodeURIComponent(projectId)}/files`;
   const rawUrl = `/api/projects/${encodeURIComponent(projectId)}/raw/deck.html`;
-  // Exact-path match: `/files/<name>/publish-public` (the public-publication
-  // probe) must not be mistaken for the project file LIST read.
+  // Match the exact file-list path so unrelated per-file requests cannot be
+  // mistaken for the project file-list read.
   const isFilesListUrl = (url: string) => url.split('?')[0] === filesUrl;
   vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);

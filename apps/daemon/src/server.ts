@@ -843,7 +843,6 @@ import {
 import { registerTeamResourceRoutes } from './routes/team-resources.js';
 import { registerTeamResourceShareRoutes } from './routes/team-resource-share.js';
 import { createCollabRuntime } from './collab/runtime.js';
-import { createSqlitePublicFilePublicationStore } from './collab/public-file-publication-store.js';
 import {
   createActiveWorkspaceSelectionStore,
 } from './collab/active-workspace-selection.js';
@@ -4437,8 +4436,6 @@ export async function startServer({
     });
   const collabSyncRoutes = registerCollabSyncRoutes(app, {
     collab,
-    publicFilePublicationStore: createSqlitePublicFilePublicationStore(db),
-    verifyWorkspaceRequest: verifiedWorkspaceContextForRequest,
     verifyWorkspaceReadRequest: verifiedWorkspaceReadContextForRequest,
     verifyWorkspaceScope: verifiedTeamMirrorScope,
     readContentTransferState: (projectId, scope) =>
@@ -4484,11 +4481,6 @@ export async function startServer({
       materializeTeamMirror: (input, scope) => materializePulledTeamMirror(db, input, scope),
       materializeTeamPlaceholder: (input, scope) =>
         materializePulledTeamMirror(db, input, scope, { placeholder: true }),
-    },
-    resolveProjectDir: async (projectId) => {
-      const project = getProject(db, projectId);
-      if (project) await ensureProject(PROJECTS_DIR, projectId, project.metadata);
-      return resolveProjectShareDir(PROJECTS_DIR, projectId, project, resolveProjectDir);
     },
     resolvePullDir: (projectId) => resolveProjectDir(PROJECTS_DIR, projectId),
     readMaterializedVersion: (projectId, scope) =>

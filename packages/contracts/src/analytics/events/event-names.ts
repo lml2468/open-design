@@ -45,7 +45,6 @@ export type AnalyticsEventName =
   | 'artifact_edit_result'
   | 'artifact_export_result'
   | 'artifact_deploy_result'
-  | 'artifact_publish_result'
   | 'file_version_restore_result'
   // Workspace redesign: authoritative outcome events. Clicks and impressions
   // continue to use the core ui_click/surface_view catalogue.

@@ -1,9 +1,4 @@
-import {
-  PUBLIC_FILE_MANUAL_REVOKE_REQUIRED,
-  workspaceContextHasTeamIdentity,
-  type PublicFileManualRevokeRequiredData,
-  type PublicProjectFilePublication,
-} from '@open-design/contracts';
+import { workspaceContextHasTeamIdentity } from '@open-design/contracts';
 import { boundedRequestErrorCode } from '../analytics/workspace';
 import type {
   ConnectorAuthConfigPrepareResponse,
@@ -105,7 +100,6 @@ import {
   workspaceAccountScopedCacheKey,
   currentWorkspaceAccountGeneration,
 } from '../collab/workspace-identity';
-import { PublicFilePublishError } from '../collab/public-file-publish';
 
 export const DEFAULT_DEPLOY_PROVIDER_ID = 'vercel-self';
 export const CLOUDFLARE_PAGES_PROVIDER_ID = 'cloudflare-pages';
@@ -122,8 +116,6 @@ export type WebDeploymentInfo = ProjectDeploymentsResponse['deployments'][number
 export type WebDeployProjectFileResponse = DeployProjectFileResponse;
 export type WebCloudflarePagesDeploySelection = CloudflarePagesDeploySelection;
 export type WebCloudflarePagesZonesResponse = CloudflarePagesZonesResponse;
-
-export type WebPublicProjectFileResponse = PublicProjectFilePublication;
 
 export function isDeployProviderId(value: unknown): value is WebDeployProviderId {
   return typeof value === 'string' && (DEPLOY_PROVIDER_IDS as readonly string[]).includes(value);
@@ -1856,142 +1848,6 @@ export async function deployProjectFile(
     throw Object.assign(new Error(message), { code });
   }
   return (await resp.json()) as WebDeployProjectFileResponse;
-}
-
-function parsePublicFileManualRevokeData(
-  value: unknown,
-): PublicFileManualRevokeRequiredData | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const data = value as Partial<Record<keyof PublicFileManualRevokeRequiredData, unknown>>;
-  if (
-    typeof data.projectId !== 'string'
-    || typeof data.url !== 'string'
-    || typeof data.slug !== 'string'
-    || typeof data.fileName !== 'string'
-    || !data.projectId
-    || !data.url
-    || !data.slug
-    || !data.fileName
-  ) {
-    return undefined;
-  }
-  return {
-    projectId: data.projectId,
-    url: data.url,
-    slug: data.slug,
-    fileName: data.fileName,
-  };
-}
-
-export async function publishProjectFilePublic(
-  projectId: string,
-  fileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<WebPublicProjectFileResponse> {
-  // Carry the active workspace identity so the daemon's `canShareProjectsForRequest`
-  // gate (apps/daemon/src/routes/collab-sync.ts) reads the real permission bit
-  // instead of falling back to a headerless context read — see
-  // workspaceProjectHeaders' call sites in state/projects.ts for the same pattern.
-  const resp = await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileName)}/publish-public`,
-    {
-      method: 'POST',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
-    },
-  );
-  if (!resp.ok) {
-    const payload = (await resp.json().catch(() => null)) as
-      | {
-          error?: { code?: unknown; message?: unknown; data?: unknown } | string;
-          message?: unknown;
-        }
-      | null;
-    const structuredError = payload?.error && typeof payload.error === 'object'
-      ? payload.error
-      : null;
-    const code = typeof structuredError?.code === 'string'
-      ? structuredError.code
-      : typeof payload?.error === 'string'
-        ? payload.error
-        : undefined;
-    const errorMessage =
-      typeof structuredError?.message === 'string'
-        ? structuredError.message
-      : typeof payload?.error === 'string'
-          ? payload.error
-          : typeof payload?.message === 'string'
-            ? payload.message
-            : undefined;
-    const recoveryData = code === PUBLIC_FILE_MANUAL_REVOKE_REQUIRED
-      ? parsePublicFileManualRevokeData(structuredError?.data)
-      : undefined;
-    throw new PublicFilePublishError(
-      errorMessage || `Publish failed (${resp.status})`,
-      resp.status,
-      code,
-      recoveryData?.projectId === projectId && recoveryData.fileName === fileName
-        ? recoveryData
-        : undefined,
-    );
-  }
-  return (await resp.json()) as WebPublicProjectFileResponse;
-}
-
-export async function fetchProjectFilePublicPublication(
-  projectId: string,
-  fileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<WebPublicProjectFileResponse | null> {
-  const resp = await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileName)}/publish-public`,
-    workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
-  );
-  if (!resp.ok) {
-    const payload = (await resp.json().catch(() => null)) as
-      | { error?: { message?: string } | string; message?: string }
-      | null;
-    const errorMessage =
-      typeof payload?.error === 'object'
-        ? payload.error.message
-        : typeof payload?.error === 'string'
-          ? payload.error
-          : payload?.message;
-    throw new Error(errorMessage || `Fetch publish state failed (${resp.status})`);
-  }
-  const payload = (await resp.json()) as { publication?: WebPublicProjectFileResponse | null };
-  return payload.publication ?? null;
-}
-
-export async function unpublishProjectFilePublic(
-  projectId: string,
-  fileName: string,
-  slug: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<{ ok: true; slug: string; fileName: string }> {
-  const resp = await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileName)}/publish-public`,
-    {
-      method: 'DELETE',
-      headers: {
-        'content-type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
-      },
-      body: JSON.stringify({ slug }),
-    },
-  );
-  if (!resp.ok) {
-    const payload = (await resp.json().catch(() => null)) as
-      | { error?: { message?: string } | string; message?: string }
-      | null;
-    const errorMessage =
-      typeof payload?.error === 'object'
-        ? payload.error.message
-        : typeof payload?.error === 'string'
-          ? payload.error
-          : payload?.message;
-    throw new Error(errorMessage || `Unpublish failed (${resp.status})`);
-  }
-  return (await resp.json()) as { ok: true; slug: string; fileName: string };
 }
 
 export async function checkDeploymentLink(

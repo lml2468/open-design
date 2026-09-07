@@ -16,7 +16,6 @@ import type {
 } from '@open-design/contracts';
 import { eventsEndedWithUnfinishedWork } from '@open-design/contracts';
 import { migrateCollabSyncSnapshots } from './collab/sync-snapshot-store.js';
-import { migratePublicFilePublications } from './collab/public-file-publication-store.js';
 import {
   collapseWorkspaceProjectHomes,
   type WorkspaceProjectHomeRow,
@@ -558,7 +557,6 @@ function migrate(db: SqliteDb): void {
   migrateStrategyTaskStore(db);
   migrateOdNextRolloutStore(db);
   migrateCollabSyncSnapshots(db);
-  migratePublicFilePublications(db);
 }
 
 /**

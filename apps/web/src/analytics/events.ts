@@ -129,7 +129,6 @@ import type {
   ArtifactEditResultProps,
   ArtifactExportResultProps,
   ArtifactDeployResultProps,
-  ArtifactPublishResultProps,
   SketchSaveResultProps,
   SketchExportResultProps,
   FeedbackSubmitResultProps,
@@ -1115,13 +1114,6 @@ export function trackArtifactDeployResult(
   options?: { requestId?: string },
 ): void {
   send(track, 'artifact_deploy_result', props, options);
-}
-
-export function trackArtifactPublishResult(
-  track: Track,
-  props: ArtifactPublishResultProps,
-): void {
-  send(track, 'artifact_publish_result', props);
 }
 
 export function trackFileVersionRestoreResult(
