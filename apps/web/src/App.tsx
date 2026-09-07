@@ -29,7 +29,6 @@ import type {
   LocalCatalogScope,
   RunContextSelection,
   WorkspaceCollabContext,
-  WorkspaceInvalidationSsePayload,
   ProjectWorkspaceScope,
   ProjectScenarioTaskProfile,
 } from '@open-design/contracts';
@@ -51,7 +50,6 @@ import { migrateCustomPetAtlas } from './components/pet/pets';
 import {
   ProjectView,
   type ProjectRenameFenceToken,
-  type ProjectNameAuthorityResolution,
 } from './components/ProjectView';
 import { ProjectCreationPendingView } from './components/ProjectCreationPendingView';
 import { ExperienceSurvey } from './components/ExperienceSurvey';
@@ -101,10 +99,6 @@ import { CollabDemoView } from './collab/CollabDemoView';
 import {
   WorkspaceMemberDirectoryPreloader,
 } from './collab/WorkspaceMemberDirectoryPreloader';
-import {
-  beginTeamProjectMetadataRefresh,
-  fetchTeamProjectCatalogEntry as fetchScopedTeamProjectCatalogEntry,
-} from './collab/team-projects-catalog';
 import { useWorkspaceInvalidation } from './collab/workspace-events';
 import { useWorkspaceSnapshotActivation } from './collab/workspace-snapshot-activation';
 import {
@@ -163,7 +157,6 @@ import {
   importClaudeDesignZip,
   importFolderProject,
   invalidatePluginCatalogCache,
-  invalidateWorkspaceProjectLists,
   listProjects,
   listTemplates,
   deleteTemplate,
@@ -741,91 +734,6 @@ function AppInner() {
   useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
-  // Project names from another member's team-catalog row are authoritative:
-  // the local mirror can carry an older real name (not only "共享项目") with a
-  // newer local timestamp. Scope keys prevent a project id observed in one
-  // workspace/member context from leaking its title authority into another.
-  const [authoritativeProjectNames, setAuthoritativeProjectNames] = useState<
-    Record<string, string>
-  >({});
-  const authoritativeProjectNamesRef = useRef(authoritativeProjectNames);
-  authoritativeProjectNamesRef.current = authoritativeProjectNames;
-  const projectNameAuthorityRequestGenerationRef = useRef<Map<string, number>>(new Map());
-  const refreshTargetedProjectMetadata = useCallback(async (
-    payload: Extract<WorkspaceInvalidationSsePayload, { type: 'team-projects-changed' }>,
-  ) => {
-    const projectId = payload.projectId;
-    if (!projectId) return;
-    const issuedContext = workspaceContextRef.current;
-    if (!issuedContext) return;
-    const issuedAccountGeneration = currentWorkspaceAccountGeneration();
-    const issuedIdentity = workspaceIdentityCacheKey(issuedContext);
-    const metadataRefresh = beginTeamProjectMetadataRefresh({
-      accountGeneration: issuedAccountGeneration,
-      context: issuedContext,
-      projectId,
-      event: payload,
-    });
-    const metadataRequestIsCurrent = () =>
-      currentWorkspaceAccountGeneration() === issuedAccountGeneration
-      && workspaceIdentityCacheKey(workspaceContextRef.current) === issuedIdentity
-      && metadataRefresh.isLatest();
-    try {
-      const catalogProject = await fetchScopedTeamProjectCatalogEntry({
-        context: issuedContext,
-        projectId,
-        force: true,
-        cacheDiscriminator: metadataRefresh.cacheDiscriminator,
-      });
-      if (
-        !catalogProject
-        || !metadataRequestIsCurrent()
-      ) return;
-      const name = catalogProject.name?.trim();
-      if (!name) return;
-      setProjects((current) => {
-        if (!metadataRequestIsCurrent()) return current;
-        return current.map((project) =>
-          project.id === projectId
-          && project.workspaceId === issuedContext.workspaceId
-            ? { ...project, name }
-            : project
-        );
-      });
-      if (!metadataRequestIsCurrent()) return;
-      patchProjectDisplaySnapshots({
-        accountGeneration: issuedAccountGeneration,
-        context: issuedContext,
-        patch: (projects) => projects.map((project) =>
-          project.id === projectId
-            ? {
-                ...project,
-                name,
-                ...(catalogProject.metadata ? { metadata: catalogProject.metadata } : {}),
-                ...(catalogProject.updatedAt !== undefined
-                  ? { updatedAt: catalogProject.updatedAt }
-                  : {}),
-              }
-            : project),
-      });
-      // Another member's catalog row is title authority over a stale local
-      // mirror. The creator's own local row remains authoritative, but still
-      // receives the exact hub-confirmed projection update above (for another
-      // window/device logged into the same member).
-      if (catalogProject.ownerMemberId !== issuedContext.workspaceMemberId) {
-        const authorityKey = projectViewAuthorizationLifetimeKey(projectId, issuedContext);
-        setAuthoritativeProjectNames((current) => {
-          if (!metadataRequestIsCurrent()) return current;
-          return current[authorityKey] === name
-            ? current
-            : { ...current, [authorityKey]: name };
-        });
-      }
-    } catch {
-      // Keep the last-good projection. Reconnect/poll performs full catch-up.
-    }
-  }, []);
-  const refreshProjectCatalogRef = useRef<() => void>(() => {});
   const teamResourceRefreshRefs = useRef<{
     skill: (resourceId?: string) => void;
     designSystem: (resourceId?: string) => void;
@@ -852,13 +760,6 @@ function AppInner() {
     refresh: () => teamResourceRefreshRefs.current.catchUp(),
   });
   useWorkspaceInvalidation({
-    'team-projects-changed': (payload) => {
-      if (payload.kind === 'metadata' && payload.projectId) {
-        void refreshTargetedProjectMetadata(payload);
-        return;
-      }
-      refreshProjectCatalogRef.current();
-    },
     'team-resources-changed': (payload) => {
       if (payload.resourceKind === 'skill') {
         teamResourceRefreshRefs.current.skill(payload.resourceId);
@@ -1736,23 +1637,6 @@ function AppInner() {
     });
     reconcileFetchedProjects(list, request);
   }, [beginProjectListRequest, listCurrentWorkspaceProjects, reconcileFetchedProjects, workspaceProjectView]);
-
-  const refreshProjectsAfterTeamCatalogChange = useCallback(() => {
-    const context = workspaceContextRef.current;
-    if (!context) return;
-    invalidateWorkspaceProjectLists(
-      context,
-      currentWorkspaceAccountGeneration(),
-    );
-    // Preserve the exact principal's last-good rows while the authoritative
-    // list reconciles. The request/reconcile pair independently captures and
-    // rechecks account + Workspace identity, so a late response cannot cross a
-    // switch boundary.
-    void refreshProjectsStrict().catch((error: unknown) => {
-      console.error('[projects] failed to refresh after team catalog change', error);
-    });
-  }, [refreshProjectsStrict]);
-  refreshProjectCatalogRef.current = refreshProjectsAfterTeamCatalogChange;
 
   useEffect(() => {
     // Bootstrap already reads this exact scope on mount. Only re-list after
@@ -2870,92 +2754,6 @@ function AppInner() {
     });
   }, [beginProjectListRequest, listCurrentWorkspaceProjects, rememberLocalProject, reconcileFetchedProjects, workspaceProjectView]);
 
-  const rememberAuthoritativeProjectName = useCallback((
-    key: string,
-    name: string | null,
-    isCurrent: () => boolean = () => true,
-  ) => {
-    setAuthoritativeProjectNames((current) => {
-      if (!isCurrent()) return current;
-      if (name) {
-        if (current[key] === name) return current;
-        return { ...current, [key]: name };
-      }
-      if (!(key in current)) return current;
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
-  }, []);
-
-  const resolveAuthoritativeProjectName = useCallback(async (
-    projectId: string,
-    expectedAuthorizationKey: string,
-  ): Promise<ProjectNameAuthorityResolution> => {
-    const context = projectRouteWorkspaceContextRef.current;
-    const key = projectViewAuthorizationLifetimeKey(projectId, context);
-    if (key !== expectedAuthorizationKey) return { kind: 'stale' };
-    const authorizationGeneration = projectAuthorizationGenerationRef.current;
-    const requestGeneration =
-      (projectNameAuthorityRequestGenerationRef.current.get(key) ?? 0) + 1;
-    projectNameAuthorityRequestGenerationRef.current.set(key, requestGeneration);
-    const authorityRequestIsCurrent = () =>
-      projectAuthorizationGenerationRef.current === authorizationGeneration
-      && projectNameAuthorityRequestGenerationRef.current.get(key) === requestGeneration
-      && projectViewAuthorizationLifetimeKey(
-        projectId,
-        projectRouteWorkspaceContextRef.current,
-      ) === key;
-    let catalogProject;
-    try {
-      catalogProject = context
-        ? await fetchScopedTeamProjectCatalogEntry({
-            context,
-            projectId,
-            force: true,
-          })
-        : null;
-    } catch {
-      catalogProject = undefined;
-    }
-    if (!authorityRequestIsCurrent()) {
-      // Workspace/member changed while the catalog request was in flight.
-      // A newer same-key request also supersedes this response, so an older
-      // catalog snapshot cannot roll back a rename that resolved first.
-      return { kind: 'stale' };
-    }
-    if (catalogProject === undefined) {
-      // A transport failure is not evidence that ownership/title authority
-      // changed. Keep the last catalog title until a successful read says so.
-      return {
-        kind: 'resolved',
-        name: authoritativeProjectNamesRef.current[key] ?? null,
-      };
-    }
-    const catalogName = catalogProject?.name?.trim() || null;
-    const belongsToAnotherMember = Boolean(
-      catalogProject
-      && catalogProject.ownerMemberId !== context?.workspaceMemberId,
-    );
-    const authoritativeName = belongsToAnotherMember ? catalogName : null;
-    rememberAuthoritativeProjectName(key, authoritativeName, authorityRequestIsCurrent);
-    if (authoritativeName) {
-      // Merge title only into the already-authorized local row; never construct
-      // a catalog-shaped Project because catalog rows do not carry workspace
-      // binding or the full project metadata.
-      setProjects((current) => {
-        if (!authorityRequestIsCurrent()) return current;
-        return current.map((project) =>
-          project.id === projectId
-            && project.workspaceId
-            && (!context?.workspaceId || project.workspaceId === context.workspaceId)
-            ? { ...project, name: authoritativeName }
-            : project);
-      });
-    }
-    return { kind: 'resolved', name: authoritativeName };
-  }, [rememberAuthoritativeProjectName]);
-
   const handleOpenProject = useCallback(async (
     id: string,
     fileName?: string,
@@ -3621,15 +3419,6 @@ function AppInner() {
             : null
           : identityScopeKey
       : identityScopeKey;
-  const activeAuthoritativeProjectName =
-    route.kind === 'project'
-      ? authoritativeProjectNames[
-          projectViewAuthorizationLifetimeKey(
-            route.projectId,
-            activeProjectWorkspaceContext,
-          )
-        ]
-      : undefined;
   const activeProjectAuthorizationKey =
     route.kind === 'project'
       ? projectViewAuthorizationLifetimeKey(
@@ -3637,28 +3426,6 @@ function AppInner() {
           activeProjectWorkspaceContext,
         )
       : null;
-
-  // A full-page refresh/deep link does not pass through EntryShell's card
-  // click, and the local list may already contain a stale shared-project row.
-  // Calibrate that bound row from the hub catalog as soon as both the route and
-  // workspace identity have settled. This closes the path where the effect
-  // below skipped resolution merely because SQLite returned "some" row.
-  useEffect(() => {
-    if (route.kind !== 'project') return;
-    if (!loadedActiveProject?.workspaceId) return;
-    if (!activeProjectWorkspaceContext) return;
-    if (!activeProjectAuthorizationKey || activeAuthoritativeProjectName) return;
-    void resolveAuthoritativeProjectName(route.projectId, activeProjectAuthorizationKey);
-  }, [
-    route.kind,
-    route.kind === 'project' ? route.projectId : null,
-    loadedActiveProject?.id,
-    loadedActiveProject?.workspaceId,
-    activeAuthoritativeProjectName,
-    activeProjectAuthorizationKey,
-    activeProjectWorkspaceContext,
-    resolveAuthoritativeProjectName,
-  ]);
 
   // Resolve a project route that is absent from the current local list. The
   // scoped bootstrap remains authoritative; the retired Team catalog and its
@@ -4350,8 +4117,6 @@ function AppInner() {
           projectAuthorizationKey={
             activeProjectAuthorizationKey ?? activeProject.id
           }
-          authoritativeProjectName={activeAuthoritativeProjectName}
-          resolveAuthoritativeProjectName={resolveAuthoritativeProjectName}
           routeFileName={route.fileName}
           routeConversationId={route.conversationId ?? null}
           config={config}

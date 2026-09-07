@@ -599,17 +599,6 @@ interface Props {
   initialMaterializationPending?: boolean;
   /** Workspace/member authorization lifetime for async title reads. */
   projectAuthorizationKey?: string;
-  /**
-   * The current title from the team catalog when this project is shared by
-   * another member. That catalog is the naming authority; the member's local
-   * mirror may carry an older real name with a newer local timestamp.
-   */
-  authoritativeProjectName?: string;
-  /** Re-read the catalog after a metadata invalidation before merging detail. */
-  resolveAuthoritativeProjectName?: (
-    projectId: string,
-    expectedAuthorizationKey: string,
-  ) => Promise<ProjectNameAuthorityResolution>;
   routeFileName: string | null;
   /**
    * Routed conversation id. When set (the URL is
@@ -1744,33 +1733,23 @@ function artifactWithHtml(
 
 const SHARED_PROJECT_PLACEHOLDER_NAME = '共享项目';
 
-export type ProjectNameAuthorityResolution =
-  | { kind: 'resolved'; name: string | null }
-  | { kind: 'stale' };
-
 /**
  * Reconcile the route/list snapshot with the daemon detail response.
  *
  * A shared-project placeholder is created locally with `updatedAt = now`, so
- * timestamp-only selection can make it look newer than the catalog row whose
- * real title the user already saw. Detail still owns newer project fields, but
- * it must never replace a meaningful catalog title with that transport
- * placeholder. The project-id check also keeps a late response from a previous
- * route out of the next project.
+ * timestamp-only selection can make it look newer than the local project row.
+ * Detail still owns newer project fields, but it must never replace a
+ * meaningful local title with that transport placeholder. The project-id check
+ * also keeps a late response from a previous route out of the next project.
  */
 export function reconcileProjectDetail(
   project: Project,
   detail: Project | null,
-  authoritativeProjectName?: string | null,
 ): Project {
-  const authoritativeName = authoritativeProjectName?.trim() || null;
-  const routedProject = authoritativeName
-    ? { ...project, name: authoritativeName }
-    : project;
   if (!detail || detail.id !== project.id || detail.updatedAt < project.updatedAt) {
-    return routedProject;
+    return project;
   }
-  const projectName = routedProject.name.trim();
+  const projectName = project.name.trim();
   const detailName = detail.name.trim();
   if (
     detailName === SHARED_PROJECT_PLACEHOLDER_NAME
@@ -1780,9 +1759,9 @@ export function reconcileProjectDetail(
     // The placeholder is an unmaterialized transport row, not a newer project
     // authority. Reject the whole row so its null skill/design metadata cannot
     // regress the catalog/local record along with its synthetic title.
-    return routedProject;
+    return project;
   }
-  return authoritativeName ? { ...detail, name: authoritativeName } : detail;
+  return detail;
 }
 
 export function ProjectView({
@@ -1792,8 +1771,6 @@ export function ProjectView({
   initialProjectDetail,
   initialMaterializationPending = false,
   projectAuthorizationKey = project.id,
-  authoritativeProjectName,
-  resolveAuthoritativeProjectName,
   routeFileName,
   routeConversationId = null,
   config,
@@ -2017,7 +1994,6 @@ export function ProjectView({
   const currentProject = reconcileProjectDetail(
     project,
     detailedProject,
-    authoritativeProjectName,
   );
   let projectTitleTooltip = currentProject.name;
   if (projectMutationReadOnly) projectTitleTooltip = t('workspace.readonlyNotice');
@@ -3928,17 +3904,8 @@ export function ProjectView({
         const capturedProjectId = project.id;
         const capturedAuthorizationKey = projectAuthorizationKey;
         const capturedProjectWorkspaceContext = projectRunWorkspaceContext;
-        void Promise.all([
-          getProject(capturedProjectId, capturedProjectWorkspaceContext),
-          resolveAuthoritativeProjectName
-            ? resolveAuthoritativeProjectName(capturedProjectId, capturedAuthorizationKey)
-            : Promise.resolve<ProjectNameAuthorityResolution>({
-                kind: 'resolved',
-                name: authoritativeProjectName ?? null,
-              }),
-        ]).then(([fresh, authorityResolution]) => {
+        void getProject(capturedProjectId, capturedProjectWorkspaceContext).then((fresh) => {
           if (!fresh) return;
-          if (authorityResolution.kind === 'stale') return;
           if (activeAuthorizationLifetimeRef.current !== capturedAuthorizationKey) return;
           // User switched projects while the fetch was in flight.
           if (projectIdRef.current !== capturedProjectId) return;
@@ -3946,7 +3913,6 @@ export function ProjectView({
           const reconciled = reconcileProjectDetail(
             current,
             fresh,
-            authorityResolution.name,
           );
           if (
             reconciled.name === current.name
@@ -4019,7 +3985,6 @@ export function ProjectView({
     // also imply the conversation transcript changed.
     setDesignMdRefreshKey((n) => n + 1);
   }, [
-    authoritativeProjectName,
     coalescedFileChangedRefresh,
     collabCheckStatusNow,
     collabRefreshPresence,
@@ -4028,7 +3993,6 @@ export function ProjectView({
     onProjectsRefresh,
     refreshLiveArtifacts,
     recoverMaterializedConversations,
-    resolveAuthoritativeProjectName,
     project.id,
     projectAuthorizationKey,
     projectRunAuthorityKey,
