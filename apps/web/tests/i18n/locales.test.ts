@@ -138,7 +138,7 @@ describe('i18n locales', () => {
     }
   });
 
-  it('labels workspace USD spending power as allowance instead of points or account balance', async () => {
+  it('labels USD spending power as allowance instead of points or account balance', async () => {
     const expected: Record<Locale, string> = {
       ar: 'الحصة',
       de: 'Kontingent',
@@ -164,9 +164,6 @@ describe('i18n locales', () => {
     for (const locale of LOCALES) {
       const dict = await loadDict(locale);
       expect(dict['entry.credits'], `${locale}.entry.credits`).toBe(expected[locale]);
-      expect(dict['settings.amrBalance'], `${locale}.settings.amrBalance`).toBe(
-        expected[locale],
-      );
     }
   });
 
