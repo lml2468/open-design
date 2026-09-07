@@ -176,16 +176,6 @@ describe('analytics run_finished contract', () => {
         tool_call_seen: true,
         tool_result_sent: false,
         approval_requested: true,
-        tool_execution_lifecycle_seen: true,
-        tool_execution_lifecycle_count_bucket: '2_5',
-        tool_execution_trigger: 'deadline',
-        tool_execution_terminal: 'interrupted',
-        tool_terminal_source: 'processor_cleanup',
-        tool_kill_outcome: 'sent',
-        tool_child_close_seen: true,
-        tool_stdout_close_seen: true,
-        tool_stderr_close_seen: false,
-        tool_execution_evidence_incomplete: true,
         stdin_backpressure: false,
         last_progress_age_ms: 610_000,
         amr_opencode_error_phase: 'timeout',
@@ -307,9 +297,6 @@ describe('analytics run_finished contract', () => {
     expect(payload.props.first_token_seen).toBe(true);
     expect(payload.props.tool_result_sent).toBe(false);
     expect(payload.props.approval_requested).toBe(true);
-    expect(payload.props.tool_execution_trigger).toBe('deadline');
-    expect(payload.props.tool_terminal_source).toBe('processor_cleanup');
-    expect(payload.props.tool_execution_evidence_incomplete).toBe(true);
     expect(payload.props.stdin_backpressure).toBe(false);
     expect(payload.props.last_progress_age_ms).toBe(610_000);
     expect(payload.props.amr_opencode_error_phase).toBe('timeout');

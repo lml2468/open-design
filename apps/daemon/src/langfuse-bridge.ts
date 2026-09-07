@@ -64,7 +64,6 @@ import {
   summarizeRunDiagnosticsForAnalytics,
   type RunDiagnosticsAnalytics,
 } from './run-diagnostics.js';
-import { projectToolExecutionLifecycleDiagnostic } from './agent-protocol/acp/tool-execution-lifecycle.js';
 import {
   classifyRunFailure,
   type RunFailureClassification,
@@ -609,10 +608,6 @@ function collectAgentEvents(
         typeof data.name === 'string' && data.name.length > 0
           ? data.name
           : 'runtime_diagnostic';
-      const toolExecutionLifecycle = diagnosticName === 'tool_execution_lifecycle'
-        ? projectToolExecutionLifecycleDiagnostic(data)
-        : null;
-      if (diagnosticName === 'tool_execution_lifecycle' && !toolExecutionLifecycle) continue;
       const index = diagnosticCounts.get(diagnosticName) ?? 0;
       diagnosticCounts.set(diagnosticName, index + 1);
       const promptBudget = promptBudgetAnalyticsFromDiagnostic(
@@ -624,7 +619,7 @@ function collectAgentEvents(
         name: `agent-diagnostic:${diagnosticName}`,
         timestamp,
         input: eventInput('diagnostic'),
-        output: toolExecutionLifecycle ?? {
+        output: {
           name: diagnosticName,
           ...(typeof data.source === 'string' ? { source: data.source } : {}),
           ...(typeof data.reason === 'string' ? { reason: data.reason } : {}),
