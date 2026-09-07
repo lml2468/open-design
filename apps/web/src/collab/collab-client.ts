@@ -124,11 +124,6 @@ export class CollabClient {
     await this.post('/collab/publish');
   }
 
-  async pull(): Promise<number | null> {
-    const body = await this.post('/collab/pull');
-    return typeof body?.version === 'number' ? body.version : null;
-  }
-
   async pollStatus(): Promise<void> {
     const statusRequestGeneration = ++this.contentTransferStatusRequestGeneration;
     const transferGenerationAtStart = this.contentTransferStateGeneration;

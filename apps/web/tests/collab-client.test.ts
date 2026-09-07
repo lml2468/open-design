@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe('CollabClient', () => {
-  it('binds status and pull to the captured workspace identity', async () => {
+  it('binds status to the captured workspace identity', async () => {
     const { fetchImpl, calls } = makeFetch();
     const client = new CollabClient({
       projectId: 'p1',
@@ -56,7 +56,6 @@ describe('CollabClient', () => {
     });
 
     await client.pollStatus();
-    await client.pull();
 
     for (const call of calls) {
       expect(call.headers.get('x-od-workspace-id')).toBe(TEAM_CONTEXT.workspaceId);

@@ -31,7 +31,6 @@ export interface UseCollabResult {
   ownerRole: CollabSnapshot['ownerRole'];
   reportChange: () => void;
   requestPublish: () => void;
-  pull: () => Promise<number | null>;
   checkStatusNow: () => void;
   applyContentTransferState: (state: ProjectContentTransferState) => void;
 }
@@ -132,9 +131,6 @@ export function useCollab(options: UseCollabOptions): UseCollabResult {
   const requestPublish = useCallback(() => {
     void clientRef.current?.requestPublish();
   }, []);
-  const pull = useCallback(async () => {
-    return (await clientRef.current?.pull()) ?? null;
-  }, []);
   const checkStatusNow = useCallback(() => {
     void clientRef.current?.pollStatus();
   }, []);
@@ -157,7 +153,6 @@ export function useCollab(options: UseCollabOptions): UseCollabResult {
     ownerRole: snapshot.ownerRole,
     reportChange,
     requestPublish,
-    pull,
     checkStatusNow,
     applyContentTransferState,
   };
