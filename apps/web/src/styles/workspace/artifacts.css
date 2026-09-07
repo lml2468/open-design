@@ -1878,13 +1878,6 @@ button.agent-group-rescan-btn:hover:not(:disabled) {
 /* The pill's base layout is a single non-wrapping flex row; let it wrap so the
    full-width activation block drops onto its own line below the status. Scoped
    by :has so only the signing-in-with-activation case is affected. */
-.amr-account-control--signing-in:has(.amr-login-activation) {
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  row-gap: 6px;
-  padding-top: 8px;
-  padding-bottom: 8px;
-}
 .amr-login-activation {
   flex: 1 1 100%;
   max-width: 100%;

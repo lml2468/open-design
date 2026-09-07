@@ -3021,11 +3021,7 @@
   color: var(--text-strong);
 }
 
-/* Capsule treatment for the activation-retry card on THIS view only — the
- * base `.amr-login-activation` rule (artifacts.css) stays untouched so
- * Settings/AmrLoginPill keeps its compact inline card.
- * Compound selector (not cascade order) guarantees this wins over the base
- * padding/radius regardless of stylesheet import order. */
+/* Capsule treatment for the activation-retry card on this view. */
 .amr-login-activation.onboarding-cloud__activation {
   padding: 16px;
   border-radius: 28px;
@@ -4309,91 +4305,6 @@
   box-shadow: none;
   font-size: 12px;
   font-weight: 600;
-}
-
-.onboarding-view__card-status {
-  position: absolute;
-  left: 24px;
-  bottom: 18px;
-  z-index: 1;
-  display: inline-flex;
-  max-width: min(260px, calc(100% - 72px));
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.onboarding-view__card-status .amr-account-control {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  max-width: 100%;
-  min-height: 20px;
-  gap: 6px;
-  padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border));
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--bg-panel) 90%, var(--accent) 10%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
-  color: currentColor;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.onboarding-view__card-status .amr-account-control__status {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.onboarding-view__card-status .amr-account-control__status::before {
-  content: '';
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: currentColor;
-  opacity: 0.7;
-}
-
-.onboarding-view__card-status .amr-account-control--signed-in {
-  color: var(--success-text, #15803d);
-  border-color: color-mix(in srgb, var(--success-text, #15803d) 18%, var(--border));
-  background: color-mix(in srgb, var(--bg-panel) 88%, var(--success-text, #15803d) 12%);
-}
-
-.onboarding-view__card-status .amr-account-control--signing-in {
-  color: var(--accent-strong);
-}
-
-.onboarding-view__card-status .amr-account-control--error {
-  color: var(--danger-text, #991b1b);
-  border-color: color-mix(in srgb, var(--danger-text, #991b1b) 18%, var(--border));
-  background: color-mix(in srgb, var(--bg-panel) 88%, var(--danger-text, #991b1b) 12%);
-}
-
-.onboarding-view__card-status .amr-account-control__error {
-  display: none;
-}
-
-.onboarding-view__card-action {
-  grid-column: 2;
-  justify-self: start;
-  color: var(--accent-strong);
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  opacity: 0.92;
-}
-
-.onboarding-view__card--featured .onboarding-view__card-action {
-  grid-column: auto;
-  justify-self: end;
 }
 
 .onboarding-view__check {

@@ -206,7 +206,6 @@ import {
   isAmrSessionAuthenticated,
   notifyAmrLoginStatusChanged,
 } from './amrLoginPolling';
-import { closeAmrActivationWindowBestEffort } from './AmrLoginPill';
 import { isMacPlatform } from '../utils/platform';
 import { smoothScrollToTop } from '../utils/smoothScrollToTop';
 import { summarizeProjectNameFromPrompt } from '../utils/projectName';
@@ -233,6 +232,16 @@ import onboardingSourceStyles from './OnboardingModelSource.module.css';
 // tab's sidebar toggle (WorkspaceTabsBar, a sibling React tree) can share
 // them without importing this module's graph.
 export { ENTRY_RAIL_STATE_EVENT, ENTRY_RAIL_TOGGLE_EVENT };
+
+function closeAmrActivationWindowBestEffort(): boolean {
+  if (typeof window === 'undefined' || window.opener == null) return false;
+  try {
+    window.close();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function writeStoredRailOpen(open: boolean): void {
   if (typeof window === 'undefined') return;
@@ -3390,8 +3399,8 @@ function OnboardingView({
                 {amrLoginError}
               </span>
             ) : null}
-            {/* Manual device-auth fallback, mirroring Settings' AmrLoginPill:
-                vela auto-opens the browser, but when that fails silently (e.g.
+            {/* Manual device-auth fallback: vela auto-opens the browser, but
+                when that fails silently (e.g.
                 corp-managed hosts) the pending login otherwise looks like a
                 dead button — surface the activation link the status poll
                 already carries. */}

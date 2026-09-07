@@ -1,7 +1,6 @@
-// amr_auth_result single-flight contract. One sign-in attempt is observed
-// by several pollers at once (the initiating surface plus every mounted
-// AmrLoginPill woken by AMR_LOGIN_STATUS_EVENT), and each reports the
-// outcome it sees. These tests pin the begin/resolve gate in
+// amr_auth_result single-flight contract. One sign-in attempt can be observed
+// by several pollers at once, and each reports the outcome it sees. These tests
+// pin the begin/resolve gate in
 // analytics/amr-auth.ts: exactly one amr_auth_result per attempt, first
 // terminal outcome wins, attribution carried from the amr_entry click.
 

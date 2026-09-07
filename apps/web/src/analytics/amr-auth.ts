@@ -1,11 +1,8 @@
 // Single-flight tracker for the AMR (vela) sign-in flow.
 //
-// A login attempt is observed by more than one component at once: the
-// initiator (AmrLoginPill, InlineModelSwitcher, or the onboarding
-// EntryShell) runs its own poll loop, and the global
-// AMR_LOGIN_STATUS_EVENT wakes every mounted AmrLoginPill into polling
-// too. Each observer reports the outcome it sees; without a shared gate
-// one attempt would emit several amr_auth_result rows.
+// A login attempt can be observed by more than one AMR surface at once. Each
+// observer reports the outcome it sees; without a shared gate one attempt
+// would emit several amr_auth_result rows.
 //
 // This module is that gate. Pending browser initiations remain separate until
 // the daemon says which one owns the single process: a 202 activates its own
