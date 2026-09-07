@@ -1,6 +1,5 @@
 import type { OkResponse } from '../common.js';
 import type { ProjectMetadata } from './projects.js';
-import type { ProjectSyncState } from './project-sync.js';
 import type {
   PreviewAnnotationStyle,
   PreviewCommentAnchorState,
@@ -40,97 +39,12 @@ export interface PublicFileManualRevokeRequiredResponse {
   };
 }
 
-/**
- * Daemon-local lifecycle for an inbound shared-project content transfer.
- *
- * This is deliberately transport-agnostic: the UI only needs to know whether
- * bytes are still being fetched/materialized. `updatedAt` lets an SSE update
- * and a racing `/collab/status` response resolve in last-write-wins order.
- */
+/** Temporary daemon-local state for the remaining legacy mirror transfer. */
 export interface ProjectContentTransferState {
   status: 'downloading' | 'idle';
-  /** Hub version associated with the transfer, when the event supplied one. */
   version?: number;
-  /** First observation of this transfer (epoch ms). */
   startedAt: number;
-  /** Last transition (epoch ms, monotonic within one daemon process). */
   updatedAt: number;
-}
-
-/**
- * GET /api/projects/:id/collab/status. `publishedVersion` is the head version
- * members poll to learn when to pull; null before the first publish.
- * `syncState` is the project sync state (see {@link ProjectSyncState}).
- */
-export interface CollabSyncStatusResponse {
-  publishedVersion: number | null;
-  /**
-   * The latest published version this daemon has durably materialized into the
-   * local project tree for the current workspace + project owner scope. Null
-   * means the local cursor is unavailable, so clients must fail closed and
-   * treat a non-null published head as potentially pending.
-   */
-  materializedVersion: number | null;
-  /**
-   * Latest daemon-local inbound-transfer state. Null means this daemon has not
-   * observed a transfer for the project in its current process lifetime.
-   */
-  contentTransferState?: ProjectContentTransferState | null;
-  /**
-   * True while this daemon's only local record for the project is an
-   * unmaterialized shared-project placeholder — a row registered so the
-   * project's other routes stop 404ing, whose content directory is empty and
-   * is NOT the project's content (see the daemon's
-   * `sharedProjectPlaceholderAt` stamp).
-   *
-   * It is the one download signal that does not depend on remote enrichment.
-   * `publishedVersion` is null on a fresh install's very first status response
-   * — the daemon answers from local state and fetches the real hub head in the
-   * background for a later poll — so a client gated only on
-   * `publishedVersion`/`contentTransferState` cannot distinguish "empty
-   * project" from "content still downloading" on first open, and shows an
-   * empty project with create-a-file CTAs instead of a syncing state.
-   *
-   * Clients must treat this as authoritative over the local file list: while
-   * it is true, zero files means "not downloaded yet", never "nothing here".
-   */
-  awaitingFirstMaterialization?: boolean;
-  syncState: ProjectSyncState;
-  /**
-   * The member who shared this project (its single writer), resolved
-   * server-side (from the team hub). A member compares this to their own id to
-   * know whether they view the project read-only. Absent for a project that is
-   * not team-shared (off-team / hub unconfigured).
-   */
-  ownerMemberId?: string | null;
-  /**
-   * Human-friendly display name of {@link ownerMemberId}, resolved from the
-   * collab-cloud member directory so the client can render a "这是 麻薯 创建的
-   * 共享项目" banner instead of an opaque member id. Absent when the directory
-   * is unconfigured or the owner is not registered in it. STUB: the real name
-   * source is B's member roster; the collab-cloud directory stands in until B
-   * exposes it (see {@link CollabCloudMemberDirectoryEntry}).
-   */
-  ownerDisplayName?: string;
-  /** The owner's team role (owner/admin/member), from the same directory entry. */
-  ownerRole?: CollabMemberRole;
-}
-
-/** Idempotent local bootstrap for a hub-authorized Team project first open. */
-export interface CollabProjectBootstrapResponse {
-  ok: true;
-  awaitingFirstMaterialization: boolean;
-}
-
-/** POST /api/projects/:id/collab/pull response. */
-export interface CollabPullResponse extends OkResponse {
-  /** The actual hub version materialized by this pull, or null when unpublished. */
-  version: number | null;
-}
-
-/** POST /api/projects/:id/collab/sync-intent response. */
-export interface CollabSyncIntentResponse extends OkResponse {
-  syncState: ProjectSyncState;
 }
 
 /**

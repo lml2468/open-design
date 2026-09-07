@@ -7,9 +7,7 @@ import {
   workspaceContextHasWorkspaceIdentity,
   type PublicFileManualRevokeRequiredResponse,
   type PublicProjectFilePublication,
-  type ProjectContentTransferState,
   type ProjectMetadata,
-  type ProjectSyncIntentEvent,
   type TeamProject,
   type WorkspaceCollabContext,
 } from '@open-design/contracts';
@@ -78,11 +76,6 @@ export interface PulledProjectStore {
     input: RegisterPulledProjectInput,
     scope: TeamMirrorPullScope,
   ) => { localRecordChanged: boolean };
-  /** Atomically create a stamped, creator-less Team-bound first-open row. */
-  materializeTeamPlaceholder?: (
-    input: RegisterPulledProjectInput,
-    scope: TeamMirrorPullScope,
-  ) => { localRecordChanged: boolean };
 }
 
 type CollabSyncPullTimingStatus =
@@ -92,31 +85,7 @@ type CollabSyncPullTimingStatus =
   | 'threw';
 
 export interface RegisterCollabSyncRoutesDeps {
-  collab: Pick<
-    CollabRuntime,
-    | 'scheduler'
-    | 'publishedVersion'
-    | 'publishedHead'
-    | 'projectSyncState'
-    | 'projectOwnerMemberId'
-    | 'requestTeamShare'
-    | 'requestTeamUnshare'
-    | 'pullLatest'
-  >;
-  resolveSharedProjectOwner?: (
-    projectId: string,
-    scope?: { workspaceId: string; workspaceMemberId: string },
-  ) => Promise<string | null>;
-  /**
-   * Read-only owner lookup for GET /collab/status. This may use a short-lived
-   * explicit-scope display cache because request authority is verified first.
-   * Pull, publish, and mutation paths deliberately keep using the
-   * fresh `resolveSharedProjectOwner` dependency above.
-   */
-  resolveSharedProjectOwnerForStatus?: (
-    projectId: string,
-    scope?: { workspaceId: string; workspaceMemberId: string },
-  ) => Promise<string | null>;
+  collab: Pick<CollabRuntime, 'pullLatest'>;
   resolveSharedProject?: (
     projectId: string,
     scope?: TeamMirrorPullScope | null,
@@ -136,19 +105,6 @@ export interface RegisterCollabSyncRoutesDeps {
     | null
   >;
   /**
-   * Bounded successful authority lease for the read-only status surface.
-   * Mutations and content materialization must continue to use
-   * `verifyWorkspaceRequest`.
-   */
-  verifyWorkspaceReadRequest?: (
-    req: Request,
-    projectId?: string,
-  ) => Promise<
-    | VerifiedWorkspaceRequestContextResult
-    | WorkspaceCollabContext
-    | null
-  >;
-  /**
    * Revalidate one already-captured Team pull scope against the authoritative
    * membership directory. This must address `scope.workspaceId` +
    * `scope.viewerMemberId` directly; it must not compare against the daemon's
@@ -158,8 +114,6 @@ export interface RegisterCollabSyncRoutesDeps {
   /** Set/clear the non-destructive "team mirror revoked" flag on a local
    *  project so read routes stop serving a project that has left the team. */
   markTeamProjectRevoked?: (projectId: string, revoked: boolean) => void;
-  /** Read the same durable quarantine marker for status/direct-read denial. */
-  isTeamProjectRevoked?: (projectId: string) => boolean;
   /**
    * Set/clear the `sharedProjectPlaceholderAt` stamp on a local project's
    * metadata (see collab/shared-project-placeholder.ts). Set when
@@ -169,29 +123,11 @@ export interface RegisterCollabSyncRoutesDeps {
    * authority (the recvqzaDvUU6B3 fresh-install wipe guard).
    */
   markSharedProjectPlaceholder?: (projectId: string, placeholder: boolean) => void;
-  /** Drop the daemon's cached team-project catalog listing so a heal that
-   *  removed a catalog row is visible on the next list read, not one
-   *  stale-while-revalidate TTL later. */
-  invalidateTeamProjectCatalog?: () => void;
-  resolveOwnerDisplayName?: (
-    memberId: string,
-    context: WorkspaceCollabContext,
-  ) => Promise<{ displayName: string; role: 'owner' | 'admin' | 'member' } | null>;
   projectStore?: PulledProjectStore;
   resolveProjectDir?: (projectId: string) => string | Promise<string>;
   /** Durable publication metadata used to restore public links after restart. */
   publicFilePublicationStore?: PublicFilePublicationStore;
   resolvePullDir?: (projectId: string) => string;
-  /** Read the durable local materialization cursor for this exact team mirror. */
-  readMaterializedVersion?: (
-    projectId: string,
-    scope: TeamMirrorPullScope,
-  ) => number | null;
-  /** Read the daemon-local inbound content-transfer lifecycle snapshot. */
-  readContentTransferState?: (
-    projectId: string,
-    scope: TeamMirrorPullScope,
-  ) => ProjectContentTransferState | null;
   /** Begin one exact-scope transfer generation after authorization resolves. */
   beginContentTransfer?: (
     projectId: string,
@@ -212,13 +148,6 @@ export interface RegisterCollabSyncRoutesDeps {
     version: number,
   ) => void | Promise<void>;
   readManifest?: (projectDir: string) => Promise<PulledProjectManifest | null>;
-  onTeamShareStateChanged?: (input: {
-    projectId: string;
-    principal?: ResourceHubPrincipal | null;
-    visibility: 'personal' | 'team';
-    ownerMemberId?: string | null;
-    updatedByMemberId?: string | null;
-  }) => void;
   /**
    * Notify any live `/api/projects/:id/events` SSE subscribers that this
    * project's files changed on disk. Called after a successful
@@ -272,22 +201,18 @@ export interface RegisterCollabSyncRoutesDeps {
   }) => void;
 }
 
-/** Result of one explicit shared-project content pull. */
+/** Result of one legacy team-mirror materialization. */
 export type CollabSyncPullOutcome =
   | { status: 'pulled'; version: number | null }
   | { status: 'revoked' }
   | { status: 'register_failed' };
 
-/** Daemon-internal surface used by explicit project materialization flows. */
+/** Daemon-internal surface retained until team-mirror materialization is removed. */
 export interface CollabSyncRoutesHandle {
   /**
-   * Materialize the latest published content for a shared project, exactly as
-   * `POST /api/projects/:id/collab/pull` would: revocation gate, owner-routed
-   * hub pull, register-on-pull, and the `file-changed` /
-   * `project-metadata-changed` signals. The viewer principal is derived from
-   * the daemon's own workspace context (there is no request to read headers
-   * from). Concurrent pulls for the same project+scope — including a member
-   * web's racing POST — coalesce onto one in-flight materialization.
+   * Materialize the latest published content for a shared project using an
+   * already-authorized daemon-owned scope. Concurrent pulls for the same
+   * project and scope coalesce onto one in-flight materialization.
    */
   pullSharedProject(
     projectId: string,
@@ -295,11 +220,6 @@ export interface CollabSyncRoutesHandle {
   ): Promise<CollabSyncPullOutcome>;
 }
 
-const SYNC_INTENT_EVENTS: ReadonlySet<ProjectSyncIntentEvent> = new Set([
-  'project_visibility_changed',
-  'project_team_share_requested',
-  'project_team_unshare_requested',
-]);
 const PULLED_PROJECT_PLACEHOLDER_NAME = '共享项目';
 const PUBLIC_FILE_RESOURCE_KIND = 'project';
 const PUBLIC_FILE_REF = 'published';
@@ -396,26 +316,6 @@ async function resolvePulledProjectName(
     ?? await inferNameFromSkillManifest(projectDir)
     ?? await inferNameFromHtmlTitle(projectDir)
     ?? PULLED_PROJECT_PLACEHOLDER_NAME;
-}
-
-const STATUS_ENRICHMENT_CACHE_LIMIT = 256;
-
-function readLruEntry<K, V>(cache: Map<K, V>, key: K): V | undefined {
-  if (!cache.has(key)) return undefined;
-  const value = cache.get(key)!;
-  cache.delete(key);
-  cache.set(key, value);
-  return value;
-}
-
-function writeLruEntry<K, V>(cache: Map<K, V>, key: K, value: V): void {
-  cache.delete(key);
-  cache.set(key, value);
-  while (cache.size > STATUS_ENRICHMENT_CACHE_LIMIT) {
-    const oldest = cache.keys().next();
-    if (oldest.done) return;
-    cache.delete(oldest.value);
-  }
 }
 
 function normalizePublicFilePath(raw: string): string | null {
@@ -605,68 +505,21 @@ export function registerCollabSyncRoutes(
   app: Express,
   deps: RegisterCollabSyncRoutesDeps,
 ): CollabSyncRoutesHandle {
-  const {
-    scheduler,
-    publishedVersion,
-    publishedHead,
-    projectSyncState,
-    projectOwnerMemberId,
-    requestTeamShare,
-    requestTeamUnshare,
-    pullLatest,
-  } = deps.collab;
+  const { pullLatest } = deps.collab;
   const {
     projectStore,
     resolveProjectDir,
     resolvePullDir,
-    resolveSharedProjectOwner,
-    resolveSharedProjectOwnerForStatus,
     resolveSharedProject,
     markTeamProjectRevoked,
-    isTeamProjectRevoked,
     markSharedProjectPlaceholder,
-    invalidateTeamProjectCatalog,
-    resolveOwnerDisplayName,
     notifyFilesChanged,
     notifyProjectMetadataChanged,
   } = deps;
-  /**
-   * One seam for "this project's team-share state just changed".
-   *
-   * Both halves belong together: the visibility record is persisted AND the
-   * team-project catalog is dropped. The catalog read behind
-   * `/api/workspace/projects/team` is served from a short-lived SWR entry, so a
-   * GET issued right after a share would otherwise answer with the pre-share
-   * list until the freshness window expired or a hub event happened to arrive.
-   *
-   * Announce through this rather than calling the two deps side by side, so a
-   * future mutation added to this module cannot pick up one and forget the
-   * other.
-   */
-  const announceTeamShareStateChange = (
-    change: Parameters<NonNullable<RegisterCollabSyncRoutesDeps['onTeamShareStateChanged']>>[0],
-  ): void => {
-    deps.onTeamShareStateChanged?.(change);
-    invalidateTeamProjectCatalog?.();
-  };
   const readManifest = deps.readManifest ?? readProjectManifest;
   const publicFilePublicationStore =
     deps.publicFilePublicationStore
     ?? createInMemoryPublicFilePublicationStore();
-  const ownerEnrichmentCache = new Map<
-    string,
-    {
-      entry: { displayName: string; role: 'owner' | 'admin' | 'member' } | null;
-      resolvedAt: number;
-    }
-  >();
-  const ownerEnrichmentInFlight = new Map<string, Promise<void>>();
-  const headEnrichmentCache = new Map<
-    string,
-    { head: number | null; scope: TeamMirrorPullScope | null }
-  >();
-  const headEnrichmentInFlight = new Map<string, Promise<void>>();
-  const OWNER_ENRICHMENT_TTL_MS = 30_000;
   const reportPullTiming = (
     event: Parameters<NonNullable<RegisterCollabSyncRoutesDeps['onPullTiming']>>[0],
   ): void => {
@@ -711,115 +564,6 @@ export function registerCollabSyncRoutes(
     );
   }
 
-  function verifiedWorkspaceReadContextForRequest(
-    req: Request,
-    projectId?: string,
-  ): Promise<RouteWorkspaceVerification> {
-    return verifyWorkspaceContextForRequest(
-      req,
-      projectId,
-      deps.verifyWorkspaceReadRequest ?? deps.verifyWorkspaceRequest,
-    );
-  }
-
-  async function statusIdentityForRequest(projectId: string, req: {
-    get(name: string): string | undefined;
-    headers: { authorization?: string | string[] | undefined };
-  }): Promise<{
-    verification: RouteWorkspaceVerification;
-    context: WorkspaceCollabContext | null;
-    principal: ResourceHubPrincipal | null;
-    workspaceId: string | null;
-  }> {
-    const verification = await verifiedWorkspaceReadContextForRequest(
-      req as Request,
-      projectId,
-    );
-    const context = verification.ok ? verification.context : null;
-    return {
-      verification,
-      context,
-      principal: contextToResourceHubPrincipal(context),
-      workspaceId: context?.workspaceId?.trim() || null,
-    };
-  }
-
-  async function pullAccessForRequest(
-    projectId: string,
-    req: {
-      get(name: string): string | undefined;
-      headers: { authorization?: string | string[] | undefined };
-    },
-    knownOwnerMemberId?: string | null,
-    capturedIdentity?: {
-      principal: ResourceHubPrincipal | null;
-      workspaceId: string | null;
-    },
-  ): Promise<{
-    verification: RouteWorkspaceVerification;
-    principal: ResourceHubPrincipal | null;
-    scope: TeamMirrorPullScope | null;
-  }> {
-    const verification = capturedIdentity
-      ? { ok: true as const, context: null }
-      : await verifiedWorkspaceContextForRequest(req as Request, projectId);
-    const context = verification.ok ? verification.context : null;
-    const viewerPrincipal =
-      capturedIdentity?.principal ??
-      contextToResourceHubPrincipal(context);
-    const workspaceId = capturedIdentity
-      ? capturedIdentity.workspaceId
-      : context?.workspaceId;
-    const viewerMemberId = viewerPrincipal?.memberId ?? null;
-    let ownerMemberId = knownOwnerMemberId ?? null;
-    if (knownOwnerMemberId === undefined) {
-      try {
-        ownerMemberId =
-          workspaceId && viewerMemberId
-            ? (await resolveSharedProjectOwner?.(projectId, {
-                workspaceId,
-                workspaceMemberId: viewerMemberId,
-              }))
-                ?? projectOwnerMemberId(projectId, viewerPrincipal)
-                ?? null
-            : null;
-      } catch {
-        ownerMemberId = null;
-      }
-    }
-    const resourceTeamId = capturedIdentity
-      ? viewerPrincipal?.teamId
-      : context?.workspaceType === 'team'
-        && context.memberStatus === 'active'
-        && context.lifecycleState === 'active'
-        && context.workspaceId === workspaceId
-        && context.workspaceMemberId === viewerPrincipal?.memberId
-          ? context.teamId ?? context.workspaceId
-          : null;
-    const scope =
-      ownerMemberId &&
-      viewerPrincipal &&
-      workspaceId &&
-      resourceTeamId &&
-      (capturedIdentity != null || context?.workspaceType === 'team')
-        ? {
-            workspaceId,
-            resourceTeamId,
-            viewerMemberId: viewerPrincipal.memberId,
-            ownerMemberId,
-          }
-        : null;
-    const principal = ownerMemberId && viewerPrincipal?.teamId
-      ? {
-          ...viewerPrincipal,
-          ...(scope ? { teamId: scope.resourceTeamId } : {}),
-          memberId: ownerMemberId,
-          role: ownerMemberId === viewerPrincipal.memberId ? viewerPrincipal.role : 'member' as const,
-        }
-      : viewerPrincipal;
-    return { verification, principal, scope };
-  }
-
   async function canShareProjectsForRequest(
     req: Request,
     verifiedContext?: WorkspaceCollabContext | null,
@@ -830,69 +574,6 @@ export function registerCollabSyncRoutes(
         : { ok: true as const, context: verifiedContext };
     const context = verification.ok ? verification.context : null;
     return context?.permissions.canShareProjects === true;
-  }
-
-  async function verifiedPublishPrincipalForRequest(
-    req: Request,
-    projectId: string,
-  ): Promise<
-    | { ok: true; principal: ResourceHubPrincipal }
-    | {
-        ok: false;
-        status: 400 | 401 | 403 | 503;
-        error: string;
-        message?: string;
-        retryable?: true;
-      }
-  > {
-    const verification = await verifiedWorkspaceContextForRequest(req, projectId);
-    if (!verification.ok) {
-      return {
-        ok: false,
-        status: verification.status,
-        error: verification.code,
-        message: verification.message,
-        ...(verification.retryable ? { retryable: true } : {}),
-      };
-    }
-    const context = verification.context;
-    const principal = contextToResourceHubPrincipal(context);
-    if (
-      !context
-      || !principal
-      || context.memberStatus !== 'active'
-      || context.lifecycleState !== 'active'
-      || !context.permissions.canWriteSyncedFiles
-    ) {
-      return {
-        ok: false,
-        status: 403,
-        error: 'WORKSPACE_PROJECT_PUBLISH_DENIED',
-      };
-    }
-    let ownerMemberId: string | null;
-    try {
-      ownerMemberId =
-        await resolveSharedProjectOwner?.(projectId, {
-          workspaceId: context.workspaceId,
-          workspaceMemberId: context.workspaceMemberId,
-        })
-        ?? projectOwnerMemberId(projectId, principal);
-    } catch {
-      return {
-        ok: false,
-        status: 503,
-        error: 'WORKSPACE_PROJECT_OWNERSHIP_UNAVAILABLE',
-      };
-    }
-    if (ownerMemberId !== principal.memberId) {
-      return {
-        ok: false,
-        status: 403,
-        error: 'WORKSPACE_PROJECT_PUBLISH_DENIED',
-      };
-    }
-    return { ok: true, principal };
   }
 
   async function capturedScopeIsStillAuthorized(scope: TeamMirrorPullScope): Promise<boolean> {
@@ -986,87 +667,6 @@ export function registerCollabSyncRoutes(
     projectStore.register(input);
     return true;
   }
-
-  /**
-   * Register a minimal placeholder project record the moment a member opens a
-   * shared project they don't have locally yet — synchronously, with no hub
-   * round-trip. Without it `getProject` fails for the multi-second window before
-   * the resource pull materializes the project, and every project route
-   * (conversations, events SSE, tabs, files) 404s. The web answers those 404s
-   * with retry storms + EventSource reconnects — the request flood that made a
-   * shared project take tens of seconds to open. The post-pull
-   * `registerPulledProject` overwrites the placeholder name with the real one;
-   * this is a no-op once the project is known locally.
-   */
-  function ensureSharedProjectPlaceholder(projectId: string): void {
-    if (!projectStore || projectStore.has(projectId)) return;
-    const now = Date.now();
-    projectStore.register({
-      id: projectId,
-      name: PULLED_PROJECT_PLACEHOLDER_NAME,
-      skillId: null,
-      designSystemId: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-    // Stamp the record as an unmaterialized placeholder so no publish path
-    // ever treats its (empty) content directory as content authority until a
-    // pull lands real hub content (the recvqzaDvUU6B3 fresh-install wipe
-    // guard — see collab/shared-project-placeholder.ts).
-    markSharedProjectPlaceholder?.(projectId, true);
-  }
-
-  function ensureTeamBoundSharedProjectPlaceholder(
-    projectId: string,
-    scope: TeamMirrorPullScope,
-  ): boolean {
-    if (!projectStore?.materializeTeamPlaceholder) {
-      throw new Error('team placeholder materializer unavailable');
-    }
-    const existing = projectStore.get?.(projectId) ?? null;
-    if (projectStore.has(projectId) && !isUnmaterializedSharedPlaceholder(existing)) {
-      return false;
-    }
-    const now = Date.now();
-    projectStore.materializeTeamPlaceholder({
-      id: projectId,
-      name: PULLED_PROJECT_PLACEHOLDER_NAME,
-      skillId: null,
-      designSystemId: null,
-      createdAt: now,
-      updatedAt: now,
-    }, scope);
-    return true;
-  }
-
-  app.post('/api/projects/:id/collab/changed', async (req, res) => {
-    const projectId = req.params.id;
-    const authorization = await verifiedPublishPrincipalForRequest(req, projectId);
-    if (!authorization.ok) {
-      return res.status(authorization.status).json({
-        error: authorization.error,
-        ...(authorization.message ? { message: authorization.message } : {}),
-        ...(authorization.retryable ? { retryable: true } : {}),
-      });
-    }
-    scheduler.notifyChanged(projectId, 'change', authorization.principal);
-    return res.json({ ok: true });
-  });
-
-  app.post('/api/projects/:id/collab/publish', async (req, res) => {
-    const projectId = req.params.id;
-    const authorization = await verifiedPublishPrincipalForRequest(req, projectId);
-    if (!authorization.ok) {
-      return res.status(authorization.status).json({
-        error: authorization.error,
-        ...(authorization.message ? { message: authorization.message } : {}),
-        ...(authorization.retryable ? { retryable: true } : {}),
-      });
-    }
-    scheduler.notifyChanged(projectId, 'run', authorization.principal);
-    scheduler.runBoundary(projectId, authorization.principal);
-    return res.json({ ok: true });
-  });
 
   app.post(/^\/api\/projects\/([^/]+)\/files\/(.+)\/publish-public$/u, async (req, res) => {
     const params = req.params as unknown as { 0?: string; 1?: string };
@@ -1292,89 +892,6 @@ export function registerCollabSyncRoutes(
         publicFilePublicationScope(projectId, filePath, principal),
       ),
     });
-  });
-
-  app.post('/api/projects/:id/collab/sync-intent', async (req, res) => {
-    const event = (req.body as { event?: unknown } | undefined)?.event;
-    if (typeof event !== 'string' || !SYNC_INTENT_EVENTS.has(event as ProjectSyncIntentEvent)) {
-      return res.status(400).json({ error: 'invalid sync intent event' });
-    }
-    const projectId = req.params.id;
-    const verification = await verifiedWorkspaceContextForRequest(req, projectId);
-    if (!verification.ok) {
-      return sendWorkspaceVerificationFailure(res, verification);
-    }
-    const context = verification.context;
-    const principal = contextToResourceHubPrincipal(context);
-
-    if (event === 'project_team_share_requested') {
-      if (!principal || !(await canShareProjectsForRequest(req, context))) {
-        return res.status(403).json({ error: 'WORKSPACE_PROJECT_SHARE_DENIED' });
-      }
-      const sharerMemberId = principal.memberId;
-      const existingOwnerMemberId = await resolveSharedProjectOwner?.(projectId, {
-        workspaceId: context!.workspaceId,
-        workspaceMemberId: context!.workspaceMemberId,
-      }) ?? null;
-      if (
-        existingOwnerMemberId &&
-        existingOwnerMemberId !== sharerMemberId
-      ) {
-        return res.json({
-          ok: true,
-          syncState: 'synced',
-          publishedVersion: publishedVersion(projectId, principal),
-        });
-      }
-      let nextPublishedVersion: number | null;
-      try {
-        ({ version: nextPublishedVersion } = await requestTeamShare(projectId, principal ?? sharerMemberId));
-      } catch (error) {
-        console.warn('[od] failed to publish team-shared project bytes:', error);
-        return res.status(502).json({ error: 'TEAM_PROJECT_PUBLISH_UNAVAILABLE' });
-      }
-      if (nextPublishedVersion == null) {
-        return res.status(502).json({ error: 'TEAM_PROJECT_PUBLISH_UNAVAILABLE' });
-      }
-      announceTeamShareStateChange({
-        projectId,
-        principal,
-        visibility: 'team',
-        ownerMemberId: sharerMemberId ?? null,
-        updatedByMemberId: sharerMemberId ?? null,
-      });
-      return res.json({
-        ok: true,
-        syncState: projectSyncState(projectId, principal),
-        publishedVersion: nextPublishedVersion,
-      });
-    }
-
-    if (event === 'project_team_unshare_requested') {
-      if (!principal || !(await canShareProjectsForRequest(req, context))) {
-        return res.status(403).json({ error: 'WORKSPACE_PROJECT_SHARE_DENIED' });
-      }
-      const callerMemberId = principal.memberId;
-      const remoteOwnerMemberId = await resolveSharedProjectOwner?.(projectId, {
-        workspaceId: context!.workspaceId,
-        workspaceMemberId: context!.workspaceMemberId,
-      }) ?? null;
-      const ownerMemberId =
-        remoteOwnerMemberId ?? projectOwnerMemberId(projectId, principal);
-      if (ownerMemberId && ownerMemberId !== callerMemberId) {
-        return res.status(403).json({ error: 'WORKSPACE_PROJECT_UNSHARE_DENIED' });
-      }
-      await requestTeamUnshare(projectId, principal);
-      announceTeamShareStateChange({
-        projectId,
-        principal,
-        visibility: 'personal',
-        ownerMemberId,
-        updatedByMemberId: callerMemberId ?? null,
-      });
-    }
-
-    res.json({ ok: true, syncState: projectSyncState(projectId, principal) });
   });
 
   /** Shared explicit-pull flow used by the HTTP route and local materialization. */
@@ -1656,256 +1173,6 @@ export function registerCollabSyncRoutes(
     pullsInFlight.set(key, run);
     return run;
   }
-
-  app.post('/api/projects/:id/collab/pull', async (req, res) => {
-    const projectId = req.params.id;
-    const { verification, principal, scope } =
-      await pullAccessForRequest(projectId, req);
-    if (!verification.ok) {
-      return sendWorkspaceVerificationFailure(res, verification);
-    }
-    if (!principal || !scope) {
-      return res.status(403).json({ error: 'WORKSPACE_PROJECT_PULL_DENIED' });
-    }
-    const outcome = await pullSharedProjectCoalesced(projectId, principal, scope);
-    if (outcome.status === 'revoked') {
-      return res.status(403).json({ error: 'WORKSPACE_PROJECT_PULL_DENIED' });
-    }
-    if (outcome.status === 'register_failed') {
-      return res.status(502).json({ error: 'TEAM_PROJECT_PULL_REGISTER_UNAVAILABLE' });
-    }
-    res.json({ ok: true, version: outcome.version });
-  });
-
-  app.put('/api/projects/:id/collab/bootstrap', async (req, res) => {
-    const projectId = req.params.id;
-    // This endpoint materializes local authority state, so it deliberately uses
-    // the fresh mutation verifier and uncached owner lookup, never status's
-    // bounded read lease. PUT is idempotent and lets the sidecar safely replay
-    // one request on a reset reused socket.
-    const { verification, principal, scope } =
-      await pullAccessForRequest(projectId, req);
-    if (!verification.ok) {
-      return sendWorkspaceVerificationFailure(res, verification);
-    }
-    if (!principal || !scope) {
-      return res.status(404).json({ error: 'TEAM_PROJECT_NOT_FOUND' });
-    }
-    let awaitingFirstMaterialization: boolean;
-    try {
-      awaitingFirstMaterialization = ensureTeamBoundSharedProjectPlaceholder(
-        projectId,
-        scope,
-      );
-    } catch {
-      return res.status(503).json({ error: 'TEAM_PROJECT_BOOTSTRAP_UNAVAILABLE' });
-    }
-    return res
-      .status(awaitingFirstMaterialization ? 202 : 200)
-      .json({ ok: true, awaitingFirstMaterialization });
-  });
-
-  app.get('/api/projects/:id/collab/status', async (req, res) => {
-    const projectId = req.params.id;
-    if (isTeamProjectRevoked?.(projectId)) {
-      return res.status(404).json({ error: 'PROJECT_NOT_FOUND' });
-    }
-    const {
-      verification,
-      context,
-      principal,
-      workspaceId: resolvedWorkspaceId,
-    } = await statusIdentityForRequest(projectId, req);
-    if (!verification.ok) {
-      return sendWorkspaceVerificationFailure(res, verification);
-    }
-    if (!context || !resolvedWorkspaceId) {
-      return res.status(403).json({ error: 'WORKSPACE_PROJECT_STATUS_DENIED' });
-    }
-    let syncState = projectSyncState(projectId, principal);
-    let ownerMemberId = projectOwnerMemberId(projectId, principal);
-    let ownerDisplayName: string | undefined;
-    let ownerRole: 'owner' | 'admin' | 'member' | undefined;
-    // Resolve ownership first through the CACHED hub owner lookup. This decides
-    // whether the project is shared at all — and a project that is local-only AND
-    // unowned on the hub is a genuine personal project with no hub-published head.
-    // Answering its version from local state lets us skip the uncached ~2s
-    // publishedHead round-trip that otherwise ran on every status poll. That hub
-    // call was the reason a member's OWN project flashed the "shared read-only"
-    // notice for seconds after opening: the front end fails closed until
-    // /collab/status confirms ownership, so a slow status made the flash long.
-    const statusOwnerResolver =
-      resolveSharedProjectOwnerForStatus ?? resolveSharedProjectOwner;
-    if (ownerMemberId == null && statusOwnerResolver) {
-      try {
-        const hubOwner =
-          resolvedWorkspaceId && principal?.memberId
-            ? await statusOwnerResolver(projectId, {
-                workspaceId: resolvedWorkspaceId,
-                workspaceMemberId: principal.memberId,
-              })
-            : null;
-        if (hubOwner != null) {
-          if (syncState === 'local_only') syncState = 'synced';
-          ownerMemberId = hubOwner;
-        }
-      } catch {
-        // Hub unavailable: fall back to the local state.
-      }
-    }
-    // The caller owns the project when the resolved owner id matches their own
-    // member id. The owner is the single writer of their own project: the front
-    // end shows them an editable surface (not the "shared by X" banner), so they
-    // need NEITHER the owner display-name directory
-    // lookup NOR the hub published-head round-trip. Both are uncached ~1-3s vela
-    // calls, and running them made a member's own shared project sit in the
-    // fail-closed "shared read-only" state (disabled history/share, disabled
-    // composer) for tens of seconds before /collab/status confirmed ownership.
-    const callerIsOwner =
-      ownerMemberId != null && principal?.memberId != null && ownerMemberId === principal.memberId;
-    // Anyone opening a shared project absent from this daemon's local DB needs
-    // the placeholder so the project's other routes stop 404ing while the pull
-    // runs (see ensureSharedProjectPlaceholder). This covers BOTH a member
-    // viewing someone else's shared project AND an owner opening their OWN shared
-    // project that was created/shared on another machine (or attributed to them
-    // by a smoke test) and never materialized here: until the owner explicitly
-    // retrieves it, its conversations/events/tabs would 404 and the left pane
-    // hangs for a minute. ensureSharedProjectPlaceholder no-ops once the project
-    // is known locally, so an owner's normal local project is untouched. The web
-    // polls /collab/status on open, so this fires before the conversations/events
-    // retry storm builds up.
-    if (ownerMemberId) {
-      ensureSharedProjectPlaceholder(projectId);
-    }
-    // Whether this daemon's only local record for the project is still an
-    // unmaterialized placeholder. Purely local and synchronous — it needs no
-    // hub round-trip, which is exactly why it is the signal the client can act
-    // on from the FIRST status response (see `awaitingFirstMaterialization` on
-    // CollabSyncStatusResponse).
-    const awaitingFirstMaterialization = Boolean(
-      projectStore?.get && isUnmaterializedSharedPlaceholder(projectStore.get(projectId)),
-    );
-    // A verified local mirror binding is enough to return shared identity
-    // immediately. The owner-name directory and published-head
-    // calls are remote enrichment: neither may hold this status response open.
-    // Cache them by the exact viewer/team/owner/project tuple so a later poll can
-    // consume the result without leaking it across workspace scopes. Unknown local
-    // ownership still fails closed above; this path never guesses an owner. The
-    // web's default status poll is 5s, so settled enrichment becomes visible on
-    // the next poll (<=5s); this local-first fix does not add another SSE contract.
-    const needsHubHead = (syncState !== 'local_only' || ownerMemberId != null) && !callerIsOwner;
-    const enrichmentKey = JSON.stringify([
-      resolvedWorkspaceId ?? '',
-      principal?.teamId ?? '',
-      principal?.memberId ?? '',
-      ownerMemberId ?? '',
-      projectId,
-    ]);
-    const cachedOwnerName = readLruEntry(ownerEnrichmentCache, enrichmentKey);
-    const ownerNameEntry = cachedOwnerName?.entry ?? null;
-    if (ownerNameEntry) {
-      ownerDisplayName = ownerNameEntry.displayName;
-      ownerRole = ownerNameEntry.role;
-    }
-    if (
-      ownerMemberId &&
-      resolvedWorkspaceId &&
-      context &&
-      principal &&
-      !callerIsOwner &&
-      resolveOwnerDisplayName &&
-      (!cachedOwnerName || Date.now() - cachedOwnerName.resolvedAt >= OWNER_ENRICHMENT_TTL_MS) &&
-      !ownerEnrichmentInFlight.has(enrichmentKey)
-    ) {
-      const refreshOwner = resolveOwnerDisplayName(ownerMemberId, context)
-        .then((entry) => {
-          writeLruEntry(ownerEnrichmentCache, enrichmentKey, {
-            entry,
-            resolvedAt: Date.now(),
-          });
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (ownerEnrichmentInFlight.get(enrichmentKey) === refreshOwner) {
-            ownerEnrichmentInFlight.delete(enrichmentKey);
-          }
-        });
-      ownerEnrichmentInFlight.set(enrichmentKey, refreshOwner);
-    }
-
-    let headResult =
-      readLruEntry(headEnrichmentCache, enrichmentKey) ??
-      { head: publishedVersion(projectId, principal), scope: null };
-    if (needsHubHead && !headEnrichmentInFlight.has(enrichmentKey)) {
-      const expectedWorkspaceId = resolvedWorkspaceId;
-      const expectedPrincipal = principal;
-      const expectedOwnerMemberId = ownerMemberId;
-      const refreshHead = (async () => {
-        const { principal: resourcePrincipal, scope } =
-          await pullAccessForRequest(
-            projectId,
-            req,
-            expectedOwnerMemberId,
-            {
-              principal: expectedPrincipal,
-              workspaceId: expectedWorkspaceId,
-            },
-          );
-        if (
-          !scope ||
-          !expectedPrincipal ||
-          scope.workspaceId !== expectedWorkspaceId ||
-          scope.resourceTeamId !== expectedPrincipal.teamId ||
-          scope.viewerMemberId !== expectedPrincipal.memberId ||
-          scope.ownerMemberId !== expectedOwnerMemberId
-        ) {
-          return;
-        }
-        const head = await publishedHead(projectId, resourcePrincipal);
-        writeLruEntry(headEnrichmentCache, enrichmentKey, { head, scope });
-      })()
-        .catch(() => undefined)
-        .finally(() => {
-          if (headEnrichmentInFlight.get(enrichmentKey) === refreshHead) {
-            headEnrichmentInFlight.delete(enrichmentKey);
-          }
-        });
-      headEnrichmentInFlight.set(enrichmentKey, refreshHead);
-    }
-    let materializedVersion: number | null = null;
-    if (headResult.scope && deps.readMaterializedVersion) {
-      try {
-        materializedVersion =
-          deps.readMaterializedVersion(projectId, headResult.scope) ?? null;
-      } catch {
-        materializedVersion = null;
-      }
-    }
-    const transferScope =
-      resolvedWorkspaceId
-      && principal
-      && ownerMemberId
-        ? {
-            workspaceId: resolvedWorkspaceId,
-            resourceTeamId: principal.teamId,
-            viewerMemberId: principal.memberId,
-            ownerMemberId,
-          }
-        : null;
-    res.json({
-      publishedVersion: headResult.head,
-      materializedVersion,
-      contentTransferState:
-        transferScope
-          ? deps.readContentTransferState?.(projectId, transferScope) ?? null
-          : null,
-      awaitingFirstMaterialization,
-      syncState,
-      ownerMemberId,
-      ...(ownerDisplayName ? { ownerDisplayName } : {}),
-      ...(ownerRole ? { ownerRole } : {}),
-    });
-  });
 
   return {
     async pullSharedProject(
