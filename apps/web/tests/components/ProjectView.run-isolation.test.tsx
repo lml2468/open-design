@@ -1339,24 +1339,24 @@ describe('ProjectView conversation run isolation', () => {
     );
   });
 
-  it('submits the live AMR fallback model when the saved AMR model is stale', async () => {
+  it('preserves a custom CLI model that is not enumerated by the agent catalog', async () => {
     conversationAMessages = [];
     renderProjectView(
       {
         ...config,
-        agentId: 'amr',
+        agentId: 'agent-1',
         agentModels: {
-          amr: { model: 'gpt-5.4-mini', reasoning: 'medium' },
+          'agent-1': { model: 'custom-model', reasoning: 'medium' },
         },
       },
       project,
       [
         {
-          id: 'amr',
-          name: 'AMR',
-          bin: 'amr',
+          id: 'agent-1',
+          name: 'OpenCode',
+          bin: 'opencode',
           available: true,
-          models: [{ id: 'glm-5', label: 'GLM 5' }],
+          models: [{ id: 'gpt-5.2', label: 'GPT 5.2' }],
         },
       ],
     );
@@ -1369,8 +1369,8 @@ describe('ProjectView conversation run isolation', () => {
     await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
     expect(streamViaDaemon).toHaveBeenCalledWith(
       expect.objectContaining({
-        agentId: 'amr',
-        model: 'glm-5',
+        agentId: 'agent-1',
+        model: 'custom-model',
         reasoning: 'medium',
       }),
     );

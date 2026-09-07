@@ -2018,18 +2018,6 @@
 .inline-switcher--compact .inline-switcher__chip-text {
   display: none;
 }
-.inline-switcher__amr-reminder-dot {
-  position: absolute;
-  z-index: 1;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  background: var(--danger, #dc2626);
-  box-shadow:
-    0 0 0 2px var(--bg-panel),
-    0 0 0 4px color-mix(in srgb, var(--danger, #dc2626) 12%, transparent);
-  pointer-events: none;
-}
 /* Popover */
 .inline-switcher__popover {
   position: absolute;
@@ -2217,20 +2205,6 @@
   background: var(--bg-subtle);
   color: var(--text-strong);
 }
-/* A model above the caller's plan. It stays listed (so the catalog still reads
-   as complete) but must LOOK unavailable: rendering it as a normal row was the
-   whole bug — the click was accepted and then silently reverted. Matches the
-   project composer's `.avatar-model-option.is-locked`. */
-.inline-switcher--compact .inline-switcher__agent.is-locked {
-  color: var(--text-muted);
-  opacity: 0.6;
-}
-.inline-switcher__agent-lock {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  color: var(--text-muted);
-}
 /* Each row now leads with the provider logo, so the old leading selection dot
    is dropped — the active row reads from its tinted background alone. */
 /* Hovering an unselected model slides its label forward as a "reach". */
@@ -2238,7 +2212,7 @@
   transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .inline-switcher--compact
-  .inline-switcher__agent:not(.is-active):not(.is-locked):hover
+  .inline-switcher__agent:not(.is-active):hover
   .inline-switcher__agent-name {
   transform: translateX(6px);
 }
@@ -2246,10 +2220,6 @@
   .inline-switcher--compact .inline-switcher__agent-name {
     transition: none;
   }
-}
-.inline-switcher__amr-reminder-dot--agent {
-  top: 6px;
-  left: 26px;
 }
 .inline-switcher__agent-name {
   flex: 1 1 auto;
@@ -2638,10 +2608,9 @@
 .inline-switcher__more {
   appearance: none;
   border: 0;
-  /* Pinned to the bottom of the popover's scroll port: the model list can be
-     long (29 models on AMR), and this entry used to scroll away with it — the
-     one link out to where agent switching now lives. Opaque so rows scrolling
-     underneath do not show through. */
+  /* Pinned to the bottom of the popover's scroll port: long model lists used
+     to push this link out of view. Opaque so rows scrolling underneath do not
+     show through. */
   position: sticky;
   bottom: -12px;
   z-index: 1;
@@ -8074,199 +8043,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
   }
 }
 
-
-/* ---- Restored: branch-local styles clobbered by the #5517 whole-file
-   entry-layout.css replacement (2567c3e6f) — language submenu, menu chevron,
-   workspace menu meta, InviteDialog art, InlineModelSwitcher account block.
-   Sourced verbatim from pre-integration 37f7510f4. ---- */
-
-/* Account row: OpenDesign login/plan, lifted out of the agent card so the
-   agent name is never truncated. */
-.inline-switcher__account {
-  order: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  background: var(--bg-subtle);
-  transition: background-color 120ms var(--ease-out),
-    border-color 120ms var(--ease-out);
-}
-
-/* The OpenDesign entry is also the agent selector now: hovering the clickable
-   area previews selectability, and the active agent gets the same accent
-   highlight the grid rows use. */
-.inline-switcher__account:has(.inline-switcher__account-select:hover):not(.is-active) {
-  background: var(--bg-panel);
-  border-color: var(--border);
-}
-
-.inline-switcher__account.is-active {
-  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
-  background: color-mix(in srgb, var(--bg-subtle) 82%, var(--accent-tint));
-}
-
-.inline-switcher__account.is-active:has(.inline-switcher__account-select:hover) {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
-  background: color-mix(in srgb, var(--bg-panel) 74%, var(--accent-tint));
-}
-
-.inline-switcher__account-id {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-strong);
-}
-
-/* The icon+name+plan+balance block is the radio control that selects Open
-   Design; the upgrade / sign-in buttons stay siblings so they never nest in
-   this button. */
-.inline-switcher__account-select {
-  flex: 1 1 auto;
-  appearance: none;
-  border: none;
-  background: none;
-  padding: 0;
-  margin: 0;
-  text-align: left;
-  cursor: pointer;
-}
-
-.inline-switcher__account-id-icon {
-  position: relative;
-  flex: 0 0 auto;
-  display: inline-flex;
-}
-
-.inline-switcher__amr-reminder-dot--account {
-  top: -1px;
-  right: -1px;
-}
-
-.inline-switcher__account-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.inline-switcher__account-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.inline-switcher__account-name-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-
-/* Balance shown as a muted subtitle line under the OpenDesign name. Each
-   stat is "label value"; the gap (not a literal separator) keeps them apart. */
-.inline-switcher__account-subtitle {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 2px 14px;
-  min-width: 0;
-}
-
-.inline-switcher__account-stat {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-}
-
-.inline-switcher__account-stat-label {
-  flex: 0 0 auto;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-
-.inline-switcher__account-stat-value {
-  flex: 0 0 auto;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-strong);
-  font-variant-numeric: tabular-nums;
-  text-transform: capitalize;
-}
-
-.inline-switcher__account-upgrade {
-  flex: 0 0 auto;
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--accent) 45%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent);
-  transition:
-    transform 150ms cubic-bezier(0.23, 1, 0.32, 1),
-    background-color 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.inline-switcher__account-upgrade:active {
-  transform: scale(0.96);
-}
-
-.inline-switcher__account-upgrade:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: 2px;
-}
-
-.inline-switcher__account-status.is-error {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--danger);
-}
-
-.inline-switcher__account-action {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  padding: 2px 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--accent-strong);
-  cursor: pointer;
-  border-radius: var(--radius);
-}
-
-.inline-switcher__account-action:hover {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-.inline-switcher__account-action svg {
-  animation: spin 0.8s linear infinite;
-}
 
 .entry-nav-rail__menu-chevron { margin-left: auto; display: inline-flex; }
 

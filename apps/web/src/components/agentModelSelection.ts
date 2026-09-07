@@ -23,14 +23,14 @@ export function normalizeAgentModelChoice(
 ): AgentModelChoice | null {
   const configuredModel =
     typeof choice?.model === 'string' && choice.model ? choice.model : null;
-  if (agent?.id !== 'amr' || !configuredModel) return null;
+  if (!configuredModel) return null;
   if (configuredModel === 'default') return null;
 
-  const matchingModel = agent.models?.find((model) => model.id === configuredModel) ?? null;
-  if (!matchingModel && (agent.models?.length ?? 0) === 0) {
-    return null;
-  }
-  if (matchingModel && matchingModel.enabled !== false) return null;
+  const matchingModel =
+    agent?.models?.find((model) => model.id === configuredModel) ?? null;
+  // Unknown ids remain valid custom CLI choices. Only an explicit disabled
+  // catalogue row is normalized away.
+  if (!matchingModel || matchingModel.enabled !== false) return null;
 
   const fallbackModel = defaultAgentModelId(agent);
   if (!fallbackModel || fallbackModel === configuredModel) return null;
@@ -61,12 +61,9 @@ export function effectiveAgentModelId(
 /**
  * Whether `modelId` may be OFFERED to the user as a selectable model.
  *
- * This is the single definition of "locked" for every model-list surface — the
- * home composer's compact list, the execution-settings picker, and the project
- * composer's `AvatarMenu` list all ask it instead of re-deriving the rule. Only
- * AMR's catalog carries plan entitlement (`enabled: false` is what `vela model
- * list --json` reports for a model above the caller's plan); every other agent's
- * list is its own model ids and stays fully selectable.
+ * This is the single definition of availability for every model-list surface.
+ * Unknown ids remain valid custom CLI choices, while a catalogue row carrying
+ * `enabled: false` is never offered as selectable.
  *
  * The invariant that makes it safe: this predicate is AT LEAST as strict as
  * `normalizeAgentModelChoice`. Every model normalization would coerce away is
@@ -83,12 +80,7 @@ export function agentModelIsSelectable(
   modelId: string | null | undefined,
 ): boolean {
   if (!modelId) return false;
-  if (agent?.id !== 'amr') return true;
   if (modelId === 'default') return true;
-  const models = agent.models ?? [];
-  // No catalog yet (vela not queried) — nothing to gate against, and no surface
-  // can render a row for a model it has not been told about.
-  if (models.length === 0) return true;
-  const option = models.find((model) => model.id === modelId) ?? null;
-  return option !== null && option.enabled !== false;
+  const option = agent?.models?.find((model) => model.id === modelId) ?? null;
+  return option?.enabled !== false;
 }
