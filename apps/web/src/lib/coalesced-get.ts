@@ -93,7 +93,7 @@ const forcedAt = new Map<string, number>();
 // mounted consumer of a hook in the SAME synchronous `dispatchEvent` pass —
 // e.g. `useWorkspaceContext()` is called from a dozen components that can all
 // be mounted at once, and AmrLoginPill alone can mount twice (the Settings
-// agent-card instance and the cloud sign-in callout instance both listen and
+// multiple AMR account controls can listen and
 // both react). Two calls to `forceCoalescedGet` for the same key inside this
 // window are the same burst, not two independent identity changes; the
 // second must join the first's fetch rather than evict it. Measured in a

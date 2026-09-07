@@ -101,10 +101,9 @@ import {
   ProjectSearchModal,
 } from './ProjectSearchModal';
 import {
-  CloudSignInTip,
   RailAccountRecoveryTip,
   RailAccountSyncTip,
-} from './CloudSignInTip';
+} from './RailAccountStatus';
 import {
   resolveEntryRailAccountFooterState,
   requiresAmrReauthentication,
@@ -682,8 +681,6 @@ export function EntryShell({
     accountFooterNotice = <RailAccountSyncTip />;
   } else if (accountFooterState === 'recovering') {
     accountFooterNotice = <RailAccountRecoveryTip />;
-  } else if (accountFooterState === 'sign-in') {
-    accountFooterNotice = <CloudSignInTip />;
   }
   const workspaceContextRef = useRef(workspaceContext);
   workspaceContextRef.current = workspaceContext;
@@ -1515,12 +1512,10 @@ export function EntryShell({
   /**
    * Re-read every workspace surface because onboarding just ended.
    *
-   * Onboarding is where a signed-out user signs IN, so the workspace context
-   * the shell resolved before it is stale by definition. Without this the rail
-   * came back in its signed-out shape — no workspace switcher, no 草稿 / 全部项目
-   * / Workspace 设置, and the "sign in to OpenDesign Cloud" callout still in
-   * the bottom-left corner (#140) — until a focus or the 30s poll happened to
-   * re-read it. `CloudSignInTip` fires the same three after its own sign-in.
+   * Onboarding can change the active account, so the workspace context the
+   * shell resolved before it is stale by definition. Without this the rail
+   * can come back in its signed-out shape until a focus or the 30s poll causes
+   * another read.
    *
    * EVERY exit from onboarding must call this. It used to live inline in
    * `finishOnboarding` only, so the "go build a design system" door left the
@@ -1633,7 +1628,6 @@ export function EntryShell({
           balanceUsd={workspaceBalanceUsd}
           onOpenSettings={onOpenSettings}
           onInvite={() => changeView('members')}
-          onSignInCloud={() => navigate({ kind: 'home', view: 'onboarding' })}
           onSignedOut={onSignedOut}
           updaterSlot={updaterSlot}
           // A loading or unavailable workspace read is not proof of sign-out.
@@ -3113,9 +3107,7 @@ function OnboardingView({
         // Onboarding may sit on this step for a while before finishOnboarding
         // fires refreshWorkspaceSurfacesAfterOnboarding() — without firing
         // these here too, Home's rail can render in its stale signed-out
-        // shape (still showing the "sign in to OpenDesign Cloud" callout)
-        // for however long that gap lasts. Mirrors CloudSignInTip's own
-        // finishSignedIn().
+        // shape for however long that gap lasts.
         notifyWorkspaceContextRefresh();
         notifyWorkspaceBillingRefresh();
         notifyTeamProjectsChanged();

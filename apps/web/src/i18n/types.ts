@@ -1222,14 +1222,11 @@ export interface Dict extends CollaborationSettingsDict {
   'entry.navBoard': string;
   'entry.navTeamSection': string;
   'entry.teamSlotNote': string;
-  'entry.cloudCalloutTitle': string;
   'entry.cloudRecovering': string;
   'entry.authExpiredBody': string;
   'home.createFailed': string;
   'home.daemonRecovering': string;
   'home.bundledScenarioMissing': string;
-  'entry.cloudCalloutBody': string;
-  'entry.cloudCalloutDismissAria': string;
   'entry.workspaceLockedNote': string;
   'entry.workspaceLockedRecover': string;
   'workspaceTabs.project': string;

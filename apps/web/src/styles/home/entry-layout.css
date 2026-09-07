@@ -429,110 +429,12 @@
 .entry-rail-actions .use-everywhere-chip {
   justify-content: center;
 }
-.entry-local-mode-tip {
-  /* In flow, not absolute. It used to be anchored to the footer's bottom edge
-     (position: absolute; bottom: 3px; z-index: 2), which was harmless while
-     the footer had nothing else in it. The footer now ends with the social
-     row, and an opaque card pinned over that same bottom strip hid the
-     Discord, X and mail links from exactly the signed-out users this
-     card is shown to. Sitting in flow (order 2, above the social row's 3)
-     keeps both reachable and lets the footer size itself. */
-  order: 2;
-  display: grid;
-  gap: 8px;
-  width: calc(100% - var(--spacing-16, 16px));
-  margin: 0 auto;
-  padding: 8px;
-  box-sizing: border-box;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-panel);
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.4;
-  text-align: left;
-  cursor: pointer;
-  z-index: 2;
-  /* A mousedown→mouseup gesture that selects the label text (any hair of
-     drag, e.g. a real click made while screen-recording) makes the browser
-     suppress the click event entirely — this card would then silently never
-     call begin(), with no spinner, no browser tab, and no visible error. */
-  user-select: none;
-  transition: border-color 120ms, background 120ms, transform 120ms;
-}
-.entry-local-mode-tip:hover,
-.entry-local-mode-tip:focus-visible {
-  border-color: var(--border-strong);
-  background: var(--bg-subtle);
-  outline: none;
-  transform: translateY(-1px);
-}
-.entry-local-mode-tip__head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  color: var(--text-strong);
-}
-.entry-local-mode-tip__login-badge {
-  display: inline-flex;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 30px;
-  overflow: hidden;
-  padding: 0 16px;
-  border-radius: var(--radius-pill, 999px);
-  background: var(--accent);
-  color: #00ff08;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.entry-local-mode-tip p {
-  margin: 0;
-}
-/* While the vela device-auth flow is pending the card stops being a button:
-   the body swaps to a progress line + cancel, so the hover lift would lie. */
-.entry-local-mode-tip.is-signing {
-  cursor: default;
-}
-.entry-local-mode-tip.is-signing:hover {
-  transform: none;
-  border-color: var(--border);
-  background: var(--bg-panel);
-}
-.entry-local-mode-tip__cancel {
-  justify-self: start;
-  margin-top: 2px;
-  padding: 3px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.4;
-  cursor: pointer;
-  transition: border-color 120ms, background 120ms, color 120ms;
-}
-.entry-local-mode-tip__cancel:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-subtle);
-  color: var(--text);
-}
-
 /* ---------- Rail account skeleton (RailAccountSyncTip) ----------
    Stand-in for the account row (`.entry-nav-rail__account-trigger` below)
    while the just-signed-in `GET /api/workspace/context` re-read is still in
-   flight. Unlike `.entry-local-mode-tip` (absolutely positioned with a fixed
-   `bottom` so its card shape never collides with the rail-actions row below
-   it), this is a normal flex child of `.entry-nav-rail__footer` — the same
+   flight. This is a normal flex child of `.entry-nav-rail__footer` — the same
    flow `.entry-rail-actions` already uses (`width: calc(100% - 18px); margin:
-   0 auto;`). That keeps it clear of the actions row through ordinary flex
-   stacking instead of a guessed pixel offset, AND lands its bottom edge
+   0 auto;`). That lands its bottom edge
    close to the panel's bottom padding the same way the real account-trigger
    does once it mounts in `.entry-nav-rail__group` — so the loading→loaded
    swap reads as one row filling in, not a card jumping to a different slot
@@ -3121,7 +3023,7 @@
 
 /* Capsule treatment for the activation-retry card on THIS view only — the
  * base `.amr-login-activation` rule (artifacts.css) stays untouched so
- * Settings/AmrLoginPill and CloudSignInTip keep their compact inline card.
+ * Settings/AmrLoginPill keeps its compact inline card.
  * Compound selector (not cascade order) guarantees this wins over the base
  * padding/radius regardless of stylesheet import order. */
 .amr-login-activation.onboarding-cloud__activation {

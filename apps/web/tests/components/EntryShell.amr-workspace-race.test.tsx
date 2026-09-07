@@ -646,7 +646,6 @@ describe('EntryShell AMR workspace precheck race', () => {
       await Promise.resolve();
     });
 
-    expect(screen.queryByTestId('entry-cloud-signin-tip')).toBeNull();
     expect(screen.getByTestId('entry-rail-account-recovery-tip')).toBeTruthy();
   });
 

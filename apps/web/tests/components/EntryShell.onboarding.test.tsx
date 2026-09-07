@@ -2022,12 +2022,10 @@ describe('EntryShell onboarding OpenDesign AMR runtime', () => {
   it('refreshes workspace context, billing, and team projects as soon as onboarding sign-in completes', async () => {
     // Onboarding's embedded AMR sign-in step (pollAmrLoginCompletion) used to
     // fire only notifyAmrLoginStatusChanged() on success — unlike
-    // CloudSignInTip's finishSignedIn() and refreshWorkspaceSurfacesAfterOnboarding()
-    // (the two other places a sign-in completes), which fire all three
+    // refreshWorkspaceSurfacesAfterOnboarding(), which fires all three
     // workspace-refresh notifications. That gap left workspaceContext stale
     // until finishOnboarding fired it later, so Home's rail briefly rendered
-    // in its signed-out shape (still showing "Sign in to use OpenDesign
-    // Cloud") right after a successful onboarding sign-in.
+    // in its signed-out shape right after a successful onboarding sign-in.
     const { WORKSPACE_CONTEXT_REFRESH_EVENT, WORKSPACE_BILLING_REFRESH_EVENT, TEAM_PROJECTS_CHANGED_EVENT } =
       await import('../../src/collab/useWorkspaceContext');
     const contextRefresh = vi.fn();

@@ -644,8 +644,8 @@ describe('AmrLoginPill', () => {
   // on that page). Besides notifyAmrLoginStatusChanged(), it also fires
   // notifyWorkspaceContextRefresh()/notifyWorkspaceBillingRefresh()/
   // notifyTeamProjectsChanged() directly on poll-confirmed sign-in — the same
-  // three CloudSignInTip's finishSignedIn() and EntryShell's
-  // pollAmrLoginCompletion() fire (see the dedicated test below). It no
+  // three EntryShell's pollAmrLoginCompletion() also fires (see the dedicated
+  // test below). It no
   // longer relies solely on App.tsx's global AMR_LOGIN_STATUS_EVENT listener
   // eventually resetting every open tab down to a fresh Home tab (see
   // `deriveTabIdentityScope` / WorkspaceTabsBar) to get a stale rail to
@@ -698,8 +698,8 @@ describe('AmrLoginPill', () => {
   // workspace-context/billing/team-projects refresh to whatever the global
   // AMR_LOGIN_STATUS_EVENT listener in App.tsx happened to trigger later
   // (a forced tab-reset remount, not a deliberate signal). It must now fire
-  // all three explicitly, immediately, the same way CloudSignInTip's
-  // finishSignedIn() and EntryShell's pollAmrLoginCompletion() already do.
+  // all three explicitly, immediately, the same way EntryShell's
+  // pollAmrLoginCompletion() already does.
   it('fires notifyWorkspaceContextRefresh/notifyWorkspaceBillingRefresh/notifyTeamProjectsChanged once polling confirms signed-in', async () => {
     let loginPosted = false;
     const fetchMock = vi.fn(async (input, init) => {

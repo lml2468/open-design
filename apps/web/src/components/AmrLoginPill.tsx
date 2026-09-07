@@ -395,10 +395,9 @@ export function AmrLoginPill({
         // Wake the app-level status sync so configure_type flips to 'amr'
         // on the very next capture, not on an unrelated later refresh.
         notifyAmrLoginStatusChanged();
-        // This pill is a THIRD place AMR sign-in success is detected
-        // (CloudSignInTip's finishSignedIn() and EntryShell's
-        // pollAmrLoginCompletion() are the other two) and must fire the same
-        // workspace-surface nudges they do. Before this, the pill relied on
+        // This pill and EntryShell's pollAmrLoginCompletion() both detect AMR
+        // sign-in success and must fire the same workspace-surface nudges.
+        // Before this, the pill relied on
         // App.tsx's global AMR_LOGIN_STATUS_EVENT listener eventually
         // resetting every open tab back to a fresh Home mount (see
         // deriveTabIdentityScope), whose remount happens to start
