@@ -195,16 +195,6 @@ export function runWorkspaceIdentity(
   return null;
 }
 
-/** Whether the settled project scope itself resolves an explicit AMR billing
- * principal. An unbound project can still present a Personal adoption witness
- * through {@link runWorkspaceIdentity}; this predicate intentionally describes
- * only the persisted project scope. */
-export function projectWorkspaceScopeAuthorizesAmr(
-  scope: ProjectWorkspaceScope | null | undefined,
-): boolean {
-  return scope?.kind === 'personal' || scope?.kind === 'team';
-}
-
 /**
  * How to read a non-OK scope response: which failure kind the app should see,
  * and whether asking again can change it.

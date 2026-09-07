@@ -8,7 +8,6 @@ import type {
 } from '@open-design/contracts';
 
 import {
-  projectWorkspaceScopeAuthorizesAmr,
   useProjectWorkspaceScope,
 } from '../src/collab/useProjectWorkspaceScope';
 import { WORKSPACE_CONTEXT_REFRESH_EVENT } from '../src/collab/useWorkspaceContext';
@@ -556,28 +555,6 @@ describe('useProjectWorkspaceScope', () => {
       await vi.advanceTimersByTimeAsync(20_000);
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('authorizes AMR only for explicit personal or team scopes', () => {
-    expect(projectWorkspaceScopeAuthorizesAmr(null)).toBe(false);
-    expect(projectWorkspaceScopeAuthorizesAmr({
-      kind: 'unbound',
-      projectId: 'project-a',
-      workspaceId: null,
-      context: null,
-    })).toBe(false);
-    expect(projectWorkspaceScopeAuthorizesAmr({
-      kind: 'unavailable',
-      projectId: 'project-a',
-      workspaceId: 'workspace-a',
-      visibility: 'personal',
-      context: null,
-    })).toBe(false);
-    expect(
-      projectWorkspaceScopeAuthorizesAmr(
-        teamScope('project-a', 'workspace-a', 'member-a').scope,
-      ),
-    ).toBe(true);
   });
 
   it('drops a late response from the previously open project', async () => {

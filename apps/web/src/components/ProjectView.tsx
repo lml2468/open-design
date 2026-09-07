@@ -250,12 +250,8 @@ import {
   useTeamMembers,
 } from '../collab/useTeamMembers';
 import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
+import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import {
-  useWorkspaceContext,
-  workspaceIdentityCanBillAmr,
-} from '../collab/useWorkspaceContext';
-import {
-  projectWorkspaceScopeAuthorizesAmr,
   projectWorkspaceScopeReady,
   runWorkspaceIdentity,
   useProjectWorkspaceScope,
@@ -1907,31 +1903,6 @@ export function ProjectView({
   projectResourceAuthorityRef.current = projectResourceAuthority;
   const projectRunWorkspaceContextRef = useRef(projectRunWorkspaceContext);
   projectRunWorkspaceContextRef.current = projectRunWorkspaceContext;
-  const cloudModelSelected = config.mode === 'daemon' && config.agentId === 'amr';
-  const projectRunRequiresWorkspaceScope = cloudModelSelected;
-  // An OpenDesign Cloud run needs a wallet, and the ONLY client-side veto is
-  // "there is no billing principal at all". Either witness suffices: the
-  // caller's own cloud identity, or a project scope that already names an
-  // explicit personal/team principal.
-  //
-  // What this deliberately stops doing is requiring the PROJECT's membership
-  // projection to resolve before a send. A transient directory failure says
-  // nothing authoritative about access or billing: the daemon still forwards
-  // the project's persisted Workspace id with the signed-in account, and Vela
-  // makes the final membership/balance decision. It must not be converted to a
-  // Personal run. A settled unbound historical project is also allowed to
-  // reach the daemon: with an exact Personal witness it may be transactionally
-  // adopted; with a Team/absent witness the daemon rejects it explicitly.
-  // An explicit backend rejection is preferable to a client-side dead button
-  // or a popup for the wrong wallet.
-  //
-  // Strictly a widening: every state this admits was previously blocked, and
-  // nothing previously admitted becomes blocked.
-  const projectRunHasBillableAmrPrincipal =
-    !projectRunRequiresWorkspaceScope ||
-    projectWorkspaceScopeState.scope?.kind === 'unbound' ||
-    workspaceIdentityCanBillAmr(workspaceContextState) ||
-    projectWorkspaceScopeAuthorizesAmr(projectWorkspaceScopeState.scope);
   // Onboarding first-generation funnel (spec §11.1). Consume the pending entry
   // (set by the Home recommendation) exactly once on mount; the refs guard the
   // two lifecycle events so each fires only for the genuine first send / first
@@ -2638,7 +2609,6 @@ export function ProjectView({
     && !currentConversationStreaming
     && !currentConversationHasProgrammaticBrandExtractionRun;
   const currentConversationSendDisabled = projectMutationReadOnly
-    || !projectRunHasBillableAmrPrincipal
     || currentConversationLoading
     || failedMessagesConversationId === activeConversationId
     || currentConversationAwaitingActiveRunAttach;
@@ -6779,11 +6749,6 @@ export function ProjectView({
         attachments.length === 0 &&
         commentAttachments.length === 0
       ) return false;
-      // AMR must resolve this project's persisted billing principal before a
-      // run can start. Local CLI and BYOK runtimes do not consume the Vela
-      // wallet, so old daemons without this endpoint and directory outages
-      // must not disable those runtimes.
-      if (!projectRunHasBillableAmrPrincipal) return false;
       const effectiveAttachments = mergeChatAttachments(
         attachments,
         ...commentAttachments.map((attachment) =>
@@ -8417,7 +8382,6 @@ export function ProjectView({
       byokVideoModelOptionsPV,
       byokSpeechModelOptionsPV,
       projectRunWorkspaceContext,
-      projectRunHasBillableAmrPrincipal,
       projectMutationReadOnly,
       projectWorkspaceScopeState.scope,
     ],
@@ -10947,7 +10911,6 @@ export function ProjectView({
     // render where the state is ready but the ref has already been invalidated
     // for a fresh scoped reload.
     if (messagesConversationIdRef.current !== activeConversationId) return;
-    if (!projectRunHasBillableAmrPrincipal) return;
     // Wait for the initial listMessages DB read to land. Without this gate
     // the auto-send fires before the in-flight DB response, which then
     // arrives with `setMessages([])` and wipes the freshly-pushed user +
@@ -11023,7 +10986,6 @@ export function ProjectView({
     project.metadata,
     initialDraft,
     project.pendingPrompt,
-    projectRunHasBillableAmrPrincipal,
     handleSend,
   ]);
 
