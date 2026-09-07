@@ -20,16 +20,9 @@ export type EntryHomeView =
   | 'library'
   | 'brands'
   | 'integrations'
-  // Team-edition navigation-shell destinations. `community` is the shared
-  // template gallery surfaced as a rail destination (rather than only a home
-  // sub-section); the rest are team-workspace slots (project spaces + members +
-  // board + workspace settings) whose views are provided by other lanes.
+  // Community is the shared template gallery surfaced as a rail destination
+  // rather than only a home sub-section.
   | 'community'
-  | 'drafts'
-  | 'all-projects'
-  | 'members'
-  | 'board'
-  | 'workspace-settings'
   // Full-page personal Settings surface. `/settings` renders the same
   // SettingsDialog component in its `page` presentation instead of the modal.
   | 'settings';
@@ -145,21 +138,6 @@ export function parseRoute(pathname: string): Route {
     // stays visible alongside the gallery.
     return { kind: 'home', view: 'community' };
   }
-  if (parts[0] === 'drafts' && !parts[1]) {
-    return { kind: 'home', view: 'drafts' };
-  }
-  if (parts[0] === 'all-projects' && !parts[1]) {
-    return { kind: 'home', view: 'all-projects' };
-  }
-  if (parts[0] === 'members' && !parts[1]) {
-    return { kind: 'home', view: 'members' };
-  }
-  if (parts[0] === 'board' && !parts[1]) {
-    return { kind: 'home', view: 'board' };
-  }
-  if (parts[0] === 'workspace-settings' && !parts[1]) {
-    return { kind: 'home', view: 'workspace-settings' };
-  }
   // Phase 2B / spec §11.6 — marketplace deep UI routes. Two paths:
   //   /marketplace            → catalog grid (MarketplaceView)
   //   /marketplace/<pluginId> → detail page (PluginDetailView)
@@ -187,11 +165,6 @@ export function buildPath(route: Route): string {
     }
     if (route.view === 'integrations') return '/integrations';
     if (route.view === 'community') return '/community';
-    if (route.view === 'drafts') return '/drafts';
-    if (route.view === 'all-projects') return '/all-projects';
-    if (route.view === 'members') return '/members';
-    if (route.view === 'board') return '/board';
-    if (route.view === 'workspace-settings') return '/workspace-settings';
     if (route.view === 'settings') return '/settings';
     return '/';
   }

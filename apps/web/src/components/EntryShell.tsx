@@ -31,7 +31,6 @@ import {
   type InstalledPluginRecord,
   type RunContextSelection,
   type ProjectScenarioTaskProfile,
-  type WorkspaceProjectSummary,
 } from '@open-design/contracts';
 import type { OpenDesignHostProjectImportSuccess } from '@open-design/host';
 import { useAnalytics } from '../analytics/provider';
@@ -82,10 +81,7 @@ import { DesignsTab } from './DesignsTab';
 import { DesignSystemsTab } from './DesignSystemsTab';
 import { BrandsTab } from './BrandsTab';
 import { EntryNavRail, type EntryView as EntryViewKind } from './EntryNavRail';
-import {
-  buildProjectSearchCatalog,
-  ProjectSearchModal,
-} from './ProjectSearchModal';
+import { ProjectSearchModal } from './ProjectSearchModal';
 import { LibrarySection } from './LibrarySection';
 import { UpdaterPopup } from './UpdaterPopup';
 import { WhatsNewPopup } from './WhatsNewPopup';
@@ -93,8 +89,6 @@ import { DeepSeekHarnessSetupDialog } from './DeepSeekHarnessSetupDialog';
 import { installDeepSeekHarnessCompanion } from '../providers/agent-companion';
 import { HomeView, seedHomeComposerPrompt } from './HomeView';
 import { entryStrategyRoutingFields } from './entry-strategy-routing';
-import { EntryBlankState } from './EntryBlankState';
-import { RecentProjectsStrip } from './RecentProjectsStrip';
 import {
   createPluginAuthoringHandoff,
   createPluginUseHandoff,
@@ -112,36 +106,12 @@ import {
 } from './agentModelSelection';
 import { AgentIcon } from './AgentIcon';
 import { CommunityView } from './CommunityView';
-import { TeamSlotPlaceholder } from './TeamSlotPlaceholder';
 import {
-  notifyTeamProjectsChanged,
   notifyWorkspaceBillingRefresh,
   notifyWorkspaceContextRefresh,
-  currentWorkspaceAccountGeneration,
-  useTeamProjects,
   useWorkspaceContext,
   workspaceResourceReadContext,
 } from '../collab/useWorkspaceContext';
-import { useWorkspaceInvalidation } from '../collab/workspace-events';
-import {
-  beginWorkspaceScopedRead,
-  workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
-} from '../collab/workspace-identity';
-import {
-  buildAllProjectsList,
-  buildDraftsList,
-  createSharedProjectPredicate,
-  reconcileSharedProjectCatalogFields,
-} from '../collab/all-projects-list';
-import {
-  forgetOptimisticProjectOwnership,
-  optimisticProjectOwnershipScopeKey,
-  projectOwnerMemberIdsWithOptimisticWitnesses,
-  reconcileOptimisticProjectOwnership,
-  recordOptimisticProjectOwnership,
-  type OptimisticProjectOwnershipWitnesses,
-} from '../collab/optimistic-project-ownership';
 import type { ModelCapabilityTag } from './modelCapabilityTags';
 import { LanguageMenu } from './LanguageMenu';
 import { IntegrationsView, type IntegrationTab } from './IntegrationsView';
@@ -168,7 +138,6 @@ import { defaultKnownProviderModel, KNOWN_PROVIDERS } from '../state/config';
 import type { KnownProvider } from '../state/config';
 import { testAgent, testApiProvider } from '../providers/connection-test';
 import { fetchProviderModels } from '../providers/provider-models';
-import { invalidateProjectFilesCache } from '../providers/registry';
 import { isMacPlatform } from '../utils/platform';
 import { smoothScrollToTop } from '../utils/smoothScrollToTop';
 import { summarizeProjectNameFromPrompt } from '../utils/projectName';
@@ -372,19 +341,6 @@ function defaultPluginInputsForCreate(
   };
 }
 
-export interface ProjectTitleHint {
-  name: string;
-  /** Workspace whose catalog produced this hint; null for a local-only row. */
-  workspaceId: string | null;
-  /** Member authorization lifetime that produced the catalog row. */
-  workspaceMemberId: string | null;
-  /**
-   * The team catalog is the title authority for a project shared by another
-   * member. Own/private projects may still accept a newer local rename.
-   */
-  authoritative: boolean;
-}
-
 interface Props {
   skills: SkillSummary[];
   designTemplates: SkillSummary[];
@@ -439,21 +395,12 @@ interface Props {
   ) => Promise<ImportClaudeDesignOutcome | void> | ImportClaudeDesignOutcome | void;
   onImportFolder?: (baseDir: string) => Promise<void> | void;
   onImportFolderResponse?: (response: OpenDesignHostProjectImportSuccess) => Promise<void> | void;
-  onOpenProject: (
-    id: string,
-    fileName?: string,
-    projectTitleHint?: ProjectTitleHint,
-  ) => Promise<boolean> | boolean | void;
+  onOpenProject: (id: string, fileName?: string) => Promise<boolean> | boolean | void;
   onOpenLiveArtifact: (projectId: string, artifactId: string) => void;
   onDeleteProject: (id: string) => Promise<boolean | void> | boolean | void;
   onDuplicateProject?: (id: string) => Promise<void> | void;
   onRenameProject: (id: string, name: string) => void;
   onProjectsRefresh?: () => Promise<void> | void;
-  onTeamProjectContentReady?: (
-    projectId: string,
-    workspaceId: string,
-    workspaceMemberId: string,
-  ) => Promise<boolean> | boolean;
   onChangeDefaultDesignSystem: (id: string) => void;
   onCreateDesignSystem?: () => void;
   // First-run onboarding intentionally stops after model-source setup.
@@ -556,7 +503,6 @@ export function EntryShell({
   onDuplicateProject,
   onRenameProject,
   onProjectsRefresh,
-  onTeamProjectContentReady,
   onChangeDefaultDesignSystem,
   onCreateDesignSystem,
   onOpenDesignSystem,
@@ -573,379 +519,11 @@ export function EntryShell({
   // view from the route rather than keeping it in component state.
   const route = useRoute();
   const view: EntryViewKind = route.kind === 'home' ? route.view : 'home';
-  // The one shared workspace context. Any non-null context is a real workspace
-  // (personal or team); workspace surfaces gate on B's permission bits, not on
-  // workspaceType.
-  // The whole state (not just `context`) so workspace-scoped WRITES can go
-  // through `resolvedWorkspaceContextForWrite`, which refuses to collapse an
-  // unresolved or unavailable authority into an anonymous, unbound create.
+  // Keep the current context for the remaining plugin/design-system catalogue
+  // and project-create APIs until those resource scopes are migrated in the
+  // following removal batches. Project discovery itself is local-only here.
   const workspaceContextState = useWorkspaceContext();
-  const { context: workspaceContext, loading: workspaceLoading } = workspaceContextState;
-  const workspaceContextRef = useRef(workspaceContext);
-  workspaceContextRef.current = workspaceContext;
-  const workspaceContextStateRef = useRef(workspaceContextState);
-  workspaceContextStateRef.current = workspaceContextState;
-  // Team-wide shared-project discovery for the "全部项目" view. The member's own
-  // `projects` prop is only their LOCAL list; team-shared projects come from the
-  // resource hub through the daemon. Empty off-team / when the hub is unconfigured.
-  const teamProjects = useTeamProjects();
-  const hasWorkspaceContext = Boolean(workspaceContext);
-  // The "全部项目" grid is the SAME project-card grid used everywhere; its
-  // membership rule lives in `buildAllProjectsList`. Rows flow through
-  // `RecentProjectsStrip` like any other card — no custom section.
-  const localProjectIds = new Set(projects.map((project) => project.id));
-  // The optimistic share layer lives HERE, above every project strip, because a
-  // share has to move TWO things at once: the card's 共享 badge and which grid
-  // the card sits in. It used to live inside `RecentProjectsStrip`, so the badge
-  // flipped on click while 草稿 kept the card until the next team-projects poll
-  // (acceptance: 「转入团队空间, 怎么还显示在草稿里…切到全部项目再切回草稿它才消失」).
-  const [sharedThisSession, setSharedThisSession] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
-  const [unsharedThisSession, setUnsharedThisSession] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
-  const optimisticOwnershipScopeKey = optimisticProjectOwnershipScopeKey(
-    workspaceContext,
-    currentWorkspaceAccountGeneration(),
-  );
-  const [optimisticOwnershipWitnesses, setOptimisticOwnershipWitnesses] = useState<
-    OptimisticProjectOwnershipWitnesses
-  >(() => new Map());
-  const markProjectShared = useCallback((project: WorkspaceProjectSummary) => {
-    setSharedThisSession((prev) => new Set(prev).add(project.id));
-    setUnsharedThisSession((prev) => {
-      const next = new Set(prev);
-      next.delete(project.id);
-      return next;
-    });
-    setOptimisticOwnershipWitnesses((prev) => recordOptimisticProjectOwnership(prev, {
-      scopeKey: optimisticOwnershipScopeKey,
-      context: workspaceContext,
-      project,
-    }));
-  }, [optimisticOwnershipScopeKey, workspaceContext]);
-  const markProjectShareFailed = useCallback((projectId: string) => {
-    setSharedThisSession((prev) => {
-      if (!prev.has(projectId)) return prev;
-      const next = new Set(prev);
-      next.delete(projectId);
-      return next;
-    });
-    setOptimisticOwnershipWitnesses((prev) =>
-      forgetOptimisticProjectOwnership(prev, projectId));
-  }, []);
-  const markProjectUnshared = useCallback((projectId: string) => {
-    setUnsharedThisSession((prev) => new Set(prev).add(projectId));
-    setSharedThisSession((prev) => {
-      const next = new Set(prev);
-      next.delete(projectId);
-      return next;
-    });
-    setOptimisticOwnershipWitnesses((prev) =>
-      forgetOptimisticProjectOwnership(prev, projectId));
-  }, []);
-  useEffect(() => {
-    setOptimisticOwnershipWitnesses((prev) => reconcileOptimisticProjectOwnership(prev, {
-      scopeKey: optimisticOwnershipScopeKey,
-      teamProjects: teamProjects.projects,
-    }));
-    const catalogProjectIds = new Set(
-      teamProjects.projects.map((project) => project.projectId),
-    );
-    setSharedThisSession((prev) => {
-      if (![...prev].some((projectId) => catalogProjectIds.has(projectId))) return prev;
-      return new Set([...prev].filter((projectId) => !catalogProjectIds.has(projectId)));
-    });
-  }, [optimisticOwnershipScopeKey, teamProjects.projects]);
-  // The single shared-state answer, handed to the grids AND to every strip.
-  const isSharedProject = useMemo(
-    () =>
-      createSharedProjectPredicate({
-        teamProjects: teamProjects.projects,
-        localProjects: projects,
-        workspaceContext,
-        sharedThisSession,
-        unsharedThisSession,
-      }),
-    [projects, teamProjects.projects, workspaceContext, sharedThisSession, unsharedThisSession],
-  );
-  // 草稿 is the complement of 全部项目: sharing moves a project from one to the
-  // other, so a shared project must stop appearing here (acceptance #78).
-  const draftProjectsList: Project[] = buildDraftsList({
-    projects,
-    teamProjects: teamProjects.projects,
-    workspaceContext,
-    isShared: isSharedProject,
-  });
-  const allProjectsList: Project[] = buildAllProjectsList({
-    projects,
-    teamProjects: teamProjects.projects,
-    workspaceContext,
-    sharedFallbackName: t('recentProjects.sharedProjectFallbackName'),
-    isShared: isSharedProject,
-  });
-  const projectSearchProjects = buildProjectSearchCatalog(draftProjectsList, allProjectsList);
-  const homeProjectsList = useMemo(
-    () => reconcileSharedProjectCatalogFields({
-      projects,
-      teamProjects: teamProjects.projects,
-      workspaceContext,
-    }),
-    [projects, teamProjects.projects, workspaceContext],
-  );
-  // projectId → sharing member id, so a card in the 全部项目 / 草稿 grids can
-  // resolve "{creator}创建" against the member directory. A project absent here
-  // is the member's own local project → "我创建".
-  const teamProjectOwnerMemberIds = useMemo(
-    () => projectOwnerMemberIdsWithOptimisticWitnesses({
-      scopeKey: optimisticOwnershipScopeKey,
-      teamProjects: teamProjects.projects,
-      witnesses: optimisticOwnershipWitnesses,
-    }),
-    [optimisticOwnershipScopeKey, optimisticOwnershipWitnesses, teamProjects.projects],
-  );
-  const contentReadyProjectIdsRef = useRef(new Set<string>());
-  const pendingContentReadyProjectIdsRef = useRef(
-    new Map<string, { workspaceId: string; workspaceMemberId: string }>(),
-  );
-  const contentReadyHydrationRef = useRef(new Map<string, Promise<boolean>>());
-  const teamProjectIdsRef = useRef(new Set<string>());
-  teamProjectIdsRef.current = new Set(
-    teamProjects.projects.map((project) => project.projectId),
-  );
-  const readyWorkspaceId = workspaceContext?.workspaceId ?? null;
-  const readyWorkspaceMemberId = workspaceContext?.workspaceMemberId ?? null;
-  const readyScopeKey = workspaceContext
-    ? workspaceIdentityCacheKey(workspaceContext)
-    : null;
-  const contentReadyScopeKeyRef = useRef<string | null>(null);
-  if (contentReadyScopeKeyRef.current !== readyScopeKey) {
-    contentReadyScopeKeyRef.current = readyScopeKey;
-    contentReadyProjectIdsRef.current.clear();
-    pendingContentReadyProjectIdsRef.current.clear();
-    contentReadyHydrationRef.current.clear();
-  }
-  const acceptContentReadyProject = useCallback((
-    projectId: string,
-    eventWorkspaceId: string,
-    eventWorkspaceMemberId: string,
-  ): Promise<boolean> => {
-    const workspaceId = workspaceContext?.workspaceId;
-    const workspaceMemberId = workspaceContext?.workspaceMemberId;
-    if (
-      !workspaceId ||
-      !workspaceMemberId ||
-      workspaceContext?.workspaceType !== 'team' ||
-      workspaceId !== eventWorkspaceId ||
-      workspaceMemberId !== eventWorkspaceMemberId ||
-      !teamProjectIdsRef.current.has(projectId)
-    ) {
-      return Promise.resolve(false);
-    }
-    if (contentReadyProjectIdsRef.current.has(projectId)) {
-      return Promise.resolve(true);
-    }
-    const scopeKey = readyScopeKey;
-    if (!scopeKey) return Promise.resolve(false);
-    const key = `${scopeKey}:${projectId}`;
-    const existing = contentReadyHydrationRef.current.get(key);
-    if (existing) return existing;
-    if (!onTeamProjectContentReady) return Promise.resolve(false);
-    const hydration = Promise.resolve(
-      onTeamProjectContentReady(projectId, workspaceId, workspaceMemberId),
-    )
-      .then((hydrated) => {
-        if (
-          hydrated !== true ||
-          contentReadyScopeKeyRef.current !== scopeKey ||
-          !teamProjectIdsRef.current.has(projectId)
-        ) {
-          return false;
-        }
-        pendingContentReadyProjectIdsRef.current.delete(projectId);
-        contentReadyProjectIdsRef.current.add(projectId);
-        return true;
-      })
-      .catch(() => false)
-      .finally(() => {
-        if (contentReadyHydrationRef.current.get(key) === hydration) {
-          contentReadyHydrationRef.current.delete(key);
-        }
-      });
-    contentReadyHydrationRef.current.set(key, hydration);
-    return hydration;
-  }, [
-    onTeamProjectContentReady,
-    readyScopeKey,
-    workspaceContext?.workspaceMemberId,
-    workspaceContext?.workspaceId,
-    workspaceContext?.workspaceType,
-  ]);
-  useWorkspaceInvalidation({
-    'team-project-content-ready': ({ projectId, workspaceId }) => {
-      const currentWorkspaceId = workspaceContext?.workspaceId;
-      const currentWorkspaceMemberId = workspaceContext?.workspaceMemberId;
-      if (
-        !currentWorkspaceId ||
-        !currentWorkspaceMemberId ||
-        currentWorkspaceId !== workspaceId
-      ) {
-        return;
-      }
-      pendingContentReadyProjectIdsRef.current.set(projectId, {
-        workspaceId,
-        workspaceMemberId: currentWorkspaceMemberId,
-      });
-      void acceptContentReadyProject(
-        projectId,
-        workspaceId,
-        currentWorkspaceMemberId,
-      );
-    },
-  }, { workspaceContext });
-  useEffect(() => {
-    if (!readyScopeKey) return;
-    for (const [projectId, eventScope] of pendingContentReadyProjectIdsRef.current) {
-      if (
-        eventScope.workspaceId === readyWorkspaceId &&
-        eventScope.workspaceMemberId === readyWorkspaceMemberId
-      ) {
-        void acceptContentReadyProject(
-          projectId,
-          eventScope.workspaceId,
-          eventScope.workspaceMemberId,
-        );
-      }
-    }
-  }, [
-    acceptContentReadyProject,
-    readyScopeKey,
-    readyWorkspaceId,
-    readyWorkspaceMemberId,
-    teamProjects.projects,
-  ]);
-  // Open handler for the "全部项目" grid. A project already in the member's local
-  // list opens directly. A remote Team project first creates an authority-bound
-  // placeholder, then ProjectView opens while the daemon materializes content in
-  // the background. The placeholder stamp keeps every content writer fail-closed.
-  const [pullingProjectId, setPullingProjectId] = useState<string | null>(null);
-  async function handleOpenAllProjects(id: string): Promise<boolean> {
-    // The grid already reconciled the local row with the authoritative team
-    // catalog (notably the owner's current project name). Carry its title and
-    // provenance into App before navigation. Passing only the id made App reopen its local
-    // SQLite placeholder ("共享项目"), throwing away data already visible on the
-    // list and leaving the project header stale until a later metadata event.
-    const projectName = allProjectsList.find((project) => project.id === id)?.name.trim();
-    const teamProject = teamProjects.projects.find((project) => project.projectId === id);
-    const localProject = projects.find((project) => project.id === id);
-    const projectTitleHint = projectName
-      ? {
-          name: projectName,
-          workspaceId: workspaceContext?.workspaceId ?? null,
-          workspaceMemberId: workspaceContext?.workspaceMemberId ?? null,
-          // A member must render the owner's catalog title even when their
-          // local mirror has a newer timestamp or an older non-placeholder
-          // title. The owner may rename locally before the catalog catches up.
-          authoritative: Boolean(
-            teamProject
-            && teamProject.ownerMemberId !== workspaceContext?.workspaceMemberId,
-          ),
-        }
-      : undefined;
-    const open = () => Promise.resolve(onOpenProject(id, undefined, projectTitleHint));
-    if (contentReadyProjectIdsRef.current.has(id)) {
-      await open();
-      return true;
-    }
-    const scopeKey = contentReadyScopeKeyRef.current;
-    const hydration = scopeKey
-      ? contentReadyHydrationRef.current.get(`${scopeKey}:${id}`)
-      : null;
-    if (hydration) {
-      const hydrated = await hydration;
-      if (hydrated) {
-        await open();
-        return true;
-      }
-      if (contentReadyScopeKeyRef.current !== scopeKey) return false;
-    }
-    // The daemon explicitly stamps the local row created by a first Team
-    // status read as a placeholder. Hydrate only that stamped row before
-    // navigation; a normal local Team row is already materialized and must
-    // keep its direct-open path (including unpublished owner changes).
-    if (
-      localProject?.metadata?.sharedProjectPlaceholderAt != null
-      && teamProject
-      && workspaceContext?.workspaceType === 'team'
-      && workspaceContext.workspaceId
-      && workspaceContext.workspaceMemberId
-      && onTeamProjectContentReady
-    ) {
-      const hydrated = await acceptContentReadyProject(
-        id,
-        workspaceContext.workspaceId,
-        workspaceContext.workspaceMemberId,
-      );
-      if (hydrated) {
-        await open();
-        return true;
-      }
-    } else if (localProjectIds.has(id)) {
-      await open();
-      return true;
-    }
-    // Keep the card busy only for the short authority/bootstrap round trip, not
-    // for the full content transfer. PUT is idempotent, so the sidecar may safely
-    // replay it after a reused keep-alive socket resets. A paired older daemon
-    // has no bootstrap route; retain the former blocking POST fallback for that
-    // compatibility case.
-    if (pullingProjectId) return false;
-    const pullRead = beginWorkspaceScopedRead(workspaceContextRef.current);
-    if (!pullRead.context) return false;
-    setPullingProjectId(id);
-    try {
-      const collabRoute = `/api/projects/${encodeURIComponent(id)}/collab`;
-      let response = await fetch(`${collabRoute}/bootstrap`, {
-        method: 'PUT',
-        headers: workspaceProjectHeaders(pullRead.context),
-      });
-      if (response.status === 404 || response.status === 405) {
-        response = await fetch(`${collabRoute}/pull`, {
-          method: 'POST',
-          headers: workspaceProjectHeaders(pullRead.context),
-        });
-      }
-      if (!pullRead.isStillCurrent(workspaceContextRef.current)) return false;
-      if (!response.ok) return false;
-      invalidateProjectFilesCache(id, pullRead.context);
-      // The exact route bootstrap and ambient list refresh are independent.
-      // Navigation may read the newly committed placeholder immediately while
-      // the shell refreshes its catalog in parallel.
-      void Promise.resolve(onProjectsRefresh?.());
-    } catch {
-      return false;
-    } finally {
-      setPullingProjectId(null);
-    }
-    await open();
-    return true;
-  }
-  // Workspace-only destinations. Personal and team workspaces both use these;
-  // signed-out/local state falls back to home once the context has resolved.
-  // `community` is allowed in both states, so it is not guarded.
-  const isWorkspaceOnlyView =
-    view === 'drafts' ||
-    view === 'all-projects' ||
-    view === 'members' ||
-    view === 'board' ||
-    view === 'workspace-settings';
-  useEffect(() => {
-    if (workspaceLoading) return;
-    if (isWorkspaceOnlyView && !hasWorkspaceContext) {
-      navigate({ kind: 'home', view: 'home' }, { replace: true });
-    }
-  }, [workspaceLoading, isWorkspaceOnlyView, hasWorkspaceContext]);
+  const { context: workspaceContext } = workspaceContextState;
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   // The entry nav rail is collapsed by default (Manus-style) so the entry
   // view opens clean and full-width; the panel toggle in the topbar opens it
@@ -1051,14 +629,6 @@ export function EntryShell({
     }
     navigate({ kind: 'home', view: next });
   }
-
-  // Project collection surfaces have no legacy page-level tracker. Community
-  // is conditionally mounted and tracks its own visit; always-mounted library
-  // surfaces receive an explicit isActive prop below.
-  useEffect(() => {
-    if (view === 'drafts') trackPageView(analytics.track, { page_name: 'drafts' });
-    else if (view === 'all-projects') trackPageView(analytics.track, { page_name: 'all_projects' });
-  }, [analytics.track, view]);
 
   function startPluginAuthoring(goal?: string) {
     setHomePromptHandoff(
@@ -1290,7 +860,6 @@ export function EntryShell({
   function refreshWorkspaceSurfacesAfterOnboarding() {
     notifyWorkspaceContextRefresh();
     notifyWorkspaceBillingRefresh();
-    notifyTeamProjectsChanged();
   }
 
   function finishOnboarding() {
@@ -1377,11 +946,10 @@ export function EntryShell({
           open={railOpen}
           onOpenSettings={onOpenSettings}
           updaterSlot={updaterSlot}
-          /* Same catalog and same opener the 全部项目 grid uses below, so the
-             rail's 最近浏览过 list and that view's 最近浏览过 tab are two views of
-             ONE list rather than two sorts of two lists. */
-          recentProjects={projectSearchProjects}
-          onOpenRecentProject={handleOpenAllProjects}
+          recentProjects={projects}
+          onOpenRecentProject={(id) => {
+            void onOpenProject(id);
+          }}
           /* Same handlers the projects grid drives its own row menu with, so a
              rename or a delete from the rail lands in exactly one place. */
           onRenameRecentProject={onRenameProject}
@@ -1389,11 +957,8 @@ export function EntryShell({
         />
         {projectSearchOpen ? (
           <ProjectSearchModal
-            // Search spans personal drafts plus the shared workspace catalog.
-            // The pull-first handler still opens not-yet-local shared projects.
-            projects={projectSearchProjects}
-            workspaceContext={workspaceContext}
-            onOpenProject={handleOpenAllProjects}
+            projects={projects}
+            onOpenProject={onOpenProject}
             onClose={() => setProjectSearchOpen(false)}
           />
         ) : null}
@@ -1412,7 +977,7 @@ export function EntryShell({
             <div className="entry-main__view-home" data-testid="entry-view-home" data-active={view === 'home' ? 'true' : 'false'} {...inactiveViewProps(view === 'home')}>
               <HomeView
                 isActive={view === 'home'}
-                projects={homeProjectsList}
+                projects={projects}
                 projectsLoading={projectsLoading}
                 designSystems={designSystems}
                 designSystemsLoading={designSystemsLoading}
@@ -1430,11 +995,6 @@ export function EntryShell({
                 }}
                 onStartBlankProject={startBlankProjectFromRail}
                 promptHandoff={homePromptHandoff}
-                isSharedProject={isSharedProject}
-                onProjectShared={markProjectShared}
-                onProjectShareFailed={markProjectShareFailed}
-                onProjectUnshared={markProjectUnshared}
-                projectOwnerMemberIds={teamProjectOwnerMemberIds}
                 skills={skills}
                 skillsLoading={skillsLoading}
                 connectors={connectors}
@@ -1621,80 +1181,6 @@ export function EntryShell({
                   });
                 }}
               />
-            ) : null}
-            {/* Team destinations — the entry shell owns the nav frame only; each
-                view is provided by another lane (B = members/board, D = team
-                project spaces / workspace settings), rendered as a placeholder
-                until those land. */}
-            {view === 'drafts' ? (
-              projectsLoading ? (
-                <div className="entry-section">
-                  <CenteredLoader label={t('common.loading')} />
-                </div>
-              ) : draftProjectsList.length === 0 ? (
-                <EntryBlankState
-                  heading={t('entry.navDrafts')}
-                  description={t('entry.blankDraftsDescription')}
-                  actionLabel={t('entry.blankCreate')}
-                  onCreate={() => startBlankProjectFromRail()}
-                />
-              ) : (
-                <div className="entry-section">
-                  <RecentProjectsStrip
-                    projects={draftProjectsList}
-                    designSystems={designSystems}
-                    limit={1000}
-                    heading={t('entry.navDrafts')}
-                    space="projects"
-                    onOpen={(id) => onOpenProject(id)}
-                    onViewAll={() => {}}
-                    onDelete={onDeleteProject}
-                    onRename={onRenameProject}
-                  />
-                </div>
-              )
-            ) : null}
-            {view === 'all-projects' ? (
-              // The all-projects grid is fed by `teamProjects`, which has its own
-              // loading state and restarts from empty whenever the entry shell
-              // remounts (e.g. returning from a project). Gating only on
-              // `projectsLoading` flashed the "还没有团队项目" empty state during
-              // that team read; wait for BOTH before deciding the grid is empty.
-              projectsLoading || teamProjects.loading ? (
-                <div className="entry-section">
-                  <CenteredLoader label={t('common.loading')} />
-                </div>
-              ) : allProjectsList.length === 0 ? (
-                <EntryBlankState
-                  heading={t('entry.navAllProjects')}
-                  description={t('entry.blankAllProjectsDescription')}
-                  actionLabel={t('entry.blankCreate')}
-                  onCreate={() => startBlankProjectFromRail()}
-                />
-              ) : (
-                <div className="entry-section">
-                  <RecentProjectsStrip
-                    projects={allProjectsList}
-                    designSystems={designSystems}
-                    limit={1000}
-                    heading={t('entry.navAllProjects')}
-                    space="projects"
-                    onOpen={handleOpenAllProjects}
-                    onViewAll={() => {}}
-                    onDelete={onDeleteProject}
-                    onRename={onRenameProject}
-                  />
-                </div>
-              )
-            ) : null}
-            {view === 'members' ? (
-              <TeamSlotPlaceholder icon="users" title={t('entry.navMembers')} />
-            ) : null}
-            {view === 'board' ? (
-              <TeamSlotPlaceholder icon="kanban" title={t('entry.navBoard')} />
-            ) : null}
-            {view === 'workspace-settings' ? (
-              <TeamSlotPlaceholder icon="settings" title={t('entry.navWorkspaceSettings')} />
             ) : null}
           </div>
         </main>

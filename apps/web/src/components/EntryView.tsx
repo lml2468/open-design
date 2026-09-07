@@ -31,7 +31,7 @@ import type {
 // hero + recent projects + plugins). Keeping the redesign in a sibling
 // component lets future rebases against upstream `EntryView` (props,
 // connector lifecycle, exported helpers) stay close to a no-op here.
-import { EntryShell, type ProjectTitleHint } from './EntryShell';
+import { EntryShell } from './EntryShell';
 import type { IntegrationTab } from './IntegrationsView';
 import type { CreateInput, ImportClaudeDesignOutcome } from './NewProjectPanel';
 import {
@@ -123,21 +123,12 @@ interface Props {
   ) => Promise<ImportClaudeDesignOutcome | void> | ImportClaudeDesignOutcome | void;
   onImportFolder?: (baseDir: string) => Promise<void> | void;
   onImportFolderResponse?: (response: OpenDesignHostProjectImportSuccess) => Promise<void> | void;
-  onOpenProject: (
-    id: string,
-    fileName?: string,
-    projectTitleHint?: ProjectTitleHint,
-  ) => Promise<boolean> | boolean | void;
+  onOpenProject: (id: string, fileName?: string) => Promise<boolean> | boolean | void;
   onOpenLiveArtifact: (projectId: string, artifactId: string) => void;
   onDeleteProject: (id: string) => void;
   onDuplicateProject?: (id: string) => Promise<void> | void;
   onRenameProject: (id: string, name: string) => void;
   onProjectsRefresh?: () => Promise<void> | void;
-  onTeamProjectContentReady?: (
-    projectId: string,
-    workspaceId: string,
-    workspaceMemberId: string,
-  ) => Promise<boolean> | boolean;
   onChangeDefaultDesignSystem: (id: string) => void;
   onCreateDesignSystem?: () => void;
   onOpenDesignSystem?: (id: string) => void;
@@ -284,7 +275,6 @@ export function EntryView({
   onDuplicateProject,
   onRenameProject,
   onProjectsRefresh,
-  onTeamProjectContentReady,
   onChangeDefaultDesignSystem,
   onCreateDesignSystem,
   onOpenDesignSystem,
@@ -404,7 +394,6 @@ export function EntryView({
       onDuplicateProject={onDuplicateProject}
       onRenameProject={onRenameProject}
       onProjectsRefresh={onProjectsRefresh}
-      onTeamProjectContentReady={onTeamProjectContentReady}
       onChangeDefaultDesignSystem={onChangeDefaultDesignSystem}
       onCreateDesignSystem={onCreateDesignSystem}
       onOpenDesignSystem={onOpenDesignSystem}

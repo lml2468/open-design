@@ -3,10 +3,7 @@
 // name in real time, click a result to open it. Portaled to <body> so the
 // blur covers the whole app and the card isn't clipped by the rail.
 //
-// Ported from #5517; the project list and the open handler come from
-// EntryShell's REAL merged catalog (own projects + team-shared cards), so a
-// not-yet-pulled shared project opens through the same pull-first path as the
-// All Projects grid.
+// The project list and open handler come from EntryShell's local catalogue.
 import {
   useEffect,
   useMemo,
@@ -20,33 +17,15 @@ import { Icon } from './Icon';
 import { useT } from '../i18n';
 import { relativeTimeLong } from '../utils/chatTime';
 import { projectCover, projectCategory, ProjectTag } from './RecentProjectsStrip';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 interface Props {
   projects: Project[];
-  workspaceContext?: WorkspaceCollabContext | null;
   onOpenProject: (id: string) => Promise<boolean> | Promise<void> | boolean | void;
   onClose: () => void;
 }
 
-/**
- * Search spans both personal drafts and the shared workspace catalog. Shared
- * cards win if a project temporarily appears in both lists because they carry
- * the authoritative workspace-facing title and metadata.
- */
-export function buildProjectSearchCatalog(
-  draftProjects: readonly Project[],
-  sharedProjects: readonly Project[],
-): Project[] {
-  const projectsById = new Map<string, Project>();
-  for (const project of draftProjects) projectsById.set(project.id, project);
-  for (const project of sharedProjects) projectsById.set(project.id, project);
-  return [...projectsById.values()];
-}
-
 export function ProjectSearchModal({
   projects,
-  workspaceContext = null,
   onOpenProject,
   onClose,
 }: Props) {

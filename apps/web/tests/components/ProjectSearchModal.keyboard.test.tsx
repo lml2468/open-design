@@ -7,13 +7,9 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  buildProjectSearchCatalog,
-  ProjectSearchModal,
-} from '../../src/components/ProjectSearchModal';
+import { ProjectSearchModal } from '../../src/components/ProjectSearchModal';
 import { I18nProvider } from '../../src/i18n';
 import type { Project } from '../../src/types';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 afterEach(() => cleanup());
 
@@ -35,30 +31,15 @@ const PROJECTS = [
   project('middle', 'Middle deck', 2_000),
 ];
 
-const WORKSPACE_CONTEXT = {
-  workspaceId: 'workspace-team',
-  workspaceType: 'team',
-  workspaceMemberId: 'member-1',
-  role: 'member',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  permissions: {
-    canShareProjects: false,
-    canWriteSyncedFiles: false,
-  },
-} as WorkspaceCollabContext;
-
 function renderPalette(
   onOpenProject = vi.fn(),
   onClose = vi.fn(),
   projects = PROJECTS,
-  workspaceContext: WorkspaceCollabContext | null = null,
 ) {
   render(
     <I18nProvider>
       <ProjectSearchModal
         projects={projects}
-        workspaceContext={workspaceContext}
         onOpenProject={onOpenProject}
         onClose={onClose}
       />
@@ -73,26 +54,6 @@ function activeName(): string | undefined {
 }
 
 describe('ProjectSearchModal keyboard navigation', () => {
-  it('searches personal drafts together with shared workspace projects', () => {
-    const personalProject = project('personal-white-shoes', '白色慢跑鞋棚拍商品图', 4_000);
-    const sharedProject = project('shared-blue-shoes', '共享蓝色跑鞋', 3_000);
-    const projects = buildProjectSearchCatalog([personalProject], [sharedProject]);
-
-    renderPalette(vi.fn(), vi.fn(), projects);
-    fireEvent.change(screen.getByTestId('project-search-input'), {
-      target: { value: '白色' },
-    });
-
-    expect(screen.getByTestId('project-search-item-personal-white-shoes')).toBeTruthy();
-  });
-
-  it('uses the shared catalog card when the same project appears twice', () => {
-    const localCard = project('shared-project', 'Stale local title', 1_000);
-    const sharedCard = project('shared-project', 'Current shared title', 2_000);
-
-    expect(buildProjectSearchCatalog([localCard], [sharedCard])).toEqual([sharedCard]);
-  });
-
   it('highlights the top match first and walks the list with the arrow keys', () => {
     renderPalette();
     const input = screen.getByTestId('project-search-input');
@@ -161,19 +122,19 @@ describe('ProjectSearchModal keyboard navigation', () => {
     expect(activeName()).toBeUndefined();
   });
 
-  it('uses server-derived project authority for Team project cover URLs', () => {
-    const teamProject = {
-      ...project('team-project', 'Team project', 4_000),
+  it('uses the local project route for cover URLs', () => {
+    const localProject = {
+      ...project('local-project', 'Local project', 4_000),
       metadata: {
         entryFile: 'cover.png',
         kind: 'image',
       },
     } as Project;
-    renderPalette(vi.fn(), vi.fn(), [teamProject], WORKSPACE_CONTEXT);
+    renderPalette(vi.fn(), vi.fn(), [localProject]);
 
-    const image = screen.getByTestId('project-search-item-team-project').querySelector('img');
+    const image = screen.getByTestId('project-search-item-local-project').querySelector('img');
     expect(image?.getAttribute('src')).toBe(
-      '/api/projects/team-project/raw/cover.png?v=4000',
+      '/api/projects/local-project/raw/cover.png?v=4000',
     );
   });
 });

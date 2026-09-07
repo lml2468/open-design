@@ -20,7 +20,6 @@
 import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createSharedProjectPredicate } from '../src/collab/all-projects-list';
 import { projectIsSharedWithWorkspace } from '../src/collab/project-shared-status';
 import {
   resetTeamProjectsCache,
@@ -116,31 +115,5 @@ describe('team-projects coalescing key is shape-safe across call sites', () => {
     });
 
     await expect(projectIsSharedWithWorkspace('p-shared', TEAM_CONTEXT)).resolves.toBe(true);
-  });
-});
-
-describe('shared-project predicate never white-screens on a malformed catalog', () => {
-  // Defense in depth. Even if some future reader hands this helper a non-array,
-  // the all-projects grid must degrade to "nothing is shared" instead of
-  // throwing out of a useMemo and unmounting the entire app shell.
-  it.each([
-    ['a response object', { projects: [] }],
-    ['undefined', undefined],
-    ['null', null],
-    ['a string', 'not-an-array'],
-  ])('tolerates %s', (_label, malformed) => {
-    const predicate = createSharedProjectPredicate({
-      teamProjects: malformed as never,
-    });
-    expect(() => predicate('p-shared')).not.toThrow();
-    expect(predicate('p-shared')).toBe(false);
-  });
-
-  it('still honours the session layer when the hub catalog is malformed', () => {
-    const predicate = createSharedProjectPredicate({
-      teamProjects: { projects: [] } as never,
-      sharedThisSession: new Set(['p-optimistic']),
-    });
-    expect(predicate('p-optimistic')).toBe(true);
   });
 });

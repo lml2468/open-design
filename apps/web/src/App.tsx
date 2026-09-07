@@ -33,11 +33,9 @@ import type {
   WorkspaceInvalidationSsePayload,
   ProjectWorkspaceScope,
   ProjectScenarioTaskProfile,
-  WorkspaceProjectSummary,
 } from '@open-design/contracts';
 import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@open-design/contracts';
 import { EntryView } from './components/EntryView';
-import type { ProjectTitleHint } from './components/EntryShell';
 import type { IntegrationTab } from './components/IntegrationsView';
 import { MarketplaceView } from './components/MarketplaceView';
 import { PluginDetailView } from './components/PluginDetailView';
@@ -170,7 +168,6 @@ import {
   importFolderProject,
   invalidatePluginCatalogCache,
   invalidateWorkspaceProjectLists,
-  listWorkspaceProjectSummaries,
   listProjects,
   listTemplates,
   deleteTemplate,
@@ -273,8 +270,6 @@ export function shouldRouteToFirstRunOnboarding(
 }
 
 function workspaceProjectListViewForRoute(route: Route): WorkspaceProjectListView {
-  if (route.kind === 'home' && route.view === 'all-projects') return 'all';
-  if (route.kind === 'home' && route.view === 'drafts') return 'drafts';
   if (route.kind === 'project') return 'all';
   return 'recent';
 }
@@ -676,65 +671,6 @@ export async function resolveDeepLinkedTeamSharedProject(
     }
   }
   return everConfirmedTeamShared ? { kind: 'still-materializing' } : { kind: 'not-found' };
-}
-
-export async function hydrateReadyTeamProject(
-  projectId: string,
-  workspaceId: string,
-  deps: {
-    getWorkspaceContext: () => WorkspaceCollabContext | null;
-    listWorkspaceProjects: (
-      context: WorkspaceCollabContext,
-    ) => Promise<WorkspaceProjectSummary[]>;
-    onReady?: (project: Project, context: WorkspaceCollabContext) => void;
-    applyProject: (project: Project) => void;
-  },
-): Promise<Project | null> {
-  const initialContext = deps.getWorkspaceContext();
-  if (
-    !initialContext ||
-    initialContext.workspaceType !== 'team' ||
-    initialContext.workspaceId !== workspaceId ||
-    initialContext.memberStatus !== 'active' ||
-    initialContext.lifecycleState !== 'active'
-  ) {
-    return null;
-  }
-  const contextMatches = () => {
-    const context = deps.getWorkspaceContext();
-    return Boolean(
-      context &&
-      context.workspaceType === 'team' &&
-      context.workspaceId === initialContext.workspaceId &&
-      context.workspaceMemberId === initialContext.workspaceMemberId &&
-      context.memberStatus === 'active' &&
-      context.lifecycleState === 'active' &&
-      (context.teamId ?? context.workspaceId) ===
-        (initialContext.teamId ?? initialContext.workspaceId)
-    );
-  };
-  const summaries = await deps.listWorkspaceProjects(initialContext).catch(() => []);
-  if (!contextMatches()) return null;
-  const summary = summaries.find((candidate) =>
-    candidate.id === projectId &&
-    candidate.project.id === projectId
-  );
-  const hasMaterializedTeamBinding = Boolean(
-    summary &&
-    summary.workspaceId === workspaceId &&
-    summary.project.workspaceId === workspaceId &&
-    summary.visibility === 'team' &&
-    summary.resourceState === 'active' &&
-    summary.cloudTombstonedAt == null &&
-    summary.currentUserAccess.canOpen === true &&
-    typeof summary.resourceHubResourceId === 'string' &&
-    summary.resourceHubResourceId.trim() &&
-    summary.syncState === 'synced'
-  );
-  if (!summary || !hasMaterializedTeamBinding) return null;
-  deps.onReady?.(summary.project, initialContext);
-  deps.applyProject(summary.project);
-  return summary.project;
 }
 
 export function App() {
@@ -1298,36 +1234,6 @@ function AppInner() {
       });
     }
   }, []);
-
-  const handleTeamProjectContentReady = useCallback(async (
-    projectId: string,
-    workspaceId: string,
-    workspaceMemberId: string,
-  ): Promise<boolean> => {
-    if (workspaceContextRef.current?.workspaceMemberId !== workspaceMemberId) {
-      return false;
-    }
-    const project = await hydrateReadyTeamProject(projectId, workspaceId, {
-      getWorkspaceContext: () => workspaceContextRef.current,
-      listWorkspaceProjects: (context) =>
-        listWorkspaceProjectSummaries({
-          context,
-          workspaceView: 'team',
-          throwOnError: true,
-        }),
-      onReady: (_project, context) => {
-        invalidateProjectFilesCache(projectId, context);
-      },
-      applyProject: (project) => {
-        rememberLocalProject(projectId);
-        setProjects((current) => [
-          project,
-          ...current.filter((candidate) => candidate.id !== projectId),
-        ]);
-      },
-    });
-    return project != null;
-  }, [rememberLocalProject]);
 
   const clearLocalProject = useCallback((projectId: string, options?: { deleted?: boolean }) => {
     pendingLocalProjectIdsRef.current.delete(projectId);
@@ -3195,17 +3101,13 @@ function AppInner() {
   const handleOpenProject = useCallback(async (
     id: string,
     fileName?: string,
-    projectTitleHint?: ProjectTitleHint,
   ): Promise<boolean> => {
     const routeFileName = fileName ?? null;
-    const hintedProjectName = projectTitleHint?.name.trim() || null;
-    const requiresBoundCatalogProject = projectTitleHint?.authoritative === true;
     const openingAccountGeneration = currentWorkspaceAccountGeneration();
     let openingContext = workspaceContextRef.current;
-    const knownUnboundLocalProject = !requiresBoundCatalogProject
-      && projectsRef.current.some((project) =>
-        project.id === id && !project.workspaceId?.trim()
-      );
+    const knownUnboundLocalProject = projectsRef.current.some((project) =>
+      project.id === id && !project.workspaceId?.trim()
+    );
     let pendingContextWitness: Awaited<
       ReturnType<typeof resolveCurrentWorkspaceContextReadWitness>
     > | null = null;
@@ -3236,23 +3138,6 @@ function AppInner() {
     const openingAuthorizationGeneration = projectAuthorizationGenerationRef.current;
     const openingScopeKey = projectListScopeKey(openingContext);
     const expectedWorkspaceId = openingContext?.workspaceId ?? null;
-    const hintMatchesOpeningScope =
-      !projectTitleHint
-      || Boolean(
-        expectedWorkspaceId
-        && openingContext?.workspaceMemberId
-        && projectTitleHint.workspaceId === expectedWorkspaceId
-        && projectTitleHint.workspaceMemberId === openingContext.workspaceMemberId,
-      );
-    if (requiresBoundCatalogProject && !hintMatchesOpeningScope) return false;
-    // A stale non-authoritative card may still open the current local row, but
-    // its old-workspace title must never overwrite that row. Authoritative
-    // catalog cards fail closed above; own/local cards simply drop the hint.
-    const catalogName = hintMatchesOpeningScope ? hintedProjectName : null;
-    const titleAuthorityKey = projectViewAuthorizationLifetimeKey(
-      id,
-      openingContext,
-    );
     const openingScopeIsCurrent = () => {
       if (currentWorkspaceAccountGeneration() !== openingAccountGeneration) return false;
       if (!pendingContextWitness) {
@@ -3271,7 +3156,7 @@ function AppInner() {
     };
     const canUseLocalProject = (project: Project) => {
       if (project.workspaceId) return project.workspaceId === expectedWorkspaceId;
-      return !requiresBoundCatalogProject;
+      return true;
     };
     const navigateToOpenedProject = (project: Project) => {
       const projectWorkspaceId = project.workspaceId?.trim() ?? '';
@@ -3291,64 +3176,9 @@ function AppInner() {
       navigate({ kind: 'project', projectId: id, fileName: routeFileName });
       return true;
     };
-    const rememberHintAuthority = () => {
-      if (projectTitleHint?.authoritative && catalogName && openingScopeIsCurrent()) {
-        // A catalog card is an authority response too. Invalidate any older
-        // deep-link/metadata lookup that started before this newer UI snapshot
-        // was accepted, otherwise its late response could roll the title back.
-        const nextRequestGeneration =
-          (projectNameAuthorityRequestGenerationRef.current.get(titleAuthorityKey) ?? 0) + 1;
-        projectNameAuthorityRequestGenerationRef.current.set(
-          titleAuthorityKey,
-          nextRequestGeneration,
-        );
-        rememberAuthoritativeProjectName(
-          titleAuthorityKey,
-          catalogName,
-          openingScopeIsCurrent,
-        );
-      }
-    };
-    // EntryShell's shared-project grid has already reconciled local SQLite with
-    // the workspace catalog. Preserve its authoritative display name during the
-    // route transition instead of reopening the stale local placeholder by id.
-    //
-    // The catalog row is NOT a local project record: it may omit workspaceId
-    // and other binding fields. Treat it as a name hint only, and merge it into
-    // an already-bound local row. If App has not observed that row yet, keep
-    // loading through GET/pull/list below instead of inserting an unbound
-    // catalog-shaped Project into local state.
-    if (
-      catalogName
-      && projectsRef.current.some((project) => project.id === id && canUseLocalProject(project))
-    ) {
-      setProjects((current) => {
-        if (!openingScopeIsCurrent()) return current;
-        const existingIndex = current.findIndex(
-          (project) => project.id === id && canUseLocalProject(project),
-        );
-        if (existingIndex < 0) return current;
-        const existing = current[existingIndex]!;
-        if (existing.name === catalogName) return current;
-        const next = [...current];
-        next[existingIndex] = {
-          ...existing,
-          name: catalogName,
-        };
-        return next;
-      });
-      rememberHintAuthority();
-      const localProject = projectsRef.current.find(
-        (project) => project.id === id && canUseLocalProject(project),
-      );
-      return localProject ? navigateToOpenedProject(localProject) : false;
-    }
-    if (
-      !catalogName
-      && projectsRef.current.some(
-        (project) => project.id === id && canUseLocalProject(project),
-      )
-    ) {
+    if (projectsRef.current.some(
+      (project) => project.id === id && canUseLocalProject(project),
+    )) {
       const localProject = projectsRef.current.find(
         (project) => project.id === id && canUseLocalProject(project),
       );
@@ -3358,52 +3188,24 @@ function AppInner() {
       const project = await getProject(id, openingContext);
       if (!openingScopeIsCurrent()) return false;
       if (project && canUseLocalProject(project)) {
-        const openedProject = catalogName ? { ...project, name: catalogName } : project;
         setProjects((curr) => openingScopeIsCurrent()
           ? [
-              openedProject,
-              ...curr.filter((candidate) => candidate.id !== openedProject.id),
+              project,
+              ...curr.filter((candidate) => candidate.id !== project.id),
             ]
           : curr);
-        rememberHintAuthority();
-        return navigateToOpenedProject(openedProject);
-      }
-      const { pulled } = await pullTeamSharedProjectIfAvailable(id, openingContext);
-      if (!openingScopeIsCurrent()) return false;
-      if (pulled) {
-        const pulledProject = await getProject(id, openingContext);
-        if (!openingScopeIsCurrent()) return false;
-        if (pulledProject && canUseLocalProject(pulledProject)) {
-          const openedProject = catalogName
-            ? { ...pulledProject, name: catalogName }
-            : pulledProject;
-          setProjects((curr) => openingScopeIsCurrent()
-            ? [
-                openedProject,
-                ...curr.filter((candidate) => candidate.id !== openedProject.id),
-              ]
-            : curr);
-          rememberHintAuthority();
-          return navigateToOpenedProject(openedProject);
-        }
+        return navigateToOpenedProject(project);
       }
       const request = beginProjectListRequest('all');
       const list = await listCurrentWorkspaceProjects({ workspaceView: 'all' });
       if (!openingScopeIsCurrent()) return false;
-      const reconciledList = catalogName
-        ? list.map((candidate) =>
-            candidate.id === id && canUseLocalProject(candidate)
-              ? { ...candidate, name: catalogName }
-              : candidate)
-        : list;
-      reconcileFetchedProjects(reconciledList, request);
+      reconcileFetchedProjects(list, request);
       const fetchedProject = locallyDeletedProjectIdsRef.current.has(id)
         ? undefined
-        : reconciledList.find(
+        : list.find(
             (candidate) => candidate.id === id && canUseLocalProject(candidate),
           );
       if (fetchedProject) {
-        rememberHintAuthority();
         return navigateToOpenedProject(fetchedProject);
       }
     } catch {
@@ -3418,7 +3220,6 @@ function AppInner() {
     beginProjectListRequest,
     listCurrentWorkspaceProjects,
     reconcileFetchedProjects,
-    rememberAuthoritativeProjectName,
     t,
   ]);
 
@@ -4829,7 +4630,6 @@ function AppInner() {
         onDuplicateProject={handleDuplicateProject}
         onRenameProject={handleRenameProject}
         onProjectsRefresh={refreshProjectsStrict}
-        onTeamProjectContentReady={handleTeamProjectContentReady}
         onChangeDefaultDesignSystem={handleChangeDefaultDesignSystem}
         onCreateDesignSystem={() => {
           setPendingDesignSystemCreateEntry('design_systems_page');

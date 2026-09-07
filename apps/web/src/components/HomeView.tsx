@@ -20,7 +20,6 @@ import type {
   LocalCatalogScope,
   ProjectKind,
   WorkspaceCollabContext,
-  WorkspaceProjectSummary,
   AudioVoiceOption,
   WorkspaceContextItem,
 } from '@open-design/contracts';
@@ -112,7 +111,6 @@ import { setPendingDesignSystemCreateEntry } from '../analytics/ds-create-entry'
 import { workspaceContextLinkedDirs } from './workspace-context';
 import {
   currentWorkspaceAccountGeneration,
-  useTeamProjects,
   useWorkspaceContext,
   workspaceResourceReadContext,
 } from '../collab/useWorkspaceContext';
@@ -145,7 +143,6 @@ import { localizePluginTitle } from './plugins-home/localization';
 import type { PluginUseAction } from './plugins-home/useActions';
 import { examplePresetSeedPrompt } from './plugins-home/presetSeedPrompt';
 import { localizePluginDescription } from './plugins-home/localization';
-import type { SharedProjectPredicate } from '../collab/all-projects-list';
 import { RecentProjectsStrip } from './RecentProjectsStrip';
 import type { Recommendation } from '../onboarding/recommendation';
 import type { OnboardingEntry } from '../onboarding/onboarding-entry';
@@ -293,15 +290,6 @@ interface Props {
    *  back to its collapsed default (the community view raises it on every tab
    *  change). */
   collapseSignal?: number;
-  /** The one shared-state answer for the home strip's cards. Owned by EntryShell
-   *  because the SAME answer partitions its 全部项目 / 草稿 grids — a home share
-   *  must move the project between those grids too, without a refetch. */
-  isSharedProject?: SharedProjectPredicate;
-  onProjectShared?: (project: WorkspaceProjectSummary) => void;
-  onProjectShareFailed?: (projectId: string) => void;
-  onProjectUnshared?: (projectId: string) => void;
-  /** Authoritative catalog owners plus any exact successful-move witness. */
-  projectOwnerMemberIds?: ReadonlyMap<string, string>;
   skills?: SkillSummary[];
   skillsLoading?: boolean;
   connectors?: ConnectorDetail[];
@@ -514,11 +502,6 @@ export function HomeView({
   onStartBlankProject,
   promptHandoff,
   collapseSignal,
-  isSharedProject,
-  onProjectShared,
-  onProjectShareFailed,
-  onProjectUnshared,
-  projectOwnerMemberIds,
   skills = EMPTY_SKILLS,
   skillsLoading = false,
   connectors = EMPTY_CONNECTORS,
@@ -561,23 +544,6 @@ export function HomeView({
   const desiredPluginCatalogKey = workspaceContextState.identityChangePending
     ? null
     : pluginCatalogCacheKey(pluginCatalogOptions);
-  // Team-wide catalog from the resource hub via the daemon; empty off-team / when
-  // the hub is unconfigured. Only the creator attribution is derived here — the
-  // shared/not-shared answer arrives as `isSharedProject` from EntryShell, which
-  // owns the optimistic layer the 全部项目 / 草稿 grids read from too.
-  const homeTeamProjects = useTeamProjects();
-  // projectId → sharing member id, so the strip can resolve "{creator}创建" for a
-  // teammate's shared project (a project absent here is the member's own local
-  // project → "我创建").
-  const homeProjectOwnerMemberIds = useMemo(
-    () => projectOwnerMemberIds ?? new Map(
-      homeTeamProjects.projects.map((teamProject) => [
-        teamProject.projectId,
-        teamProject.ownerMemberId,
-      ]),
-    ),
-    [homeTeamProjects.projects, projectOwnerMemberIds],
-  );
   // P0 page_view page_name=home — fire once on mount. ref-keyed to survive
   // re-renders that flip parent state without remounting HomeView.
   const homePageViewFiredRef = useRef(false);

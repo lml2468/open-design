@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildPersistedConfig,
   isAutosaveDraftOnlyChange,
-  hydrateReadyTeamProject,
   mergeAgentModelChoice,
   persistComposioConfigChange,
   projectViewAuthorizationLifetimeKey,
@@ -14,10 +13,7 @@ import {
   shouldSyncMediaProvidersOnSave,
 } from '../src/App';
 import type { AppConfig, Project } from '../src/types';
-import type {
-  WorkspaceCollabContext,
-  WorkspaceProjectSummary,
-} from '@open-design/contracts';
+import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 describe('projectRouteSurfaceState', () => {
   it('only shows an unbounded loader while the initial project list is loading', () => {
@@ -79,119 +75,6 @@ describe('shouldRouteToFirstRunOnboarding', () => {
 
     expect(shouldRouteToFirstRunOnboarding(unfinished, '/projects/project-a')).toBe(false);
     expect(shouldRouteToFirstRunOnboarding(unfinished, '/')).toBe(true);
-  });
-});
-
-describe('hydrateReadyTeamProject', () => {
-  const project: Project = {
-    id: 'shared-ready',
-    name: 'Ready project',
-    skillId: null,
-    designSystemId: null,
-    createdAt: 1,
-    updatedAt: 2,
-    workspaceId: 'ws-1',
-  };
-  const teamContext = {
-    workspaceId: 'ws-1',
-    workspaceType: 'team',
-    workspaceMemberId: 'wm-1',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    teamId: 'team-1',
-  } as WorkspaceCollabContext;
-  const summary: WorkspaceProjectSummary = {
-    id: project.id,
-    name: project.name,
-    workspaceId: 'ws-1',
-    visibility: 'team',
-    resourceState: 'active',
-    createdByWorkspaceMemberId: null,
-    resourceHubResourceId: 'resource-shared-ready',
-    cloudTombstonedAt: null,
-    currentUserAccess: {
-      canOpen: true,
-      canRename: false,
-      canDelete: false,
-      canDuplicate: false,
-      canMoveToTeam: false,
-      canMoveToPersonal: false,
-      canExport: true,
-      canSendTo: true,
-      canRestoreVersion: false,
-    },
-    syncState: 'synced',
-    createdAt: project.createdAt,
-    updatedAt: project.updatedAt,
-    project,
-  };
-
-  it('fetches and applies only the ready project with the validated workspace scope', async () => {
-    const listWorkspaceProjects = vi.fn(async () => [summary]);
-    const applyProject = vi.fn();
-    const result = await hydrateReadyTeamProject('shared-ready', 'ws-1', {
-      getWorkspaceContext: () => teamContext,
-      listWorkspaceProjects,
-      applyProject,
-    });
-
-    expect(listWorkspaceProjects).toHaveBeenCalledWith(teamContext);
-    expect(applyProject).toHaveBeenCalledWith(project);
-    expect(result).toEqual(project);
-  });
-
-  it('invalidates the exact file authority before publishing readiness', async () => {
-    const order: string[] = [];
-    const onReady = vi.fn((_project: Project, context: WorkspaceCollabContext) => {
-      expect(context).toBe(teamContext);
-      order.push('invalidate');
-    });
-    const applyProject = vi.fn(() => order.push('apply'));
-
-    await expect(hydrateReadyTeamProject(project.id, 'ws-1', {
-      getWorkspaceContext: () => teamContext,
-      listWorkspaceProjects: async () => [summary],
-      onReady,
-      applyProject,
-    })).resolves.toEqual(project);
-
-    expect(onReady).toHaveBeenCalledWith(project, teamContext);
-    expect(order).toEqual(['invalidate', 'apply']);
-  });
-
-  it('drops a hydration result when the workspace changes while the scoped list is in flight', async () => {
-    let resolveProjects!: (value: WorkspaceProjectSummary[]) => void;
-    const pending = new Promise<WorkspaceProjectSummary[]>((resolve) => {
-      resolveProjects = resolve;
-    });
-    let context: WorkspaceCollabContext = teamContext;
-    const applyProject = vi.fn();
-    const hydration = hydrateReadyTeamProject('shared-ready', 'ws-1', {
-      getWorkspaceContext: () => context,
-      listWorkspaceProjects: async () => pending,
-      applyProject,
-    });
-    context = { ...teamContext, workspaceId: 'ws-other' };
-    resolveProjects([summary]);
-
-    await expect(hydration).resolves.toBeNull();
-    expect(applyProject).not.toHaveBeenCalled();
-  });
-
-  it('rejects a remote-only catalog card that has no materialized local binding', async () => {
-    const applyProject = vi.fn();
-    const remoteOnly = {
-      ...summary,
-      id: 'resource-shared-ready',
-      project: { ...project, workspaceId: undefined },
-    };
-
-    await expect(hydrateReadyTeamProject('shared-ready', 'ws-1', {
-      getWorkspaceContext: () => teamContext,
-      listWorkspaceProjects: async () => [remoteOnly],
-      applyProject,
-    })).resolves.toBeNull();
-    expect(applyProject).not.toHaveBeenCalled();
   });
 });
 
