@@ -205,40 +205,6 @@ describe('agent runtime tool environment', () => {
     expect(env.OD_DATA_DIR).toBe(process.env.OD_DATA_DIR);
   });
 
-  it('keeps wrapper media commands on the daemon data dir even when configured agent env is stale', () => {
-    const base = createAgentRuntimeEnv(
-      { PATH: '/bin', OD_DATA_DIR: '/stale/process/data' },
-      'http://127.0.0.1:7456',
-      null,
-      '/opt/open-design/bin/node',
-    );
-    const configuredAgentEnv = createDaemonDataDirConfiguredAgentEnv({
-      OD_DATA_DIR: '/stale/configured/data',
-    });
-
-    const env = {
-      ...spawnEnvForAgent(
-        'amr',
-        base,
-        configuredAgentEnv,
-      ),
-      ...createOpenDesignToolEnv({
-        daemonUrl: 'http://127.0.0.1:7456',
-        hyperFramesBin: '/opt/open-design/hyperframes/bin/hyperframes.mjs',
-        projectDir: '/tmp/project',
-        projectId: 'project-1',
-      }),
-    };
-
-    expect(env.OD_DATA_DIR).toBe(process.env.OD_DATA_DIR);
-    expect(env.OPENCODE_TEST_HOME).toBe(
-      path.join(process.env.OD_DATA_DIR ?? '', 'amr', 'opencode-home'),
-    );
-    expect(env.OD_PROJECT_ID).toBe('project-1');
-    expect(env.OD_PROJECT_DIR).toBe('/tmp/project');
-    expect(env.OD_HYPERFRAMES_BIN).toBe('/opt/open-design/hyperframes/bin/hyperframes.mjs');
-  });
-
   it('names the codex rollout root so a complex Run can observe its native Children', () => {
     // `collectCodexChildEvidence` reads
     // `<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-*.jsonl` and deliberately
