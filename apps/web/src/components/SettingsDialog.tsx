@@ -136,9 +136,7 @@ import { DesignSystemsSection } from './DesignSystemsSection';
 import { PrivacySection } from './PrivacySection';
 import { ProjectLocationsSection } from './ProjectLocationsSection';
 import { RoutinesSection } from './RoutinesSection';
-import { SettingsWorkspaceSection } from './SettingsWorkspaceSection';
 import { useWorkspaceContext } from '../collab/useWorkspaceContext';
-import { canShowWorkspaceSettings } from '../collab/settings-access';
 import { ConnectorsBrowser } from './ConnectorsBrowser';
 import { MemoryModelInline } from './MemoryModelInline';
 import { MemorySection } from './MemorySection';
@@ -186,7 +184,6 @@ export type SettingsSection =
   | 'general'
   | 'labs'
   | 'execution'
-  | 'workspace'
   | 'instructions'
   | 'media'
   | 'composio'
@@ -222,7 +219,7 @@ export type SettingsSection =
 // so leaving it unmapped would deep-link into a section that renders nothing.
 //
 // Sections that keep their own render block but no longer have a nav item
-// (workspace, mcpClient, composio, designSystems) must NOT be listed: they
+// (mcpClient, composio, designSystems) must NOT be listed: they
 // stay individually addressable through `initialSection`, and folding them
 // here would silently swallow a deep link into the wrong section.
 // `privacy` and `about` must not be listed either — they own nav items, and
@@ -1475,16 +1472,7 @@ export function SettingsDialog({
       : {},
   );
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => normalizeSettingsSection(initialSection));
-  // Workspace region gating (E-frontend, D4.3). One shared read of the workspace
-  // context; the Workspace section only renders for a team workspace whose
-  // viewer may see workspace settings. Gate on the folded permission bits,
-  // never a role re-derivation (see `../collab/settings-access`).
-  // The Workspace nav item was removed to match the agreed 8-item nav, so this
-  // gate now guards the deep-link (`initialSection='workspace'`) path — it must
-  // stay, otherwise a deep link would hand workspace settings to a viewer the
-  // permission bits exclude.
   const { context: workspaceContext } = useWorkspaceContext();
-  const showWorkspaceSettings = canShowWorkspaceSettings(workspaceContext);
   const [settingsSidebarCollapsed, setSettingsSidebarCollapsed] = useState(false);
   const [settingsFullscreen, setSettingsFullscreen] = useState(true);
   // Scroll the right-hand content pane back to the top whenever the user
@@ -3445,7 +3433,6 @@ export function SettingsDialog({
     general: { title: t('settings.general'), subtitle: t('settings.generalHint') },
     labs: { title: t('labs.title'), subtitle: t('labs.navHint') },
     execution: { title: t('settings.title'), subtitle: t('settings.subtitle') },
-    workspace: { title: t('settings.workspace'), subtitle: t('settings.workspaceHint') },
     instructions: {
       title: t('settings.instructionsTitle'),
       subtitle: t('settings.instructionsSubtitle'),
@@ -5423,9 +5410,6 @@ export function SettingsDialog({
             </section>
           ) : null}
 
-          {activeSection === 'workspace' && showWorkspaceSettings ? (
-            <SettingsWorkspaceSection context={workspaceContext} />
-          ) : null}
           {aboutToast ? (
             <Toast
               message={aboutToast}

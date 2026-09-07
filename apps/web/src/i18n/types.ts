@@ -419,20 +419,6 @@ export interface Dict extends CollaborationSettingsDict {
   'settings.amrBalance': string;
   'settings.amrPlan': string;
   'settings.amrUpgrade': string;
-  // Settings > Workspace region (E-frontend, D4.3): the role-gated shell for
-  // other-lane workspace destinations. Shown only for a team workspace.
-  'settings.workspace': string;
-  'settings.workspaceHint': string;
-  'settings.workspaceLede': string;
-  'settings.workspaceBack': string;
-  'settings.workspaceMembers': string;
-  'settings.workspaceMembersHint': string;
-  'settings.workspaceBilling': string;
-  'settings.workspaceBillingHint': string;
-  'settings.workspaceAutoRecharge': string;
-  'settings.workspaceAutoRechargeHint': string;
-  'settings.workspaceTeamSpace': string;
-  'settings.workspaceTeamSpaceHint': string;
   // Full-page Settings (`/settings`): sidebar nav head above the section list
   // (back-to-home link, decorative search field, personal group label).
   'settings.pageBackToHome': string;

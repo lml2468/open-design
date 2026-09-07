@@ -4502,20 +4502,6 @@ export const en: Dict = {
   'ds.repoConnectBannerBody': 'Connect GitHub so OpenDesign can read your repository and pull colors, type, and components into this design system.',
   'ds.repoConnectCardBody': 'Pull colors, type, and components from your repository into this design system.',
   'ds.repoConnectButton': 'Connect GitHub',
-  // Settings > Workspace region (E-frontend, D4.3): role-gated shell for
-  // other-lane workspace destinations (members / billing / team space).
-  'settings.workspace': 'Workspace',
-  'settings.workspaceHint': 'Members, billing, and team spaces',
-  'settings.workspaceLede': 'Team-level settings for this workspace. These areas are managed by the team service — open one to continue.',
-  'settings.workspaceBack': 'Back to workspace',
-  'settings.workspaceMembers': 'Members & invites',
-  'settings.workspaceMembersHint': 'Manage who can access this workspace and send invitations.',
-  'settings.workspaceBilling': 'Subscription & seats',
-  'settings.workspaceBillingHint': 'Plan, seats, and payment for this workspace.',
-  'settings.workspaceAutoRecharge': 'Auto-recharge',
-  'settings.workspaceAutoRechargeHint': 'Automatically top up credits when the balance runs low.',
-  'settings.workspaceTeamSpace': 'Team space',
-  'settings.workspaceTeamSpaceHint': 'Shared projects and visibility for your team.',
   // Full-page Settings (`/settings`): sidebar nav head above the section list.
   'settings.pageBackToHome': 'Back to home',
   'settings.pageNavGroupPersonal': 'Personal',

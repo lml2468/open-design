@@ -4905,20 +4905,6 @@ export const zhTW: Dict = {
     "連接 GitHub 後，OpenDesign 可以讀取你的儲存庫，並把顏色、字體和元件擷取到此設計體系中。",
   "ds.repoConnectCardBody": "從儲存庫中擷取顏色、字體和元件到此設計體系。",
   "ds.repoConnectButton": "連接 GitHub",
-  // Settings > Workspace region (E-frontend, D4.3): role-gated shell for
-  // other-lane workspace destinations (members / billing / team space).
-  'settings.workspace': '工作區',
-  'settings.workspaceHint': '成員、訂閱與團隊空間',
-  'settings.workspaceLede': '該工作區的團隊級設定。以下區域由團隊服務提供，點擊任一入口繼續。',
-  'settings.workspaceBack': '返回工作區',
-  'settings.workspaceMembers': '成員與邀請',
-  'settings.workspaceMembersHint': '管理誰可以存取該工作區，並發送邀請。',
-  'settings.workspaceBilling': '訂閱與席位',
-  'settings.workspaceBillingHint': '該工作區的方案、席位與付款。',
-  'settings.workspaceAutoRecharge': '自動儲值',
-  'settings.workspaceAutoRechargeHint': '餘額不足時自動儲值額度。',
-  'settings.workspaceTeamSpace': '團隊空間',
-  'settings.workspaceTeamSpaceHint': '團隊的共享專案與可見性。',
   // Full-page Settings (`/settings`): sidebar nav head above the section list.
   'settings.pageBackToHome': '返回首頁',
   'settings.pageNavGroupPersonal': '個人',
