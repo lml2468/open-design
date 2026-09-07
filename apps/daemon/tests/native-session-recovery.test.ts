@@ -58,10 +58,10 @@ describe('native session recovery metadata', () => {
       updatedAt: 200,
     });
     const acp = initialNativeSessionRecoveryMetadata({
-      agent: { id: 'amr', resumesSessionViaAcpLoad: true },
+      agent: { id: 'kilo', resumesSessionViaAcpLoad: true },
       supportsSessionResume: true,
       isResuming: true,
-      resumeSessionId: 'vela-durable-session',
+      resumeSessionId: 'acp-durable-session',
       invalidationReason: null,
       updatedAt: 300,
     });
@@ -74,13 +74,13 @@ describe('native session recovery metadata', () => {
       handle: { present: false, kind: 'session-file-path' },
     });
     expect(acp).toMatchObject({
-      agentId: 'amr',
+      agentId: 'kilo',
       state: 'resume_attempted',
       acquisition: 'acp-session-load',
       continuation: 'acp-session-load',
       handle: { present: true, kind: 'acp-session-handle', display: null, redacted: true },
     });
-    expect(JSON.stringify(acp)).not.toContain('vela-durable-session');
+    expect(JSON.stringify(acp)).not.toContain('acp-durable-session');
   });
 
   it('classifies stream-captured CLI handles from runtime capabilities', () => {
