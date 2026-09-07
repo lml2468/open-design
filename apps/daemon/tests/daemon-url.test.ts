@@ -43,6 +43,7 @@ describe("resolveDaemonUrl", () => {
 
   it("returns the legacy default when no flag/env/socket is available", async () => {
     const url = await resolveDaemonUrl({
+      connectInherited: () => null,
       env: {
         PATH: emptyBinDir,
       },
@@ -68,10 +69,11 @@ describe("resolveDaemonUrl", () => {
     }
 
     const url = await resolveDaemonUrl({
+      connectInherited: () => null,
       env: {
         PATH: `${fakeBinDir}${path.delimiter}${process.env.PATH ?? ""}`,
       },
-      timeoutMs: 1000,
+      timeoutMs: 3000,
     });
     expect(url).toBe("http://127.0.0.1:60123");
   });

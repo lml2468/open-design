@@ -20,6 +20,7 @@ const ENV_KEYS = [
   'OD_SENSEAUDIO_API_KEY',
   'SENSEAUDIO_API_KEY',
   'OD_MEDIA_CONFIG_DIR',
+  'OD_SANDBOX_MODE',
 ] as const;
 
 describe('memory extraction media-provider fallback', () => {
@@ -42,6 +43,7 @@ describe('memory extraction media-provider fallback', () => {
       delete process.env[key];
     }
     process.env.OD_MEDIA_CONFIG_DIR = path.join(projectRoot, '.od');
+    process.env.OD_SANDBOX_MODE = '1';
   });
 
   afterEach(async () => {
