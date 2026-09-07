@@ -146,7 +146,6 @@ import { summarizeProjectNameFromPrompt } from './utils/projectName';
 import { armCompletionFeedbackOnFirstGesture } from './utils/notifications';
 import { installFontRecovery } from './runtime/font-recovery';
 import {
-  bootstrapFirstOpenTeamProjectRoute,
   bootstrapProjectRoute,
   createDesignSystemProjectFromProject,
   createProject,
@@ -3489,46 +3488,6 @@ function AppInner() {
         });
         return;
       }
-      // A verified Team identity can bootstrap independently of the shell's
-      // project list, so begin local authority + background content work now.
-      const firstOpenTeamContext = exactOpenContext ?? deepLinkContext;
-      if (
-        firstOpenTeamContext?.workspaceType === 'team'
-        && firstOpenTeamContext.memberStatus === 'active'
-        && firstOpenTeamContext.lifecycleState === 'active'
-      ) {
-        const progressive = await bootstrapFirstOpenTeamProjectRoute(projectId, {
-          accountGeneration,
-          exactContext: firstOpenTeamContext,
-        });
-        if (
-          cancelled
-          || accountChanged()
-          || (!exactOpenContext && identityChanged())
-        ) return;
-        if (progressive.kind === 'found') {
-          routeProjectSnapshotRef.current = {
-            project: progressive.project,
-            accountGeneration,
-            capturedAfterListGeneration: latestAppliedProjectListGenerationRef.current,
-            workspaceScope: progressive.scope,
-            resolvedDir: progressive.resolvedDir,
-            workspaceContext: firstOpenTeamContext,
-            awaitingFirstMaterialization:
-              progressive.awaitingFirstMaterialization,
-          };
-          setRouteProjectSnapshotRevision((current) => current + 1);
-          return;
-        }
-        if (progressive.kind === 'forbidden') {
-          setDeepLinkResolutionFailure({ projectId, failure: 'missing' });
-          return;
-        }
-        // A not-found or unavailable response falls through to the ordinary
-        // local project-list reconciliation below.
-      }
-      // The exact Team bootstrap above is independent of the shell project
-      // list, so it intentionally starts while that list is still loading.
       if (projectsLoading || !daemonLive) return;
       const request = beginProjectListRequest('all');
       let list: Project[];
