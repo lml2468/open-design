@@ -72,7 +72,6 @@ export const th: Dict = {
   'chat.amrCard.switchCta': 'สลับไปยัง OpenDesign Cloud และลองใหม่',
   'chat.amrError.authMessage': 'บัญชี OpenDesign Cloud ของคุณยังไม่ได้รับอนุญาต ให้สิทธิ์แล้วงานนี้จะถูกลองใหม่โดยอัตโนมัติ',
   'chat.amrError.balanceMessage': 'ยอดเงิน OpenDesign Cloud ของคุณหมดแล้ว เติมเงินเพื่อดำเนินงานนี้ต่อ',
-  'chat.amrError.authorizeCta': 'ให้สิทธิ์และลองใหม่',
   'chat.amrError.rechargeCta': 'เติมเงิน',
   'chat.amrBalanceGate.title': 'อัปเกรดแล้วสร้างสรรค์ต่อ',
   'chat.amrBalanceGate.plansCta': 'อัปเกรดแพ็กเกจ',

@@ -72,7 +72,6 @@ export const id: Dict = {
   'chat.amrCard.switchCta': 'Beralih ke OpenDesign Cloud & coba lagi',
   'chat.amrError.authMessage': 'Akun OpenDesign Cloud Anda belum diotorisasi. Otorisasi sekarang dan proses ini akan dicoba ulang otomatis.',
   'chat.amrError.balanceMessage': 'Saldo OpenDesign Cloud Anda habis. Isi ulang untuk melanjutkan proses ini.',
-  'chat.amrError.authorizeCta': 'Otorisasi & coba lagi',
   'chat.amrError.rechargeCta': 'Isi ulang',
   'chat.amrBalanceGate.title': 'Tingkatkan paket dan terus berkarya',
   'chat.amrBalanceGate.plansCta': 'Tingkatkan paket',

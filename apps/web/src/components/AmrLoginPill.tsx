@@ -63,7 +63,6 @@ interface AmrLoginPillProps {
 
 const AMR_LOGIN_REUSE_ENTRY_SOURCES: readonly TrackingAmrEntrySource[] = [
   'settings_amr_agent_card',
-  'chat_error_authorize_retry',
   'generation_preview_authorize_retry',
 ];
 

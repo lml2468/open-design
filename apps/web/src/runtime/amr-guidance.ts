@@ -578,9 +578,8 @@ export function resolveRunFailureUi(
         primaryAction: 'authorize',
         // PRD「需要登录」type — shared title with the non-AMR sign-in case.
         titleKey: 'chat.runError.title.signInRequired',
-        // "OpenDesign 智能体尚未登录，前往登录即可正常使用" — single CTA, no
-        // AMR promotion (the agent already IS AMR). The authorize action reuses
-        // the inline AmrLoginPill (sign-in + auto-retry on success).
+        // Keep the AMR-specific explanation while the runtime is still present.
+        // Chat no longer owns an inline login or an automatic retry action.
         messageKey: 'chat.runError.signInMessage.amr',
         secondaryRetry: false,
         showSwitchCard: false,

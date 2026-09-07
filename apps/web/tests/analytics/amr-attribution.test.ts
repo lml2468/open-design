@@ -36,7 +36,6 @@ describe('AMR attribution helper', () => {
       'settings_amr_install',
       'avatar_amr_console',
       'handoff_amr_website',
-      'chat_error_authorize_retry',
       'chat_error_recharge',
       'chat_error_upgrade',
       'chat_error_switch_retry_card',

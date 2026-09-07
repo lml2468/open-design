@@ -75,7 +75,6 @@ export const zhTW: Dict = {
     "OpenDesign Cloud 帳號尚未授權。完成授權後將自動重試目前任務。",
   "chat.amrError.balanceMessage":
     "OpenDesign Cloud 額度不足。儲值後即可繼續執行目前任務。",
-  "chat.amrError.authorizeCta": "授權並重試",
   "chat.amrError.rechargeCta": "儲值",
   "chat.amrBalanceGate.title": "升級方案，繼續創作",
   "chat.amrBalanceGate.plansCta": "升級方案",

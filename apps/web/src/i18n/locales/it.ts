@@ -72,7 +72,6 @@ export const it: Dict = {
   'chat.amrCard.switchCta': 'Passa ad OpenDesign Cloud e riprova',
   'chat.amrError.authMessage': 'Il tuo account OpenDesign Cloud non è ancora autorizzato. Autorizzalo e questa esecuzione verrà ritentata automaticamente.',
   'chat.amrError.balanceMessage': 'Il tuo saldo OpenDesign Cloud è esaurito. Ricarica per continuare questa esecuzione.',
-  'chat.amrError.authorizeCta': 'Autorizza e riprova',
   'chat.amrError.rechargeCta': 'Ricarica',
   'chat.amrBalanceGate.title': 'Fai l’upgrade e continua a creare',
   'chat.amrBalanceGate.plansCta': 'Aggiorna piano',

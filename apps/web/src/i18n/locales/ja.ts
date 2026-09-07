@@ -157,7 +157,6 @@ export const ja: Dict = {
   'chat.amrCard.switchCta': 'OpenDesign Cloud に切り替えて再試行',
   'chat.amrError.authMessage': 'OpenDesign Cloud アカウントがまだ認可されていません。認可するとこのタスクは自動で再試行されます。',
   'chat.amrError.balanceMessage': 'OpenDesign Cloud の残高が不足しています。チャージしてこのタスクを続行してください。',
-  'chat.amrError.authorizeCta': '認可して再試行',
   'chat.amrError.rechargeCta': 'チャージ',
   'chat.amrBalanceGate.title': 'アップグレードして創作を続ける',
   'chat.amrBalanceGate.plansCta': 'プランをアップグレード',

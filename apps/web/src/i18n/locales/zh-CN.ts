@@ -160,7 +160,6 @@ export const zhCN: Dict = {
     "OpenDesign Cloud 账号尚未授权。完成授权后将自动重试当前任务。",
   "chat.amrError.balanceMessage":
     "OpenDesign Cloud 额度不足。充值后可继续运行当前任务。",
-  "chat.amrError.authorizeCta": "授权并重试",
   "chat.amrError.rechargeCta": "充值",
   "chat.amrBalanceGate.title": "升级套餐，继续创作",
   "chat.amrBalanceGate.plansCta": "升级套餐",

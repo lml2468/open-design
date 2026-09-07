@@ -72,7 +72,6 @@ export const tr: Dict = {
   'chat.amrCard.switchCta': 'OpenDesign Cloud\'ye geç ve yeniden dene',
   'chat.amrError.authMessage': 'OpenDesign Cloud hesabınız henüz yetkilendirilmedi. Yetkilendirin ve bu çalıştırma otomatik olarak yeniden denensin.',
   'chat.amrError.balanceMessage': 'OpenDesign Cloud bakiyeniz bitti. Çalıştırmaya devam etmek için bakiye yükleyin.',
-  'chat.amrError.authorizeCta': 'Yetkilendir ve yeniden dene',
   'chat.amrError.rechargeCta': 'Bakiye yükle',
   'chat.amrBalanceGate.title': 'Yükseltin, üretmeye devam edin',
   'chat.amrBalanceGate.plansCta': 'Planı yükselt',

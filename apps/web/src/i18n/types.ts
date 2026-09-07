@@ -2780,7 +2780,6 @@ export interface Dict extends CollaborationSettingsDict {
   'chat.amrCard.switchCta': string;
   'chat.amrError.authMessage': string;
   'chat.amrError.balanceMessage': string;
-  'chat.amrError.authorizeCta': string;
   'chat.amrError.rechargeCta': string;
   'chat.amrBalanceGate.title': string;
   'chat.amrBalanceGate.plansCta': string;

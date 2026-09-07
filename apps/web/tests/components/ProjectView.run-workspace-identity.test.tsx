@@ -987,7 +987,7 @@ describe('a Home auto-send identifies its caller before the project scope resolv
     );
   });
 
-  it('uses an exact Personal witness to adopt a confirmed unbound Home project', async () => {
+  it('uses an exact Personal context to adopt a confirmed unbound Home project', async () => {
     workspaceScopeMocks.ambientContext = PERSONAL_CONTEXT;
     workspaceScopeMocks.projectScope = {
       loading: false,
@@ -1010,18 +1010,6 @@ describe('a Home auto-send identifies its caller before the project scope resolv
     expect(mockedStreamViaDaemon.mock.calls[0]?.[0].workspaceContext).toEqual(
       PERSONAL_CONTEXT,
     );
-    await waitFor(() => {
-      expect(
-        chatPaneSpy.mock.calls.at(-1)?.[0].amrAuthRetryPersonalAdoptionWitness,
-      ).toEqual({
-        workspaceIdentityKey:
-          'personal-workspace:personal:personal-member:member:active:active:true:true',
-        workspaceId: PERSONAL_CONTEXT.workspaceId,
-        workspaceMemberId: PERSONAL_CONTEXT.workspaceMemberId,
-        workspaceType: 'personal',
-        memberStatus: 'active',
-      });
-    });
   });
 
   it.each([

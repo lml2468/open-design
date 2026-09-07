@@ -72,7 +72,6 @@ export const uk: Dict = {
   'chat.amrCard.switchCta': 'Перейти на OpenDesign Cloud і повторити',
   'chat.amrError.authMessage': 'Ваш обліковий запис OpenDesign Cloud ще не авторизовано. Авторизуйте, і це виконання буде повторено автоматично.',
   'chat.amrError.balanceMessage': 'Баланс OpenDesign Cloud вичерпано. Поповніть, щоб продовжити це виконання.',
-  'chat.amrError.authorizeCta': 'Авторизувати та повторити',
   'chat.amrError.rechargeCta': 'Поповнити',
   'chat.amrBalanceGate.title': 'Покращте тариф і продовжуйте творити',
   'chat.amrBalanceGate.plansCta': 'Покращити тариф',

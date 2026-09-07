@@ -72,7 +72,6 @@ export const ko: Dict = {
   'chat.amrCard.switchCta': 'OpenDesign Cloud로 전환하고 재시도',
   'chat.amrError.authMessage': 'OpenDesign Cloud 계정이 아직 인증되지 않았습니다. 인증하면 이 작업이 자동으로 재시도됩니다.',
   'chat.amrError.balanceMessage': 'OpenDesign Cloud 잔액이 부족합니다. 충전하여 이 작업을 계속 진행하세요.',
-  'chat.amrError.authorizeCta': '인증하고 재시도',
   'chat.amrError.rechargeCta': '충전',
   'chat.amrBalanceGate.title': '업그레이드하고 계속 만들기',
   'chat.amrBalanceGate.plansCta': '요금제 업그레이드',

@@ -72,7 +72,6 @@ export const hu: Dict = {
   'chat.amrCard.switchCta': 'Váltás OpenDesign Cloud-re és újrapróbálkozás',
   'chat.amrError.authMessage': 'Az OpenDesign Cloud-fiókod még nincs engedélyezve. Engedélyezd, és ez a futtatás automatikusan újraindul.',
   'chat.amrError.balanceMessage': 'Az OpenDesign Cloud-egyenleged elfogyott. Tölts fel a futtatás folytatásához.',
-  'chat.amrError.authorizeCta': 'Engedélyezés és újrapróbálkozás',
   'chat.amrError.rechargeCta': 'Feltöltés',
   'chat.amrBalanceGate.title': 'Válts csomagot és alkoss tovább',
   'chat.amrBalanceGate.plansCta': 'Csomagváltás',

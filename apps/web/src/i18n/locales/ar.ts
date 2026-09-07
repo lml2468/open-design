@@ -72,7 +72,6 @@ export const ar: Dict = {
   'chat.amrCard.switchCta': 'التبديل إلى OpenDesign Cloud وإعادة المحاولة',
   'chat.amrError.authMessage': 'حساب OpenDesign Cloud الخاص بك لم يتم تفويضه بعد. فوِّضه وستُعاد محاولة هذه المهمة تلقائيًا.',
   'chat.amrError.balanceMessage': 'نفد رصيد OpenDesign Cloud الخاص بك. اشحن للاستمرار في هذه المهمة.',
-  'chat.amrError.authorizeCta': 'تفويض وإعادة المحاولة',
   'chat.amrError.rechargeCta': 'شحن',
   'chat.amrBalanceGate.title': 'قم بالترقية وواصل الإبداع',
   'chat.amrBalanceGate.plansCta': 'ترقية الباقة',

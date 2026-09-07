@@ -72,7 +72,6 @@ export const de: Dict = {
   'chat.amrCard.switchCta': 'Zu OpenDesign Cloud wechseln und wiederholen',
   'chat.amrError.authMessage': 'Dein OpenDesign Cloud-Konto ist noch nicht autorisiert. Autorisiere es, und dieser Lauf wird automatisch wiederholt.',
   'chat.amrError.balanceMessage': 'Dein OpenDesign Cloud-Guthaben ist aufgebraucht. Lade auf, um diesen Lauf fortzusetzen.',
-  'chat.amrError.authorizeCta': 'Autorisieren und wiederholen',
   'chat.amrError.rechargeCta': 'Aufladen',
   'chat.amrBalanceGate.title': 'Upgraden und weiter gestalten',
   'chat.amrBalanceGate.plansCta': 'Plan upgraden',

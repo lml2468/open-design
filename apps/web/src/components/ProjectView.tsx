@@ -123,10 +123,6 @@ import { playSound, showCompletionNotification } from '../utils/notifications';
 import { randomUUID } from '../utils/uuid';
 import { DEFAULT_NOTIFICATIONS, KNOWN_PROVIDERS } from '../state/config';
 import type { TodoItem } from '../runtime/todos';
-import type {
-  AmrAuthRetryContinuation,
-  AmrAuthRetryPersonalAdoptionWitness,
-} from '../runtime/amr-auth-retry-continuation';
 import {
   appendErrorStatusEvent,
   removeErrorStatusEvent,
@@ -262,7 +258,6 @@ import {
   projectWorkspaceScopeAuthorizesAmr,
   projectWorkspaceScopeReady,
   runWorkspaceIdentity,
-  runWorkspacePersonalAdoptionWitness,
   useProjectWorkspaceScope,
 } from '../collab/useProjectWorkspaceScope';
 import {
@@ -609,16 +604,6 @@ interface Props {
   initialMaterializationPending?: boolean;
   /** Workspace/member authorization lifetime for async title reads. */
   projectAuthorizationKey?: string;
-  amrAuthRetryContinuation?: AmrAuthRetryContinuation | null;
-  onArmAmrAuthRetryContinuation?: (
-    continuation: Omit<AmrAuthRetryContinuation, 'accountIdAtArm' | 'createdAtMs'>,
-  ) => void;
-  onConsumeAmrAuthRetryContinuation?: (
-    continuation: AmrAuthRetryContinuation,
-  ) => boolean;
-  onDiscardAmrAuthRetryContinuation?: (
-    continuation: AmrAuthRetryContinuation,
-  ) => void;
   /**
    * The current title from the team catalog when this project is shared by
    * another member. That catalog is the naming authority; the member's local
@@ -1813,10 +1798,6 @@ export function ProjectView({
   initialProjectDetail,
   initialMaterializationPending = false,
   projectAuthorizationKey = project.id,
-  amrAuthRetryContinuation = null,
-  onArmAmrAuthRetryContinuation,
-  onConsumeAmrAuthRetryContinuation,
-  onDiscardAmrAuthRetryContinuation,
   authoritativeProjectName,
   resolveAuthoritativeProjectName,
   routeFileName,
@@ -1856,10 +1837,6 @@ export function ProjectView({
   onRunActivityChange,
 }: Props) {
   const { locale, t } = useI18n();
-  const amrAuthRetryMountIdRef = useRef<string | null>(null);
-  if (amrAuthRetryMountIdRef.current === null) {
-    amrAuthRetryMountIdRef.current = randomUUID();
-  }
   const activeAuthorizationLifetimeRef = useRef<string | null>(projectAuthorizationKey);
   useEffect(() => {
     activeAuthorizationLifetimeRef.current = projectAuthorizationKey;
@@ -1893,11 +1870,6 @@ export function ProjectView({
     workspaceContext,
     project.workspaceId,
   );
-  const personalAdoptionContext = runWorkspacePersonalAdoptionWitness(
-    projectWorkspaceScopeState,
-    workspaceContext,
-    project.workspaceId,
-  );
   // Scope revalidation returns a freshly decoded context object even when the
   // data-plane authority did not change. Project hydration is keyed to the
   // authority carried by resource requests, not that object's allocation:
@@ -1906,16 +1878,6 @@ export function ProjectView({
   const projectRunAuthorityKey = workspaceIdentityCacheKey(
     resolvedProjectRunWorkspaceContext,
   );
-  const amrAuthRetryPersonalAdoptionWitness:
-    AmrAuthRetryPersonalAdoptionWitness | null = personalAdoptionContext
-      ? {
-          workspaceIdentityKey: workspaceIdentityCacheKey(personalAdoptionContext),
-          workspaceId: personalAdoptionContext.workspaceId,
-          workspaceMemberId: personalAdoptionContext.workspaceMemberId,
-          workspaceType: 'personal',
-          memberStatus: 'active',
-        }
-      : null;
   const canonicalProjectRunWorkspaceContextRef = useRef<{
     authorityKey: string;
     context: WorkspaceCollabContext | null;
@@ -8711,39 +8673,18 @@ export function ProjectView({
     [currentConversationActionDisabled, handleSend, messages],
   );
 
-  // "Switch to AMR & retry" crosses the Settings route, which intentionally
-  // unmounts this ProjectView. Arm the exact failed turn in App before any
-  // config or navigation write; a fresh ProjectView may consume it only after
-  // re-proving the same project, conversation and Workspace authority.
   const handleSwitchToAmrAndRetry = useCallback(
-    (failedAssistant: ChatMessage) => {
+    () => {
       if (currentConversationActionDisabled) return;
-      if (
-        activeConversationId
-        && amrAuthRetryMountIdRef.current
-        && onArmAmrAuthRetryContinuation
-      ) {
-        onArmAmrAuthRetryContinuation({
-          projectId: project.id,
-          conversationId: activeConversationId,
-          assistantId: failedAssistant.id,
-          workspaceIdentityKey: projectRunAuthorityKey,
-          originMountId: amrAuthRetryMountIdRef.current,
-        });
-      }
       onModeChange('daemon');
       onAgentChange('amr');
       onOpenAmrSettings?.();
     },
     [
-      activeConversationId,
       currentConversationActionDisabled,
       onAgentChange,
-      onArmAmrAuthRetryContinuation,
       onModeChange,
       onOpenAmrSettings,
-      project.id,
-      projectRunAuthorityKey,
     ],
   );
   // PR #3157: Antigravity's `agy -p` cannot complete OAuth on its own,
@@ -11278,13 +11219,6 @@ export function ProjectView({
               onDeleteComment={(commentId) => void removePreviewComment(commentId)}
               onSend={handleComposerSend}
               onRetry={handleRetry}
-              amrAuthRetryContinuation={amrAuthRetryContinuation}
-              amrAuthRetryMountId={amrAuthRetryMountIdRef.current}
-              amrAuthRetryWorkspaceIdentityKey={projectRunAuthorityKey}
-              amrAuthRetryPersonalAdoptionWitness={amrAuthRetryPersonalAdoptionWitness}
-              onArmAmrAuthRetryContinuation={onArmAmrAuthRetryContinuation}
-              onConsumeAmrAuthRetryContinuation={onConsumeAmrAuthRetryContinuation}
-              onDiscardAmrAuthRetryContinuation={onDiscardAmrAuthRetryContinuation}
               onResumeRun={handleResumeRun}
               onStop={handleStop}
               onRemoveQueuedSend={removeQueuedChatSend}

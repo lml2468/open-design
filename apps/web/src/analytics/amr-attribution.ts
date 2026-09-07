@@ -40,7 +40,6 @@ const ENTRY_PAGE_BY_SOURCE: Record<TrackingAmrEntrySource, TrackingPageName> = {
   settings_amr_install: 'settings',
   avatar_amr_console: 'chat_panel',
   handoff_amr_website: 'artifact',
-  chat_error_authorize_retry: 'chat_panel',
   chat_error_recharge: 'chat_panel',
   chat_error_upgrade: 'chat_panel',
   chat_error_switch_retry_card: 'chat_panel',

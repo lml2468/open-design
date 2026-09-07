@@ -108,7 +108,6 @@ import {
 } from './providers/daemon';
 import {
   AMR_LOGIN_STATUS_EVENT,
-  amrLoginStatusEventReason,
   isAmrSessionAuthenticated,
 } from './components/amrLoginPolling';
 import { CollabDemoView } from './collab/CollabDemoView';
@@ -170,11 +169,6 @@ import { isMacPlatform } from './utils/platform';
 import { randomUUID } from './utils/uuid';
 import { summarizeProjectNameFromPrompt } from './utils/projectName';
 import { armCompletionFeedbackOnFirstGesture } from './utils/notifications';
-import {
-  AMR_AUTH_RETRY_CONTINUATION_TTL_MS,
-  routeStillMatchesAmrAuthRetryContinuation,
-  type AmrAuthRetryContinuation,
-} from './runtime/amr-auth-retry-continuation';
 import { installFontRecovery } from './runtime/font-recovery';
 import {
   bootstrapFirstOpenTeamProjectRoute,
@@ -1594,55 +1588,6 @@ function AppInner() {
   // globals effect below reads it; the sync effects live next to the
   // other AMR plumbing further down.
   const [amrLoginStatus, setAmrLoginStatus] = useState<VelaLoginStatus | null>(null);
-  // Inline AMR auth can invalidate the caller identity and intentionally tear
-  // down ProjectView before the login poll reports success. Keep only the
-  // exact failed-turn continuation above that authorization lifetime; the
-  // fresh ProjectView must prove the same route + Workspace authority before
-  // it may consume this one-shot retry.
-  const [amrAuthRetryContinuation, setAmrAuthRetryContinuation] =
-    useState<AmrAuthRetryContinuation | null>(null);
-  const amrAuthRetryContinuationRef = useRef<AmrAuthRetryContinuation | null>(null);
-  const clearAmrAuthRetryContinuation = useCallback((expected?: AmrAuthRetryContinuation) => {
-    if (expected && amrAuthRetryContinuationRef.current !== expected) return;
-    amrAuthRetryContinuationRef.current = null;
-    setAmrAuthRetryContinuation(null);
-  }, []);
-  const armAmrAuthRetryContinuation = useCallback((
-    input: Omit<AmrAuthRetryContinuation, 'accountIdAtArm' | 'createdAtMs'>,
-  ) => {
-    const next: AmrAuthRetryContinuation = {
-      ...input,
-      accountIdAtArm:
-        isAmrSessionAuthenticated(amrLoginStatusRef.current)
-          ? amrLoginStatusRef.current?.user?.id ?? null
-          : null,
-      createdAtMs: Date.now(),
-    };
-    amrAuthRetryContinuationRef.current = next;
-    setAmrAuthRetryContinuation(next);
-  }, []);
-  const consumeAmrAuthRetryContinuation = useCallback((
-    expected: AmrAuthRetryContinuation,
-  ): boolean => {
-    if (amrAuthRetryContinuationRef.current !== expected) return false;
-    clearAmrAuthRetryContinuation(expected);
-    return true;
-  }, [clearAmrAuthRetryContinuation]);
-  useEffect(() => {
-    if (!amrAuthRetryContinuation) return;
-    const remainingMs =
-      amrAuthRetryContinuation.createdAtMs
-      + AMR_AUTH_RETRY_CONTINUATION_TTL_MS
-      - Date.now();
-    if (remainingMs <= 0) {
-      clearAmrAuthRetryContinuation(amrAuthRetryContinuation);
-      return;
-    }
-    const timeout = window.setTimeout(() => {
-      clearAmrAuthRetryContinuation(amrAuthRetryContinuation);
-    }, remainingMs);
-    return () => window.clearTimeout(timeout);
-  }, [amrAuthRetryContinuation, clearAmrAuthRetryContinuation]);
   // Child surfaces report status snapshots, not login events. Deduplicate the
   // signed-in transition here: restarting the model poll for every Settings
   // snapshot updates `agents`, which makes Settings fetch status again and
@@ -1655,48 +1600,8 @@ function AppInner() {
     const previousStatus = amrLoginStatusRef.current;
     const wasLoggedIn = isAmrSessionAuthenticated(previousStatus);
     const isLoggedIn = isAmrSessionAuthenticated(status);
-    const pendingRetry = amrAuthRetryContinuationRef.current;
-    const accountChangedWhileAuthorizing = Boolean(
-      pendingRetry
-      && (
-        (wasLoggedIn && !isLoggedIn)
-        || (
-          isLoggedIn
-          && pendingRetry.accountIdAtArm !== null
-          && status.user?.id !== pendingRetry.accountIdAtArm
-        )
-      )
-    );
-    if (accountChangedWhileAuthorizing && pendingRetry) {
-      clearAmrAuthRetryContinuation(pendingRetry);
-    }
     amrLoginStatusRef.current = status;
     setAmrLoginStatus(status);
-    const currentRoute = routeRef.current;
-    if (
-      pendingRetry
-      && !accountChangedWhileAuthorizing
-      && isLoggedIn
-      && status.user?.id
-      && (
-        pendingRetry.accountIdAtArm === null
-        || pendingRetry.accountIdAtArm === status.user.id
-      )
-      && currentRoute.kind === 'home'
-      && currentRoute.view === 'settings'
-    ) {
-      // The Settings page intentionally unmounts ProjectView while AMR login
-      // completes. Return only to the exact failed conversation carried by the
-      // App-owned continuation; the fresh ProjectView must still prove its
-      // persisted Workspace authority before ChatPane may consume the retry.
-      settingsReturnTargetRef.current = null;
-      navigate({
-        kind: 'project',
-        projectId: pendingRetry.projectId,
-        conversationId: pendingRetry.conversationId,
-        fileName: null,
-      }, { replace: true });
-    }
     if (
       isLoggedIn
       && (
@@ -1706,7 +1611,7 @@ function AppInner() {
     ) {
       restartAmrPolling();
     }
-  }, [clearAmrAuthRetryContinuation, restartAmrPolling]);
+  }, [restartAmrPolling]);
 
   // Tab-scope identity key, fed to WorkspaceTabsBar so it can close every open
   // tab down to a single fresh Home tab whenever the caller's identity
@@ -1900,10 +1805,7 @@ function AppInner() {
       }
     };
     void sync();
-    const onStatusEvent = (event: Event) => {
-      if (amrLoginStatusEventReason(event) === 'login-canceled') {
-        clearAmrAuthRetryContinuation();
-      }
+    const onStatusEvent = () => {
       void sync({}, true);
     };
     const onReturnToApp = () => {
@@ -1919,7 +1821,7 @@ function AppInner() {
       window.removeEventListener('focus', onReturnToApp);
       document.removeEventListener('visibilitychange', onReturnToApp);
     };
-  }, [applyAmrLoginStatus, clearAmrAuthRetryContinuation, daemonLive]);
+  }, [applyAmrLoginStatus, daemonLive]);
 
   useEffect(() => {
     analytics.setUserId(
@@ -4319,40 +4221,6 @@ function AppInner() {
     ? projectRouteWorkspaceContext.context
     : null;
   projectRouteWorkspaceContextRef.current = activeProjectWorkspaceContext;
-  useEffect(() => {
-    const pending = amrAuthRetryContinuationRef.current;
-    if (!pending) return;
-    if (route.kind === 'home' && route.view === 'settings') {
-      // This is the one permitted non-project route: the failed-turn CTA
-      // deliberately opens AMR Settings and ProjectView unmounts while the
-      // authorization attempt is in flight. Every other route exit clears the
-      // continuation below.
-      return;
-    }
-    if (!routeStillMatchesAmrAuthRetryContinuation(pending, route)) {
-      clearAmrAuthRetryContinuation(pending);
-      return;
-    }
-    if (projectRouteWorkspaceContext.failure) {
-      clearAmrAuthRetryContinuation(pending);
-      return;
-    }
-    // A null context is the expected fail-closed refresh window. Wait for the
-    // fresh exact witness rather than borrowing or latching the old one.
-    if (
-      activeProjectWorkspaceContext
-      && workspaceIdentityCacheKey(activeProjectWorkspaceContext)
-        !== pending.workspaceIdentityKey
-    ) {
-      clearAmrAuthRetryContinuation(pending);
-    }
-  }, [
-    activeProjectWorkspaceContext,
-    amrAuthRetryContinuation,
-    clearAmrAuthRetryContinuation,
-    projectRouteWorkspaceContext.failure,
-    route,
-  ]);
   // Project tabs belong to the project's persisted Workspace authority, not
   // the shell's ambient selection. On a cold deep link the ambient context can
   // settle (or switch A -> B) after the exact project scope has already loaded;
@@ -5180,10 +5048,6 @@ function AppInner() {
           projectAuthorizationKey={
             activeProjectAuthorizationKey ?? activeProject.id
           }
-          amrAuthRetryContinuation={amrAuthRetryContinuation}
-          onArmAmrAuthRetryContinuation={armAmrAuthRetryContinuation}
-          onConsumeAmrAuthRetryContinuation={consumeAmrAuthRetryContinuation}
-          onDiscardAmrAuthRetryContinuation={clearAmrAuthRetryContinuation}
           authoritativeProjectName={activeAuthoritativeProjectName}
           resolveAuthoritativeProjectName={resolveAuthoritativeProjectName}
           routeFileName={route.fileName}

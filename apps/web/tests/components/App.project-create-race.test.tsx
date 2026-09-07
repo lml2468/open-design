@@ -8,7 +8,6 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/App';
-import { notifyAmrLoginStatusChanged } from '../../src/components/amrLoginPolling';
 import type {
   ProjectNameAuthorityResolution,
   ProjectRenameFenceToken,
@@ -52,7 +51,6 @@ import {
   resetTeamProjectsCache,
   resetWorkspaceContextCache,
   currentWorkspaceAccountGeneration,
-  workspaceIdentityCacheKey,
 } from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
 import {
@@ -61,7 +59,6 @@ import {
   resetProjectDisplaySnapshots,
   writeProjectDisplaySnapshot,
 } from '../../src/state/project-display-cache';
-import type { AmrAuthRetryContinuation } from '../../src/runtime/amr-auth-retry-continuation';
 import type { VelaLoginStatus } from '../../src/providers/daemon';
 import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 
@@ -359,10 +356,6 @@ vi.mock('../../src/components/ProjectView', () => ({
     authoritativeProjectName,
     projectAuthorizationKey,
     resolveAuthoritativeProjectName,
-    amrAuthRetryContinuation,
-    onArmAmrAuthRetryContinuation,
-    onConsumeAmrAuthRetryContinuation,
-    onOpenAmrSettings,
     onOpenSettings,
     workspaceContextOverride,
   }: {
@@ -391,14 +384,6 @@ vi.mock('../../src/components/ProjectView', () => ({
       projectId: string,
       expectedAuthorizationKey: string,
     ) => Promise<ProjectNameAuthorityResolution>;
-    amrAuthRetryContinuation?: AmrAuthRetryContinuation | null;
-    onArmAmrAuthRetryContinuation?: (
-      continuation: Omit<AmrAuthRetryContinuation, 'accountIdAtArm' | 'createdAtMs'>,
-    ) => void;
-    onConsumeAmrAuthRetryContinuation?: (
-      continuation: AmrAuthRetryContinuation,
-    ) => boolean;
-    onOpenAmrSettings?: () => void;
     onOpenSettings?: () => void;
     workspaceContextOverride?: WorkspaceCollabContext | null;
   }) => (
@@ -412,9 +397,6 @@ vi.mock('../../src/components/ProjectView', () => ({
           : 'none'}
       </span>
       <span data-testid="project-route-conversation">{routeConversationId ?? 'none'}</span>
-      <span data-testid="project-auth-continuation">
-        {amrAuthRetryContinuation?.assistantId ?? 'none'}
-      </span>
       <button type="button" onClick={onBack}>
         Back to projects
       </button>
@@ -487,44 +469,6 @@ vi.mock('../../src/components/ProjectView', () => ({
         }
       >
         Refresh catalog title
-      </button>
-      <button
-        type="button"
-        onClick={() => onArmAmrAuthRetryContinuation?.({
-          projectId: project.id,
-          conversationId: routeConversationId ?? 'conv-auth',
-          assistantId: 'assistant-auth-failure',
-          originMountId: 'origin-mount',
-          workspaceIdentityKey: workspaceIdentityCacheKey(workspaceContextOverride),
-        })}
-      >
-        Arm auth continuation
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          onArmAmrAuthRetryContinuation?.({
-            projectId: project.id,
-            conversationId: routeConversationId ?? 'conv-auth',
-            assistantId: 'assistant-auth-failure',
-            originMountId: 'origin-mount',
-            workspaceIdentityKey: workspaceIdentityCacheKey(workspaceContextOverride),
-          });
-          onOpenAmrSettings?.();
-        }}
-      >
-        Authorize in settings
-      </button>
-      <button
-        type="button"
-        disabled={!amrAuthRetryContinuation}
-        onClick={() => {
-          if (amrAuthRetryContinuation) {
-            onConsumeAmrAuthRetryContinuation?.(amrAuthRetryContinuation);
-          }
-        }}
-      >
-        Consume auth continuation
       </button>
     </main>
   ),
@@ -3438,140 +3382,6 @@ describe('App project creation routing', () => {
     await waitFor(() => {
       expect(screen.getByTestId('workspace-tabs-active-project-workspace').textContent).toBe(
         'ws-1',
-      );
-    });
-  });
-
-  it('owns one AMR auth continuation above ProjectView and clears it after consume, cancel, or route exit', async () => {
-    stubWorkspaceContext('ws-1', 'wm-1');
-    mockedListProjects.mockResolvedValue([{
-      ...existingProject,
-      workspaceId: 'ws-1',
-    }]);
-
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
-    await screen.findByTestId('project-view');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Arm auth continuation' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('project-auth-continuation').textContent).toBe(
-        'assistant-auth-failure',
-      );
-    });
-
-    const refreshedIdentity = deferred<void>();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const pathname = new URL(String(input), 'http://d.local').pathname;
-        if (
-          pathname.endsWith('/workspace/directory')
-          || pathname.endsWith('/workspace/context')
-        ) {
-          await refreshedIdentity.promise;
-        }
-        return {
-          ok: true,
-          json: async () =>
-            pathname.endsWith('/workspace/directory')
-              ? workspaceDirectoryFixture([workspaceContext('ws-1', 'wm-1')])
-              : pathname.endsWith('/workspace/context')
-                ? workspaceContextPayload('ws-1', 'wm-1')
-                : {},
-        } as Response;
-      }),
-    );
-    act(() => notifyWorkspaceContextRefresh());
-    await waitFor(() => expect(screen.queryByTestId('project-view')).toBeNull());
-    await act(async () => {
-      refreshedIdentity.resolve();
-      await refreshedIdentity.promise;
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId('project-auth-continuation').textContent).toBe(
-        'assistant-auth-failure',
-      );
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Consume auth continuation' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('project-auth-continuation').textContent).toBe('none');
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Arm auth continuation' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('project-auth-continuation').textContent).toBe(
-        'assistant-auth-failure',
-      );
-    });
-    act(() => notifyAmrLoginStatusChanged('login-canceled'));
-    await waitFor(() => {
-      expect(screen.getByTestId('project-auth-continuation').textContent).toBe('none');
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Arm auth continuation' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('project-auth-continuation').textContent).toBe(
-        'assistant-auth-failure',
-      );
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Back to projects' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('project-auth-continuation').textContent).toBe('none');
-    });
-  });
-
-  it('preserves an exact retry through Settings and returns to its project after sign-in', async () => {
-    mockedListProjects.mockResolvedValue([{
-      ...existingProject,
-      workspaceId: 'ws-1',
-    }]);
-    let loginStatus: VelaLoginStatus = {
-      loggedIn: false,
-      profile: 'test',
-      user: null,
-      configPath: '',
-    };
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const pathname = new URL(String(input), 'http://d.local').pathname;
-        return {
-          ok: true,
-          json: async () =>
-            pathname.endsWith('/workspace/directory')
-              ? workspaceDirectoryFixture([workspaceContext('ws-1', 'wm-1')])
-              : pathname.endsWith('/workspace/context')
-                ? workspaceContextPayload('ws-1', 'wm-1')
-                : pathname.endsWith('/integrations/vela/status')
-                  ? loginStatus
-                  : {},
-        } as Response;
-      }),
-    );
-
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
-    await screen.findByTestId('project-view');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Authorize in settings' }));
-    await screen.findByTestId('settings-surface');
-    expect(window.location.pathname).toBe('/settings');
-
-    loginStatus = {
-      loggedIn: true,
-      profile: 'test',
-      user: { id: 'account-a', email: 'account-a@example.com', plan: 'free' },
-      configPath: '',
-    };
-    act(() => notifyAmrLoginStatusChanged());
-
-    await waitFor(() => {
-      expect(window.location.pathname).toBe('/projects/project-existing/conversations/conv-auth');
-      expect(screen.getByTestId('project-auth-continuation').textContent).toBe(
-        'assistant-auth-failure',
       );
     });
   });
