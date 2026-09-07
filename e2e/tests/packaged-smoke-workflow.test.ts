@@ -2756,8 +2756,9 @@ process.stdin.on("end", () => {
     expect(canary).toContain("ref: main");
     expect(canary).not.toContain("inputs.ref");
     expect(canary).toContain("runs-on: windows-latest");
-    expect(canary).toContain("OPEN_DESIGN_AMR_PROFILE: prod");
-    expect(canary).toContain("OD_VELA_WEB_URL: ${{ secrets.VELA_WEB_URL_PROD }}");
+    expect(canary).not.toContain("OPEN_DESIGN_AMR_PROFILE");
+    expect(canary).not.toContain("OD_VELA_WEB_URL");
+    expect(canary).not.toContain("--require-vela-cli");
     expect(canary).toContain("--namespace release-prerelease-canary-win");
     expect(canary).toContain('OD_PACKAGED_E2E_RELEASE_CHANNEL: prerelease');
     expect(canary).toContain('OD_PACKAGED_E2E_WIN_SMOKE_PROFILE: core');
