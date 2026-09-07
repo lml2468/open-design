@@ -126,14 +126,12 @@ describe('diagnostics export handler — non-sidecar launch', () => {
         amr: {
           profile?: string;
           loggedIn?: boolean;
-          sessionState?: string;
           credentialRevision?: string;
         };
       };
       expect(runtimeHealth.amr).toMatchObject({
         profile: 'local',
         loggedIn: true,
-        sessionState: 'authenticated',
         credentialRevision: expect.any(String),
       });
       expect(runtimeHealthRaw).not.toContain(runtimeKey);

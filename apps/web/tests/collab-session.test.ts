@@ -32,7 +32,7 @@ describe('resolveCollabSession', () => {
   it('enables collab for an active member of a live team workspace', () => {
     const decision = resolveCollabSession(ctx());
     expect(decision.enabled).toBe(true);
-    expect(decision.member).toEqual({ memberId: 'wm-1', role: 'member', name: 'Ma Shu' });
+    expect(decision.reason).toBe('ok');
   });
 
   it('still runs during a billing grace period (past_due)', () => {
@@ -43,7 +43,6 @@ describe('resolveCollabSession', () => {
     const decision = resolveCollabSession(null);
     expect(decision.enabled).toBe(false);
     expect(decision.reason).toBe('no-workspace-context');
-    expect(decision.member).toBeNull();
   });
 
   it('enables collab for a personal workspace that can later invite seats', () => {
@@ -64,9 +63,4 @@ describe('resolveCollabSession', () => {
       expect(decision.reason).toBe(`lifecycle-${lifecycleState}`);
     },
   );
-
-  it('falls back to the member id when there is no display name', () => {
-    const decision = resolveCollabSession(ctx({ displayName: '   ' }));
-    expect(decision.member).toEqual({ memberId: 'wm-1', role: 'member' });
-  });
 });

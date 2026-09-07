@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe('useProjectCollab: status waits for explicit workspace authority', () => {
-  it('keeps project A status, presence, and pull on A when ambient context is B', async () => {
+  it('keeps project A status and pull on A when ambient context is B', async () => {
     const projectContext = teamContext({
       workspaceId: 'workspace-a',
       workspaceMemberId: 'member-a',
@@ -82,12 +82,6 @@ describe('useProjectCollab: status waits for explicit workspace authority', () =
           ownerMemberId: 'member-owner',
         }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return new Response(JSON.stringify({ present: [] }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       return new Response(JSON.stringify({ ok: true, version: 2 }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -108,13 +102,11 @@ describe('useProjectCollab: status waits for explicit workspace authority', () =
     expect(contextReads).toBe(0);
     const projectCalls = scopedCalls.filter(({ pathname }) =>
       pathname.endsWith('/collab/status')
-      || pathname.endsWith('/presence/heartbeat')
       || pathname.endsWith('/collab/pull'),
     );
     expect(projectCalls.map(({ pathname }) => pathname)).toEqual(
       expect.arrayContaining([
         '/api/projects/project-a/collab/status',
-        '/api/projects/project-a/presence/heartbeat',
         '/api/projects/project-a/collab/pull',
       ]),
     );
@@ -149,12 +141,9 @@ describe('useProjectCollab: status waits for explicit workspace authority', () =
     });
 
     expect(calls.some((p) => p.endsWith('/collab/status'))).toBe(false);
-    // Presence never announces itself without a resolved identity — the
-    // context read (which member depends on) is still hanging.
-    expect(calls.some((p) => p.endsWith('/presence/heartbeat'))).toBe(false);
   });
 
-  it('starts scoped status and presence once workspace context resolves', async () => {
+  it('starts scoped status once workspace context resolves', async () => {
     const scopedCalls: Array<{ pathname: string; workspaceId: string | null }> = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const pathname = new URL(String(input), 'http://d.local').pathname;
@@ -164,9 +153,6 @@ describe('useProjectCollab: status waits for explicit workspace authority', () =
       });
       if (pathname.endsWith('/collab/status')) {
         return { ok: true, status: 200, json: async () => ({ publishedVersion: 1, syncState: 'synced' }) } as unknown as Response;
-      }
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return { ok: true, status: 200, json: async () => ({ present: [{ memberId: 'wm-1' }] }) } as unknown as Response;
       }
       return { ok: true, status: 200, json: async () => ({ ok: true }) } as unknown as Response;
     }) as typeof fetch;
@@ -191,7 +177,6 @@ describe('useProjectCollab: status waits for explicit workspace authority', () =
     });
     expect(result.current.syncState).toBeNull();
     expect(result.current.enabled).toBe(false);
-    expect(result.current.present).toEqual([]);
 
     await act(async () => {
       rerender({
@@ -205,8 +190,7 @@ describe('useProjectCollab: status waits for explicit workspace authority', () =
     expect(
       scopedCalls
         .filter(({ pathname }) =>
-          pathname.endsWith('/collab/status')
-          || pathname.endsWith('/presence/heartbeat'),
+          pathname.endsWith('/collab/status'),
         )
         .every(({ workspaceId }) => workspaceId === 'ws-1'),
     ).toBe(true);
@@ -237,7 +221,6 @@ describe('useProjectCollab: permission-denied identities never start collab', ()
     });
 
     expect(calls.some((p) => p.endsWith('/collab/status'))).toBe(false);
-    expect(calls.some((p) => p.endsWith('/presence/heartbeat'))).toBe(false);
     expect(result.current.enabled).toBe(false);
 
     const pollsAtSettle = calls.filter((p) => p.endsWith('/collab/status')).length;
@@ -275,7 +258,6 @@ describe('useProjectCollab: permission-denied identities never start collab', ()
     });
 
     expect(calls.some((p) => p.endsWith('/collab/status'))).toBe(false);
-    expect(calls.some((p) => p.endsWith('/presence/heartbeat'))).toBe(false);
     expect(result.current.enabled).toBe(false);
 
     const pollsAtSettle = calls.filter((p) => p.endsWith('/collab/status')).length;

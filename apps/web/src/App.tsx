@@ -2171,7 +2171,7 @@ function AppInner() {
         // daemon already accepts that exact id for idempotent retries. Keep the
         // real ProjectView unmounted until the response settles; the pending
         // surface is deliberately read-free so an unpersisted project cannot
-        // fan out unauthorized conversation/file/presence requests.
+        // fan out unauthorized conversation/file requests.
         if (input.autoSendFirstMessage) {
           optimisticProjectId = randomUUID();
           const now = Date.now();
@@ -3397,8 +3397,8 @@ function AppInner() {
   // the shell's ambient selection. On a cold deep link the ambient context can
   // settle (or switch A -> B) after the exact project scope has already loaded;
   // handing that B key to WorkspaceTabsBar makes its legitimate scope-change
-  // cleanup navigate to B's saved Home tab, unmounting the healthy A project
-  // and emitting a misleading presence/leave. Keep tab reconciliation
+  // cleanup navigate to B's saved Home tab and unmount the healthy A project.
+  // Keep tab reconciliation
   // deferred until the project row + exact membership witness exist, then pin
   // it to that Workspace. Truly unbound local projects retain the ambient
   // account/workspace tab behavior.

@@ -71,8 +71,6 @@ function renderProjectFileViewer(
     workspaceContext: context,
     workspaceContextLoading: false,
     enabled: true,
-    member: null,
-    present: [],
     publishedVersion: null,
     syncState: null,
     viewerOnly: props.viewerOnly === true,
@@ -85,7 +83,6 @@ function renderProjectFileViewer(
     downloadPending: false,
     reportChange: () => {},
     requestPublish: () => {},
-    refreshPresence: () => {},
     checkStatusNow: () => {},
   };
   return render(

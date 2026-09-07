@@ -7219,7 +7219,7 @@ function HtmlViewer({
     projectResourceAuthority,
   );
   // Project context providers may re-materialize an equivalent object while
-  // ambient focus/presence settles. Requests are scoped by the fields encoded
+  // ambient focus settles. Requests are scoped by the fields encoded
   // in this key, so preserve the existing object until that wire identity
   // actually changes. Otherwise every provider refresh retriggers raw/file-list
   // effects and reloads a byte-identical preview.
@@ -15649,15 +15649,15 @@ function HtmlViewer({
   const activeComposerAttachments =
     activeComposerComment?.attachments ?? activeCommentExistingAttachments;
   // Team-collab permission model for a comment's action buttons (庆雨,
-  // 2026-07-09). `myMemberId` is the viewer's presence identity — the same
-  // `workspaceMemberId` the B lane stamps on `authorMemberId`; null off-team.
+  // 2026-07-09). `myMemberId` is the exact project workspace identity stamped
+  // by the B lane on `authorMemberId`; null off-team.
   // `iAmProjectOwner` is the collab-resolved project owner (the single writer),
   // failing closed until the status poll confirms it. A comment with no author
   // (a brand-new one in the create flow, or any off-team / legacy row) is the
   // current user's to act on, so it reads as "mine". Only the author may EDIT
   // their own note; the author OR the project owner may delete it or send it to
   // the agent. The B lane enforces the same rules server-side.
-  const myMemberId = collab.member?.memberId ?? null;
+  const myMemberId = collab.workspaceContext?.workspaceMemberId ?? null;
   const iAmProjectOwner = collab.isOwner;
   const commentAuthoredByMe = (comment: PreviewComment | null | undefined): boolean => {
     // No persisted comment means this is the create flow: the draft belongs

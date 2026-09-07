@@ -5,7 +5,6 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 
 import { createCommandInvocation } from '@open-design/platform';
-import type { AmrSessionState } from '@open-design/contracts';
 
 import { resolveAgentLaunch } from '../runtimes/launch.js';
 import { spawnEnvForAgent } from '../runtimes/env.js';
@@ -36,7 +35,6 @@ export interface VelaUser {
 
 export interface VelaLoginStatus {
   loggedIn: boolean;
-  sessionState?: AmrSessionState;
   credentialRevision?: string;
   loginInFlight: boolean;
   profile: string;
@@ -234,20 +232,8 @@ export function readVelaLoginStatus(
   const credentialRevision = velaCredentialRevisionDigest(
     readRawVelaCredentialRevision(env, configuredEnv, rawStatus),
   );
-  let sessionState: AmrSessionState = 'authenticated';
-  if (!rawStatus.loggedIn) {
-    sessionState = 'signed_out';
-  } else if (expiredVelaCredentialRevisions.has(credentialRevision)) {
-    sessionState = 'reauth_required';
-  }
   return {
     ...rawStatus,
-    // `loggedIn` remains the backwards-compatible "credential is present"
-    // projection. Routing must not treat an expired credential like a brand
-    // new user and throw them back into first-run onboarding; new callers use
-    // `sessionState` for authoritative validity.
-    loggedIn: rawStatus.loggedIn,
-    sessionState,
     credentialRevision,
   };
 }
@@ -255,7 +241,7 @@ export function readVelaLoginStatus(
 function readRawVelaLoginStatus(
   env: NodeJS.ProcessEnv = process.env,
   configuredEnv: Record<string, string> = {},
-): Omit<VelaLoginStatus, 'sessionState' | 'credentialRevision'> {
+): Omit<VelaLoginStatus, 'credentialRevision'> {
   const mergedEnv = mergeVelaEnv(env, configuredEnv);
   const profile = resolveAmrProfile(mergedEnv);
   const configPath = amrConfigPath();
@@ -431,7 +417,7 @@ export function readVelaCredentialRevision(
 function readRawVelaCredentialRevision(
   env: NodeJS.ProcessEnv,
   configuredEnv: Record<string, string>,
-  status: Omit<VelaLoginStatus, 'sessionState' | 'credentialRevision'>,
+  status: Omit<VelaLoginStatus, 'credentialRevision'>,
 ): VelaCredentialRevision {
   const mergedEnv = mergeVelaEnv(env, configuredEnv);
   const hasEnvCredentials =
@@ -473,7 +459,6 @@ function readRawVelaCredentialRevision(
   };
 }
 
-const expiredVelaCredentialRevisions = new Set<string>();
 const expiredVelaControlKeys = new Set<string>();
 
 function velaCredentialRevisionDigest(revision: VelaCredentialRevision): string {
@@ -489,7 +474,6 @@ export function markVelaAuthorizationExpired(
   configuredEnv: Record<string, string> = {},
 ): string {
   const revision = velaCredentialRevisionDigest(readVelaCredentialRevision(env, configuredEnv));
-  expiredVelaCredentialRevisions.add(revision);
   const control = readRawVelaControlApiContext(env, configuredEnv);
   if (control) expiredVelaControlKeys.add(velaControlKeyDigest(control.controlKey));
   return revision;
@@ -497,7 +481,6 @@ export function markVelaAuthorizationExpired(
 
 /** Test/logout seam. A rotated credential naturally has a different revision. */
 export function clearVelaAuthorizationState(): void {
-  expiredVelaCredentialRevisions.clear();
   expiredVelaControlKeys.clear();
 }
 

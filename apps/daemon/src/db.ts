@@ -1399,7 +1399,7 @@ export function deleteWorkspaceProject(db: SqliteDb, workspaceId: string, projec
 
 /**
  * The workspace a project's TEAM projection lives in — the project's pinned
- * scope for hub-facing calls (presence, comments). A project shared to (or
+ * scope for hub-facing calls such as comments. A project shared to (or
  * pulled from) a team has exactly one team-visibility row; personal drafts
  * have none and resolve to null so callers fall back to the local selection.
  */

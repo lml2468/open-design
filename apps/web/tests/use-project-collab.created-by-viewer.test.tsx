@@ -117,9 +117,6 @@ function installFullyHangingFetch() {
 function installOtherOwnerStatusFetch() {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const pathname = new URL(String(input), 'http://d.local').pathname;
-    if (pathname.endsWith('/presence/heartbeat')) {
-      return Response.json({ present: [{ memberId: DEFAULT_TEAM_CONTEXT.workspaceMemberId }] });
-    }
     if (pathname.endsWith('/collab/status')) {
       return Response.json({
         publishedVersion: 1,
@@ -340,9 +337,7 @@ describe('useProjectCollab: project created by the viewer this session', () => {
     const fetchImpl = (async (input: RequestInfo | URL) => {
       const pathname = new URL(String(input), 'http://d.local').pathname;
       let payload: unknown = { ok: true };
-      if (pathname.endsWith('/presence/heartbeat')) {
-        payload = { present: [{ memberId: 'wm-viewer' }] };
-      } else if (pathname.endsWith('/collab/status')) {
+      if (pathname.endsWith('/collab/status')) {
         payload = {
           publishedVersion: 2,
           materializedVersion: 2,
@@ -370,11 +365,6 @@ describe('useProjectCollab: project created by the viewer this session', () => {
       const pathname = new URL(String(input), 'http://d.local').pathname;
       if (pathname.endsWith('/workspace-scope')) return scopeResponse.promise;
       if (pathname.endsWith('/collab/status')) return statusResponse.promise;
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return Promise.resolve(Response.json({
-          present: [{ memberId: PERSONAL_CONTEXT.workspaceMemberId }],
-        }));
-      }
       return Promise.resolve(Response.json({ ok: true }));
     });
     globalThis.fetch = fetchMock as typeof fetch;

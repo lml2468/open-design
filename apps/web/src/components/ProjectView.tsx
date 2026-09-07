@@ -241,13 +241,8 @@ import { Icon } from './Icon';
 import { useWorkspaceTabsDockRef } from './workspaceTabsDock';
 import { localizePluginTitle } from './plugins-home/localization';
 import { DesignSystemPicker } from './DesignSystemPicker';
-import { PresenceBar } from '../collab/PresenceBar';
 import { ProjectCollaborationPublish } from './collaboration/ProjectCollaborationPublish';
 import { useProjectCollab } from '../collab/useProjectCollab';
-import {
-  currentUserDirectoryEntry,
-  useTeamMembers,
-} from '../collab/useTeamMembers';
 import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
 import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import {
@@ -1689,7 +1684,6 @@ function projectEventToAgentEvent(evt: ProjectEvent): LiveArtifactEventItem['eve
   // `handleProjectEvent` (they trigger targeted re-fetches, not artifact cards).
   if (
     evt.type === 'comment-changed' ||
-    evt.type === 'presence-changed' ||
     evt.type === 'project-metadata-changed' ||
     evt.type === 'project-content-transfer-state'
   ) {
@@ -1922,14 +1916,11 @@ export function ProjectView({
   useEffect(() => () => {
     invalidateHtmlSourceSnapshotProject(project.id);
   }, [project.id]);
-  // Team collaboration: presence for a shared project. Dormant (no heartbeat,
-  // renders nothing) unless the workspace context marks the viewer an active
-  // team member — safe to mount unconditionally.
+  // Legacy Team sync state remains active until the mirror path is removed.
   const projectCollab = useProjectCollab(project?.id ?? null, {
     workspaceContext: projectRunWorkspaceContext,
     workspaceContextLoading: projectWorkspaceScopeState.loading,
     initialMaterializationPending,
-    presenceFilePath: project?.metadata?.entryFile ?? null,
   });
   // A Team-bound placeholder is safe to render and comment around, but its
   // empty tree is never a writer authority. Reuse the established viewer-only
@@ -1939,10 +1930,6 @@ export function ProjectView({
   // syncing project, not the misleading “shared by someone else” notice.
   const projectMutationReadOnly =
     projectCollab.viewerOnly || projectCollab.materializationPending;
-  const { resolve: resolvePresenceMember } = useTeamMembers(
-    currentUserDirectoryEntry(projectRunWorkspaceContext),
-    projectRunWorkspaceContext,
-  );
   // Tab layout is private browser state for a read-only Team viewer. Keep its
   // identity-partitioned local cache working, but only let a positively proven
   // project writer update the daemon's shared project row. Personal and legacy
@@ -1963,7 +1950,6 @@ export function ProjectView({
   // Stable references (useCallback with empty deps inside useCollab) — safe
   // for the project-events handler's dependency array without re-subscribing.
   const {
-    refreshPresence: collabRefreshPresence,
     checkStatusNow: collabCheckStatusNow,
   } = projectCollab;
   // Read-only banner copy: when the collab cloud resolved who shared this project,
@@ -3878,12 +3864,6 @@ export function ProjectView({
       if (evt.projectId === project.id) void refreshPreviewCommentsRef.current?.();
       return;
     }
-    if (evt.type === 'presence-changed') {
-      // Hub push channel: a teammate joined/left. Refresh the roster now
-      // instead of waiting for the next 10s heartbeat tick.
-      if (evt.projectId === project.id) collabRefreshPresence();
-      return;
-    }
     if (evt.type === 'project-metadata-changed') {
       // Hub push channel: rename or a fresh content publish landed. Run one
       // status check now (drives the member auto-pull) instead of waiting for
@@ -3987,7 +3967,6 @@ export function ProjectView({
   }, [
     coalescedFileChangedRefresh,
     collabCheckStatusNow,
-    collabRefreshPresence,
     iframeKeepAlivePool,
     onProjectChange,
     onProjectsRefresh,
@@ -11409,14 +11388,6 @@ export function ProjectView({
           githubConnected={githubConnected}
           commentPortalId={commentInspectorPortalId}
           onCommentModeChange={setCommentInspectorActive}
-          fileActionsBefore={projectCollab.enabled ? (
-            <PresenceBar
-              members={projectCollab.present}
-              selfMember={projectCollab.member}
-              resolveMember={resolvePresenceMember}
-              {...(projectCollab.member ? { selfMemberId: projectCollab.member.memberId } : {})}
-            />
-          ) : null}
           chatConfig={config}
           chatAgentsById={agentsById}
           handoffAgents={agents}

@@ -71,7 +71,6 @@ function daemonWith(status: Record<string, unknown>, context: WorkspaceCollabCon
     const pathname = new URL(String(input), 'http://d.local').pathname;
     if (pathname.endsWith('/workspace/context')) return response({ context });
     if (pathname.endsWith('/collab/status')) return response(status);
-    if (pathname.endsWith('/presence/heartbeat')) return response({ present: [] });
     return response({ ok: true });
   }) as typeof fetch;
 }
@@ -91,7 +90,6 @@ describe('first open of an unmaterialized shared project (QA P0)', () => {
     const fetchImpl = (async (input: RequestInfo | URL) => {
       const pathname = new URL(String(input), 'http://d.local').pathname;
       if (pathname.endsWith('/collab/status')) return statusGate;
-      if (pathname.endsWith('/presence/heartbeat')) return response({ present: [] });
       return response({ ok: true });
     }) as typeof fetch;
     const { result } = renderHook(() =>

@@ -81,8 +81,6 @@ function renderProjectFileViewer(
     workspaceContext: context,
     workspaceContextLoading: false,
     enabled: true,
-    member: null,
-    present: [],
     publishedVersion: null,
     syncState: null,
     viewerOnly: false,
@@ -95,7 +93,6 @@ function renderProjectFileViewer(
     downloadPending: false,
     reportChange: () => {},
     requestPublish: () => {},
-    refreshPresence: () => {},
     checkStatusNow: () => {},
   };
   const tree = (next: ComponentProps<typeof FileViewer>) => (

@@ -301,7 +301,6 @@ export function createDiagnosticsExportHandler(options: DiagnosticsHandlerOption
                 return {
                   profile: status.profile,
                   loggedIn: status.loggedIn,
-                  sessionState: status.sessionState,
                   credentialRevision: status.credentialRevision,
                   loginInFlight: status.loginInFlight,
                 };

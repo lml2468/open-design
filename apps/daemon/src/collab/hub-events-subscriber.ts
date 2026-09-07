@@ -48,8 +48,6 @@ export const WORKSPACE_MEMBER_EVENTS_CAPABILITY =
   'workspace-member-events-v1';
 const WORKSPACE_EVENT_LISTENER_STATUS_CAPABILITY =
   'workspace-event-listener-status-v1';
-export const AUTHORITATIVE_PROJECT_PRESENCE_CAPABILITY =
-  'authoritative-project-presence-v1';
 export const WORKSPACE_DIRECTORY_EVENTS_CAPABILITY =
   'workspace-directory-events-v1';
 const MAX_HANDLED_SOURCE_GAP_EPOCHS = 64;
@@ -58,7 +56,6 @@ export interface HubWorkspaceEvent {
   type:
     | 'team-projects-changed'
     | 'comment-changed'
-    | 'presence-changed'
     | 'workspace-context-changed'
     | 'workspace-members-changed'
     | 'billing-changed'
@@ -103,7 +100,6 @@ export interface HubWorkspaceDirectoryEvent {
 const HUB_EVENT_TYPES = new Set<HubWorkspaceEvent['type']>([
   'team-projects-changed',
   'comment-changed',
-  'presence-changed',
   'workspace-context-changed',
   'workspace-members-changed',
   'billing-changed',

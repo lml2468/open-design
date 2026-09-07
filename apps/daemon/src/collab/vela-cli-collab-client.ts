@@ -2,7 +2,6 @@ import type {
   CollabCloudComment,
   CollabCloudMemberDirectoryEntry,
   CollabMemberRole,
-  CollabPresenceMember,
 } from '@open-design/contracts';
 import {
   runVelaCommand,
@@ -25,30 +24,10 @@ type MemberWire = {
   avatarUrl?: unknown;
 };
 
-type PresenceWire = MemberWire & {
-  filePath?: unknown;
-  activity?: unknown;
-  heartbeatAt?: unknown;
-};
-
 type PullCommentsWire = {
   comments?: unknown;
   latestSeq?: unknown;
 };
-
-export interface VelaCliPresenceHeartbeatInput {
-  member: CollabPresenceMember;
-  clientId?: string;
-  filePath?: string | null;
-  activity?: CollabPresenceMember['activity'];
-}
-
-export interface VelaCliPresenceLeaveInput {
-  memberId: string;
-  clientId?: string;
-}
-
-type PresenceActivity = Exclude<CollabPresenceMember['activity'], undefined>;
 
 export function createVelaCliCollabClient(options: VelaCliCollabClientOptions = {}) {
   const run = options.run ?? defaultRunVelaCollab;
@@ -130,51 +109,6 @@ export function createVelaCliCollabClient(options: VelaCliCollabClientOptions = 
       };
     },
 
-    async heartbeatPresence(
-      projectId: string,
-      input: VelaCliPresenceHeartbeatInput,
-      workspaceId: string,
-    ): Promise<CollabPresenceMember[]> {
-      const args = [
-        'presence',
-        'heartbeat',
-        projectId,
-        '--client-id',
-        input.clientId ?? input.member.memberId,
-      ];
-      const displayName = input.member.name?.trim();
-      if (displayName) args.push('--display-name', displayName);
-      if (input.filePath) args.push('--file-path', input.filePath);
-      if (input.activity !== undefined && input.activity !== null) {
-        args.push('--activity-json', JSON.stringify(input.activity));
-      }
-      const payload = await runJson<{ viewers?: PresenceWire[] }>(args, workspaceId);
-      return Array.isArray(payload.viewers) ? payload.viewers.map(toPresenceMember) : [];
-    },
-
-    async listPresence(projectId: string, workspaceId: string): Promise<CollabPresenceMember[]> {
-      const payload = await runJson<{ viewers?: PresenceWire[] }>([
-        'presence',
-        'list',
-        projectId,
-      ], workspaceId);
-      return Array.isArray(payload.viewers) ? payload.viewers.map(toPresenceMember) : [];
-    },
-
-    async leavePresence(
-      projectId: string,
-      input: VelaCliPresenceLeaveInput,
-      workspaceId: string,
-    ): Promise<CollabPresenceMember[]> {
-      const payload = await runJson<{ viewers?: PresenceWire[] }>([
-        'presence',
-        'leave',
-        projectId,
-        '--client-id',
-        input.clientId ?? input.memberId,
-      ], workspaceId);
-      return Array.isArray(payload.viewers) ? payload.viewers.map(toPresenceMember) : [];
-    },
   };
 }
 
@@ -190,57 +124,14 @@ function toDirectoryEntry(input: MemberWire | undefined): CollabCloudMemberDirec
   return { memberId, displayName, role };
 }
 
-function toPresenceMember(input: PresenceWire): CollabPresenceMember {
-  const memberId = typeof input.memberId === 'string' ? input.memberId : '';
-  const member: CollabPresenceMember = {
-    memberId,
-  };
-  const displayName = typeof input.displayName === 'string'
-    ? input.displayName.trim()
-    : '';
-  if (displayName && displayName !== memberId) {
-    member.name = displayName;
-  }
-  if (isRole(input.role)) member.role = input.role;
-  if (typeof input.avatarUrl === 'string' || input.avatarUrl === null) {
-    member.avatarUrl = input.avatarUrl;
-  }
-  if (typeof input.filePath === 'string' || input.filePath === null) {
-    member.filePath = input.filePath;
-  }
-  if (input.activity !== undefined) {
-    member.activity = input.activity as PresenceActivity;
-  }
-  if (typeof input.heartbeatAt === 'string') {
-    member.heartbeatAt = input.heartbeatAt;
-  }
-  return member;
-}
-
 function isRole(value: unknown): value is CollabMemberRole {
   return value === 'owner' || value === 'admin' || value === 'member';
 }
 
-/**
- * Wall-clock budget for presence spawns. Presence heartbeat/list/leave are
- * high-frequency lease traffic (the web client beats every 10s and every beat
- * spawns a CLI process); without a budget a wedged CLI piles up unbounded
- * children while the client keeps beating. Presence data is disposable — the
- * next beat re-establishes it — so a hung spawn is terminated rather than
- * awaited. Lower-frequency member/comment commands keep their existing
- * unbounded behavior.
- */
-const PRESENCE_COMMAND_TIMEOUT_MS = 10_000;
-
 const defaultRunVelaCollab: RunVelaCollab = (args, workspaceId) =>
   runVelaCommand(
     ['collab', ...args],
-    {
-      ...velaWorkspaceCommandOptions(workspaceId),
-      ...(args[0] === 'presence'
-        ? { timeoutMs: PRESENCE_COMMAND_TIMEOUT_MS }
-        : {}),
-    },
+    velaWorkspaceCommandOptions(workspaceId),
   );
 
 export function shouldUseVelaCliCollabTransport(

@@ -383,8 +383,6 @@ describe("DesignFilesPanel selection", () => {
           workspaceContext,
           workspaceContextLoading: false,
           enabled: true,
-          member: null,
-          present: [],
           publishedVersion: null,
           syncState: null,
           viewerOnly: false,
@@ -397,7 +395,6 @@ describe("DesignFilesPanel selection", () => {
           downloadPending: false,
           reportChange: vi.fn(),
           requestPublish: vi.fn(),
-          refreshPresence: vi.fn(),
           checkStatusNow: vi.fn(),
         }}
       >

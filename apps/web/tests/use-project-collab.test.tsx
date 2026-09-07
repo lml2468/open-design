@@ -40,13 +40,12 @@ function makeContext(
 
 const TEAM_CONTEXT = makeContext();
 
-function installFetch(context: unknown, present: Array<{ memberId: string }>) {
+function installFetch(context: unknown) {
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const pathname = new URL(url, 'http://d.local').pathname;
     let payload: unknown = { ok: true };
     if (pathname.endsWith('/workspace/context')) payload = { context };
-    else if (pathname.endsWith('/presence/heartbeat')) payload = { present };
     else if (pathname.endsWith('/collab/status')) payload = { publishedVersion: 2, syncState: 'synced' };
     return { ok: true, status: 200, json: async () => payload } as unknown as Response;
   }) as typeof fetch;
@@ -60,28 +59,26 @@ afterEach(() => {
 });
 
 describe('useProjectCollab', () => {
-  it('activates presence + sync for a team member', async () => {
-    const fetchImpl = installFetch(TEAM_CONTEXT, [{ memberId: 'wm-1' }, { memberId: 'other' }]);
+  it('activates sync for a team member', async () => {
+    const fetchImpl = installFetch(TEAM_CONTEXT);
     const { result } = renderHook(() =>
       useProjectCollab('p1', { fetch: fetchImpl, workspaceContext: TEAM_CONTEXT }),
     );
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0); // context fetch
-      await vi.advanceTimersByTimeAsync(0); // presence/status polls
+      await vi.advanceTimersByTimeAsync(0); // status poll
     });
 
     expect(result.current.enabled).toBe(true);
-    expect(result.current.member).toEqual({ memberId: 'wm-1', role: 'member', name: 'Ma Shu' });
-    expect(result.current.present.length).toBe(2);
     expect(result.current.publishedVersion).toBe(2);
     expect(result.current.syncState).toBe('synced');
   });
 
-  it('activates presence for a personal workspace that can later invite seats', async () => {
+  it('activates sync for a personal workspace that can later invite seats', async () => {
     const calls: string[] = [];
     const personalContext = { ...TEAM_CONTEXT, workspaceType: 'personal' as const };
-    const base = installFetch(personalContext, []);
+    const base = installFetch(personalContext);
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push(new URL(String(input), 'http://d.local').pathname);
       return base(input, init);
@@ -95,12 +92,11 @@ describe('useProjectCollab', () => {
     });
 
     expect(result.current.enabled).toBe(true);
-    expect(result.current.present).toEqual([]);
-    expect(calls.some((p) => p.endsWith('/presence/heartbeat'))).toBe(true);
+    expect(calls.some((p) => p.endsWith('/collab/status'))).toBe(true);
   });
 
   it('stays dormant when there is no workspace context', async () => {
-    const fetchImpl = installFetch(null, []);
+    const fetchImpl = installFetch(null);
     const { result } = renderHook(() =>
       useProjectCollab('p1', { fetch: fetchImpl, workspaceContext: null }),
     );
@@ -148,7 +144,7 @@ describe('useProjectCollab', () => {
     // a non-owner of any role must not get edit affordances until their own
     // ownership is confirmed. Pre-fix this returned viewerOnly=false for admins.
     const admin = makeContext({ role: 'admin', workspaceMemberId: 'wm-admin' });
-    const fetchImpl = installFetch(admin, [{ memberId: 'wm-admin' }]);
+    const fetchImpl = installFetch(admin);
     const { result } = renderHook(() =>
       useProjectCollab('p1', { fetch: fetchImpl, workspaceContext: admin }),
     );
@@ -167,7 +163,6 @@ describe('useProjectCollab', () => {
       const pathname = new URL(String(input), 'http://d.local').pathname;
       let payload: unknown = { ok: true };
       if (pathname.endsWith('/workspace/context')) payload = { context: admin };
-      else if (pathname.endsWith('/presence/heartbeat')) payload = { present: [{ memberId: 'wm-admin' }] };
       else if (pathname.endsWith('/collab/status')) {
         return new Promise<Response>(() => {
           /* keep the initial status poll unresolved */
@@ -201,7 +196,6 @@ describe('useProjectCollab', () => {
       const pathname = new URL(String(input), 'http://d.local').pathname;
       let payload: unknown = { ok: true };
       if (pathname.endsWith('/workspace/context')) payload = { context: owner };
-      else if (pathname.endsWith('/presence/heartbeat')) payload = { present: [{ memberId: 'wm-owner' }] };
       else if (pathname.endsWith('/collab/status')) {
         payload = { publishedVersion: 2, syncState: 'synced', ownerMemberId: 'wm-owner' };
       }
@@ -231,9 +225,7 @@ describe('useProjectCollab', () => {
     const fetchImpl = (async (input: RequestInfo | URL) => {
       const pathname = new URL(String(input), 'http://d.local').pathname;
       let payload: unknown = { ok: true };
-      if (pathname.endsWith('/presence/heartbeat')) {
-        payload = { present: [{ memberId: 'wm-owner' }] };
-      } else if (pathname.endsWith('/collab/status')) {
+      if (pathname.endsWith('/collab/status')) {
         payload = {
           publishedVersion: 2,
           syncState: 'synced',
@@ -278,7 +270,6 @@ describe('useProjectCollab', () => {
       const pathname = new URL(String(input), 'http://d.local').pathname;
       let payload: unknown = { ok: true };
       if (pathname.endsWith('/workspace/context')) payload = { context: member };
-      else if (pathname.endsWith('/presence/heartbeat')) payload = { present: [{ memberId: 'wm-member' }] };
       else if (pathname.endsWith('/collab/status')) {
         payload = unshared
           ? { publishedVersion: null, syncState: 'local_only', ownerMemberId: null }
@@ -310,7 +301,7 @@ describe('useProjectCollab', () => {
     // writer. This is the billing-freeze behavior, distinct from the shared-project
     // ownership gate.
     const owner = makeContext({ role: 'owner', lifecycleState: 'locked', workspaceMemberId: 'wm-owner' });
-    const fetchImpl = installFetch(owner, [{ memberId: 'wm-owner' }]);
+    const fetchImpl = installFetch(owner);
     const { result } = renderHook(() =>
       useProjectCollab('p1', { fetch: fetchImpl, workspaceContext: owner }),
     );
@@ -331,7 +322,6 @@ describe('useProjectCollab', () => {
       calls.push({ pathname, method: init?.method ?? 'GET' });
       let payload: unknown = { ok: true };
       if (pathname.endsWith('/workspace/context')) payload = { context: owner };
-      else if (pathname.endsWith('/presence/heartbeat')) payload = { present: [{ memberId: 'wm-owner' }] };
       else if (pathname.endsWith('/collab/status')) {
         payload = { publishedVersion: 2, syncState: 'synced', ownerMemberId: 'wm-owner' };
       }

@@ -240,7 +240,7 @@ describe('createProjectEventsConnection', () => {
   // Collab realtime hop-2: the project events stream now also carries the
   // project-scoped thin invalidation events. Each is forwarded to onChange so
   // ProjectView can re-fetch the affected resource (e.g. the comment list).
-  it('forwards collab invalidation events (comment/presence/metadata)', () => {
+  it('forwards collab invalidation events (comment/metadata)', () => {
     const seen: ProjectEvent[] = [];
     const conn = createProjectEventsConnection(
       'p1',
@@ -251,15 +251,11 @@ describe('createProjectEventsConnection', () => {
     es.dispatch('comment-changed', {
       data: JSON.stringify({ type: 'comment-changed', projectId: 'p1', at: 7 }),
     });
-    es.dispatch('presence-changed', {
-      data: JSON.stringify({ type: 'presence-changed', projectId: 'p1' }),
-    });
     es.dispatch('project-metadata-changed', {
       data: JSON.stringify({ type: 'project-metadata-changed', projectId: 'p1' }),
     });
     expect(seen).toEqual([
       { type: 'comment-changed', projectId: 'p1', at: 7 },
-      { type: 'presence-changed', projectId: 'p1' },
       { type: 'project-metadata-changed', projectId: 'p1' },
     ]);
     conn.close();

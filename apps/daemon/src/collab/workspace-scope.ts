@@ -8,7 +8,7 @@
 //   1. `explicit`            — the id this specific call was asked to target;
 //   2. `projectWorkspaceId`  — the workspace a project belongs to (its shared
 //                              projection row), for project-scoped calls like
-//                              presence and comments;
+//                              comments and publishing;
 //   3. `localSelection`      — the persisted OD-local workspace selection
 //                              (workspace-selection.json);
 //   4. `envWorkspaceId`      — a VELA_WORKSPACE_ID inherited from the spawn

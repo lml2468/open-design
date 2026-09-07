@@ -13,7 +13,7 @@ import type {
 } from '@open-design/contracts';
 import { resolveEffectiveVelaConsoleOrigin } from '../integrations/vela-console-origin.js';
 
-// The daemon's single B-integration point . Presence + sync need the
+// The daemon's single B-integration point. Synchronization and identity surfaces need the
 // caller's workspace identity (workspaceMemberId + role + lifecycle). In
 // production this provider verifies the signed-in identity against B's
 // workspace membership directory, then resolves the daemon's locally persisted

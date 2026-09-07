@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
   CollabMemberRole,
-  CollabPresenceMember,
   ProjectContentTransferState,
   WorkspaceCollabContext,
 } from '@open-design/contracts';
@@ -81,7 +80,7 @@ export interface UseProjectCollabOptions {
   /**
    * Project-bound Workspace authority. Production project views pass the
    * persisted project's resolved context here so ambient navigation cannot
-   * retarget status, presence, or pull requests.
+   * retarget status or pull requests.
    *
    * Omitted or explicit `null` means the project scope is unresolved/refused
    * and keeps collab dormant. There is intentionally no shell-context fallback.
@@ -97,10 +96,7 @@ export interface UseProjectCollabOptions {
   /** Injectable for tests. */
   fetch?: typeof fetch;
   baseUrl?: string;
-  heartbeatMs?: number;
   statusPollMs?: number;
-  presenceFilePath?: string | null;
-  presenceActivity?: CollabPresenceMember['activity'];
 }
 
 interface WorkspaceContextState {
@@ -147,11 +143,8 @@ export function useWorkspaceContext(options: UseProjectCollabOptions = {}): Work
 }
 
 export interface ProjectCollab {
-  /** Whether collab (presence + sync) is active for this project + viewer. */
+  /** Whether legacy sync is active for this project + viewer. */
   enabled: boolean;
-  /** The viewer's presence identity, when enabled. */
-  member: CollabPresenceMember | null;
-  present: CollabPresenceMember[];
   publishedVersion: number | null;
   syncState: ReturnType<typeof useCollab>['syncState'];
   /**
@@ -220,8 +213,6 @@ export interface ProjectCollab {
   materializationPending?: boolean;
   reportChange: () => void;
   requestPublish: () => void;
-  /** Refresh the presence roster now (hub push-channel consumer). */
-  refreshPresence: () => void;
   /** Run one status check now (hub push-channel consumer). */
   checkStatusNow: () => void;
   /** Apply an inbound-transfer lifecycle update from the project SSE. */
@@ -260,8 +251,7 @@ export function resolveProjectWriterAuthority(options: {
 
 /**
  * Real-product collab integration for a project : resolves the workspace
- * context → decides whether collab runs (team member of a live workspace) → runs
- * presence + sync for the viewer. Dormant (enabled=false, no heartbeat) when the
+ * context → decides whether legacy sync runs for a live workspace. Dormant when the
  * project is personal / the viewer is not a team member — so it is safe to mount
  * unconditionally in the project view.
  */
@@ -271,26 +261,16 @@ export function useProjectCollab(
 ): ProjectCollab {
   const { context, loading: workspaceContextLoading } = useWorkspaceContextState(options);
   const decision = resolveCollabSession(context);
-  const member = decision.member
-    ? {
-        ...decision.member,
-        ...(options.presenceFilePath ? { filePath: options.presenceFilePath } : {}),
-        ...(options.presenceActivity !== undefined ? { activity: options.presenceActivity } : {}),
-      }
-    : null;
   const collab = useCollab({
     projectId: projectId ?? null,
-    member,
     workspaceContext: context,
     enabled: decision.enabled,
     // Collab routes fail closed without an explicit workspace identity. Wait
-    // for context, then bind every status/presence/pull request to that exact
+    // for context, then bind every status/pull request to that exact
     // identity; switching workspace recreates the client and tombstones the
     // old response stream.
-    statusEnabled: Boolean(projectId) && decision.enabled,
     ...(options.fetch ? { fetch: options.fetch } : {}),
     ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
-    ...(options.heartbeatMs !== undefined ? { heartbeatMs: options.heartbeatMs } : {}),
     ...(options.statusPollMs !== undefined ? { statusPollMs: options.statusPollMs } : {}),
   });
   const workspaceIdentity = workspaceIdentityCacheKey(context);
@@ -519,8 +499,6 @@ export function useProjectCollab(
 
   return {
     enabled: collabEnabled,
-    member,
-    present: collab.present,
     publishedVersion: collab.publishedVersion,
     syncState: collab.syncState,
     viewerOnly,
@@ -534,7 +512,6 @@ export function useProjectCollab(
     materializationPending,
     reportChange: collab.reportChange,
     requestPublish: collab.requestPublish,
-    refreshPresence: collab.refreshPresence,
     checkStatusNow: collab.checkStatusNow,
     applyContentTransferState: collab.applyContentTransferState,
   };

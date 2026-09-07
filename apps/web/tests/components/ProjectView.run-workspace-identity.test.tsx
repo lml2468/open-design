@@ -140,8 +140,6 @@ vi.mock('../../src/collab/useProjectCollab', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/collab/useProjectCollab')>()),
   useProjectCollab: () => ({
     enabled: true,
-    member: null,
-    present: [],
     publishedVersion: null,
     syncState: null,
     viewerOnly: projectCollabMocks.viewerOnly,
@@ -152,7 +150,6 @@ vi.mock('../../src/collab/useProjectCollab', async (importOriginal) => ({
     downloadPending: false,
     reportChange: () => undefined,
     requestPublish: () => undefined,
-    refreshPresence: () => undefined,
     checkStatusNow: () => undefined,
   }),
 }));

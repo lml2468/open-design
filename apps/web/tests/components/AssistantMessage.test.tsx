@@ -74,8 +74,6 @@ function projectCollabValue(workspaceContext = PROJECT_A_CONTEXT) {
     workspaceContext,
     workspaceContextLoading: false,
     enabled: false,
-    member: null,
-    present: [],
     publishedVersion: null,
     syncState: null,
     viewerOnly: false,
@@ -85,7 +83,6 @@ function projectCollabValue(workspaceContext = PROJECT_A_CONTEXT) {
     downloadPending: false,
     reportChange: vi.fn(),
     requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
     checkStatusNow: vi.fn(),
   };
 }

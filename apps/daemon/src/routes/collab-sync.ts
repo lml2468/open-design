@@ -140,7 +140,7 @@ export interface RegisterCollabSyncRoutesDeps {
   /**
    * Read-only owner lookup for GET /collab/status. This may use a short-lived
    * explicit-scope display cache because request authority is verified first.
-   * Pull, publish, presence, and mutation paths deliberately keep using the
+   * Pull, publish, and mutation paths deliberately keep using the
    * fresh `resolveSharedProjectOwner` dependency above.
    */
   resolveSharedProjectOwnerForStatus?: (
@@ -2383,8 +2383,8 @@ export function registerCollabSyncRoutes(
         callerIsOwner,
       });
     }
-    // A verified local mirror binding is enough to return shared identity and
-    // unlock presence immediately. The owner-name directory and published-head
+    // A verified local mirror binding is enough to return shared identity
+    // immediately. The owner-name directory and published-head
     // calls are remote enrichment: neither may hold this status response open.
     // Cache them by the exact viewer/team/owner/project tuple so a later poll can
     // consume the result without leaking it across workspace scopes. Unknown local

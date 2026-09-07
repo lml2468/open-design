@@ -840,10 +840,6 @@ import { registerOpenDesignPublicMetadataRoutes } from './routes/open-design-pub
 import { registerWhatsNewRoutes } from './routes/whats-new.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 import {
-  createCollabPresenceCloudClient,
-  registerCollabPresenceRoutes,
-} from './routes/collab-presence.js';
-import {
   registerCollabSyncRoutes,
   type TeamMirrorPullScope,
 } from './routes/collab-sync.js';
@@ -890,7 +886,6 @@ import {
   WorkspaceBillingAccessRevokedError,
 } from './collab/workspace-billing-runtime.js';
 import {
-  AUTHORITATIVE_PROJECT_PRESENCE_CAPABILITY,
   startHubEventsSubscriber,
   WORKSPACE_DIRECTORY_EVENTS_CAPABILITY,
 } from './collab/hub-events-subscriber.js';
@@ -3353,7 +3348,7 @@ export async function startServer({
   // ---- Projects (DB-backed) -------------------------------------------------
 
 
-  // Team collaboration subsystem: presence + author-side publish scheduler.
+  // Team collaboration subsystem: author-side publish scheduler.
   // Product team workspaces publish and pull through the login-backed Vela CLI;
   // non-Vela local modes retain the in-memory adapter for isolated development.
   const describeCollabProject = (projectId: string) => {
@@ -3868,14 +3863,6 @@ export async function startServer({
    */
   const projectIsUnmaterializedSharedPlaceholder = (projectId: string): boolean =>
     isUnmaterializedSharedPlaceholder(getProject(db, projectId));
-  let invalidatePresenceReadCache = (
-    _projectId: string,
-    _workspaceId?: string,
-  ): void => {};
-  let markPresenceReadCacheStale = (
-    _projectId: string,
-    _workspaceId?: string,
-  ): void => {};
   const collab = createCollabRuntime({
     workspaceContext: workspaceContextProvider,
     canPublishProjectContent: (projectId) =>
@@ -3905,14 +3892,6 @@ export async function startServer({
     },
     onMetadataRefreshComplete: ({ projectId, principal }) => {
       setWorkspaceProjectMetadataRefreshPending(db, principal.teamId, projectId, false);
-    },
-    // Collab realtime hop-2: a member joined/left this project's presence set
-    // (fires only on explicit join/leave, not on every heartbeat). Push a thin
-    // `presence-changed` onto the project's existing events SSE so the open
-    // project view re-fetches presence instead of waiting for its poll tick.
-    onPresenceChange: ({ projectId }) => {
-      markPresenceReadCacheStale(projectId);
-      emitProjectEvent(projectId, { type: 'presence-changed', projectId, at: Date.now() });
     },
   });
   for (const share of listTeamWorkspaceProjectShares(db)) {
@@ -4171,7 +4150,7 @@ export async function startServer({
   // immutable workspace + member scope captured for that request, so a later
   // active-workspace switch cannot retarget an in-flight read or its cache
   // write. Deliberately NOT used by resolveSharedProject below: the pull gate
-  // and comment/presence relays must observe an unshare immediately, so those
+  // and comment relays must observe an unshare immediately, so those
   // use the uncached exact lookup. A just-shared/unshared project shows up in
   // this list within the TTL.
   const teamProjectsDisplayCache = (() => {
@@ -4494,8 +4473,8 @@ export async function startServer({
       },
     ))[0] ?? null;
   };
-  // Security-sensitive ownership decisions stay fresh. Pull, publish,
-  // presence, and mutation paths all use this exact lookup so an unshare or
+  // Security-sensitive ownership decisions stay fresh. Pull, publish, and
+  // mutation paths all use this exact lookup so an unshare or
   // member revocation is observed immediately.
   const resolveSharedProjectOwner = async (
     projectId: string,
@@ -4521,67 +4500,6 @@ export async function startServer({
     );
     return list.find((entry) => entry.projectId === projectId)?.ownerMemberId ?? null;
   };
-  // Presence is project-bound data. Its relay scope comes only from the
-  // persisted project binding; an ambient active workspace is never a fallback.
-  const authoritativePresenceWorkspaces = new Set<string>();
-  const presenceScopeFor = (projectId: string): string | undefined =>
-    findTeamWorkspaceIdForProject(db, projectId)?.trim() || undefined;
-  const verifyPresenceWorkspaceRequest = async (
-    req: any,
-    projectId: string,
-    options: { fresh?: boolean; backgroundFresh?: boolean } = {},
-  ) => {
-    const verified = await verifyExplicitWorkspaceRequestContext(
-      { req },
-      options,
-    );
-    if (!verified.ok) return verified;
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    if (
-      binding?.workspaceId
-      && binding.workspaceId !== verified.context.workspaceId
-    ) {
-      return {
-        ok: false as const,
-        status: 403 as const,
-        code: 'WORKSPACE_ACCESS_DENIED' as const,
-        message: 'the requested workspace does not own this project',
-      };
-    }
-    return verified;
-  };
-  const presenceRoutes = registerCollabPresenceRoutes(app, {
-    collab,
-    // Null when this run has no vela-cli collab transport, which is what keeps
-    // the process-local presence fallback reachable. See
-    // `createCollabPresenceCloudClient` for the invariant.
-    cloud: createCollabPresenceCloudClient(velaCliCollabClient, presenceScopeFor),
-    verifyWorkspaceRequest: (req, projectId) =>
-      verifyPresenceWorkspaceRequest(req, projectId, { fresh: false }),
-    verifyWorkspaceLeaveRequest: (req, projectId) =>
-      verifyPresenceWorkspaceRequest(req, projectId, { fresh: true }),
-    verifyWorkspaceReadRequest: (req, projectId) =>
-      verifyPresenceWorkspaceRequest(req, projectId, { fresh: false }),
-    isProjectShared: async (projectId, context) => {
-      const projectContext =
-        context ?? await resolveBoundProjectWorkspaceContext(projectId);
-      if (!projectContext || projectContext.workspaceType !== 'team') return false;
-      return Boolean(
-        await resolveSharedProjectOwner(projectId, {
-          workspaceId: projectContext.workspaceId,
-          workspaceMemberId: projectContext.workspaceMemberId,
-        }),
-      );
-    },
-    cloudAuthorizesProjectPresence: (projectId) => {
-      const workspaceId = findTeamWorkspaceIdForProject(db, projectId)?.trim();
-      return Boolean(
-        workspaceId && authoritativePresenceWorkspaces.has(workspaceId),
-      );
-    },
-  });
-  invalidatePresenceReadCache = presenceRoutes.invalidatePresence;
-  markPresenceReadCacheStale = presenceRoutes.markPresenceStale;
   // Author-side publish TRIGGER (C spec §D1): watch the projects THIS daemon's
   // member owns + has shared, and coalesce every file edit into a debounced
   // publish. The read-only gate (team-shared AND owner === me) means a member's
@@ -5416,7 +5334,7 @@ export async function startServer({
     //
     // These routes are display reads: the Home team-project grid and the
     // deep-link "is this shared to my team?" check. Nothing here gates data
-    // access — the pull gate and the comment/presence relays reach
+    // access — the pull gate and comment relays reach
     // `teamProjectsLister` on their own and still observe an unshare
     // immediately.
     //
@@ -5656,7 +5574,6 @@ export async function startServer({
     },
     onStateChange: (state, connection) => {
       if (state === 'disconnected') {
-        authoritativePresenceWorkspaces.delete(subscribedWorkspaceId);
         const identityKey =
           connection.identityKey
           ?? directoryConnectionIdentities.get(subscribedWorkspaceId);
@@ -5736,11 +5653,6 @@ export async function startServer({
       const verifiedWorkspaceId = workspaceId ?? subscribedWorkspaceId;
       const verifiedIdentityKey =
         identityKey ?? currentWorkspaceDirectoryIdentity();
-      if (capabilities.includes(AUTHORITATIVE_PROJECT_PRESENCE_CAPABILITY)) {
-        authoritativePresenceWorkspaces.add(verifiedWorkspaceId);
-      } else {
-        authoritativePresenceWorkspaces.delete(verifiedWorkspaceId);
-      }
       if (capabilities.includes(WORKSPACE_DIRECTORY_EVENTS_CAPABILITY)) {
         const hadDirectoryCarrier = [
           ...directoryConnectionIdentities.values(),
@@ -5939,23 +5851,6 @@ export async function startServer({
             // Closed project: just mark dirty. The open-project path pulls
             // immediately, and an unopened project costs zero requests.
             dirtyCommentProjects.add(projectId);
-          }
-          break;
-        }
-        case 'presence-changed': {
-          if (event.projectId) {
-            const projectId = event.projectId;
-            markPresenceReadCacheStale(projectId, eventWorkspaceId);
-            void resolveBoundProjectWorkspaceContext(projectId)
-              .then((context) => {
-                if (context?.workspaceId !== eventWorkspaceId) return;
-                emitProjectEvent(projectId, {
-                  type: 'presence-changed',
-                  projectId,
-                  at: Date.now(),
-                });
-              })
-              .catch(() => undefined);
           }
           break;
         }
@@ -8258,15 +8153,10 @@ export async function startServer({
     collabSync: {
       requestTeamShare: async (projectId, ownerMemberId) => {
         const result = await collab.requestTeamShare(projectId, ownerMemberId);
-        // The GET cache also contains the fallback "project is shared"
-        // verdict when this Workspace has no authoritative presence stream.
-        // A successful visibility mutation changes that verdict immediately.
-        invalidatePresenceReadCache(projectId);
         return result;
       },
       requestTeamUnshare: async (projectId, ownerMemberId) => {
         const result = await collab.requestTeamUnshare(projectId, ownerMemberId);
-        invalidatePresenceReadCache(projectId);
         return result;
       },
       materializeTeamProject: async (projectId, principal) => {

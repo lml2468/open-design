@@ -167,8 +167,6 @@ function projectWorkspaceCollabValue(
     workspaceContext,
     workspaceContextLoading: false,
     enabled: false,
-    member: null,
-    present: [],
     publishedVersion: null,
     syncState: null,
     viewerOnly: false,
@@ -181,7 +179,6 @@ function projectWorkspaceCollabValue(
     downloadPending: false,
     reportChange: () => {},
     requestPublish: () => {},
-    refreshPresence: () => {},
     checkStatusNow: () => {},
   };
 }
@@ -11409,8 +11406,6 @@ describe('FileViewer tweaks toolbar', () => {
       workspaceContext: teamWorkspaceContext(),
       workspaceContextLoading: false,
       enabled: true,
-      member: { memberId: 'wm-1', name: 'Member', role: 'member' },
-      present: [],
       publishedVersion: 1,
       syncState: 'synced',
       viewerOnly: true,
@@ -11423,7 +11418,6 @@ describe('FileViewer tweaks toolbar', () => {
       downloadPending: false,
       reportChange: () => {},
       requestPublish: () => {},
-      refreshPresence: () => {},
       checkStatusNow: () => {},
     };
 

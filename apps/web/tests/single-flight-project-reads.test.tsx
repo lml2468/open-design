@@ -174,7 +174,6 @@ describe('project-open single-flight reads (Batch A §4.3)', () => {
   it('keeps CollabClient status polls independent of the shared one-shot read', async () => {
     const client = new CollabClient({
       projectId: 'sf-status-poll',
-      member: null,
       fetch: fetchStub as unknown as typeof fetch,
     });
     await fetchProjectCollabStatus('sf-status-poll');

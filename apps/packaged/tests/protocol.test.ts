@@ -456,7 +456,7 @@ describe('od:// proxy client-cancellation is not an upstream failure', () => {
     controller.abort();
 
     const response = await handleOdRequest(
-      new Request('od://app/api/projects/p-1/presence/leave', {
+      new Request('od://app/api/projects/p-1/collab/publish', {
         method: 'POST',
         signal: controller.signal,
       }),

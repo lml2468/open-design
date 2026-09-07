@@ -684,14 +684,14 @@ describe('startHubEventsSubscriber', () => {
         fetches += 1;
         return sseResponse([
           fetches === 1
-            ? 'event: ready\ndata: {"workspaceId":"w1","capabilities":["authoritative-project-presence-v1"]}\n\n'
+            ? 'event: ready\ndata: {"workspaceId":"w1","capabilities":["workspace-member-events-v1"]}\n\n'
             : 'event: ready\ndata: {"workspaceId":"w1","capabilities":[]}\n\n',
         ]);
       },
     });
 
     await second;
-    expect(capabilities).toEqual([['authoritative-project-presence-v1'], []]);
+    expect(capabilities).toEqual([['workspace-member-events-v1'], []]);
   });
 
   it('immediately re-resolves and reconnects when the active workspace changes', async () => {

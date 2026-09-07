@@ -226,7 +226,7 @@ const DIAGNOSTICS_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const CONFIG_STRING_FLAGS = new Set(['daemon-url', 'value', 'value-json']);
 const CONFIG_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const COLLAB_STRING_FLAGS = new Set([
-  'daemon-url', 'project', 'member', 'name', 'role', 'client-id', 'sequence', 'design-system',
+  'daemon-url', 'project', 'design-system',
   'workspace', 'workspace-member',
 ]);
 const COLLAB_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
@@ -1441,9 +1441,6 @@ function workspaceHeadersFromExplicitFlags(flags, required = false) {
 function printCollabHelp() {
   console.log(`Usage:
   od collab status <projectId> --workspace <id> --workspace-member <id> [--json]
-  od collab presence <projectId> --workspace <id> --workspace-member <id> [--json]
-  od collab heartbeat <projectId> --workspace <id> --workspace-member <id> --member <id> [--client-id <id> --sequence <n>] [--name <name>] [--role owner|admin|member] [--json]
-  od collab leave <projectId> --workspace <id> --workspace-member <id> --member <id> [--client-id <id> --sequence <n>] [--json]
   od collab changed <projectId> --workspace <id> --workspace-member <id> [--json]
   od collab publish <projectId> --workspace <id> --workspace-member <id> [--json]
   od collab share <projectId> --workspace <id> --workspace-member <id> [--json]
@@ -1453,9 +1450,7 @@ function printCollabHelp() {
   od collab share-design-system <designSystemId> --workspace <id> --workspace-member <id> [--json]
   od collab team-design-systems --workspace <id> --workspace-member <id> [--json]
 
-Team-edition collaboration: presence overlay + sync trigger. The
-client is authoritative about whether it is in a shared context, so it drives
-the trigger; the daemon coalesces author edits and flushes at a run boundary,
+Legacy Team-edition sync trigger. The daemon coalesces author edits and flushes at a run boundary,
 advancing the published head version members poll to learn when to pull.
 \`share\` is the team-share intent: it requests the project be published so
 members can pull it, and reports the sync state (local_only / pending_upload /
@@ -1469,17 +1464,10 @@ Options:
   --design-system <id>    Design system id for share-design-system.
   --workspace <id>        Explicit workspace id for request authorization.
   --workspace-member <id> Explicit workspace member id for request authorization.
-  --member <id>           Member id for the presence heartbeat / leave.
-  --client-id <id>        Stable id for one presence session.
-  --sequence <n>          Positive monotonic operation number for --client-id.
-  --name <name>           Display name attached to a heartbeat.
-  --role <role>           owner | admin | member.
   --json                  Emit raw JSON.
   --daemon-url <url>      Override daemon URL.
 
 Examples:
-  od collab presence p1 --workspace team-1 --workspace-member m-42 --json
-  od collab heartbeat p1 --workspace team-1 --workspace-member m-42 --member m-42 --name "Ma Shu" --role member
   od collab publish p1 --workspace team-1 --workspace-member m-42
   od collab share-resource plugins my-plugin --workspace team-1 --workspace-member m-42 --json
   od collab team-resources skills --workspace team-1 --workspace-member m-42 --json
@@ -1640,43 +1628,6 @@ async function runCollab(args) {
       const body = await request('POST', '/collab/pull');
       return emit(body, () => console.log(`pulled\tversion=${body?.version ?? '-'}`));
     }
-    case 'presence': {
-      const body = await request('GET', '/presence');
-      return emit(body, () => {
-        const present = Array.isArray(body?.present) ? body.present : [];
-        if (present.length === 0) return console.log('no members present');
-        for (const m of present) console.log(`${m.memberId}\t${m.name ?? '-'}\t${m.role ?? '-'}`);
-      });
-    }
-    case 'heartbeat': {
-      if (!flags.member) {
-        console.error('missing --member <id>');
-        process.exit(2);
-      }
-      const presenceSession = readCollabPresenceSessionFlags(flags);
-      const memberBody = {
-        memberId: flags.member,
-        ...presenceSession,
-        ...(flags.name ? { name: flags.name } : {}),
-        ...(flags.role ? { role: flags.role } : {}),
-      };
-      const body = await request('POST', '/presence/heartbeat', memberBody);
-      return emit(body, () => {
-        const present = Array.isArray(body?.present) ? body.present : [];
-        console.log(`ok\t${present.length} present`);
-      });
-    }
-    case 'leave': {
-      if (!flags.member) {
-        console.error('missing --member <id>');
-        process.exit(2);
-      }
-      const body = await request('POST', '/presence/leave', {
-        memberId: flags.member,
-        ...readCollabPresenceSessionFlags(flags),
-      });
-      return emit(body, () => console.log('left'));
-    }
     case 'changed': {
       const body = await request('POST', '/collab/changed');
       return emit(body, () => console.log('change queued'));
@@ -1691,25 +1642,6 @@ async function runCollab(args) {
   }
 }
 
-function readCollabPresenceSessionFlags(flags) {
-  const clientId = typeof flags['client-id'] === 'string'
-    ? flags['client-id'].trim()
-    : '';
-  const rawSequence = typeof flags.sequence === 'string'
-    ? flags.sequence.trim()
-    : '';
-  if (!rawSequence) return clientId ? { clientId } : {};
-  if (!clientId) {
-    console.error('--sequence requires --client-id <id>');
-    process.exit(2);
-  }
-  const sequence = Number(rawSequence);
-  if (!Number.isSafeInteger(sequence) || sequence <= 0) {
-    console.error('--sequence must be a positive safe integer');
-    process.exit(2);
-  }
-  return { clientId, sequence };
-}
 // ---------------------------------------------------------------------------
 // Subcommand: od research …
 // ---------------------------------------------------------------------------

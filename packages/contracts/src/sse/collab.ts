@@ -26,13 +26,6 @@ export interface CommentChangedSsePayload {
   at?: number;
 }
 
-/** A member joined / left this project's presence set. */
-export interface PresenceChangedSsePayload {
-  type: 'presence-changed';
-  projectId: string;
-  at?: number;
-}
-
 /** The project's name / settings / share metadata changed. */
 export interface ProjectMetadataChangedSsePayload {
   type: 'project-metadata-changed';
@@ -58,7 +51,6 @@ export interface ProjectContentTransferStateSsePayload {
  */
 export type CollabProjectInvalidationSsePayload =
   | CommentChangedSsePayload
-  | PresenceChangedSsePayload
   | ProjectMetadataChangedSsePayload;
 
 export const PROJECT_CONTENT_TRANSFER_STATE_EVENT =
@@ -67,7 +59,6 @@ export const PROJECT_CONTENT_TRANSFER_STATE_EVENT =
 /** The SSE `event:` names for the project-scoped collab invalidations. */
 export const COLLAB_PROJECT_INVALIDATION_EVENTS = [
   'comment-changed',
-  'presence-changed',
   'project-metadata-changed',
 ] as const;
 

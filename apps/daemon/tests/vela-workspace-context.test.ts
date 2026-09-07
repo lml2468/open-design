@@ -245,7 +245,6 @@ describe('createCachedWorkspaceDirectoryFetcher', () => {
 
     expect(readVelaLoginStatus(process.env, configuredEnv)).toMatchObject({
       loggedIn: true,
-      sessionState: 'reauth_required',
     });
   });
 
@@ -809,7 +808,7 @@ describe('createWorkspaceDirectoryAuthorityBroker', () => {
     await authority.read();
     authority.setRealtimeHealthy(true);
     // Model the production order pessimistically: status first every 5s, then
-    // heartbeat at each 10s boundary. Both are idempotent display/presence
+    // heartbeat at each 10s boundary. Both are idempotent display
     // reads of the same directory authority while the strict account event
     // stream remains healthy.
     for (now = 0; now <= 30_000; now += 5_000) {

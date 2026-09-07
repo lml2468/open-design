@@ -26,8 +26,6 @@ const DISABLED: CollabContextValue = {
   workspaceContextLoading: false,
   projectResourceAuthority: 'local',
   enabled: false,
-  member: null,
-  present: [],
   publishedVersion: null,
   syncState: null,
   viewerOnly: false,
@@ -41,7 +39,6 @@ const DISABLED: CollabContextValue = {
   materializationPending: false,
   reportChange: () => {},
   requestPublish: () => {},
-  refreshPresence: () => {},
   checkStatusNow: () => {},
 };
 

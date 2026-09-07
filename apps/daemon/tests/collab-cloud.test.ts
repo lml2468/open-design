@@ -1084,7 +1084,7 @@ describe('VelaCliCollabClient', () => {
     expect(shouldUseVelaCliCollabTransport({})).toBe(false);
   });
 
-  it('uses vela collab commands for comments, directory, and presence', async () => {
+  it('uses vela collab commands for comments and the member directory', async () => {
     const calls: string[][] = [];
     const workspaces: Array<string | undefined> = [];
     const client = createVelaCliCollabClient({
@@ -1100,20 +1100,6 @@ describe('VelaCliCollabClient', () => {
         if (args[0] === 'comment' && args[1] === 'pull') {
           return JSON.stringify({ latestSeq: 7, comments: [cloudComment('c1', { seq: 7 })] });
         }
-        if (args[0] === 'presence' && args[1] === 'heartbeat') {
-          return JSON.stringify({
-            viewers: [
-              {
-                memberId: 'm-self',
-                displayName: '麻薯',
-                role: 'owner',
-                filePath: 'Typography',
-                activity: { label: '正在评论 Typography' },
-                heartbeatAt: '2026-07-10T00:00:00.000Z',
-              },
-            ],
-          });
-        }
         return JSON.stringify({});
       },
     });
@@ -1127,54 +1113,10 @@ describe('VelaCliCollabClient', () => {
       latestSeq: 7,
       comments: [{ id: 'c1' }],
     });
-    await expect(client.heartbeatPresence('p1', {
-      member: { memberId: 'm-self', name: '麻薯', role: 'owner' },
-      clientId: 'client-1',
-      filePath: 'Typography',
-      activity: { label: '正在评论 Typography' },
-    }, 'team-1')).resolves.toEqual([
-      {
-        memberId: 'm-self',
-        name: '麻薯',
-        role: 'owner',
-        filePath: 'Typography',
-        activity: { label: '正在评论 Typography' },
-        heartbeatAt: '2026-07-10T00:00:00.000Z',
-      },
-    ]);
-
     expect(calls[0]).toEqual(['member', 'register', '--display-name', '麻薯', '--role', 'owner']);
     expect(calls[1]?.slice(0, 3)).toEqual(['comment', 'push', 'p1']);
     expect(JSON.parse(calls[1]![4]!)).toMatchObject({ id: 'c1' });
     expect(calls[2]).toEqual(['comment', 'pull', 'p1', '--since-seq', '0']);
-    expect(calls[3]).toEqual([
-      'presence',
-      'heartbeat',
-      'p1',
-      '--client-id',
-      'client-1',
-      '--display-name',
-      '麻薯',
-      '--file-path',
-      'Typography',
-      '--activity-json',
-      JSON.stringify({ label: '正在评论 Typography' }),
-    ]);
-    expect(workspaces).toEqual(['team-1', 'team-1', 'team-1', 'team-1']);
-  });
-
-  it('does not turn sparse presence fallback fields into display metadata', async () => {
-    const client = createVelaCliCollabClient({
-      run: async () => JSON.stringify({
-        viewers: [{
-          memberId: 'member-id-1',
-          displayName: 'member-id-1',
-        }],
-      }),
-    });
-
-    await expect(client.listPresence('p1', 'team-1')).resolves.toEqual([
-      { memberId: 'member-id-1' },
-    ]);
+    expect(workspaces).toEqual(['team-1', 'team-1', 'team-1']);
   });
 });

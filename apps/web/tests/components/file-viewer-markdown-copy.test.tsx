@@ -77,8 +77,6 @@ function renderWithWorkspace(ui: React.ReactElement, workspaceContext: Workspace
     workspaceContext,
     workspaceContextLoading: false,
     enabled: true,
-    member: null,
-    present: [],
     publishedVersion: null,
     syncState: 'synced',
     viewerOnly: false,
@@ -91,7 +89,6 @@ function renderWithWorkspace(ui: React.ReactElement, workspaceContext: Workspace
     downloadPending: false,
     reportChange: () => {},
     requestPublish: () => {},
-    refreshPresence: () => {},
     checkStatusNow: () => {},
   };
   return render(<CollabProvider value={collab}>{ui}</CollabProvider>);

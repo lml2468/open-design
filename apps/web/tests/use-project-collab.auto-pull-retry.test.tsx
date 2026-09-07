@@ -66,9 +66,6 @@ describe('useProjectCollab member auto-pull retry', () => {
           ownerMemberId: 'wm-owner',
         });
       }
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return response({ present: [{ memberId: 'wm-member' }] });
-      }
       return response({ ok: true });
     }) as typeof fetch;
 
@@ -93,9 +90,6 @@ describe('useProjectCollab member auto-pull retry', () => {
       const pathname = new URL(String(input), 'http://d.local').pathname;
       if (pathname.endsWith('/workspace/context')) return response({ context: MEMBER_CONTEXT });
       if (pathname.endsWith('/collab/status')) return firstStatus.promise;
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return response({ present: [{ memberId: 'wm-member' }] });
-      }
       if (pathname.endsWith('/collab/pull')) {
         pullCalls += 1;
         return response({ ok: true, version: 2 });
@@ -149,9 +143,6 @@ describe('useProjectCollab member auto-pull retry', () => {
           ownerMemberId: 'wm-owner',
         });
       }
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return response({ present: [{ memberId: 'wm-member' }] });
-      }
       if (pathname.endsWith('/collab/pull')) {
         pullCalls += 1;
         return response({ ok: true, version: null });
@@ -190,9 +181,6 @@ describe('useProjectCollab member auto-pull retry', () => {
           ownerMemberId: 'wm-owner',
         });
       }
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return response({ present: [{ memberId: 'wm-member' }] });
-      }
       if (pathname.endsWith('/collab/pull')) {
         pullCalls += 1;
         return response({ ok: true, version: 7 });
@@ -229,9 +217,6 @@ describe('useProjectCollab member auto-pull retry', () => {
           syncState: 'synced',
           ownerMemberId: 'wm-owner',
         });
-      }
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return response({ present: [{ memberId: 'wm-member' }] });
       }
       if (pathname.endsWith('/collab/pull')) {
         pullCalls += 1;
@@ -280,9 +265,6 @@ describe('useProjectCollab member auto-pull retry', () => {
           syncState: 'synced',
           ownerMemberId: 'wm-owner',
         });
-      }
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return response({ present: [{ memberId: 'wm-member' }] });
       }
       if (pathname.endsWith('/collab/pull')) {
         pullCalls += 1;
@@ -344,9 +326,6 @@ describe('useProjectCollab member auto-pull retry', () => {
       }
       if (pathname.endsWith('/collab/status') && projectId === 'p2') {
         return p2Status.promise;
-      }
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return response({ present: [{ memberId: 'wm-member' }] });
       }
       if (pathname.endsWith('/collab/pull') && projectId === 'p2') {
         p2PullCalls += 1;
@@ -426,9 +405,6 @@ describe('useProjectCollab member auto-pull retry', () => {
           syncState: 'synced',
           ownerMemberId: 'wm-owner',
         });
-      }
-      if (pathname.endsWith('/presence/heartbeat')) {
-        return response({ present: [{ memberId: 'wm-member' }] });
       }
       if (pathname.endsWith('/collab/pull')) {
         pullPaths.push(pathname);

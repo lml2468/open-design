@@ -148,7 +148,7 @@ describe('sidecar daemon proxy keep-alive resilience', () => {
     const daemon = await startFlakyDaemon();
     cleanups.push(daemon.close);
     const proxyPort = await startProxy(daemon.port);
-    const url = `http://127.0.0.1:${proxyPort}/api/projects/p1/presence/heartbeat`;
+    const url = `http://127.0.0.1:${proxyPort}/api/projects/p1/collab/publish`;
     const init = {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

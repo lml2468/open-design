@@ -198,8 +198,6 @@ const designSystem: DesignSystemSummary = {
 function sharedOwnerCollab(overrides?: Partial<ProjectCollab>): ProjectCollab {
   return {
     enabled: true,
-    member: { memberId: 'owner-1', name: 'Owner' },
-    present: [],
     publishedVersion: 3,
     syncState: 'pending_upload',
     viewerOnly: false,
@@ -212,7 +210,6 @@ function sharedOwnerCollab(overrides?: Partial<ProjectCollab>): ProjectCollab {
     downloadPending: false,
     reportChange: vi.fn(),
     requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
     checkStatusNow: checkStatusNowMock,
     applyContentTransferState: applyContentTransferStateMock,
     ...overrides,

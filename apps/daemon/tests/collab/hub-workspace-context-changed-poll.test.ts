@@ -96,7 +96,7 @@ describe('handleHubWorkspaceAccessRevoked', () => {
 
 // Scope-boundary guard (real source, not a re-implementation): the fix is
 // deliberately scoped to ONLY the `workspace-context-changed` hub event.
-// `team-projects-changed`, `comment-changed`, `presence-changed`,
+// `team-projects-changed`, `comment-changed`,
 // `billing-changed`, `project-metadata-changed`, and `project-content-changed`
 // already have their own handling and must not gain a redundant immediate
 // poll trigger as a side effect of this change (or of some later edit next to

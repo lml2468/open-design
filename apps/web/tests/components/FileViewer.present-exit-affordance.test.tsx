@@ -39,8 +39,6 @@ function collabValue(): CollabContextValue {
     workspaceContextLoading: false,
     projectResourceAuthority: 'workspace',
     enabled: false,
-    member: null,
-    present: [],
     publishedVersion: null,
     syncState: null,
     viewerOnly: false,
@@ -53,7 +51,6 @@ function collabValue(): CollabContextValue {
     downloadPending: false,
     reportChange: () => {},
     requestPublish: () => {},
-    refreshPresence: () => {},
     checkStatusNow: () => {},
   };
 }

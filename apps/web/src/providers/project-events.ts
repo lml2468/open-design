@@ -29,7 +29,7 @@ export type ProjectConversationCreatedEvent = ProjectConversationCreatedSsePaylo
 export type ProjectLiveArtifactEvent = LiveArtifactSsePayload | LiveArtifactRefreshSsePayload;
 
 // Collab realtime hop-2: project-scoped thin invalidation events multiplexed
-// onto this same stream (`comment-changed`, `presence-changed`,
+// onto this same stream (`comment-changed`,
 // `project-metadata-changed`). The consumer re-fetches the affected resource on
 // receipt — the event carries no body.
 export type ProjectCollabInvalidationEvent = CollabProjectInvalidationSsePayload;
@@ -176,7 +176,7 @@ export function createProjectEventsConnection(
       }
     });
     // Collab realtime hop-2: forward the project-scoped thin invalidation events
-    // (`comment-changed`, `presence-changed`, `project-metadata-changed`). The
+    // (`comment-changed`, `project-metadata-changed`). The
     // consumer re-fetches the affected resource — this only signals what changed.
     for (const eventName of COLLAB_PROJECT_INVALIDATION_EVENTS) {
       es.addEventListener(eventName, (evt) => {

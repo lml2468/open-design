@@ -1,16 +1,9 @@
-// Team collaboration daemon subsystem: bundles the author-side publish
-// scheduler and the presence tracker behind one factory so the server wires
-// them once. The resource hub itself is E's (the resource-hub owner) — this
-// holds only C's trigger + presence, talking to the hub through
-// ResourcePublishAdapter.
+// Legacy Team collaboration daemon subsystem. The resource hub itself is E's
+// (the resource-hub owner); this module retains only the author-side publish
+// scheduler while the remaining sync path is removed.
 
 import type { ProjectSyncState } from '@open-design/contracts';
 import { projectResourceIdFor } from '../integrations/vela-team-projects.js';
-import {
-  CollabPresenceTracker,
-  type CollabPresenceTrackerOptions,
-  type PresenceMember,
-} from './presence-tracker.js';
 import {
   CollabPublishScheduler,
   type CollabPublishSchedulerOptions,
@@ -71,7 +64,6 @@ export interface CollabRuntimeScheduler {
 }
 
 export interface CollabRuntime {
-  presence: CollabPresenceTracker;
   scheduler: CollabRuntimeScheduler;
   /** Workspace-context provider — the B-integration seam (identity/visibility). */
   workspaceContext: WorkspaceContextProvider;
@@ -142,8 +134,6 @@ export interface CreateCollabRuntimeOptions {
     reason: string;
     principal: ResourceHubPrincipal | null;
   }) => void;
-  /** Fired when a project's presence set changes (join/leave). */
-  onPresenceChange?: (result: { projectId: string; present: PresenceMember[] }) => void;
   onError?: (result: { projectId: string; error: unknown; principal: ResourceHubPrincipal | null }) => void;
   /**
    * Metadata-only catalog refresh failures have their own retry loop and must
@@ -773,13 +763,9 @@ export function createCollabRuntime(options: CreateCollabRuntimeOptions = {}): C
       );
     },
   };
-  const presenceOptions: CollabPresenceTrackerOptions = {};
-  if (options.onPresenceChange) presenceOptions.onChange = options.onPresenceChange;
-  const presence = new CollabPresenceTracker(presenceOptions);
   const teamResources = options.teamResources ?? createDevTeamResourceStateProvider();
 
   return {
-    presence,
     scheduler: schedulerFacade,
     workspaceContext,
     teamResources,
@@ -898,7 +884,6 @@ export function createCollabRuntime(options: CreateCollabRuntimeOptions = {}): C
       }
       pendingMetadataRefreshes.clear();
       scheduler.dispose();
-      presence.dispose();
     },
   };
 }

@@ -327,7 +327,7 @@ test('[P0] strict SSE health suppresses authority reads and bounds event storms 
   }
 });
 
-test('[P0] two isolated clients converge live content, presence, and owner unshare', async ({
+test('[P0] two isolated clients converge live content and owner unshare', async ({
   browser,
 }, testInfo) => {
   const hubRoot = testInfo.outputPath('fake-collab-hub');
@@ -437,11 +437,6 @@ test('[P0] two isolated clients converge live content, presence, and owner unsha
     await memberPage.getByTestId('workspace-focus-toggle').click();
     await expect(memberPage.getByTestId('workspace-focus-toggle')).toHaveCount(0);
     await expect(memberPage.getByTestId('chat-collapse-toggle')).toBeVisible();
-    const twoPersonPresence = memberPage.getByRole('group', {
-      name: /2 collaborators online/i,
-    });
-    await expect(twoPersonPresence).toHaveCount(0);
-
     await ownerPage.bringToFront();
     await ownerPage.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
     await expect(ownerPage.getByTestId('file-workspace')).toBeVisible({
@@ -449,21 +444,6 @@ test('[P0] two isolated clients converge live content, presence, and owner unsha
     });
     await expect(ownerPage.getByTestId('workspace-focus-toggle')).toHaveCount(0);
     await expect(ownerPage.getByTestId('chat-collapse-toggle')).toBeVisible();
-    await hub.waitForCommand(
-      (entry) =>
-        entry.memberId === OWNER.memberId &&
-        entry.args[0] === 'collab' &&
-        entry.args[1] === 'presence' &&
-        entry.args[2] === 'heartbeat' &&
-        entry.args[3] === projectId,
-      T.long,
-    );
-    await expect(twoPersonPresence).toBeVisible({
-      timeout: T.long,
-    });
-    await expect(twoPersonPresence.locator('[data-self="true"]')).toHaveCount(1);
-    await expect(twoPersonPresence.locator('[title]')).toHaveCount(2);
-
     await test.step('relay a member comment into the owner UI', async () => {
       const [ownerConversationId, memberConversationId] = await Promise.all([
         firstConversationId(ownerPage, projectId, OWNER),

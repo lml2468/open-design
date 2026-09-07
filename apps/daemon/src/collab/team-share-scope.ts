@@ -6,17 +6,17 @@
 // and answers `403 missing_principal` for any non-team one). A PERSONAL
 // workspace therefore has no team plane to act on, and a row that claims
 // `visibility: 'team'` while pinned to a personal workspace is not a scope at
-// all: it is a permanently-broken address. Every project-scoped collab call it
-// pins — presence heartbeat/list/leave, comments, publish — is answered
+// all: it is a permanently-broken address. Every project-scoped collaboration
+// call it pins — comments, publish, and synchronization — is answered
 // `403 missing_principal`, forever, and silently. The two clients then address
-// two different resource ids for the same project, so nothing syncs, presence is
-// empty on both sides, and comment counts drift apart.
+// two different resource ids for the same project, so content and comment state
+// drift apart.
 //
 // This module is the ONE place that names the contradiction. Three call sites
 // consume it:
 //   - the write path refuses to create such a row (routes/project/index.ts);
 //   - the read path refuses to PIN one, so the local selection — which normally
-//     holds the real team workspace — wins instead (server.ts presenceScopeFor);
+//     holds the real team workspace — wins instead;
 //   - startup reconciliation demotes the ones older builds already wrote.
 //
 // Detection needs one fact the row alone cannot carry: whether a workspace id is
@@ -113,8 +113,8 @@ export function refuseTeamShareScope(
  *
  * Same fixed priority as `resolveWorkspaceScope` (the project's pinned workspace
  * outranks the local selection, so a workspace switch on another device cannot
- * re-aim an open project's heartbeats) with one subtraction: a pinned workspace
- * that provably cannot host a team share is not a scope and does not outrank
+ * re-aim an open project's scoped operations) with one subtraction: a pinned
+ * workspace that provably cannot host a team share is not a scope and does not outrank
  * anything. Refusals are reported through `onRefused` rather than swallowed —
  * a silently wrong scope is precisely how this bug survived in the field.
  */

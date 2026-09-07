@@ -275,8 +275,6 @@ const conversation: Conversation = {
 function sharedMemberCollab(overrides?: Partial<ProjectCollab>): ProjectCollab {
   return {
     enabled: true,
-    member: { memberId: 'member-1', name: 'Member' },
-    present: [],
     publishedVersion: 3,
     syncState: 'synced',
     viewerOnly: true,
@@ -289,7 +287,6 @@ function sharedMemberCollab(overrides?: Partial<ProjectCollab>): ProjectCollab {
     downloadPending: false,
     reportChange: vi.fn(),
     requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
     checkStatusNow: vi.fn(),
     ...overrides,
   };
@@ -433,7 +430,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
 
     mockedUseProjectCollab.mockReturnValue(sharedMemberCollab({
       publishedVersion: 4,
-      present: [{ memberId: 'member-2', name: 'Teammate' }],
     }));
     view.rerender(projectViewElement());
 

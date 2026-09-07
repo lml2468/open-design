@@ -13,7 +13,7 @@ import { createSwrCache } from '../src/collab/swr-cache.js';
 //
 //   "Short-TTL, single-flight cache for the read-only DISPLAY path
 //    (GET /api/workspace/projects/team) ... Deliberately NOT used by
-//    resolveSharedProject below: the pull gate and comment/presence relays must
+//    resolveSharedProject below: the pull gate and comment relays must
 //    observe an unshare immediately, so those use the uncached exact lookup."
 //
 // The uncached lookup is meant for the relay/pull gate. The display route was

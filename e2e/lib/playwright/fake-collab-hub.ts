@@ -129,7 +129,6 @@ export async function startFakeCollabHub(options: {
   const projects = new Map<string, TeamProjectRecord>();
   const resources = new Map<string, ResourceRecord>();
   const comments = new Map<string, Array<Record<string, unknown>>>();
-  const presence = new Map<string, Map<string, Record<string, unknown>>>();
   const subscribers = new Set<Subscriber>();
   const blockedEventMembers = new Set<string>();
   const removedMembers = new Set<string>();
@@ -271,14 +270,12 @@ export async function startFakeCollabHub(options: {
             workspaceId,
             capabilities: options.strictAuthorityEvents
               ? [
-                  'authoritative-project-presence-v1',
                   'workspace-member-events-v1',
                   'workspace-event-listener-status-v1',
                   'billing-revision-clocks-v1',
                   'workspace-directory-events-v1',
                 ]
               : [
-                  'authoritative-project-presence-v1',
                   'workspace-directory-events-v1',
                 ],
             ...(options.strictAuthorityEvents ? listenerStatus : {}),
@@ -324,7 +321,6 @@ export async function startFakeCollabHub(options: {
           resources,
           resourcesRoot,
           comments,
-          presence,
           accountBilling,
           workspaceBilling,
           workspaceBalances,
@@ -399,11 +395,6 @@ export async function startFakeCollabHub(options: {
     emitEvent: emit,
     removeMember: (memberId) => {
       removedMembers.add(memberId);
-      for (const roster of presence.values()) {
-        for (const [clientId, entry] of roster) {
-          if (entry.memberId === memberId) roster.delete(clientId);
-        }
-      }
       emit({ type: 'workspace-context-changed', workspaceId: options.workspaceId });
     },
     setMemberRole: (memberId, role) => {
@@ -491,7 +482,6 @@ async function handleCommand(input: {
   resources: Map<string, ResourceRecord>;
   resourcesRoot: string;
   comments: Map<string, Array<Record<string, unknown>>>;
-  presence: Map<string, Map<string, Record<string, unknown>>>;
   accountBilling: Map<
     string,
     { membershipTier: string; balanceUsd: string; revision: number }
@@ -874,7 +864,6 @@ function handleCollabCommand(input: {
   workspaceId: string;
   options: { clients: readonly ClientIdentity[] };
   comments: Map<string, Array<Record<string, unknown>>>;
-  presence: Map<string, Map<string, Record<string, unknown>>>;
   memberRoles: Map<string, ClientIdentity['role']>;
   removedMembers: Set<string>;
   emit: (event: HubEvent) => void;
@@ -899,53 +888,6 @@ function handleCollabCommand(input: {
         role: flag(input.args, '--role') ?? input.identity.role,
       },
     });
-  }
-  if (domain === 'presence' && projectId) {
-    const roster = input.presence.get(projectId) ?? new Map();
-    input.presence.set(projectId, roster);
-    const clientId = flag(input.args, '--client-id') ?? input.identity.memberId;
-    if (command === 'heartbeat') {
-      const joined = !roster.has(clientId);
-      roster.set(clientId, {
-        memberId: input.identity.memberId,
-        displayName: flag(input.args, '--display-name') ?? input.identity.name,
-        role: input.identity.role,
-        filePath: flag(input.args, '--file-path') ?? null,
-        heartbeatAt: new Date().toISOString(),
-      });
-      if (joined) {
-        input.emit({
-          type: 'presence-changed',
-          workspaceId: input.workspaceId,
-          projectId,
-        });
-      }
-    } else if (command === 'leave') {
-      const explicitClientId = flag(input.args, '--client-id');
-      let removed = roster.delete(clientId);
-      // Preserve compatibility with a legacy leave that has no session lease:
-      // it means "this member left everywhere". Modern clients always send a
-      // client id, so closing one tab must not evict another tab for the same
-      // member.
-      if (!explicitClientId) {
-        for (const [key, entry] of roster) {
-          if (entry.memberId === input.identity.memberId) {
-            roster.delete(key);
-            removed = true;
-          }
-        }
-      }
-      if (removed) {
-        input.emit({
-          type: 'presence-changed',
-          workspaceId: input.workspaceId,
-          projectId,
-        });
-      }
-    } else if (command !== 'list') {
-      throw new Error(`unsupported presence command: ${input.args.join(' ')}`);
-    }
-    return jsonLine({ viewers: [...roster.values()] });
   }
   if (domain === 'comment' && command === 'pull') {
     const sinceSeq = Number(flag(input.args, '--since-seq') ?? 0);

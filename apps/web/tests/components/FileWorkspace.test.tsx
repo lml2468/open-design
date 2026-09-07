@@ -320,8 +320,6 @@ function collabValue(workspaceContext: WorkspaceCollabContext): CollabContextVal
     workspaceContext,
     workspaceContextLoading: false,
     enabled: false,
-    member: null,
-    present: [],
     publishedVersion: null,
     syncState: null,
     viewerOnly: false,
@@ -334,7 +332,6 @@ function collabValue(workspaceContext: WorkspaceCollabContext): CollabContextVal
     downloadPending: false,
     reportChange: () => {},
     requestPublish: () => {},
-    refreshPresence: () => {},
     checkStatusNow: () => {},
   };
 }
