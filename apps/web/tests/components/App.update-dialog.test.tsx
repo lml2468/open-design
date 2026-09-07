@@ -35,8 +35,8 @@ vi.mock('../../src/router', () => ({
 }));
 
 vi.mock('../../src/components/EntryNavRail', () => ({
-  WorkspaceTopRightAccountCluster: ({ updaterSlot }: { updaterSlot?: ReactNode }) => (
-    <div data-testid="project-top-right-account-cluster">{updaterSlot}</div>
+  ProjectTopRightControls: ({ updaterSlot }: { updaterSlot?: ReactNode }) => (
+    <div data-testid="project-top-right-controls">{updaterSlot}</div>
   ),
 }));
 
@@ -245,7 +245,7 @@ describe('App updater dialog integration', () => {
     expect(unsubscribeOpenDialog).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the update-ready rocket in the project-detail account cluster', async () => {
+  it('shows the update-ready rocket in the project-detail controls', async () => {
     routeState.current = { kind: 'project', projectId: 'project-1' };
     restoreHost = installMockOpenDesignHost({
       host: {
@@ -261,7 +261,7 @@ describe('App updater dialog integration', () => {
 
     render(<App />);
 
-    expect(await screen.findByTestId('project-top-right-account-cluster')).toBeTruthy();
+    expect(await screen.findByTestId('project-top-right-controls')).toBeTruthy();
     expect(await screen.findByTestId('entry-nav-updater')).toBeTruthy();
     expect(screen.getByTestId('updater-rocket-glyph')).toBeTruthy();
   });

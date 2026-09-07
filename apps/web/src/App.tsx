@@ -66,7 +66,7 @@ import {
   removeWorkspaceProjectTabs,
   WorkspaceTabsBar,
 } from './components/WorkspaceTabsBar';
-import { WorkspaceTopRightAccountCluster } from './components/EntryNavRail';
+import { ProjectTopRightControls } from './components/EntryNavRail';
 import { ProjectWorkspaceRecoveryTip } from './components/ProjectWorkspaceRecoveryTip';
 import {
   DesignSystemCreationFlow,
@@ -4869,25 +4869,16 @@ function AppInner() {
           onboardingCompleted={config.onboardingCompleted === true}
           identityScopeKey={workspaceTabsIdentityScopeKey}
         />
-        {/* The account avatar keeps its home-view spot (the top-right actions
-            host inside the tabs chrome) while a project tab is open, even
-            though EntryShell — the cluster's usual owner — is unmounted here.
-            Home and the other entry views mount theirs through EntryNavRail;
-            the routes are mutually exclusive, so exactly one is on screen. */}
+        {/* EntryShell is unmounted while a project is open, so the project route
+            mounts the shared GitHub and updater controls into the tabs chrome. */}
         {route.kind === 'project' ? (
-          <WorkspaceTopRightAccountCluster
-            onOpenSettings={openSettings}
+          <ProjectTopRightControls
             updaterSlot={
               <UpdaterPopup
                 allowSilentUpdates={config.allowSilentUpdates}
                 silentUpdatePreferenceReady={daemonAppConfigReady}
                 onAllowSilentUpdatesChange={handleSilentUpdatePreferenceChange}
               />
-            }
-            workspaceContextOverride={
-              activeProject?.workspaceId
-                ? activeProjectWorkspaceContext
-                : undefined
             }
           />
         ) : null}

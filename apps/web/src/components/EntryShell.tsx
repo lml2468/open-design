@@ -86,13 +86,6 @@ import {
   buildProjectSearchCatalog,
   ProjectSearchModal,
 } from './ProjectSearchModal';
-import {
-  RailAccountRecoveryTip,
-  RailAccountSyncTip,
-} from './RailAccountStatus';
-import {
-  resolveEntryRailAccountFooterState,
-} from './entry-rail-account-state';
 import { LibrarySection } from './LibrarySection';
 import { UpdaterPopup } from './UpdaterPopup';
 import { WhatsNewPopup } from './WhatsNewPopup';
@@ -588,16 +581,6 @@ export function EntryShell({
   // unresolved or unavailable authority into an anonymous, unbound create.
   const workspaceContextState = useWorkspaceContext();
   const { context: workspaceContext, loading: workspaceLoading } = workspaceContextState;
-  const accountFooterState = resolveEntryRailAccountFooterState(workspaceContextState);
-  const railWorkspaceContext = accountFooterState === 'sign-in'
-    ? null
-    : workspaceContext;
-  let accountFooterNotice: ReactNode = null;
-  if (accountFooterState === 'syncing') {
-    accountFooterNotice = <RailAccountSyncTip />;
-  } else if (accountFooterState === 'recovering') {
-    accountFooterNotice = <RailAccountRecoveryTip />;
-  }
   const workspaceContextRef = useRef(workspaceContext);
   workspaceContextRef.current = workspaceContext;
   const workspaceContextStateRef = useRef(workspaceContextState);
@@ -1316,16 +1299,8 @@ export function EntryShell({
     changeView('home');
   }
 
-  // #5517: the GitHub/Discord/X/mail badges and the settings chip leave the
-  // rail footer. Socials live in the account menu, while settings stays
-  // reachable through either the account menu or the signed-out rail item.
-  //
-  // The updater host has no topbar to live in any more (the rail toggle is the
-  // pinned Home tab in the workspace tabs bar), so the rail owns it: it rides
-  // the floating account row immediately after the avatar chip, falling back
-  // to the rail footer in the signed-out shell. `EntryNavRail` decides which —
-  // the shell only supplies the host, which renders nothing until the real
-  // updater reports a downloaded, unopened installer.
+  // The rail owns the shared top-right updater host. It remains mounted while
+  // idle so a downloaded update can appear without remounting the shell.
   const updaterSlot = (
     <UpdaterPopup
       allowSilentUpdates={config.allowSilentUpdates}
@@ -1336,11 +1311,6 @@ export function EntryShell({
       }
     />
   );
-
-  // #5517 removes the entry top-bar settings cog: the nav-rail account menu owns
-  // the settings entry (EntryNavRail onOpenSettings), so the top strip no longer
-  // carries a redundant one.
-
 
   if (view === 'onboarding') {
     return (
@@ -1405,15 +1375,8 @@ export function EntryShell({
           }}
           onOpenSearch={() => setProjectSearchOpen(true)}
           open={railOpen}
-          context={railWorkspaceContext}
           onOpenSettings={onOpenSettings}
-          onInvite={() => changeView('members')}
           updaterSlot={updaterSlot}
-          // A loading or unavailable workspace read is not proof of sign-out.
-          // Keep the account slot neutral until Cloud answers successfully;
-          // only a successful null context (or known local sign-out) may show
-          // the sign-in card.
-          footerNotice={accountFooterNotice}
           /* Same catalog and same opener the 全部项目 grid uses below, so the
              rail's 最近浏览过 list and that view's 最近浏览过 tab are two views of
              ONE list rather than two sorts of two lists. */
@@ -1682,12 +1645,7 @@ export function EntryShell({
                     designSystems={designSystems}
                     limit={1000}
                     heading={t('entry.navDrafts')}
-                    space="drafts"
-                    isSharedProject={isSharedProject}
-                    onProjectShared={markProjectShared}
-                    onProjectShareFailed={markProjectShareFailed}
-                    onProjectUnshared={markProjectUnshared}
-                    projectOwnerMemberIds={teamProjectOwnerMemberIds}
+                    space="projects"
                     onOpen={(id) => onOpenProject(id)}
                     onViewAll={() => {}}
                     onDelete={onDeleteProject}
@@ -1720,19 +1678,11 @@ export function EntryShell({
                     designSystems={designSystems}
                     limit={1000}
                     heading={t('entry.navAllProjects')}
-                    space="team"
-                    isSharedProject={isSharedProject}
-                    onProjectShared={markProjectShared}
-                    onProjectShareFailed={markProjectShareFailed}
-                    onProjectUnshared={markProjectUnshared}
-                    projectOwnerMemberIds={teamProjectOwnerMemberIds}
-                    openingProjectId={pullingProjectId}
+                    space="projects"
                     onOpen={handleOpenAllProjects}
                     onViewAll={() => {}}
                     onDelete={onDeleteProject}
                     onRename={onRenameProject}
-                    canAssignInviteRoles={workspaceContext?.permissions.canInviteMembers === true}
-                    canManageProjectCollection={workspaceContext?.permissions.canShareProjects === true}
                   />
                 </div>
               )

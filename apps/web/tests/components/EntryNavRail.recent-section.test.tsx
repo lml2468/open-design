@@ -5,22 +5,11 @@
 // grid reads) and opening through the shell's pull-first opener.
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EntryNavRail } from '../../src/components/EntryNavRail';
 import { I18nProvider } from '../../src/i18n';
 import type { Project } from '../../src/types';
-
-const signedInContext = {
-  workspaceId: 'ws-personal',
-  workspaceType: 'personal',
-  workspaceMemberId: 'wm-1',
-  role: 'owner',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  permissions: { canInviteMembers: false, canViewWorkspaceSettings: false },
-} as unknown as WorkspaceCollabContext;
 
 function project(id: string, updatedAt: number, name = `Project ${id}`): Project {
   return {
@@ -86,7 +75,6 @@ function renderRail(overrides: Partial<Parameters<typeof EntryNavRail>[0]> = {})
         onViewChange={() => {}}
         onNewProject={() => {}}
         open
-        context={signedInContext}
         recentProjects={Array.from({ length: 10 }, (_, index) =>
           project(`p${index + 1}`, 1_000 - index))}
         onOpenRecentProject={onOpen}
@@ -122,11 +110,8 @@ describe('EntryNavRail 最近浏览过 section', () => {
     );
   });
 
-  it('renders nothing without projects or without a cloud identity', () => {
+  it('renders nothing without projects', () => {
     renderRail({ recentProjects: [] });
-    expect(screen.queryByTestId('entry-nav-recent-toggle')).toBeNull();
-    cleanup();
-    renderRail({ context: null });
     expect(screen.queryByTestId('entry-nav-recent-toggle')).toBeNull();
   });
 

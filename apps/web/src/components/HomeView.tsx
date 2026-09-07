@@ -3203,11 +3203,6 @@ export function HomeView({
         projects={projects}
         designSystems={designSystems}
         heading={t('recentProjects.title')}
-        {...(isSharedProject ? { isSharedProject } : {})}
-        {...(onProjectShared ? { onProjectShared } : {})}
-        {...(onProjectShareFailed ? { onProjectShareFailed } : {})}
-        {...(onProjectUnshared ? { onProjectUnshared } : {})}
-        projectOwnerMemberIds={homeProjectOwnerMemberIds}
         limit={1000}
         {...(projectsLoading !== undefined ? { loading: projectsLoading } : {})}
         onOpen={(id) => {

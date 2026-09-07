@@ -397,11 +397,11 @@
   left: 0;
 }
 
-/* Standalone updater slot (top-right cluster): the rocket rides right after
-   the account capsule, hugging the viewport's right edge, so the side-flyout
-   base rule would push the panel off-screen (and `bottom: 0` would grow it
+/* Standalone updater slot (top-right cluster): the rocket hugs the viewport's
+   right edge, so the side-flyout base rule would push the panel off-screen
+   (and `bottom: 0` would grow it
    past the top). Open DOWNWARD instead, right-aligned to the host. */
-.entry-top-right-cluster > .entry-nav-rail__account-updater .entry-updater-menu .updater-popup {
+.entry-top-right-cluster > .entry-nav-rail__updater .entry-updater-menu .updater-popup {
   top: calc(100% + 10px);
   bottom: auto;
   right: 0;

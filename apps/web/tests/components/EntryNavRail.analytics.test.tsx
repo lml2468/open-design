@@ -36,7 +36,6 @@ describe('EntryNavRail analytics', () => {
           onOpenSearch={() => {}}
           onOpenSettings={() => {}}
           open
-          context={null}
         />
       </I18nProvider>,
     );

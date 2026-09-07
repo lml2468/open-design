@@ -1,26 +1,5 @@
-// Team-edition entry navigation rail (Lovart/Manus-style labeled column).
-//
-// Structure — faithfully ported from the design demo
-// (origin/demo/workspace-team-features) but wired to the REAL workspace context
-// (`GET /api/workspace/context`, shared via `useWorkspaceContext`), never the
-// demo's hardcoded 琼羽 / Refly / 800 placeholders:
-//
-//   • Account section (top) — real `context.displayName` + an account menu
-//     (settings / GitHub help / feature request / socials / sign out — theme and
-//     language live in 设置·通用 only, matching #5517).
-//     No header block when there is no cloud identity (context === null) —
-//     the rail starts at the search box; expand/collapse lives in the
-//     workspace tabs bar's pinned Home toggle.
-//   • Search box (opens the ⌘K project search palette via `onOpenSearch`).
-//   • 最近 (Recents) → home, Community → community.
-//   • Team block (only when `context.workspaceType === 'team'`): an inline team
-//     switcher + the team destinations. In-client views: drafts / all projects /
-//     design systems / 扩展 (plugins). Member management lives in B's vela/web
-//     console, so 成员 / 数据大盘 / Workspace 设置 link OUT to it (target=_blank),
-//     derived from `context.workspaceSettingsUrl`.
-//
-// The gate is `workspaceType` + permissions, never the billing/provider axis — a
-// personal_byok workspace still has full team features.
+// Local project navigation rail. Team collaboration is exposed from each
+// project's Collaboration panel rather than from a global Workspace shell.
 
 import {
   useCallback,
@@ -29,38 +8,18 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type Ref,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { coalescedGet, evictCoalescedGet } from '../lib/coalesced-get';
-import {
-  workspaceSeatCapacityState,
-  type WorkspaceActiveResponse,
-  type WorkspaceCollabContext,
-  type WorkspaceDirectoryItem,
-  type WorkspaceDirectoryResponse,
-} from '@open-design/contracts';
 import { Icon } from './Icon';
 import { GITHUB_STARS_FALLBACK_LABEL, formatStars, useGithubStars } from './useGithubStars';
-import { InviteDialog } from './InviteDialog';
 import { RailRecentRow } from './entry-nav-rail/RailRecentRow';
 import { useProjectRunSummaries } from '../hooks/useProjectRunStatuses';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
 import type { Project } from '../types';
 import { isRtlLocale, useI18n } from '../i18n';
-import { useDismissOnOutsideInteraction } from '../hooks/useDismissOnOutsideInteraction';
 import { ENTRY_RAIL_TOGGLE_EVENT } from './entryRailBridge';
-import {
-  beginWorkspaceScopedRead,
-  notifyTeamProjectsChanged,
-  notifyWorkspaceBillingRefresh,
-  notifyWorkspaceContextRefresh,
-  useWorkspaceContext,
-  workspaceIdentityCacheKey,
-} from '../collab/useWorkspaceContext';
-import { useWorkspaceInvalidation } from '../collab/workspace-events';
 import type { EntryHomeView } from '../router';
 import type {
   AccountMenuClickProps,
@@ -70,116 +29,18 @@ import { useAnalytics } from '../analytics/provider';
 import {
   trackAccountMenuClick,
   trackEntryNavigationClick,
-  trackWorkspaceSurfaceView,
-  trackWorkspaceSwitcherClick,
-  trackWorkspaceSwitchResult,
 } from '../analytics/events';
 import {
   entryViewToTracking,
-  stableAnalyticsErrorCode,
   workspaceAnalyticsDimensions,
 } from '../analytics/workspace';
 import { workspaceChromeAccountActionsHost } from './workspaceChromeActions';
 
 const REPO_URL = 'https://github.com/nexu-io/open-design';
-const GITHUB_HELP_URL = `${REPO_URL}/issues/new`;
-const GITHUB_FEATURE_URL = `${REPO_URL}/pulls`;
 const DISCORD_URL = 'https://discord.gg/mHAjSMV6gz';
 const X_URL = 'https://x.com/OpenDesignHQ';
 const CONTACT_EMAIL_URL = 'mailto:support@open-design.ai';
-const OPEN_DESIGN_PRICING_URL = 'https://open-design.ai/pricing/';
 const externalLinkProps = { target: '_blank', rel: 'noreferrer noopener' } as const;
-
-// Last directory this shell successfully read. `coalescedGet` only collapses
-// CONCURRENT reads, so without this every open of the switcher started from an
-// empty list and showed a loading row before the same names reappeared. Kept at
-// module scope so it survives the rail unmounting (returning from a project).
-//
-// Read it through `attributableWorkspaceDirectory` — never directly. The cache is
-// deliberately long-lived, which is also what made it outlive the ACCOUNT it was
-// filled under.
-let cachedWorkspaceDirectory: WorkspaceDirectoryItem[] | null = null;
-
-/** Test seam: clear the module-level directory cache between tests. */
-export function resetWorkspaceDirectoryCache(): void {
-  cachedWorkspaceDirectory = null;
-}
-
-/**
- * Whether a directory list may be shown to `context`.
- *
- * `GET /api/workspace/directory` answers "which workspaces can the SIGNED-IN
- * ACCOUNT see", so it is exactly the read `workspaceIdentityCacheKey` warns
- * about: a cache kept across an identity change answers the next identity with
- * the previous one's data. Nothing invalidated this one — the only caller of
- * `resetWorkspaceDirectoryCache` has ever been tests — so signing in as a
- * different account kept the previous account's workspace names on screen, and
- * kept them CONFIDENTLY, because a non-empty cache also suppresses the loading
- * row.
- *
- * The context carries no account id to key on. What every directory item DOES
- * carry is the `workspaceMemberId` of the membership that produced it, and a
- * membership id names exactly one (account, workspace) pair. So a list is
- * attributable to `context` precisely when it contains the caller's OWN
- * membership:
- *
- *   • A different account — even one sharing the same team workspace — holds a
- *     different member id for it, so this returns false. The switcher then falls
- *     back to the single entry it can still attribute — the active workspace,
- *     named from the caller's OWN context — until its own read lands. (Not the
- *     `role="status"` loading row: that only renders when there is no entry at
- *     all, which cannot happen while a context exists.)
- *   • The same account moving between its own workspaces still returns true:
- *     the membership it switched into was already in the list. That is the
- *     flash-free reopen the cache exists for, and it survives this fix.
- *
- * A false positive would require the list to already contain this caller's own
- * membership — that is, to have been read by this very account.
- */
-function workspaceDirectoryBelongsTo(
-  items: ReadonlyArray<{
-    workspaceId: string;
-    workspaceMemberId?: string | null;
-  }> | null,
-  context: WorkspaceCollabContext | null,
-): boolean {
-  if (!items || items.length === 0 || !context) return false;
-  const memberId = context.workspaceMemberId?.trim();
-  if (!memberId) return false;
-  return items.some(
-    (item) =>
-      item.workspaceId === context.workspaceId && item.workspaceMemberId?.trim() === memberId,
-  );
-}
-
-/**
- * Return only directory state attributable to the identity being rendered.
- *
- * This check must happen during render. Clearing stale component state from an
- * identity-change effect is one commit too late: when two accounts share a
- * workspace id, the incoming account otherwise paints the outgoing account's
- * cached workspace name for one frame before the effect runs.
- */
-export function workspaceDirectoryForIdentity<
-  T extends {
-    workspaceId: string;
-    workspaceMemberId?: string | null;
-  },
->(
-  items: readonly T[],
-  context: WorkspaceCollabContext | null,
-): readonly T[] {
-  return workspaceDirectoryBelongsTo(items, context) ? items : [];
-}
-
-/** The cached switcher list, or null when it cannot be attributed to `context`. */
-function attributableWorkspaceDirectory(
-  context: WorkspaceCollabContext | null,
-): WorkspaceDirectoryItem[] | null {
-  return workspaceDirectoryBelongsTo(cachedWorkspaceDirectory, context)
-    ? cachedWorkspaceDirectory
-    : null;
-}
 
 // The rail's destination ids are the entry-shell home views (kept in sync with
 // the router so `navigate({ kind: 'home', view })` type-checks for every item).
@@ -194,25 +55,18 @@ interface Props {
   newProjectDisabled?: boolean;
   /** When false the rail is collapsed (hidden off-canvas) on the entry view. */
   open: boolean;
-  /** Extra content for the top-right chrome cluster, rendered left of the account module. */
+  /** Extra content rendered before the shared top-right controls. */
   topRightSlot?: ReactNode;
-  /** The one shared workspace context; null → local (no cloud identity) state. */
-  context: WorkspaceCollabContext | null;
   /** Open the app settings dialog (optionally on a specific section). */
   onOpenSettings?: (section?: EntrySettingsSection) => void;
-  /** Open the members / invite slot (B's InviteDialog). */
-  onInvite?: () => void;
   /**
    * The update-ready host (`UpdaterPopup`), which renders nothing until the
    * updater reports a downloaded, unopened installer.
    *
    * It is an independent control in the top-right chrome cluster
-   * (`.entry-nav-rail__account-updater`), immediately after the account capsule
-   * when one is present.
+   * (`.entry-nav-rail__updater`).
    */
   updaterSlot?: ReactNode;
-  /** Optional notice shown above the footer controls. */
-  footerNotice?: ReactNode;
   /** Projects for the rail's 最近浏览过 section (per product: 在插件下边新增一个
    *  类型). The SAME catalog and the SAME order 全部项目's 最近浏览过 tab shows —
    *  EntryShell hands over the one it already feeds that grid, so the two can
@@ -361,14 +215,12 @@ function RailRecentSection({
   onOpen,
   onRename,
   onDelete,
-  workspaceContext,
   label,
 }: {
   projects: Project[];
   onOpen?: (id: string) => void | Promise<unknown>;
   onRename?: (id: string, name: string) => void;
   onDelete?: (id: string) => Promise<boolean | void> | boolean | void;
-  workspaceContext?: WorkspaceCollabContext | null;
   label: string;
 }) {
   const [open, setOpen] = useState(readStoredRecentOpen);
@@ -386,7 +238,6 @@ function RailRecentSection({
   const runStatusProjectIds = useMemo(() => items.map((item) => item.id), [items]);
   const runSummaryByProjectId = useProjectRunSummaries(runStatusProjectIds, {
     enabled: open,
-    workspaceContext,
   });
   const [seenDone, setSeenDone] = useState<AcknowledgedRuns>(readStoredSeenDone);
 
@@ -466,7 +317,6 @@ function RailRecentSection({
                 <li key={project.id}>
                   <RailRecentRow
                     project={project}
-                    workspaceContext={workspaceContext}
                     runStatus={acknowledged ? undefined : status}
                     onOpen={openProject}
                     onRename={onRename}
@@ -482,214 +332,26 @@ function RailRecentSection({
   );
 }
 
-function handleWorkspaceMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
-  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-  const items = Array.from(
-    event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)'),
-  );
-  if (items.length === 0) return;
-
-  const currentIndex = items.indexOf(document.activeElement as HTMLElement);
-  let nextIndex: number;
-  if (event.key === 'Home') {
-    nextIndex = 0;
-  } else if (event.key === 'End') {
-    nextIndex = items.length - 1;
-  } else if (event.key === 'ArrowUp') {
-    nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
-  } else {
-    nextIndex = currentIndex < 0 || currentIndex >= items.length - 1 ? 0 : currentIndex + 1;
-  }
-
-  event.preventDefault();
-  items[nextIndex]?.focus();
-}
-
-// Team management (members, dashboard, settings) lives in B's vela/web console,
-// not the local client. We link out to it, deriving the section path from the one
-// workspace-settings URL the context carries. Best-effort: swap/append the section
-// segment, falling back to the raw settings URL when the path can't be rewritten.
-export function teamConsoleUrl(
-  base: string,
-  section:
-    | 'members'
-    | 'dashboard'
-    | 'settings'
-    | 'create-team'
-    | 'invite',
-): string {
-  // B's console routes: members live at /team and workspace creation/invites
-  // are handled by the dashboard. The settings URL the context carries
-  // includes the ?workspaceId deep-link param; URL parsing preserves it, so
-  // the target page opens on the SAME workspace this client is pinned to (B
-  // asks the user to confirm if their account-level selection differs).
-  const path =
-    section === 'members' ? 'team'
-    : section === 'create-team' || section === 'invite' ? 'dashboard'
-    : section;
-  try {
-    const url = new URL(base);
-    const segments = url.pathname.split('/').filter(Boolean);
-    if (segments.length > 0 && segments[segments.length - 1] === 'settings') {
-      segments[segments.length - 1] = path;
-    } else {
-      segments.push(path);
-    }
-    url.pathname = `/${segments.join('/')}`;
-    // Vela owns the final invite action because only its dashboard has the
-    // authoritative subscription + seat state needed to choose between
-    // upgrading to Team, buying seats, and sending an invite. `invite=auto`
-    // is consumed one-shot by that dashboard and then removed from the URL.
-    if (section === 'invite') url.searchParams.set('invite', 'auto');
-    // recvq725Kx0rM4 / recvqfXzHtY5wg: `create-team` opens B's create-workspace
-    // dialog via `?workspace=create`. A prior fix (675878434) removed this,
-    // reasoning that B's route source had no handler for it — true of the repo
-    // checkout that fix read at the time, but B's `sidebar-actions.tsx` (PR
-    // #905, commit 501c0069, authored 2026-07-21) added exactly this handler,
-    // and it is live on `origin/feat/workspace-team` (the branch the
-    // feature-test deployment serves) as of this fix. Re-verified directly
-    // against that branch's current source before restoring the param.
-    if (section === 'create-team') url.searchParams.set('workspace', 'create');
-    return url.toString();
-  } catch {
-    return base;
-  }
-}
-
-/**
- * Shared destination for every generic 「升级」/「升级套餐」 affordance. Pricing
- * owns comparison; selecting a concrete card there is what hands checkout to
- * Cloud. A resolved workspace without billing permission still returns null.
- */
-export function workspaceUpgradeUrl(
-  context: WorkspaceCollabContext | null | undefined,
-): string | null {
-  // Billing is owner-only and requires an authoritative workspace identity.
-  if (context && context.permissions?.canManageBilling !== true) return null;
-  if (!context) return null;
-  return OPEN_DESIGN_PRICING_URL;
-}
-
-export type WorkspaceInviteTarget =
-  | { kind: 'local' }
-  | { kind: 'vela'; url: string }
-  | { kind: 'unavailable' };
-
-/**
- * Whether this member should discover the invite flow.
- *
- * Direct invites and billing recovery are separate capabilities. A Personal
- * Free owner (or a full Team owner) can still enter Vela's upgrade/seat flow
- * without direct invite capability, but an admin never acquires billing power
- * from role alone. Unknown capacity remains usable for a member with explicit
- * invite permission; the invite API is still the authority if the plan is full.
- */
-export function canAccessWorkspaceInviteFlow(
-  context: WorkspaceCollabContext | null | undefined,
-): boolean {
-  if (
-    !context ||
-    context.memberStatus !== 'active' ||
-    context.lifecycleState !== 'active' ||
-    (context.role !== 'owner' && context.role !== 'admin')
-  ) {
-    return false;
-  }
-
-  const canInviteMembers = context.permissions?.canInviteMembers === true;
-  const canManageBilling = context.permissions?.canManageBilling === true;
-  const needsTeamUpgrade =
-    context.billingState === 'free' || context.billingState === 'inactive';
-  if (needsTeamUpgrade) {
-    return context.role === 'owner' && canManageBilling;
-  }
-  if (context.workspaceType === 'personal') return canInviteMembers;
-
-  const isSeatFull = workspaceSeatFull(context);
-  if (isSeatFull === undefined) return canInviteMembers;
-  if (!isSeatFull) return canInviteMembers;
-  return context.role === 'owner' && canManageBilling;
-}
-
-export function workspaceInviteAvailableSeats(
-  context: WorkspaceCollabContext | null | undefined,
-): number | undefined {
-  if (workspaceSeatCapacityState(context?.seatSummary) === 'unknown') return undefined;
-  return context?.seatSummary?.availableSeats;
-}
-
-function workspaceSeatFull(
-  context: WorkspaceCollabContext,
-): boolean | undefined {
-  const state = workspaceSeatCapacityState(context.seatSummary);
-  return state === 'unknown' ? undefined : state === 'full';
-}
-
-/**
- * Chooses the first safe invite surface. The local form requires direct invite
- * capability and no proof that the team is already full; unknown capacity is
- * resolved by the invite API when the form is submitted.
- * Personal, Free-plan, and proven full-seat owner states go to Vela, whose
- * dashboard owns the authoritative upgrade/seat/invite decision. Unknown seat
- * data stays on the local permission-gated flow and lets the invite API return
- * an authoritative capacity result.
- */
-export function resolveWorkspaceInviteTarget(
-  context: WorkspaceCollabContext | null | undefined,
-): WorkspaceInviteTarget {
-  if (!context || !canAccessWorkspaceInviteFlow(context)) {
-    return { kind: 'unavailable' };
-  }
-  const needsTeamUpgrade =
-    context.billingState === 'free' || context.billingState === 'inactive';
-  if (
-    context.workspaceType === 'team' &&
-    !needsTeamUpgrade &&
-    workspaceSeatFull(context) !== true &&
-    context.permissions.canInviteMembers === true
-  ) {
-    return { kind: 'local' };
-  }
-  const settingsUrl = context?.workspaceSettingsUrl?.trim() || null;
-  if (!settingsUrl) return { kind: 'unavailable' };
-  return { kind: 'vela', url: teamConsoleUrl(settingsUrl, 'invite') };
-}
-
-interface EntryTopRightClusterProps {
-  /** Analytics page the cluster reports from: the entry views map through
-   *  `entryViewToTracking`, the workspace mount reports 'project'. */
+interface TopRightControlsProps {
+  /** Analytics page the controls report from. */
   page: TrackingWorkspacePage;
-  context: WorkspaceCollabContext | null;
-  /** Extra content rendered left of the account module. */
+  /** Extra content rendered before the shared controls. */
   leadingSlot?: ReactNode;
-  /** Update-ready host; rides the account row right after the avatar chip. */
+  /** Stable host for the update-ready control. */
   updaterSlot?: ReactNode;
-  onOpenSettings?: (section?: EntrySettingsSection) => void;
 }
 
 /**
- * Top-right chrome cluster: an optional leading
- * slot and the avatar account module with its
- * hover menu — one flex row riding the workbench top-right corner.
- *
- * Extracted from `EntryNavRail` so the WORKSPACE view (an open project tab)
- * can mount the same avatar in the same fixed position even though
- * the entry shell — and its rail — is unmounted there (per product: 打开项目后
- * 个人头像和积分仍显示在原来的右上角位置). Exactly one instance is on screen
- * at a time: `EntryNavRail` renders it on the entry views, `App.tsx` (via
- * `WorkspaceTopRightAccountCluster`) on the project route — those routes are
- * mutually exclusive.
+ * Shell-neutral top-right controls shared by entry and project routes.
+ * Account identity is intentionally absent: self-hosted collaboration lives in
+ * the Project panel, while Settings remains a stable local rail destination.
  */
-export function EntryTopRightCluster({
+function TopRightControls({
   page,
-  context,
   leadingSlot,
   updaterSlot,
-  onOpenSettings,
-}: EntryTopRightClusterProps) {
-  const { t } = useI18n();
+}: TopRightControlsProps) {
   const analytics = useAnalytics();
-  const workspaceDimensions = workspaceAnalyticsDimensions(context);
   const [chromeActionsHost, setChromeActionsHost] = useState<HTMLElement | null>(
     workspaceChromeAccountActionsHost,
   );
@@ -706,19 +368,9 @@ export function EntryTopRightCluster({
     setChromeActionsHost(workspaceChromeAccountActionsHost() ?? document.body);
   }, []);
 
-  // Account identity (real). No email field on the context → the head shows the
-  // avatar + name only.
-  const displayName = context?.displayName?.trim() || '';
-  const accountName = displayName || t('app.brand');
-  const accountInitial = accountName.charAt(0).toUpperCase() || '·';
-
-  const [accountMenuMode, setAccountMenuMode] = useState<'closed' | 'hover' | 'pinned'>(
-    'closed',
-  );
   const updaterSlotHostRef = useRef<HTMLDivElement | null>(null);
   const [updaterControlVisible, setUpdaterControlVisible] = useState(false);
-  // ReactNode truthiness cannot tell whether UpdaterPopup rendered its control;
-  // observe the stable host so signed-out chrome follows actual rendered content.
+  // ReactNode truthiness cannot tell whether UpdaterPopup rendered its control.
   useLayoutEffect(() => {
     const host = updaterSlotHostRef.current;
     if (!host) {
@@ -731,247 +383,54 @@ export function EntryTopRightCluster({
     observer.observe(host, { childList: true });
     return () => observer.disconnect();
   }, [chromeActionsHost, updaterSlot]);
-  const accountOpen = accountMenuMode !== 'closed';
-  const closeAccountMenu = () => setAccountMenuMode('closed');
-  useEffect(() => {
-    if (!accountOpen) return;
-    trackWorkspaceSurfaceView(analytics.track, {
-      page_name: page,
-      area: 'account_menu',
-      ...workspaceDimensions,
-    });
-  }, [accountOpen, analytics.track, page, workspaceDimensions.workspace_key]);
-  const accountTriggerRef = useRef<HTMLButtonElement | null>(null);
   const githubStars = useGithubStars();
-  // Hover-open for the account menu (#5517 interaction). The popover floats
-  // below the trigger, so closing is delayed just long enough for the pointer
-  // to cross the gap; re-entering the container (menu included — it's a DOM
-  // child even though it renders beside) cancels the pending close.
-  const accountCloseTimer = useRef<number | null>(null);
-  const cancelAccountClose = () => {
-    if (accountCloseTimer.current !== null) {
-      window.clearTimeout(accountCloseTimer.current);
-      accountCloseTimer.current = null;
-    }
-  };
-  const openAccountMenu = () => {
-    cancelAccountClose();
-    setAccountMenuMode((mode) => (mode === 'closed' ? 'hover' : mode));
-  };
-  const scheduleAccountClose = () => {
-    cancelAccountClose();
-    accountCloseTimer.current = window.setTimeout(() => {
-      setAccountMenuMode((mode) => (mode === 'hover' ? 'closed' : mode));
-    }, 220);
-  };
-  useEffect(() => cancelAccountClose, []);
-  // While open, track the pointer at the document level: anywhere outside the
-  // account container arms the close timer, back inside disarms it. This is
-  // deliberately NOT React onMouseLeave — leaving from inside the floating
-  // menu does not reliably produce a synthetic leave on the container.
-  const accountContainerRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!accountOpen) return;
-    const onDocPointerOver = (ev: PointerEvent) => {
-      const container = accountContainerRef.current;
-      if (!container) return;
-      if (container.contains(ev.target as Node)) cancelAccountClose();
-      else scheduleAccountClose();
-    };
-    document.addEventListener('pointerover', onDocPointerOver, true);
-    return () => document.removeEventListener('pointerover', onDocPointerOver, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountOpen]);
-  // Hover-out does not cover anyone who never hovers: a touch user, or a click
-  // that lands somewhere else without the pointer crossing this container.
-  // Press-outside closes it immediately, and
-  // Escape gives the keyboard the same exit. Still a listener, not a backdrop,
-  // so the pointerover tracking above keeps receiving its events.
-  useDismissOnOutsideInteraction(accountOpen, accountContainerRef, () => {
-    cancelAccountClose();
-    closeAccountMenu();
-  });
-
-  function trackAccountAction(element: AccountMenuClickProps['element']) {
-    trackAccountMenuClick(analytics.track, {
-      page_name: page,
-      area: 'account_menu',
-      element,
-      ...workspaceDimensions,
-    });
-  }
 
   if (typeof document === 'undefined' || !chromeActionsHost) return null;
-  if (!leadingSlot && !context && !updaterSlot) return null;
-
-  const clusterVisible = Boolean(leadingSlot || context || updaterControlVisible);
-  const updaterHostVisible = Boolean(context || updaterControlVisible);
 
   return (
-    <>
-      {createPortal(
-        <div className={clusterVisible ? 'entry-top-right-cluster' : undefined}>
+    createPortal(
+        <div className="entry-top-right-cluster">
           {leadingSlot}
-          {/* GitHub star chip: its own option in the cluster, right after the
-              campaign badge (per product) — it used to live in the account
-              menu's social row. */}
-          {clusterVisible ? (
-            <a
-              className="entry-top-right-github"
-              href={REPO_URL}
-              {...externalLinkProps}
-              aria-label={`GitHub · ${githubStars == null ? GITHUB_STARS_FALLBACK_LABEL : formatStars(githubStars)} stars`}
-              title={`GitHub · ${githubStars == null ? GITHUB_STARS_FALLBACK_LABEL : formatStars(githubStars)} stars`}
-              data-testid="entry-top-right-github"
-              onClick={() => trackAccountAction('github')}
-            >
-              <Icon name="github-filled" size={14} />
-              <span>{githubStars == null ? GITHUB_STARS_FALLBACK_LABEL : formatStars(githubStars)}</span>
-            </a>
-          ) : null}
-          {/* One compact capsule for the account avatar. */}
-          {context ? (
-            <>
-              <div className="entry-top-right-account-pill">
-            <div
-              ref={accountContainerRef}
-              className="entry-nav-rail__account entry-nav-rail__account--floating"
-              onMouseEnter={cancelAccountClose}
-              onMouseLeave={scheduleAccountClose}
-            >
-              <button
-                ref={accountTriggerRef}
-                type="button"
-                className="entry-nav-rail__account-trigger"
-                onClick={() => {
-                  trackEntryNavigationClick(analytics.track, {
-                    page_name: page,
-                    area: 'entry_nav',
-                    element: 'account_menu_trigger',
-                    target: 'account_menu',
-                    entry_from: 'sidebar',
-                    ...workspaceDimensions,
-                  });
-                  cancelAccountClose();
-                  setAccountMenuMode((mode) => (mode === 'pinned' ? 'closed' : 'pinned'));
-                }}
-                onMouseEnter={openAccountMenu}
-                aria-haspopup="menu"
-                aria-expanded={accountOpen}
-                aria-label={accountName}
-                data-testid="entry-nav-account"
-              >
-                <span className="entry-nav-rail__account-avatar" aria-hidden>
-                  {accountInitial}
-                </span>
-              </button>
-              {accountOpen ? (
-                <>
-                  {/* No backdrop here (unlike the team menu): hover-open relies
-                      on document-level pointerover to close, and a full-screen
-                      backdrop would swallow those events and insta-close. */}
-                  <div className="entry-nav-rail__account-menu" role="menu">
-                    <div className="entry-nav-rail__account-head">
-                      <span className="entry-nav-rail__account-head-avatar" aria-hidden>{accountInitial}</span>
-                      <span className="entry-nav-rail__account-head-name">{accountName}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="entry-nav-rail__menu-item"
-                      role="menuitem"
-                      onClick={() => {
-                        trackAccountAction('settings');
-                        closeAccountMenu();
-                        onOpenSettings?.();
-                      }}
-                    >
-                      <Icon name="settings" size={15} /> {t('entry.accountSettings')}
-                    </button>
-                    {/* #5517's account menu goes 设置 → GitHub 帮助 → 功能建议 → 社交行,
-                        with no theme row, no language submenu, and no divider in
-                        between. Both controls still have a home in 设置·通用 (theme
-                        segmented control + language picker), so dropping the
-                        duplicates here costs no capability. */}
-                    <a
-                      className="entry-nav-rail__menu-item"
-                      role="menuitem"
-                      href={GITHUB_HELP_URL}
-                      {...externalLinkProps}
-                      onClick={() => {
-                        trackAccountAction('github_help');
-                        closeAccountMenu();
-                      }}
-                    >
-                      <Icon name="comment" size={15} /> {t('entry.accountGithubHelp')}
-                    </a>
-                    <a
-                      className="entry-nav-rail__menu-item"
-                      role="menuitem"
-                      href={GITHUB_FEATURE_URL}
-                      {...externalLinkProps}
-                      onClick={() => {
-                        trackAccountAction('feature_request');
-                        closeAccountMenu();
-                      }}
-                    >
-                      <Icon name="sparkles" size={15} /> {t('entry.accountFeatureRequest')}
-                    </a>
-                    {/* The Discord/X/mail social row used to sit here (#5517).
-                        It now lives in the nav rail's footer — see
-                        `RailSocialRow` — so the account menu stays a pure list
-                        of account actions. */}
-                  </div>
-                </>
-              ) : null}
-              </div>
-              </div>
-            </>
-          ) : null}
-          {/* Update-ready rocket: an independent top-right control. With an
-              account it follows the credits/avatar capsule; signed-out keeps
-              the same position without inventing an empty account shell. The
-              slot stays mounted so `:empty { display: none }` can remove it
-              until an installer has downloaded. */}
+          <a
+            className="entry-top-right-github"
+            href={REPO_URL}
+            {...externalLinkProps}
+            aria-label={`GitHub · ${githubStars == null ? GITHUB_STARS_FALLBACK_LABEL : formatStars(githubStars)} stars`}
+            title={`GitHub · ${githubStars == null ? GITHUB_STARS_FALLBACK_LABEL : formatStars(githubStars)} stars`}
+            data-testid="entry-top-right-github"
+            onClick={() => {
+              trackAccountMenuClick(analytics.track, {
+                page_name: page,
+                area: 'account_menu',
+                element: 'github',
+              });
+            }}
+          >
+            <Icon name="github-filled" size={14} />
+            <span>{githubStars == null ? GITHUB_STARS_FALLBACK_LABEL : formatStars(githubStars)}</span>
+          </a>
+          {/* Keep this host mounted while the updater is idle so the updater can
+              publish its control without remounting the surrounding chrome. */}
           <div
             ref={updaterSlotHostRef}
-            className={updaterHostVisible ? 'entry-nav-rail__account-updater' : undefined}
-            data-testid={updaterHostVisible ? 'entry-nav-account-updater' : undefined}
+            className={updaterControlVisible ? 'entry-nav-rail__updater' : undefined}
+            data-testid={updaterControlVisible ? 'entry-nav-updater-host' : undefined}
           >
             {updaterSlot}
           </div>
         </div>,
         chromeActionsHost,
-      )}
-    </>
+      )
   );
 }
 
-/** Project-view variant. Bound projects pass their route-owned Workspace
- * authority explicitly; an unbound local project deliberately falls back to
- * the shell's ambient account context. */
-export function WorkspaceTopRightAccountCluster({
-  onOpenSettings,
+/** Project-view mount for the same shell-neutral controls used by the entry rail. */
+export function ProjectTopRightControls({
   updaterSlot,
-  workspaceContextOverride,
 }: {
-  onOpenSettings?: (section?: EntrySettingsSection) => void;
-  /** Keep the project-detail account cluster on the same updater surface as Home. */
   updaterSlot?: ReactNode;
-  workspaceContextOverride?: WorkspaceCollabContext | null;
 }) {
-  const ambient = useWorkspaceContext();
-  const hasExplicitWorkspaceContext = workspaceContextOverride !== undefined;
-  const context = hasExplicitWorkspaceContext
-    ? workspaceContextOverride
-    : ambient.context;
-  return (
-    <EntryTopRightCluster
-      page="project"
-      context={context}
-      updaterSlot={updaterSlot}
-      onOpenSettings={onOpenSettings}
-    />
-  );
+  return <TopRightControls page="project" updaterSlot={updaterSlot} />;
 }
 
 /**
@@ -1057,15 +516,11 @@ function RailSocialRow({
 export function EntryNavRail({
   view,
   onViewChange,
-  onNewProject,
   onOpenSearch,
-  newProjectDisabled,
   open,
   topRightSlot,
-  context,
   onOpenSettings,
   updaterSlot,
-  footerNotice,
   recentProjects,
   onOpenRecentProject,
   onRenameRecentProject,
@@ -1074,197 +529,13 @@ export function EntryNavRail({
   const { t } = useI18n();
   const analytics = useAnalytics();
   const analyticsPage = entryViewToTracking(view);
-  const workspaceDimensions = workspaceAnalyticsDimensions(context);
+  const workspaceDimensions = workspaceAnalyticsDimensions(null);
   const communityLabel = t('pluginsHome.title');
   // #5517 renamed the rail's first item from 最近 (Recents) to 首页 (Home) —
   // the key keeps its historical name, the VALUE now reads Home in every
   // locale (polish round 2, ref 1db2d00c2).
   const homeLabel = t('entry.navRecents');
   const isHome = view === 'home';
-
-  const isTeam = Boolean(context) && context!.workspaceType === 'team';
-  const permissions = context?.permissions;
-  // Demo `canOwnWorkspace` → real owner-level view of workspace settings. Never
-  // re-derive from role — the permission bits already fold role + lifecycle in.
-  const canViewWorkspaceSettings = Boolean(permissions?.canViewWorkspaceSettings);
-  const canInviteMembers = Boolean(permissions?.canInviteMembers);
-  const canAccessInviteFlow = canAccessWorkspaceInviteFlow(context);
-  const workspaceSettingsUrl = context?.workspaceSettingsUrl?.trim() || null;
-
-  const [teamOpen, setTeamOpen] = useState(false);
-  useEffect(() => {
-    if (!teamOpen) return;
-    trackWorkspaceSurfaceView(analytics.track, {
-      page_name: analyticsPage,
-      area: 'workspace_switcher',
-      ...workspaceDimensions,
-    });
-  }, [teamOpen, analytics.track, analyticsPage, workspaceDimensions.workspace_key]);
-  // The LATEST context, for async work to compare against. `loadWorkspaceDirectory`
-  // closes over the render's `context` prop, which is the identity its read was
-  // issued for — so only a ref can answer "has the identity moved since?".
-  const contextRef = useRef(context);
-  contextRef.current = context;
-  const [workspaceItems, setWorkspaceItems] = useState<WorkspaceDirectoryItem[]>(
-    () => attributableWorkspaceDirectory(context) ?? [],
-  );
-  const railIdentity = workspaceIdentityCacheKey(context);
-  const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
-  const [workspaceSwitchingId, setWorkspaceSwitchingId] = useState<string | null>(null);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const inviteTarget = resolveWorkspaceInviteTarget(context);
-  const upgradeUrl = workspaceUpgradeUrl(context);
-  const identityWorkspaceItems = workspaceDirectoryForIdentity(workspaceItems, context);
-  const currentWorkspaceItem = context
-    ? identityWorkspaceItems.find((item) => item.workspaceId === context.workspaceId) ?? null
-    : null;
-  // Name the CURRENT workspace from whatever real source has already answered,
-  // never from a read of our own. `context` is the startup context the shell
-  // already holds, and B populates its `workspaceName` for personal workspaces
-  // too — so a personal workspace is labelled correctly on first paint instead
-  // of sitting on the hardcoded fallback until the user opens this dropdown and
-  // the directory read lands (recvpkuLOujgAm). The directory item stays first:
-  // when it is warm it is the same value, revalidated.
-  const workspaceName =
-    currentWorkspaceItem?.workspaceName?.trim() ||
-    context?.workspaceName?.trim() ||
-    context?.teamName?.trim() ||
-    context?.teamId ||
-    (context?.workspaceType === 'personal' ? 'Personal workspace' : '') ||
-    context?.workspaceId ||
-    '';
-  const workspaceInitial = workspaceName.charAt(0).toUpperCase() || 'W';
-  const visibleWorkspaceItems =
-    identityWorkspaceItems.length > 0
-      ? identityWorkspaceItems
-      : context
-        ? [{
-            workspaceId: context.workspaceId,
-            workspaceName,
-            workspaceType: context.workspaceType,
-            workspaceMemberId: context.workspaceMemberId,
-            role: context.role,
-            memberStatus: context.memberStatus,
-            lifecycleState: context.lifecycleState,
-          } satisfies WorkspaceDirectoryItem]
-        : [];
-
-  async function loadWorkspaceDirectory(options: { force?: boolean } = {}) {
-    // Capture the identity this read is FOR, and compare against `contextRef`
-    // (not the closed-over `context`, which is by definition the identity we are
-    // reading for) before committing anything — see `beginWorkspaceScopedRead`.
-    const read = beginWorkspaceScopedRead(contextRef.current);
-    // Only show the loading row when there is nothing to show yet. With a warm
-    // cache the list is already on screen and this read just revalidates it —
-    // but a cache belonging to another account counts as nothing to show.
-    if (attributableWorkspaceDirectory(read.context) === null) {
-      setWorkspaceDirectoryLoading(true);
-    }
-    try {
-      // The coalescing key carries the caller's identity for the same reason the
-      // module cache does: `coalescedGet` shares a settled result for a second,
-      // and this read's answer depends on WHO asked.
-      const cacheKey = `workspace-directory:${workspaceIdentityCacheKey(read.context)}`;
-      if (options.force) evictCoalescedGet(cacheKey);
-      const readDirectory = async () => {
-        const response = await fetch('/api/workspace/directory', { cache: 'no-store' });
-        if (!response.ok) throw new Error(`directory ${response.status}`);
-        const body = (await response.json()) as WorkspaceDirectoryResponse;
-        return body.items ?? [];
-      };
-      const items = await coalescedGet(cacheKey, readDirectory);
-      // The account may have changed while this was in flight. Writing here
-      // would repopulate BOTH the module cache and the visible list with the
-      // previous account's names, after the identity-change effect below had
-      // already cleared them — so an abandoned read must leave no trace.
-      if (!read.isStillCurrent(contextRef.current)) return;
-      cachedWorkspaceDirectory = items;
-      setWorkspaceItems(items);
-    } catch {
-      // A failed revalidation must not blank a list the user is looking at —
-      // keep the last known names and let the next open try again. A list this
-      // caller has no claim to is not "a list the user is looking at".
-      if (!read.isStillCurrent(contextRef.current)) return;
-      if (attributableWorkspaceDirectory(read.context) === null) setWorkspaceItems([]);
-    } finally {
-      // A request for identity A can finish after identity B has started its
-      // own load. It must not mark B as complete.
-      if (read.isStillCurrent(contextRef.current)) {
-        setWorkspaceDirectoryLoading(false);
-      }
-    }
-  }
-
-  async function switchWorkspace(workspaceId: string) {
-    if (workspaceId === context?.workspaceId || workspaceSwitchingId) return;
-    const selected = visibleWorkspaceItems.find((item) => item.workspaceId === workspaceId);
-    if (!selected) return;
-    const startedAt = performance.now();
-    const requestId = analytics.newRequestId();
-    trackWorkspaceSwitcherClick(analytics.track, {
-      page_name: analyticsPage,
-      area: 'workspace_switcher',
-      element: 'workspace_option',
-      target_workspace_type: selected.workspaceType,
-      is_current_workspace: false,
-      ...workspaceDimensions,
-    });
-    setWorkspaceSwitchingId(workspaceId);
-    try {
-      const response = await fetch('/api/workspace/active', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          workspaceId,
-          workspaceMemberId: selected.workspaceMemberId,
-        }),
-      });
-      if (!response.ok) {
-        trackWorkspaceSwitchResult(analytics.track, {
-          page_name: analyticsPage,
-          area: 'workspace_switcher',
-          result: 'failed',
-          target_workspace_type: selected.workspaceType,
-          duration_ms: Math.round(performance.now() - startedAt),
-          error_code: stableAnalyticsErrorCode(response.status),
-          ...workspaceDimensions,
-        }, { requestId });
-        return;
-      }
-      const body = (await response.json()) as WorkspaceActiveResponse;
-      trackWorkspaceSwitchResult(analytics.track, {
-        page_name: analyticsPage,
-        area: 'workspace_switcher',
-        result: 'success',
-        target_workspace_type: selected.workspaceType,
-        duration_ms: Math.round(performance.now() - startedAt),
-        ...workspaceAnalyticsDimensions(body.context),
-      }, { requestId });
-      setTeamOpen(false);
-      // Seed this tab from the authoritatively verified switch response. The
-      // selected identity is kept in sessionStorage by the context provider, so
-      // another tab remains on its own Workspace.
-      notifyWorkspaceContextRefresh(
-        body?.context ? { context: body.context } : null,
-      );
-      notifyWorkspaceBillingRefresh();
-      notifyTeamProjectsChanged();
-      selectView('home');
-    } catch {
-      trackWorkspaceSwitchResult(analytics.track, {
-        page_name: analyticsPage,
-        area: 'workspace_switcher',
-        result: 'failed',
-        target_workspace_type: selected.workspaceType,
-        duration_ms: Math.round(performance.now() - startedAt),
-        error_code: 'network_error',
-        ...workspaceDimensions,
-      }, { requestId });
-      // Keep the menu open; the next open/focus refresh can retry the directory.
-    } finally {
-      setWorkspaceSwitchingId(null);
-    }
-  }
 
   const selectView = (next: EntryView) => {
     trackEntryNavigationClick(analytics.track, {
@@ -1291,51 +562,6 @@ export function EntryNavRail({
     }
   }, [open]);
 
-  useEffect(() => {
-    if (!teamOpen) return;
-    void loadWorkspaceDirectory();
-  }, [teamOpen, railIdentity]);
-
-  // The account-directory event is delivered through the already-shared local
-  // Workspace EventSource. It stays mounted while the switcher is closed, so a
-  // remote create/join/rename/removal updates the cached list immediately. A
-  // reconnect/foreground edge also re-reads once to close a missed-event gap;
-  // this is event-driven catch-up, not a timer.
-  useWorkspaceInvalidation(
-    {
-      'workspace-directory-changed': () => {
-        void loadWorkspaceDirectory({ force: true });
-      },
-    },
-    {
-      workspaceContext: context,
-      onActive: () => {
-        void loadWorkspaceDirectory({ force: true });
-      },
-    },
-  );
-
-  // This rail can outlive the identity that filled its list: an account swap
-  // (sign out, sign in as someone else) does not necessarily unmount it, and
-  // then component state would keep the previous account's names even though the
-  // module cache is re-attributed on every read.
-  //
-  // So on each identity change, re-derive the list from the cache UNDER THE
-  // INCOMING IDENTITY. A list the new identity can claim survives (the common
-  // case: the same account moving between its own workspaces); one it cannot is
-  // dropped, and the next open refetches. Re-deriving on the identity edge — not
-  // on every render where attribution happens to fail — is what keeps a freshly
-  // read list stable afterwards instead of being cleared again on the next pass.
-  const lastRailIdentityRef = useRef(railIdentity);
-  useEffect(() => {
-    if (lastRailIdentityRef.current === railIdentity) return;
-    lastRailIdentityRef.current = railIdentity;
-    setWorkspaceItems(attributableWorkspaceDirectory(context) ?? []);
-    // `context` is read only to re-attribute the cache for `railIdentity`, which
-    // is its digest — depending on the object would re-run this on every poll.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [railIdentity]);
-
   return (
     <nav
       ref={railRef}
@@ -1345,139 +571,6 @@ export function EntryNavRail({
     >
       <div className="entry-nav-rail__panel">
       <div className="entry-nav-rail__group">
-
-        {context ? (
-          <div className="entry-nav-rail__team-wrap">
-            <button
-              type="button"
-              className="entry-nav-rail__team"
-              onClick={() => {
-                trackEntryNavigationClick(analytics.track, {
-                  page_name: analyticsPage,
-                  area: 'entry_nav',
-                  element: 'workspace_switcher_trigger',
-                  target: 'workspace_switcher',
-                  entry_from: 'sidebar',
-                  ...workspaceDimensions,
-                });
-                setTeamOpen((v) => !v);
-              }}
-              aria-expanded={teamOpen}
-              data-testid="workspace-switcher"
-            >
-              <span className="entry-nav-rail__team-avatar" aria-hidden>{workspaceInitial}</span>
-              <span className="entry-nav-rail__team-name">{workspaceName}</span>
-              <Icon name="chevron-down" size={14} />
-            </button>
-            {teamOpen ? (
-              <>
-                <div className="entry-nav-rail__menu-backdrop" onClick={() => setTeamOpen(false)} />
-                <div
-                  className="entry-nav-rail__team-menu"
-                  role="menu"
-                  onKeyDown={handleWorkspaceMenuKeyDown}
-                >
-                  <div
-                    className="entry-nav-rail__workspace-list"
-                    data-testid="workspace-switcher-list"
-                  >
-                    {visibleWorkspaceItems.map((item) => {
-                      const active = item.workspaceId === context.workspaceId;
-                      // Older daemon directory payloads can omit workspaceName.
-                      // Keep those rows identifiable and actionable by falling
-                      // back to the stable workspace id instead of crashing.
-                      const itemName = item.workspaceName?.trim() || item.workspaceId;
-                      const initial = itemName.charAt(0).toUpperCase() || 'W';
-                      return (
-                        <button
-                          key={item.workspaceId}
-                          type="button"
-                          className={`entry-nav-rail__menu-item${active ? ' is-current' : ''}`}
-                          role="menuitem"
-                          aria-current={active ? 'true' : undefined}
-                          // Only the in-flight switch disables a row. Disabling the
-                          // CURRENT one made the UA grey it out, so the selected
-                          // workspace read as the inactive one and vice versa;
-                          // `.is-current` (bold + accent ✓) is the selected signal.
-                          disabled={workspaceSwitchingId === item.workspaceId}
-                          onClick={() => {
-                            void switchWorkspace(item.workspaceId);
-                          }}
-                        >
-                          <span className="entry-nav-rail__team-avatar" aria-hidden>{initial}</span>
-                          {/* #5517's switcher rows are avatar + full name + ✓ only.
-                              The raw role word ate the name's width and truncated
-                              it; the role is already on 设置·工作区. */}
-                          <span className="entry-nav-rail__workspace-menu-name">{itemName}</span>
-                          {active ? <Icon name="check" size={14} /> : null}
-                        </button>
-                      );
-                    })}
-                    {workspaceDirectoryLoading && visibleWorkspaceItems.length === 0 ? (
-                      <div className="entry-nav-rail__menu-item is-muted" role="status">
-                        {t('common.loading')}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div
-                    className="entry-nav-rail__workspace-actions"
-                    data-testid="workspace-switcher-actions"
-                  >
-                    <div className="entry-nav-rail__menu-divider" />
-                    {canAccessInviteFlow && inviteTarget.kind !== 'unavailable' ? (
-                      <button
-                        type="button"
-                        className="entry-nav-rail__menu-item"
-                        role="menuitem"
-                        onClick={() => {
-                          trackWorkspaceSwitcherClick(analytics.track, {
-                            page_name: analyticsPage,
-                            area: 'workspace_switcher',
-                            element: 'invite_teammates',
-                            ...workspaceDimensions,
-                          });
-                          setTeamOpen(false);
-                          if (inviteTarget.kind === 'vela') {
-                            window.open(inviteTarget.url, '_blank', 'noopener,noreferrer');
-                          } else if (inviteTarget.kind === 'local') {
-                            setInviteOpen(true);
-                          }
-                        }}
-                      >
-                        <Icon name="share" size={15} /> {t('workspaceSwitcher.invite')}
-                      </button>
-                    ) : null}
-                    {/* Creating a workspace is a B console flow (its sidebar owns the
-                        create dialog; there is no route or query param that opens it
-                        directly), so this entry links OUT instead of doing local work.
-                        With no console URL there is nowhere to send the user — render
-                        nothing rather than a control that silently does nothing. */}
-                    {workspaceSettingsUrl ? (
-                      <a
-                        className="entry-nav-rail__menu-item"
-                        role="menuitem"
-                        href={teamConsoleUrl(workspaceSettingsUrl, 'create-team')}
-                        {...externalLinkProps}
-                        data-testid="entry-nav-create-team"
-                        onClick={() => {
-                          trackWorkspaceSwitcherClick(analytics.track, {
-                            page_name: analyticsPage,
-                            area: 'workspace_switcher',
-                            element: 'create_team',
-                            ...workspaceDimensions,
-                          });
-                          setTeamOpen(false);
-                        }}
-                      >
-                        <Icon name="plus" size={15} /> {t('workspaceSwitcher.createTeam')}
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
-              </>
-            ) : null}
-          </div>
-        ) : null}
 
         {/* Search + the rail-collapse control in one row. The collapse button
             moved here from the chrome corner (per product: 收起按钮放在输入框
@@ -1540,175 +633,56 @@ export function EntryNavRail({
           <Icon name="globe" size={16} />
         </NavButton>
 
-        {context ? (
-          <div className="entry-nav-rail__team-section">
-            <NavButton
-              active={view === 'drafts'}
-              ariaLabel={t('entry.navDrafts')}
-              label={t('workspaceSwitcher.draftsTooltip')}
-              onClick={() => selectView('drafts')}
-              testId="entry-nav-drafts"
-            >
-              <Icon name="file" size={16} />
-            </NavButton>
-            {isTeam ? (
-              // All-projects is a TEAM-scoped grid (EntryShell.tsx feeds it from
-              // `teamProjects`, not the personal project list) — a personal
-              // workspace has no team catalog to show here at all. Rendering it
-              // unconditionally left the item clickable in a personal workspace,
-              // landing on a "还没有团队项目" empty state that names a concept
-              // (团队项目) the current workspace cannot have.
-              <NavButton
-                active={view === 'all-projects'}
-                ariaLabel={t('entry.navAllProjects')}
-                label={t('workspaceSwitcher.allProjectsTooltip')}
-                onClick={() => selectView('all-projects')}
-                testId="entry-nav-all-projects"
-              >
-                <Icon name="grid" size={16} />
-              </NavButton>
-            ) : null}
-            <NavButton
-              active={view === 'design-systems'}
-              ariaLabel={t('entry.navDesignSystems')}
-              label={t('entry.navDesignSystems')}
-              onClick={() => selectView('design-systems')}
-              testId="entry-nav-design-systems"
-            >
-              <Icon name="palette" size={16} />
-            </NavButton>
-            <NavButton
-              active={view === 'plugins'}
-              ariaLabel={t('entry.navPlugins')}
-              label={t('entry.navPlugins')}
-              onClick={() => selectView('plugins')}
-              testId="entry-nav-plugins"
-            >
-              <Icon name="puzzle" size={16} />
-            </NavButton>
-            {/* 最近浏览过 sits under 插件 (per product) — the last thing in the
-                destination list, because it is a list of CONTENT rather than a
-                place to go. */}
-            <RailRecentSection
-              projects={recentProjects ?? []}
-              onOpen={onOpenRecentProject}
-              onRename={onRenameRecentProject}
-              onDelete={onDeleteRecentProject}
-              workspaceContext={context}
-              label={t('recentProjects.collectionRecent')}
-            />
-            {/* Product decision (2026-07-20): 成员 and 数据大盘 leave the rail
-                entirely — both surfaces live in B's console and the rail should
-                not advertise them. Workspace 设置 stays, and still links OUT to
-                that console rather than routing to an in-client view. Gate by B
-                permissions, not workspaceType: a personal workspace owner can
-                manage their workspace too. */}
-            {canViewWorkspaceSettings && workspaceSettingsUrl ? (
-              <a
-                className="entry-nav-rail__btn"
-                href={workspaceSettingsUrl}
-                {...externalLinkProps}
-                aria-label={t('entry.navWorkspaceSettings')}
-                data-testid="entry-nav-workspace-settings"
-                onClick={() => {
-                  trackEntryNavigationClick(analytics.track, {
-                    page_name: analyticsPage,
-                    area: 'entry_nav',
-                    element: 'workspace_settings',
-                    target: 'workspace_settings',
-                    entry_from: 'sidebar',
-                    ...workspaceDimensions,
-                  });
-                }}
-              >
-                <span className="entry-nav-rail__btn-icon" aria-hidden>
-                  <Icon name="settings" size={16} />
-                </span>
-                <span className="entry-nav-rail__btn-label">{t('entry.navWorkspaceSettings')}</span>
-              </a>
-            ) : null}
-          </div>
-        ) : (
-          <>
-            <NavButton
-              active={view === 'design-systems'}
-              ariaLabel={t('entry.navDesignSystems')}
-              label={t('entry.navDesignSystems')}
-              onClick={() => selectView('design-systems')}
-              testId="entry-nav-design-systems"
-            >
-              <Icon name="palette" size={16} />
-            </NavButton>
-            <NavButton
-              active={view === 'plugins'}
-              ariaLabel={t('entry.navPlugins')}
-              label={t('entry.navPlugins')}
-              onClick={() => selectView('plugins')}
-              testId="entry-nav-plugins"
-            >
-              <Icon name="puzzle" size={16} />
-            </NavButton>
-            {/* recvq4hGF7BJkI removed this entry while the rail footer still
-                carried EntryShell's `entry-settings-chip` for the signed-out
-                case. #5517 then dropped that chip (the footer only hosts the
-                updater popup now), and a signed-out rail has no account menu
-                either — leaving no settings entry at all. This item is the
-                ONLY signed-out settings entry (testId `entry-settings-button`
-                is the e2e contract); signed-in keeps settings in the account
-                menu, so it must not render on that branch. */}
-            <NavButton
-              ariaLabel={t('entry.accountSettings')}
-              label={t('entry.accountSettings')}
-              onClick={() => {
-                trackAccountMenuClick(analytics.track, {
-                  page_name: analyticsPage,
-                  area: 'account_menu',
-                  element: 'settings',
-                });
-                onOpenSettings?.();
-              }}
-              testId="entry-settings-button"
-            >
-              <Icon name="settings" size={16} />
-            </NavButton>
-          </>
-        )}
+        <NavButton
+          active={view === 'design-systems'}
+          ariaLabel={t('entry.navDesignSystems')}
+          label={t('entry.navDesignSystems')}
+          onClick={() => selectView('design-systems')}
+          testId="entry-nav-design-systems"
+        >
+          <Icon name="palette" size={16} />
+        </NavButton>
+        <NavButton
+          active={view === 'plugins'}
+          ariaLabel={t('entry.navPlugins')}
+          label={t('entry.navPlugins')}
+          onClick={() => selectView('plugins')}
+          testId="entry-nav-plugins"
+        >
+          <Icon name="puzzle" size={16} />
+        </NavButton>
+        <RailRecentSection
+          projects={recentProjects ?? []}
+          onOpen={onOpenRecentProject}
+          onRename={onRenameRecentProject}
+          onDelete={onDeleteRecentProject}
+          label={t('recentProjects.collectionRecent')}
+        />
+        <NavButton
+          ariaLabel={t('entry.accountSettings')}
+          label={t('entry.accountSettings')}
+          onClick={() => {
+            trackAccountMenuClick(analytics.track, {
+              page_name: analyticsPage,
+              area: 'account_menu',
+              element: 'settings',
+            });
+            onOpenSettings?.();
+          }}
+          testId="entry-settings-button"
+        >
+          <Icon name="settings" size={16} />
+        </NavButton>
       </div>
-      {/* The footer always has the social row to show now, so it no longer
-          collapses to nothing. The updater has one shared home in the
-          top-right cluster for both signed-in and signed-out shells. */}
       <div className="entry-nav-rail__footer">
-        {footerNotice}
         <RailSocialRow page={analyticsPage} dimensions={workspaceDimensions} />
       </div>
       </div>
 
-      <InviteDialog
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        workspaceContext={context}
-        canAssignRoles={canInviteMembers}
-        availableSeats={workspaceInviteAvailableSeats(context)}
-        entryFrom="workspace_switcher"
-        onUpgrade={
-          upgradeUrl
-            ? () => {
-                window.open(upgradeUrl, '_blank', 'noopener,noreferrer');
-              }
-            : undefined
-        }
-      />
-      {/* Top-right chrome cluster: campaign badge (slot) + account module,
-          mounted into the tabs chrome's no-drag actions
-          host so Electron includes it in the first native hit map. Extracted so the project
-          route can mount the same cluster without the rail (see
-          `EntryTopRightCluster`). */}
-      <EntryTopRightCluster
+      <TopRightControls
         page={analyticsPage}
-        context={context}
         leadingSlot={topRightSlot}
         updaterSlot={updaterSlot}
-        onOpenSettings={onOpenSettings}
       />
     </nav>
   );

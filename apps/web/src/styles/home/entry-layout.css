@@ -5204,9 +5204,8 @@
   margin: auto 0 0;
   padding-top: var(--spacing-10);
 }
-/* Update-ready slot: an independent top-right cluster item immediately AFTER
-   the credits/avatar capsule when present. Signed-out shells keep the same
-   top-right position without rendering an account capsule.
+/* Update-ready slot: an independent top-right cluster item that keeps the same
+   position whether the updater control is currently visible or idle.
 
    This stays a global selector next to the rest of the account block rather
    than a CSS Module: its only child is `.entry-updater-menu`, itself a global
@@ -5219,13 +5218,13 @@
    cluster would reserve its gap for a control that is not there.
    `display: none` (not `width: 0`) is what drops it out of flex layout so the
    `gap` collapses with it. */
-.entry-nav-rail__account-updater {
+.entry-nav-rail__updater {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   min-width: 0;
 }
-.entry-nav-rail__account-updater:empty {
+.entry-nav-rail__updater:empty {
   display: none;
 }
 .entry-nav-rail__account-trigger {

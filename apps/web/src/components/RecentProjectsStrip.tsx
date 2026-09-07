@@ -18,37 +18,15 @@ import {
 } from 'react';
 import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@open-design/components';
 
-const MOVE_CONFIRM_SKIP_KEY = 'od.projects.moveConfirmSkip';
 import { useT } from '../i18n';
 import {
   fetchProjectFiles,
   fetchProjectFileText,
-  invalidateProjectFilesCache,
 } from '../providers/registry';
 import type { DesignSystemSummary, Project, ProjectDisplayStatus, ProjectFile } from '../types';
 import { Icon } from './Icon';
-import { InviteDialog } from './InviteDialog';
 import { STATUS_LABEL_KEYS } from './DesignsTab';
 import { isDesignSystemProject, isPublishedDesignSystemProject } from './design-system-project';
-import type { SharedProjectPredicate } from '../collab/all-projects-list';
-import { useTeamMembers } from '../collab/useTeamMembers';
-import {
-  notifyTeamProjectsChanged,
-  useWorkspaceContext,
-} from '../collab/useWorkspaceContext';
-import {
-  canAccessWorkspaceInviteFlow,
-  resolveWorkspaceInviteTarget,
-  workspaceInviteAvailableSeats,
-  workspaceUpgradeUrl,
-} from './EntryNavRail';
-import { moveWorkspaceProject, workspaceProjectMoveErrorCode } from '../state/projects';
-import {
-  workspaceContextHasTeamIdentity,
-  type WorkspaceCollabContext,
-  type WorkspaceProjectSummary,
-} from '@open-design/contracts';
-import { useWorkspaceInvalidation } from '../collab/workspace-events';
 import {
   THUMBNAIL_OVERSCAN_MARGIN,
   resumeThumbnailLoads,
@@ -57,20 +35,14 @@ import {
 } from '../lib/thumbnail-load-gate';
 import {
   getProjectCoverSnapshot,
-  invalidateProjectCoverSnapshots,
   projectCoverSnapshotKey,
   setProjectCoverSnapshot,
 } from '../lib/project-cover-cache';
 import { useInView } from './plugins-home/useInView';
-import {
-  workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
-} from '../collab/workspace-identity';
 import { useAnalytics } from '../analytics/provider';
 import {
   trackProjectCollectionClick,
   trackWorkspaceProjectActionResult,
-  trackWorkspaceSharedProjectOpenResult,
 } from '../analytics/events';
 import {
   countBucket,
@@ -79,11 +51,8 @@ import {
 } from '../analytics/workspace';
 import type { ProjectCollectionClickProps } from '@open-design/contracts/analytics';
 
-/** Which project space this strip renders. Drives the per-card 共享 badge
- *  (hidden in the all-shared team space) and the "{creator}创建" line: 'recent'
- *  = home's mixed private/shared, 'drafts' = the member's own private list,
- *  'team' = the全部项目 grid where every card is a team-shared project. */
-export type SpaceKind = 'recent' | 'drafts' | 'team';
+/** Whether this is the compact Home strip or the full local project grid. */
+export type SpaceKind = 'recent' | 'projects';
 import {
   coverFromProjectFile,
   projectCoverUrl,
@@ -111,36 +80,8 @@ interface Props {
   onDuplicate?: (id: string) => Promise<void> | void;
   onRename?: (id: string, name: string) => void;
   limit?: number;
-  /** The one shared-state answer for a card: true → 共享 badge + "已在团队空间",
-   *  and the card cannot be re-shared. Owned by the caller, because the SAME
-   *  answer decides which of the 全部项目 / 草稿 grids the project belongs to —
-   *  see {@link createSharedProjectPredicate}. This strip must not re-derive it;
-   *  a strip-local optimistic set is exactly how the badge and the grids drifted
-   *  apart. Defaults to "nothing is shared" when a caller has no sharing surface. */
-  isSharedProject?: SharedProjectPredicate;
-  /** Reported after a successful share/unshare so the caller can fold the change
-   *  into its optimistic layer before the team-projects poll catches up. */
-  onProjectShared?: (project: WorkspaceProjectSummary) => void;
-  /** Clears any optimistic owner proof when a share did not commit. */
-  onProjectShareFailed?: (projectId: string) => void;
-  onProjectUnshared?: (projectId: string) => void;
-  /** Which space this strip renders (see {@link SpaceKind}). Defaults to
-   *  'recent' (home). 'team' hides the per-card 共享 badge since every card
-   *  there is already a team-shared project. */
+  /** Which local surface this strip renders. */
   space?: SpaceKind;
-  /** projectId → the sharing member's workspaceMemberId, for team-shared
-   *  projects (from the team hub). Used to resolve the creator name against the
-   *  member directory; a project absent from this map is a local project owned
-   *  by the current member ("我创建"). */
-  projectOwnerMemberIds?: ReadonlyMap<string, string>;
-  /** Project currently being materialized before it can open (a member's
-   *  first click on a team-shared card triggers a full content pull). The
-   *  card shows a spinner overlay and further clicks are ignored — without
-   *  this the pull looked like a dead click for its whole duration. */
-  openingProjectId?: string | null;
-  collaborationEnabled?: boolean;
-  canAssignInviteRoles?: boolean;
-  canManageProjectCollection?: boolean;
   /** Whether this mounted strip is visible. EntryShell keeps Home mounted while
    * other views are active, so hidden strips must not occupy browser connection
    * slots with background cover probes. */
@@ -148,15 +89,12 @@ interface Props {
 }
 
 const EMPTY_DESIGN_SYSTEMS: DesignSystemSummary[] = [];
-/** Fallback for a caller with no sharing surface (no workspace, no grids). */
-const NOTHING_SHARED: SharedProjectPredicate = () => false;
 /** The chip a design-system project wears. Product name, not a translated
  *  string — shared by the card tag and the type filter so both read alike. */
 const DESIGN_SYSTEM_TAG_LABEL = 'Design System';
 
 type DictKey = Parameters<ReturnType<typeof useT>>[0];
 
-type OwnerFilter = 'all' | 'mine' | 'others';
 /** The type filter speaks the SAME vocabulary the cards stamp on themselves
  *  ({@link projectCardCategory}), so "原型 / 幻灯片 / 实时看板 / 媒体 /
  *  Design System" in the dropdown mean exactly the chips a user can read off
@@ -165,12 +103,6 @@ type OwnerFilter = 'all' | 'mine' | 'others';
  *  shows and no 实时看板 / Design System filter for chips every card does. */
 type ProjectKindFilter = 'all' | ProjectCardCategory;
 type ProjectSort = 'updatedDesc' | 'updatedAsc' | 'nameAsc';
-
-const OWNER_FILTER_OPTIONS: Array<{ id: OwnerFilter; labelKey: DictKey }> = [
-  { id: 'all', labelKey: 'recentProjects.ownerAll' },
-  { id: 'mine', labelKey: 'recentProjects.ownerMine' },
-  { id: 'others', labelKey: 'recentProjects.ownerOthers' },
-];
 
 type KindFilterOption =
   | { id: ProjectKindFilter; labelKey: DictKey; label?: undefined }
@@ -341,39 +273,14 @@ export function RecentProjectsStrip({
   onDuplicate,
   onRename,
   limit,
-  isSharedProject,
-  onProjectShared,
-  onProjectShareFailed,
-  onProjectUnshared,
   space = 'recent',
-  projectOwnerMemberIds,
-  openingProjectId = null,
-  collaborationEnabled,
-  canAssignInviteRoles,
-  canManageProjectCollection,
   isActive = true,
 }: Props) {
   const t = useT();
   const analytics = useAnalytics();
-  const analyticsPage = space === 'drafts' ? 'drafts' : space === 'team' ? 'all_projects' : 'home';
+  const analyticsPage = space === 'projects' ? 'all_projects' : 'home';
   const rowRef = useRef<HTMLDivElement | null>(null);
-  // Real creator resolution (replaces the demo's mock 李娜/张伟 roster): the
-  // member directory turns an ownerMemberId into a display name, while the
-  // workspace context supplies the signed-in user's own name and profile image.
-  const { resolve: resolveMember } = useTeamMembers();
-  const {
-    context: workspaceContext,
-    loading: workspaceContextLoading,
-  } = useWorkspaceContext();
-  // A cover request captures the complete identity at dispatch. A mutable ref
-  // keeps the queue callbacks stable without letting an in-flight read drift
-  // to whichever Workspace a different render happens to select later.
-  const workspaceContextRef = useRef(workspaceContext);
-  workspaceContextRef.current = workspaceContext;
-  const workspaceContextLoadingRef = useRef(workspaceContextLoading);
-  workspaceContextLoadingRef.current = workspaceContextLoading;
-  const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
-  const workspaceDimensions = workspaceAnalyticsDimensions(workspaceContext);
+  const workspaceDimensions = workspaceAnalyticsDimensions(null);
   function trackCollection(
     element: ProjectCollectionClickProps['element'],
     properties: Partial<Omit<ProjectCollectionClickProps, 'page_name' | 'area' | 'element'>> = {},
@@ -387,55 +294,25 @@ export function RecentProjectsStrip({
       ...properties,
     }, requestId ? { requestId } : undefined);
   }
-  const selfMemberId = workspaceContext?.workspaceMemberId ?? null;
-  // `canShareProjects` alone is a ROLE permission ("could this member share IF
-  // a team existed"), not a "does a team exist" signal — a purely personal
-  // workspace's owner still gets `canShareProjects: true`. Without also
-  // requiring `workspaceContextHasTeamIdentity`, this stayed true for a
-  // personal-only workspace and the move-to-team menu item rendered a button
-  // the daemon can only ever 403 (recvqfZsR901YQ "无法共享方案了" /
-  // recvqgif6Xa7Wb "隐藏非 Team workspace 分享到团队的入口") — the exact class
-  // of bug `workspaceContextHasTeamIdentity`'s own doc comment warns about:
-  // "Deriving it twice is how a UI grows a button that can only ever fail."
-  const collaborationAvailable =
-    collaborationEnabled ??
-    (workspaceContextHasTeamIdentity(workspaceContext) &&
-      workspaceContext?.permissions.canShareProjects === true);
-  const canAccessInviteFlow = canAccessWorkspaceInviteFlow(workspaceContext);
-  // The invite dialog's seat-gate upgrade CTA shares the public Pricing
-  // destination owned by `workspaceUpgradeUrl` in EntryNavRail.tsx.
-  const inviteUpgradeUrl = workspaceUpgradeUrl(workspaceContext);
-  const inviteTarget = resolveWorkspaceInviteTarget(workspaceContext);
-  const canManageCollection =
-    canManageProjectCollection ??
-    (workspaceContext?.permissions.canManageSharedResources === true ||
-      workspaceContext?.permissions.canShareProjects === true);
   const [responsiveLimit, setResponsiveLimit] = useState(DEFAULT_RECENT_PROJECT_LIMIT);
   const resolvedLimit = limit ?? responsiveLimit;
   const hasRecentProjects = projects.length > 0;
   const fullPageGrid = heading !== undefined || description !== undefined || space !== 'recent';
-  const showOwnerFilter = space !== 'drafts';
   const [view, setView] = useState<'grid' | 'list'>('grid');
-  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('all');
   const [kindFilter, setKindFilter] = useState<ProjectKindFilter>('all');
   const [sort, setSort] = useState<ProjectSort>('updatedDesc');
-  // recvqbipG9QDTt: this component mounts once per host view (Home, Drafts,
-  // All projects) and stays alive across EntryShell tab switches — Home's
+  // recvqbipG9QDTt: this component mounts once per host view (Home and Projects)
+  // and stays alive across EntryShell tab switches — Home's
   // instance in particular is only ever hidden via `content-visibility`, not
   // unmounted (see EntryShell's `inactiveViewProps`) — so a filter picked
   // here keeps silently narrowing the grid on every later visit with no cue
   // that anything is filtered. Surfacing `hasActiveFilter` drives the visible
   // "clear filters" chip below instead of switching tabs quietly resetting
   // it, per the reporter's own preferred fix.
-  const hasActiveFilter = ownerFilter !== 'all' || kindFilter !== 'all';
-  const [openHeaderMenu, setOpenHeaderMenu] = useState<'owner' | 'kind' | 'sort' | null>(null);
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const hasActiveFilter = kindFilter !== 'all';
+  const [openHeaderMenu, setOpenHeaderMenu] = useState<'kind' | 'sort' | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(() => new Set());
-  // Confirmation gates for the bulk bar. Batch move reuses the single-card
-  // 不再提示 opt-out; batch delete always confirms (it is irreversible and
-  // spans N projects), mirroring the projects grid's own batch delete.
-  const [bulkMoveAction, setBulkMoveAction] = useState<'to-team' | 'to-personal' | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   useEffect(() => {
@@ -491,136 +368,28 @@ export function RecentProjectsStrip({
   // say so instead of silently doing nothing.
   const [deleteFailed, setDeleteFailed] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
-  // Project → team-space sharing (the project card entry). The daemon gates on
-  // `canShareProjects` (403 off-team / no rights), so we only badge on success.
-  const [sharingId, setSharingId] = useState<string | null>(null);
-  const [unsharingId, setUnsharingId] = useState<string | null>(null);
-  const [shareErrorProjectId, setShareErrorProjectId] = useState<string | null>(null);
-  // 'owner-conflict' is the daemon's TEAM_PROJECT_OWNER_CONFLICT refusal: the
-  // team hub already registers this project under another member's ownership.
-  // That state is permanent until the registered owner unshares, so it gets
-  // its own message instead of the retryable 'share' hint.
-  const [shareErrorKind, setShareErrorKind] = useState<'share' | 'unshare' | 'owner-conflict'>('share');
-  // Whether a card is team-shared is decided upstream, not here — the grids'
-  // 全部项目 / 草稿 partition reads the very same predicate, so the badge and the
-  // card's grid can no longer disagree.
-  const isShared = isSharedProject ?? NOTHING_SHARED;
-  // The card's "{creator}创建" line. Self-owned projects use the account identity
-  // instead of the literal "我 / Me" (whose first letter previously produced the
-  // misleading M avatar). Other owners still resolve through the team directory.
-  const resolveCreator = (projectId: string): {
-    name: string;
-    initial: string;
-    avatarUrl: string | null;
-    ownedBySelf: boolean;
-  } => {
-    const ownerMemberId = projectOwnerMemberIds?.get(projectId) ?? null;
-    if (ownerMemberId === selfMemberId || (!ownerMemberId && !isShared(projectId))) {
-      const name = workspaceContext?.displayName?.trim() || t('recentProjects.selfCreator');
-      const initial = Array.from(name.trim())[0]?.toUpperCase() ?? 'M';
-      return {
-        name,
-        initial,
-        avatarUrl: workspaceContext?.avatarUrl?.trim() || null,
-        ownedBySelf: true,
-      };
-    }
-    const name = resolveMember(ownerMemberId)?.displayName ?? t('recentProjects.teamMemberCreator');
-    const initial = (Array.from(name.trim())[0] ?? 'T').toUpperCase();
-    return { name, initial, avatarUrl: null, ownedBySelf: false };
-  };
   const visibleProjects = useMemo(
     () => sortedProjects
-      .map((project) => ({ project, creator: resolveCreator(project.id) }))
-      .filter(({ project, creator }) => {
-        const ownerMatches =
-          !showOwnerFilter ||
-          ownerFilter === 'all' ||
-          (ownerFilter === 'mine' && creator.ownedBySelf) ||
-          (ownerFilter === 'others' && !creator.ownedBySelf);
-        const kindMatches = kindFilter === 'all' || projectCardCategory(project) === kindFilter;
-        return ownerMatches && kindMatches;
-      })
+      .filter((project) => kindFilter === 'all' || projectCardCategory(project) === kindFilter)
       .slice(0, resolvedLimit),
-    [
-      kindFilter,
-      ownerFilter,
-      projectOwnerMemberIds,
-      resolveMember,
-      resolvedLimit,
-      selfMemberId,
-      showOwnerFilter,
-      sortedProjects,
-      t,
-      workspaceContext?.avatarUrl,
-      workspaceContext?.displayName,
-    ],
+    [kindFilter, resolvedLimit, sortedProjects],
   );
   const menuContainerRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const renameTitleId = useId();
   const confirmTitleId = useId();
-  const moveTitleId = useId();
-  const bulkMoveTitleId = useId();
   const bulkDeleteTitleId = useId();
-  // #5517 move confirmation: moving a project in/out of the team space asks
-  // once, with a persisted 不再提示 opt-out (the demo keeps it per-session;
-  // the product remembers the choice).
-  const [moveTarget, setMoveTarget] = useState<{ project: Project; action: 'to-team' | 'to-personal' } | null>(null);
-  const [moveDontRemind, setMoveDontRemind] = useState<boolean>(() => {
-    try {
-      return window.localStorage.getItem(MOVE_CONFIRM_SKIP_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  function requestMove(project: Project, action: 'to-team' | 'to-personal') {
-    trackCollection(action === 'to-team' ? 'move_to_team' : 'move_to_personal', {
-      project_key: project.id,
-      project_relation: resolveCreator(project.id).ownedBySelf ? 'self' : 'other',
-    });
-    if (moveDontRemind) {
-      void (action === 'to-team' ? handleShareToTeam(project) : handleUnshareFromTeam(project));
-      return;
-    }
-    setMenuOpenId(null);
-    setMoveTarget({ project, action });
-  }
-  function commitMove() {
-    if (!moveTarget) return;
-    if (moveDontRemind) {
-      try {
-        window.localStorage.setItem(MOVE_CONFIRM_SKIP_KEY, '1');
-      } catch {
-        // best-effort persistence
-      }
-    }
-    const { project, action } = moveTarget;
-    setMoveTarget(null);
-    void (action === 'to-team' ? handleShareToTeam(project) : handleUnshareFromTeam(project));
-  }
-  const actionsAvailable = Boolean(onDelete || onDuplicate || onRename || collaborationAvailable);
+  const actionsAvailable = Boolean(onDelete || onDuplicate || onRename);
 
-  // Bulk-action state for the 多选 bar. Every action below is the batch form of
-  // an action the per-card ⋯ menu already offers (move in/out of the team
-  // space, delete); nothing new is exposed here that a single card cannot do.
-  const selectedProjects = visibleProjects.filter(({ project }) => selectedProjectIds.has(project.id));
+  const selectedProjects = visibleProjects.filter((project) => selectedProjectIds.has(project.id));
   const selectedCount = selectedProjectIds.size;
-  // Same gate as the per-card menu: only your own projects can be moved or
-  // deleted, so a selection containing someone else's shared project disables
-  // the mutations instead of half-applying them.
-  const selectionHasForeignProject = selectedProjects.some(({ creator }) => !creator.ownedBySelf);
-  const bulkMutationDisabled = selectedCount === 0 || selectionHasForeignProject;
-  const bulkMutationTitle = selectionHasForeignProject
-    ? t('recentProjects.ownOnlyMutation')
-    : selectedProjects.map(({ project }) => project.name).join('、') || undefined;
-  const canBulkMoveToTeam = collaborationAvailable && space !== 'team';
-  const canBulkMoveToPersonal = collaborationAvailable && space !== 'drafts';
+  const bulkMutationDisabled = selectedCount === 0;
+  const bulkMutationTitle = selectedProjects.map((project) => project.name).join('、') || undefined;
 
   useEffect(() => {
     setSelectedProjectIds((current) => {
       if (current.size === 0) return current;
-      const visibleIds = new Set(visibleProjects.map(({ project }) => project.id));
+      const visibleIds = new Set(visibleProjects.map((project) => project.id));
       const next = new Set([...current].filter((id) => visibleIds.has(id)));
       return next.size === current.size ? current : next;
     });
@@ -679,21 +448,17 @@ export function RecentProjectsStrip({
     };
   }, [menuOpenId]);
 
-  // Cover fetching must key off the *set of project ids and their readiness*, not the
+  // Cover fetching must key off the set of project ids and versions, not the
   // `visibleProjects` array reference. That reference changes on every render
   // (upstream props/derived lists are recreated, and a 2s poll re-renders the
   // shell), and depending on it re-ran this effect — and re-fetched every
   // project's files — on every render (observed ~23× per project in a trace).
-  // A catalog placeholder can materialize without changing id or updatedAt,
-  // though, so include that one transition to start its first real scan.
   const coverFetchKey = visibleProjects
-    .map(({ project }) =>
-      `${project.id}:${project.metadata?.sharedProjectPlaceholderAt == null ? 'ready' : 'placeholder'}`,
-    )
+    .map((project) => `${project.id}:${project.updatedAt}`)
     .join('|');
   const visibleProjectsRef = useRef(new Map<string, Project>());
   visibleProjectsRef.current = new Map(
-    visibleProjects.map(({ project }) => [project.id, project]),
+    visibleProjects.map((project) => [project.id, project]),
   );
   const coverGenerationRef = useRef(new Map<string, number>());
   const activeRef = useRef(isActive);
@@ -719,22 +484,14 @@ export function RecentProjectsStrip({
   const loadProjectCover = useCallback(async (
     project: Project,
     signal: AbortSignal,
-    requestWorkspaceContext: WorkspaceCollabContext | null,
     freshFiles = false,
   ): Promise<ProjectCoverOverride | null | undefined> => {
-    // Catalog-only Team projects intentionally have no local directory until
-    // the first open materializes them. Probing `/files` here can only produce
-    // a noisy 404. This is transient rather than an authoritative no-cover
-    // decision: hydration can clear the stamp without changing id/updatedAt,
-    // at which point coverFetchKey starts the first real scan.
-    if (project.metadata?.sharedProjectPlaceholderAt != null) return undefined;
     const designSystemProject = isDesignSystemProject(project);
     if (project.metadata?.entryFile && !designSystemProject) return null;
     let files: Awaited<ReturnType<typeof fetchProjectFiles>>;
     try {
       files = await fetchProjectFiles(project.id, {
         signal,
-        workspaceContext: requestWorkspaceContext,
         ...(freshFiles ? { fresh: true } : {}),
       });
     } catch {
@@ -746,7 +503,6 @@ export function RecentProjectsStrip({
         project.id,
         files,
         signal,
-        requestWorkspaceContext,
       )) ?? null;
     }
     const cover = selectProjectFileCover(files);
@@ -756,12 +512,11 @@ export function RecentProjectsStrip({
       project.id,
       cover.name,
       cover.mtime,
-      requestWorkspaceContext,
     );
     const diagnostic = `${project.id}:${cover.name}`;
     if (project.metadata?.kind === 'deck') {
       try {
-        await loadDeckCover(src, signal, requestWorkspaceContext);
+        await loadDeckCover(src, signal);
         return signal.aborted ? undefined : cover;
       } catch (err) {
         if (signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return undefined;
@@ -775,9 +530,6 @@ export function RecentProjectsStrip({
         method: 'HEAD',
         cache: 'no-store',
         signal,
-        ...(requestWorkspaceContext
-          ? { headers: workspaceProjectHeaders(requestWorkspaceContext) }
-          : {}),
       });
       if (signal.aborted) return undefined;
       if (response.ok || response.status === 304) return cover;
@@ -800,18 +552,14 @@ export function RecentProjectsStrip({
     options: { force?: boolean } = {},
   ): Promise<void> => {
     if (!activeRef.current) return Promise.resolve();
-    if (workspaceContextLoadingRef.current) return Promise.resolve();
-    const requestWorkspaceContext = workspaceContextRef.current;
     const snapshotKey = projectCoverSnapshotKey(
-      workspaceIdentityCacheKey(requestWorkspaceContext),
+      null,
       project.id,
       project.updatedAt,
     );
     if (!options.force) {
-      // Serve the last successful decision for this exact workspace/project/
-      // version instead of re-running the files scan + probe on every
-      // remount. Stale versions miss the key; content-ready events
-      // invalidate explicitly (Batch A §4.2).
+      // Serve the last successful decision for this exact project/version
+      // instead of re-running the files scan + probe on every remount.
       const snapshot = getProjectCoverSnapshot(snapshotKey);
       if (snapshot !== undefined) {
         if (visibleProjectsRef.current.has(project.id)) {
@@ -834,7 +582,6 @@ export function RecentProjectsStrip({
       () => loadProjectCover(
         project,
         controller.signal,
-        requestWorkspaceContext,
         options.force === true,
       ),
       options.force,
@@ -881,21 +628,14 @@ export function RecentProjectsStrip({
   useEffect(() => {
     abortBackgroundCoverRequests();
     setCoverByProject({});
-    if (workspaceContextLoading) return;
     for (const project of visibleProjectsRef.current.values()) {
       if (!coverSentinelSeenRef.current.has(project.id)) continue;
       void requestProjectCover(project);
     }
-  }, [
-    abortBackgroundCoverRequests,
-    requestProjectCover,
-    workspaceContextLoading,
-    workspaceIdentity,
-  ]);
+  }, [abortBackgroundCoverRequests, requestProjectCover]);
   const handleCoverCardVisible = useCallback((projectId: string) => {
     if (coverSentinelSeenRef.current.has(projectId)) return;
     coverSentinelSeenRef.current.add(projectId);
-    if (workspaceContextLoadingRef.current) return;
     const project = visibleProjectsRef.current.get(projectId);
     if (!project) return;
     void requestProjectCover(project);
@@ -920,53 +660,8 @@ export function RecentProjectsStrip({
     };
   }, [abortBackgroundCoverRequests]);
 
-  const refreshProjectCover = useCallback((projectId: string) => {
-    // A content-ready event is authoritative: the stored cover decision (any
-    // version) and any pre-materialization file-list read are void even if the
-    // card is currently offscreen or unlisted. Invalidate the exact Workspace
-    // authority before the forced scan so another force refresh in the same
-    // burst cannot make the file-list layer reuse its earlier [] response.
-    invalidateProjectCoverSnapshots(projectId);
-    invalidateProjectFilesCache(projectId, workspaceContextRef.current);
-    const project = visibleProjectsRef.current.get(projectId);
-    if (!project) return;
-    if (!coverSentinelSeenRef.current.has(projectId)) return;
-    // Supersedes an older initial scan that may still be resolving against
-    // the pre-pull filesystem.
-    void requestProjectCover(project, { force: true });
-  }, [requestProjectCover]);
-
-  useWorkspaceInvalidation(
-    {
-      'team-project-content-ready': ({ projectId, workspaceId }) => {
-        if (!activeRef.current) return;
-        if (workspaceContext?.workspaceId !== workspaceId) return;
-        void refreshProjectCover(projectId);
-      },
-    },
-    {
-      workspaceContext,
-      // Thin SSE events are not replayed. On reconnect/focus, retry only cards
-      // whose initial scan found no local cover, closing a missed-ready gap
-      // without re-fetching every already-resolved card in the grid.
-      onActive: () => {
-        if (!activeRef.current) return;
-        for (const { project } of visibleProjects) {
-          if (!coverSentinelSeenRef.current.has(project.id)) continue;
-          if (coverByProject[project.id] == null) {
-            if (coverInFlightRef.current.has(project.id)) continue;
-            // `null` is normally a cacheable no-cover decision. Reconnect is
-            // specifically the missed-invalidation recovery path, so bypass
-            // that snapshot and re-probe the exact current Workspace.
-            void requestProjectCover(project, { force: true });
-          }
-        }
-      },
-    },
-  );
-
   useEffect(() => {
-    const visibleIds = new Set(visibleProjects.map(({ project }) => project.id));
+    const visibleIds = new Set(visibleProjects.map((project) => project.id));
     if (!isActive) {
       abortBackgroundCoverRequests();
       return;
@@ -990,7 +685,7 @@ export function RecentProjectsStrip({
         ? current
         : Object.fromEntries(entries);
     });
-    for (const { project } of visibleProjects) {
+    for (const project of visibleProjects) {
       if (!coverSentinelSeenRef.current.has(project.id)) continue;
       void requestProjectCover(project);
     }
@@ -1005,17 +700,14 @@ export function RecentProjectsStrip({
   // load window so the section doesn't pop in and then collapse;
   // the prompt hero is enough chrome on its own.
   // Home rail only: an empty rail is dropped entirely (dashed empty chrome is
-  // noise over the plugin gallery). The FULL-PAGE grids (drafts/all-projects)
-  // must keep their header + filter toolbar even when the current owner/type
-  // filter matches nothing — collapsing them stranded the user with no way to
-  // change the filter back.
+  // noise over the plugin gallery). The full Projects grid must keep its
+  // header + filter toolbar even when the current type filter matches nothing
+  // so the user can change the filter back.
   if (visibleProjects.length === 0 && !fullPageGrid) {
     return null;
   }
 
   function startRename(project: Project) {
-    const creator = resolveCreator(project.id);
-    if (!creator.ownedBySelf) return;
     trackCollection('rename', {
       project_key: project.id,
       project_relation: 'self',
@@ -1040,8 +732,6 @@ export function RecentProjectsStrip({
   }
 
   function requestDelete(project: Project) {
-    const creator = resolveCreator(project.id);
-    if (!creator.ownedBySelf) return;
     trackCollection('delete', {
       project_key: project.id,
       project_relation: 'self',
@@ -1051,115 +741,8 @@ export function RecentProjectsStrip({
     setConfirmTarget(project);
   }
 
-  // Promote/demote a project through the same workspace move endpoint used by
-  // the full project grid so cards and in-file sharing cannot drift.
-  async function handleShareToTeam(project: Project) {
-    const startedAt = performance.now();
-    setShareErrorProjectId(null);
-    setMenuOpenId(project.id);
-    setSharingId(project.id);
-    try {
-      const movedProject = await moveWorkspaceProject({
-        projectId: project.id,
-        visibility: 'team',
-        workspaceContext,
-      });
-      onProjectShared?.(movedProject);
-      notifyTeamProjectsChanged();
-      setMenuOpenId(null);
-      trackWorkspaceProjectActionResult(analytics.track, {
-        page_name: analyticsPage,
-        area: 'project_collection',
-        action: 'move_to_team',
-        result: 'success',
-        requested_count: 1,
-        succeeded_count: 1,
-        failed_count: 0,
-        duration_ms: Math.round(performance.now() - startedAt),
-        ...workspaceDimensions,
-      });
-    } catch (err) {
-      onProjectShareFailed?.(project.id);
-      console.warn('[RecentProjectsStrip] share project to team failed:', err);
-      setShareErrorProjectId(project.id);
-      setShareErrorKind(
-        workspaceProjectMoveErrorCode(err) === 'TEAM_PROJECT_OWNER_CONFLICT'
-          ? 'owner-conflict'
-          : 'share',
-      );
-      setMenuOpenId(project.id);
-      trackWorkspaceProjectActionResult(analytics.track, {
-        page_name: analyticsPage,
-        area: 'project_collection',
-        action: 'move_to_team',
-        result: 'failed',
-        requested_count: 1,
-        succeeded_count: 0,
-        failed_count: 1,
-        duration_ms: Math.round(performance.now() - startedAt),
-        error_code: workspaceProjectMoveErrorCode(err) ?? 'request_failed',
-        ...workspaceDimensions,
-      });
-    } finally {
-      setSharingId(null);
-    }
-  }
-
-  async function handleUnshareFromTeam(project: Project) {
-    const startedAt = performance.now();
-    setShareErrorProjectId(null);
-    setMenuOpenId(project.id);
-    setUnsharingId(project.id);
-    try {
-      await moveWorkspaceProject({
-        projectId: project.id,
-        visibility: 'personal',
-        workspaceContext,
-      });
-      onProjectUnshared?.(project.id);
-      notifyTeamProjectsChanged();
-      setMenuOpenId(null);
-      trackWorkspaceProjectActionResult(analytics.track, {
-        page_name: analyticsPage,
-        area: 'project_collection',
-        action: 'move_to_personal',
-        result: 'success',
-        requested_count: 1,
-        succeeded_count: 1,
-        failed_count: 0,
-        duration_ms: Math.round(performance.now() - startedAt),
-        ...workspaceDimensions,
-      });
-    } catch (err) {
-      console.warn('[RecentProjectsStrip] unshare project from team failed:', err);
-      setShareErrorProjectId(project.id);
-      setShareErrorKind('unshare');
-      setMenuOpenId(project.id);
-      trackWorkspaceProjectActionResult(analytics.track, {
-        page_name: analyticsPage,
-        area: 'project_collection',
-        action: 'move_to_personal',
-        result: 'failed',
-        requested_count: 1,
-        succeeded_count: 0,
-        failed_count: 1,
-        duration_ms: Math.round(performance.now() - startedAt),
-        error_code: workspaceProjectMoveErrorCode(err) ?? 'request_failed',
-        ...workspaceDimensions,
-      });
-    } finally {
-      setUnsharingId(null);
-    }
-  }
-
   function requestDuplicate(project: Project) {
     if (!onDuplicate) return;
-    // Same ownership gate the menu item's `disabled` already enforces (see
-    // recvqaRqM0dv2x above) — kept here too so the handler itself can never
-    // fire the doomed-to-403 request, matching startRename/requestDelete's
-    // own defense-in-depth check.
-    const creator = resolveCreator(project.id);
-    if (!creator.ownedBySelf) return;
     trackCollection('duplicate', {
       project_key: project.id,
       project_relation: 'self',
@@ -1272,83 +855,8 @@ export function RecentProjectsStrip({
     setSelectedProjectIds(new Set());
   }
 
-  /** Shared by the single-card and the bulk move confirmations so both spell
-   *  out the same consequence of crossing the team-space boundary. */
-  function moveDescription(action: 'to-team' | 'to-personal') {
-    return action === 'to-team' ? (
-      <>
-        {t('recentProjects.moveToTeamDescPre')}
-        <strong>{t('recentProjects.moveToTeamDescStrong')}</strong>
-        {t('recentProjects.moveToTeamDescPost')}
-      </>
-    ) : (
-      <>
-        {t('recentProjects.moveToPersonalDescPre')}
-        <strong>{t('recentProjects.moveToPersonalDescStrong')}</strong>
-        {t('recentProjects.moveToPersonalDescPost')}
-      </>
-    );
-  }
-
-  function requestBulkMove(action: 'to-team' | 'to-personal') {
-    if (bulkMutationDisabled) return;
-    trackCollection(action === 'to-team' ? 'bulk_move_to_team' : 'bulk_move_to_personal', {
-      selection_count_bucket: countBucket(selectedCount),
-    });
-    if (moveDontRemind) {
-      void commitBulkMove(action);
-      return;
-    }
-    setBulkMoveAction(action);
-  }
-
-  /** Batch form of the per-card 转入/移出团队空间 action: the very same
-   *  `moveWorkspaceProject` call, once per selected project. Failures are
-   *  reported per project and never abort the rest of the batch. */
-  async function commitBulkMove(action: 'to-team' | 'to-personal') {
-    const ids = selectedProjects.map(({ project }) => project.id);
-    const startedAt = performance.now();
-    setBulkMoveAction(null);
-    exitSelectionMode();
-    if (ids.length === 0) return;
-    const visibility = action === 'to-team' ? 'team' : 'personal';
-    const moved = await Promise.all(
-      ids.map(async (id) => {
-        try {
-          const project = await moveWorkspaceProject({ projectId: id, visibility, workspaceContext });
-          return { id, project };
-        } catch (err) {
-          if (action === 'to-team') onProjectShareFailed?.(id);
-          console.warn('[RecentProjectsStrip] bulk move project failed:', err);
-          return null;
-        }
-      }),
-    );
-    const succeeded = moved.filter(
-      (result): result is { id: string; project: WorkspaceProjectSummary } => result !== null,
-    );
-    for (const result of succeeded) {
-      if (action === 'to-team') onProjectShared?.(result.project);
-      else onProjectUnshared?.(result.id);
-    }
-    if (succeeded.length > 0) notifyTeamProjectsChanged();
-    const failedCount = ids.length - succeeded.length;
-    trackWorkspaceProjectActionResult(analytics.track, {
-      page_name: analyticsPage,
-      area: 'project_collection',
-      action: action === 'to-team' ? 'bulk_move_to_team' : 'bulk_move_to_personal',
-      result: failedCount === 0 ? 'success' : succeeded.length > 0 ? 'partial_success' : 'failed',
-      requested_count: ids.length,
-      succeeded_count: succeeded.length,
-      failed_count: failedCount,
-      duration_ms: Math.round(performance.now() - startedAt),
-      ...(failedCount > 0 ? { error_code: 'one_or_more_failed' } : {}),
-      ...workspaceDimensions,
-    });
-  }
-
   async function commitBulkDelete() {
-    const ids = selectedProjects.map(({ project }) => project.id);
+    const ids = selectedProjects.map((project) => project.id);
     const startedAt = performance.now();
     setBulkDeleteOpen(false);
     exitSelectionMode();
@@ -1391,25 +899,7 @@ export function RecentProjectsStrip({
             ) : null}
           </div>
           <div className="recent-projects__controls">
-            {space === 'team' &&
-            canAccessInviteFlow &&
-            inviteTarget.kind !== 'unavailable' ? (
-              <button
-                type="button"
-                className="recent-projects__invite"
-                onClick={() => {
-                  trackCollection('invite_teammates');
-                  if (inviteTarget.kind === 'vela') {
-                    window.open(inviteTarget.url, '_blank', 'noopener,noreferrer');
-                  } else if (inviteTarget.kind === 'local') {
-                    setInviteOpen(true);
-                  }
-                }}
-              >
-                <Icon name="share" size={15} /> {t('recentProjects.inviteTeammates')}
-              </button>
-            ) : null}
-            {canManageCollection ? (
+            {onDelete ? (
               <button
                 type="button"
                 className={`recent-projects__select-toggle${selectionMode ? ' is-active' : ''}`}
@@ -1425,40 +915,6 @@ export function RecentProjectsStrip({
               >
                 {t('recentProjects.multiSelect')}
               </button>
-            ) : null}
-            {showOwnerFilter ? (
-              <div className="recent-projects__filter-wrap">
-                <button
-                  type="button"
-                  className="recent-projects__filter"
-                  aria-expanded={openHeaderMenu === 'owner'}
-                  onClick={() => setOpenHeaderMenu((current) => current === 'owner' ? null : 'owner')}
-                >
-                  {t(OWNER_FILTER_OPTIONS.find((option) => option.id === ownerFilter)?.labelKey ?? 'recentProjects.ownerAll')}
-                  <Icon name="chevron-down" size={13} />
-                </button>
-                {openHeaderMenu === 'owner' ? (
-                  <div className="recent-projects__filter-menu" role="menu">
-                    {OWNER_FILTER_OPTIONS.map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        className={ownerFilter === option.id ? 'is-active' : undefined}
-                        onClick={() => {
-                          trackCollection('filter', {
-                            filter_type: 'owner',
-                            filter_value: option.id,
-                          });
-                          setOwnerFilter(option.id);
-                          setOpenHeaderMenu(null);
-                        }}
-                      >
-                        {t(option.labelKey)}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
             ) : null}
             <div className="recent-projects__filter-wrap">
               <button
@@ -1497,22 +953,16 @@ export function RecentProjectsStrip({
             </div>
             {hasActiveFilter ? (
               // Only rendered once a filter narrows the grid, so it never
-              // competes for attention with the plain owner/kind/sort chips
-              // above — see recvqbipG9QDTt.
+              // competes for attention with the kind/sort controls above.
               <button
                 type="button"
                 className="recent-projects__filter-clear"
                 data-testid="recent-projects-clear-filters"
                 onClick={() => {
                   trackCollection('filter', {
-                    filter_type: 'owner',
-                    filter_value: 'all',
-                  });
-                  trackCollection('filter', {
                     filter_type: 'project_type',
                     filter_value: 'all',
                   });
-                  setOwnerFilter('all');
                   setKindFilter('all');
                   setOpenHeaderMenu(null);
                 }}
@@ -1619,26 +1069,6 @@ export function RecentProjectsStrip({
             {t('designs.selectedCount', { n: selectedCount })}
           </span>
           <div className="recent-projects__bulkbar-actions">
-            {canBulkMoveToTeam ? (
-              <button
-                type="button"
-                disabled={bulkMutationDisabled}
-                title={bulkMutationTitle}
-                onClick={() => requestBulkMove('to-team')}
-              >
-                <Icon name="import" size={14} /> {t('recentProjects.moveToTeam')}
-              </button>
-            ) : null}
-            {canBulkMoveToPersonal ? (
-              <button
-                type="button"
-                disabled={bulkMutationDisabled}
-                title={bulkMutationTitle}
-                onClick={() => requestBulkMove('to-personal')}
-              >
-                <Icon name="log-out" size={14} /> {t('recentProjects.moveOutOfTeam')}
-              </button>
-            ) : null}
             {onDelete ? (
               <button
                 type="button"
@@ -1666,12 +1096,8 @@ export function RecentProjectsStrip({
         className={`recent-projects__row${fullPageGrid ? ` recent-projects__row--${view}` : ''}${menuOpenId ? ' recent-projects__row--menu-open' : ''}${selectionMode ? ' is-selecting' : ''}`}
         role="list"
       >
-        {visibleProjects.map(({ project, creator }) => {
-          const cover = projectCover(
-            project,
-            coverByProject[project.id] ?? null,
-            workspaceContext,
-          );
+        {visibleProjects.map((project) => {
+          const cover = projectCover(project, coverByProject[project.id] ?? null);
           const designSystemProject = isDesignSystemProject(project);
           const status: ProjectDisplayStatus = project.status?.value ?? 'not_started';
           const publishedDesignSystem = isPublishedDesignSystemProject(project, designSystems);
@@ -1683,15 +1109,12 @@ export function RecentProjectsStrip({
               // Incomplete is terminal but needs attention; show the status dot so
               // it reads as "not done", not a static success pill (#1247 / #1060).
               status === 'incomplete');
-          const shared = isShared(project.id);
           const selected = selectedProjectIds.has(project.id);
-          const readonlyShared = shared && !creator.ownedBySelf;
-          const opening = openingProjectId === project.id;
           return (
             <div
               key={project.id}
               role="listitem"
-              className={`recent-projects__card${designSystemProject ? ' is-design-system-project' : ''}${shared ? ' is-shared' : ''}${menuOpenId === project.id ? ' is-menu-open' : ''}${selected ? ' is-selected' : ''}${readonlyShared ? ' is-readonly-shared' : ''}${opening ? ' is-opening' : ''}`}
+              className={`recent-projects__card${designSystemProject ? ' is-design-system-project' : ''}${menuOpenId === project.id ? ' is-menu-open' : ''}${selected ? ' is-selected' : ''}`}
               data-project-id={project.id}
             >
               {selectionMode ? (
@@ -1728,29 +1151,10 @@ export function RecentProjectsStrip({
                     toggleSelection(project.id);
                     return;
                   }
-                  if (opening) return;
-                  const openStartedAt = performance.now();
-                  const openRequestId = analytics.newRequestId();
-                  const projectRelation = creator.ownedBySelf ? 'self' : 'other';
-                  const materialization =
-                    project.metadata?.sharedProjectPlaceholderAt != null ? 'required' : 'warm';
                   trackCollection('project_open', {
                     project_key: project.id,
-                    project_relation: projectRelation,
-                  }, openRequestId);
-                  const trackSharedOpenResult = (opened: boolean) => {
-                    if (!shared && space !== 'team') return;
-                    trackWorkspaceSharedProjectOpenResult(analytics.track, {
-                      page_name: analyticsPage,
-                      area: 'project_collection',
-                      result: opened ? 'success' : 'failed',
-                      project_relation: projectRelation,
-                      materialization,
-                      duration_ms: Math.round(performance.now() - openStartedAt),
-                      ...(!opened ? { error_code: 'open_failed' } : {}),
-                      ...workspaceDimensions,
-                    }, { requestId: openRequestId });
-                  };
+                    project_relation: 'self',
+                  });
                   // Release every background cover slot before the project view
                   // starts its foreground files/content reads. Waiting for the
                   // entry shell to unmount is too late: navigation itself needs
@@ -1765,33 +1169,21 @@ export function RecentProjectsStrip({
                     if (result && typeof result === 'object' && 'then' in result) {
                       void Promise.resolve(result).then(
                         (opened) => {
-                          trackSharedOpenResult(opened !== false);
                           if (opened === false) resumeBackgroundCoverRequests();
                         },
                         () => {
-                          trackSharedOpenResult(false);
                           resumeBackgroundCoverRequests();
                         },
                       );
                     } else if (result === false) {
-                      trackSharedOpenResult(false);
                       resumeBackgroundCoverRequests();
-                    } else {
-                      trackSharedOpenResult(true);
                     }
                   } catch {
-                    trackSharedOpenResult(false);
                     resumeBackgroundCoverRequests();
                   }
                 }}
-                aria-busy={opening ? true : undefined}
                 title={project.name}
               >
-                {opening ? (
-                  <span className="recent-projects__card-opening" aria-hidden>
-                    <Icon name="spinner" size={20} />
-                  </span>
-                ) : null}
                 <div
                   className={`recent-projects__card-thumb recent-projects__card-thumb-${cover.kind}`}
                   style={cover.style}
@@ -1822,70 +1214,17 @@ export function RecentProjectsStrip({
                       initial={cover.initial}
                       diagnostic={`${project.id}:${cover.name ?? 'unknown'}`}
                       deckCoverOnly={project.metadata?.kind === 'deck'}
-                      workspaceContext={workspaceContext}
                     />
                   ) : (
                     <span className="recent-projects__card-glyph">{cover.initial}</span>
                   )}
-                  {sharingId === project.id ? (
-                    <span
-                      aria-hidden
-                      style={{
-                        position: 'absolute',
-                        inset: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(255,255,255,0.55)',
-                        borderRadius: 'inherit',
-                      }}
-                    >
-                      <Icon name="spinner" size={18} />
-                    </span>
-                  ) : shared && view !== 'list' ? (
-                    // Grid's thumb has room for the badge as a floating overlay
-                    // (hover-revealed, see recent-projects.css); list view's
-                    // thumb is far too small (128x52) for it — the inline
-                    // variant next to the name below covers that case instead.
-                    <span className="recent-projects__card-badge recent-projects__card-badge--shared">
-                      <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="9" cy="8" r="3" />
-                        <path d="M3 20a6 6 0 0 1 12 0M16 11a3 3 0 1 0-1-5.8M21 20a6 6 0 0 0-5-5.9" />
-                      </svg>
-                      {t('recentProjects.sharedBadge')}
-                    </span>
-                  ) : null}
                 </div>
                 <div className="recent-projects__card-meta">
                   <div className="recent-projects__card-name-row">
                     <span className="recent-projects__card-name">{project.name}</span>
-                    {shared && view === 'list' ? (
-                      <span className="recent-projects__card-badge recent-projects__card-badge--shared recent-projects__card-badge--inline">
-                        <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="9" cy="8" r="3" />
-                          <path d="M3 20a6 6 0 0 1 12 0M16 11a3 3 0 1 0-1-5.8M21 20a6 6 0 0 0-5-5.9" />
-                        </svg>
-                        {t('recentProjects.sharedBadge')}
-                      </span>
-                    ) : null}
                   </div>
                   <div className="recent-projects__card-footer">
                     <div className="recent-projects__card-time">
-                      <span className="recent-projects__card-owner" aria-hidden>
-                        {creator.initial}
-                        {creator.avatarUrl ? (
-                          <img
-                            key={creator.avatarUrl}
-                            src={creator.avatarUrl}
-                            alt=""
-                            onError={(event) => {
-                              event.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : null}
-                      </span>
-                      <span>{t('recentProjects.creatorLine', { name: creator.name })}</span>
-                      <span className="recent-projects__card-sep" aria-hidden>·</span>
                       {relativeTime(project.updatedAt, t)}
                     </div>
                     <div className="design-card-tag-row">
@@ -1913,9 +1252,8 @@ export function RecentProjectsStrip({
                       event.stopPropagation();
                       trackCollection('more_menu', {
                         project_key: project.id,
-                        project_relation: creator.ownedBySelf ? 'self' : 'other',
+                        project_relation: 'self',
                       });
-                      setShareErrorProjectId(null);
                       setMenuOpenId((current) => current === project.id ? null : project.id);
                     }}
                   >
@@ -1933,92 +1271,27 @@ export function RecentProjectsStrip({
                         <button
                           type="button"
                           role="menuitem"
-                          disabled={!creator.ownedBySelf}
-                          title={creator.ownedBySelf ? undefined : t('recentProjects.ownOnlyMutation')}
                           onClick={() => startRename(project)}
                         >
                           <Icon name="pencil" size={12} />
                           <span>{t('designs.menuRename')}</span>
                         </button>
                       ) : null}
-                      {/* recvqaRqM0dv2x: duplicating a team-shared project you
-                          did not create is meaningless (the daemon's
-                          canDuplicate mirrors canMutate — privileged-or-
-                          selfCreated only, see enforceWorkspaceProjectMutation)
-                          and always 403s. This item was missing the same
-                          ownedBySelf gate Rename/Delete already carry, so it
-                          stayed enabled on a foreign card and looked like a
-                          dead click when pressed. */}
                       {onDuplicate ? (
                         <button
                           type="button"
                           role="menuitem"
-                          disabled={!creator.ownedBySelf}
-                          title={creator.ownedBySelf ? undefined : t('recentProjects.ownOnlyMutation')}
                           onClick={() => requestDuplicate(project)}
                         >
                           <Icon name="copy" size={12} />
                           <span>{t('designs.menuDuplicate')}</span>
                         </button>
                       ) : null}
-                      {/* recvq5fpqrXzV1: this menu item moves a project's
-                          visibility WITHIN the current workspace, which is
-                          meaningless (and the daemon 403s it) when the current
-                          workspace has no team plane to share into at all — a
-                          personal-only workspace. `collaborationAvailable` is
-                          the same gate the bulk toolbar's move actions
-                          already use (canBulkMoveToTeam/canBulkMoveToPersonal
-                          above); this per-card item was missing it. */}
-                      {collaborationAvailable && (shared && creator.ownedBySelf ? (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={unsharingId === project.id}
-                          onClick={() => requestMove(project, 'to-personal')}
-                        >
-                          <Icon name="close" size={12} />
-                          <span>
-                            {unsharingId === project.id
-                              ? t('recentProjects.unshareInProgress')
-                              : t('recentProjects.moveOutOfTeam')}
-                          </span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={sharingId === project.id || shared || !creator.ownedBySelf}
-                          title={!creator.ownedBySelf ? t('recentProjects.ownOnlyMutation') : undefined}
-                          onClick={() => requestMove(project, 'to-team')}
-                        >
-                          <Icon name="share" size={12} />
-                          <span>
-                            {sharingId === project.id
-                              ? t('recentProjects.shareInProgress')
-                              : shared
-                                ? t('recentProjects.sharedInTeam')
-                                : t('recentProjects.moveToTeam')}
-                          </span>
-                        </button>
-                      ))}
-                      {shareErrorProjectId === project.id ? (
-                        <div className="recent-projects__card-menu-error" role="alert">
-                          {t(
-                            shareErrorKind === 'unshare'
-                              ? 'recentProjects.unshareFailed'
-                              : shareErrorKind === 'owner-conflict'
-                                ? 'recentProjects.shareOwnerConflict'
-                                : 'recentProjects.shareFailed',
-                          )}
-                        </div>
-                      ) : null}
                       {onDelete ? (
                         <button
                           type="button"
                           role="menuitem"
                           className="danger"
-                          disabled={!creator.ownedBySelf}
-                          title={creator.ownedBySelf ? undefined : t('recentProjects.ownOnlyMutation')}
                           onClick={() => requestDelete(project)}
                         >
                           <Icon name="close" size={12} />
@@ -2112,84 +1385,6 @@ export function RecentProjectsStrip({
           </DialogFooter>
         </Dialog>
       ) : null}
-      {moveTarget ? (
-        <Dialog
-          className="modal-confirm"
-          backdropClassName="modal-backdrop--no-blur"
-          role="alertdialog"
-          onClose={() => setMoveTarget(null)}
-          closeOnEscape
-          ariaLabelledBy={moveTitleId}
-        >
-          <DialogTitle id={moveTitleId}>
-            {moveTarget.action === 'to-team'
-              ? t('recentProjects.moveToTeam')
-              : t('recentProjects.moveOutOfTeam')}
-          </DialogTitle>
-          <DialogDescription>{moveDescription(moveTarget.action)}</DialogDescription>
-          <DialogFooter className="row">
-            <label className="recent-projects__move-remind">
-              <input
-                type="checkbox"
-                checked={moveDontRemind}
-                onChange={(event) => setMoveDontRemind(event.target.checked)}
-              />
-              {t('recentProjects.moveDontRemind')}
-            </label>
-            <button type="button" onClick={() => setMoveTarget(null)}>
-              {t('designs.renameCancel')}
-            </button>
-            <button
-              type="button"
-              className={`primary${moveTarget.action === 'to-team' ? ' recent-projects__move-confirm' : ''}`}
-              onClick={commitMove}
-            >
-              {moveTarget.action === 'to-team'
-                ? t('recentProjects.confirmMoveToTeam')
-                : t('recentProjects.confirmMoveToPersonal')}
-            </button>
-          </DialogFooter>
-        </Dialog>
-      ) : null}
-      {bulkMoveAction ? (
-        <Dialog
-          className="modal-confirm"
-          backdropClassName="modal-backdrop--no-blur"
-          role="alertdialog"
-          onClose={() => setBulkMoveAction(null)}
-          closeOnEscape
-          ariaLabelledBy={bulkMoveTitleId}
-        >
-          <DialogTitle id={bulkMoveTitleId}>
-            {bulkMoveAction === 'to-team'
-              ? t('recentProjects.moveToTeam')
-              : t('recentProjects.moveOutOfTeam')}
-          </DialogTitle>
-          <DialogDescription>{moveDescription(bulkMoveAction)}</DialogDescription>
-          <DialogFooter className="row">
-            <label className="recent-projects__move-remind">
-              <input
-                type="checkbox"
-                checked={moveDontRemind}
-                onChange={(event) => setMoveDontRemind(event.target.checked)}
-              />
-              {t('recentProjects.moveDontRemind')}
-            </label>
-            <button type="button" onClick={() => setBulkMoveAction(null)}>
-              {t('designs.renameCancel')}
-            </button>
-            <button
-              type="button"
-              className={`primary${bulkMoveAction === 'to-team' ? ' recent-projects__move-confirm' : ''}`}
-              onClick={() => void commitBulkMove(bulkMoveAction)}
-            >
-              {bulkMoveAction === 'to-team'
-                ? t('recentProjects.confirmMoveToTeam')
-                : t('recentProjects.confirmMoveToPersonal')}
-            </button>
-          </DialogFooter>
-        </Dialog>
-      ) : null}
       {bulkDeleteOpen ? (
         <Dialog
           className="modal-confirm"
@@ -2216,23 +1411,6 @@ export function RecentProjectsStrip({
           </DialogFooter>
         </Dialog>
       ) : null}
-      <InviteDialog
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        workspaceContext={workspaceContext}
-        canAssignRoles={
-          canAssignInviteRoles ?? workspaceContext?.permissions.canInviteMembers === true
-        }
-        availableSeats={workspaceInviteAvailableSeats(workspaceContext)}
-        entryFrom="all_projects"
-        onUpgrade={
-          inviteUpgradeUrl
-            ? () => {
-                window.open(inviteUpgradeUrl, '_blank', 'noopener,noreferrer');
-              }
-            : undefined
-        }
-      />
     </section>
   );
 }
@@ -2247,13 +1425,11 @@ function RecentProjectHtmlThumb({
   initial,
   diagnostic,
   deckCoverOnly,
-  workspaceContext,
 }: {
   src: string;
   initial: string;
   diagnostic: string;
   deckCoverOnly: boolean;
-  workspaceContext?: WorkspaceCollabContext | null;
 }) {
   // Plain HTML goes through the shared cover frame (#5762): it HEAD-probes the
   // cover URL in the parent cover queue first and falls back to the initial
@@ -2270,7 +1446,7 @@ function RecentProjectHtmlThumb({
     );
   }
 
-  return <DeckCoverThumb src={src} workspaceContext={workspaceContext} />;
+  return <DeckCoverThumb src={src} />;
 }
 
 function VerifiedHtmlCoverFrame({
@@ -2350,10 +1526,8 @@ function CoverVisibilitySentinel({
 
 function DeckCoverThumb({
   src,
-  workspaceContext,
 }: {
   src: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const { ref: inViewRef, inView } = useInView<HTMLDivElement>({
@@ -2380,7 +1554,7 @@ function DeckCoverThumb({
     // Deck covers fetch the full document text; defer that until the card is
     // actually near the viewport (Batch A §4.2).
     if (!inView) return;
-    loadDeckCover(src, undefined, workspaceContext)
+    loadDeckCover(src)
       .then((next) => {
         if (!cancelled) setSrcDoc(next);
       })
@@ -2391,7 +1565,7 @@ function DeckCoverThumb({
     return () => {
       cancelled = true;
     };
-  }, [src, inView, workspaceContext]);
+  }, [src, inView]);
 
   useEffect(() => {
     const node = frameRef.current;
@@ -2437,14 +1611,12 @@ function DeckCoverThumb({
 async function loadDeckCover(
   src: string,
   signal?: AbortSignal,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string> {
   const cached = deckCoverCache.get(src);
   if (cached) return cached;
   if (signal) {
     const response = await fetch(src, {
       signal,
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     if (!response.ok) throw new Error(`Failed to load project cover: ${response.status}`);
     const parsed = deckPreviewSrcDoc(await response.text());
@@ -2625,7 +1797,6 @@ function relativeTime(ts: number, t: ReturnType<typeof useT>): string {
 export function projectCover(
   project: Project,
   override: ProjectCoverOverride | null,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): {
   kind: 'image' | 'video' | 'html' | 'logo' | 'fallback';
   src?: string;
@@ -2648,10 +1819,9 @@ export function projectCover(
     return {
       kind: override.kind,
       src: projectCoverUrl(
-        project.id,
-        override.name,
-        override.mtime,
-        workspaceContext,
+      project.id,
+      override.name,
+      override.mtime,
       ),
       style,
       initial,
@@ -2665,7 +1835,6 @@ export function projectCover(
       project.id,
       entry,
       project.updatedAt,
-      workspaceContext,
     );
     if (meta?.kind === 'image') return { kind: 'image', src, style, initial };
     if (meta?.kind === 'video') return { kind: 'video', src, style, initial };
@@ -2756,14 +1925,12 @@ async function findDesignSystemCover(
   projectId: string,
   files: ProjectFile[],
   signal?: AbortSignal,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectCoverOverride | null> {
   const knownFiles = new Map(files.map((file) => [file.path ?? file.name, file]));
   const brandCover = await designSystemCoverFromBrandJson(
     projectId,
     knownFiles,
     signal,
-    workspaceContext,
   );
   if (signal?.aborted) return null;
   if (brandCover) return brandCover;
@@ -2777,12 +1944,10 @@ async function designSystemCoverFromBrandJson(
   projectId: string,
   knownFiles: ReadonlyMap<string, ProjectFile>,
   signal?: AbortSignal,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectCoverOverride | null> {
   const raw = await fetchProjectFileText(projectId, 'brand.json', {
     cache: 'no-store',
     signal,
-    workspaceContext,
   });
   if (signal?.aborted) return null;
   if (!raw) return null;

@@ -1,13 +1,7 @@
 // @vitest-environment jsdom
 //
-// The floating account cluster must survive opening a project.
-//
-// The entry refresh moved the account avatar
-// into a top-right chrome cluster owned by EntryNavRail — which unmounts with
-// EntryShell the moment a project tab opens. Product: the avatar stays visible
-// on the project view too, in the same top-right spot. App.tsx
-// therefore mounts `WorkspaceTopRightAccountCluster` with the route-owned
-// Workspace authority whenever `route.kind === 'project'`.
+// The shared local top-right controls must survive opening a project even
+// though EntryShell and its navigation rail unmount on that route.
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
@@ -16,10 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/App';
 import type { Route } from '../../src/router';
 import type { AppConfig, Project } from '../../src/types';
-import type {
-  WorkspaceCollabContext,
-  WorkspaceDirectoryItem,
-} from '@open-design/contracts';
+import type { WorkspaceCollabContext } from '@open-design/contracts';
 import {
   fetchComposioConfigFromDaemon,
   fetchDaemonConfig,
@@ -38,7 +29,6 @@ import {
 } from '../../src/providers/registry';
 import { listProjects, listTemplates } from '../../src/state/projects';
 import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
-import { resetWorkspaceDirectoryCache } from '../../src/components/EntryNavRail';
 
 const PROJECT_ROUTE: Route = {
   kind: 'project' as const,
@@ -181,7 +171,7 @@ const project: Project = {
   workspaceId: 'ws-project',
 };
 
-const PROJECT_DIRECTORY_ITEM: WorkspaceDirectoryItem = {
+const PROJECT_WORKSPACE_CONTEXT: WorkspaceCollabContext = {
   workspaceId: 'ws-project',
   workspaceMemberId: 'wm-project',
   workspaceName: 'Project Workspace',
@@ -189,20 +179,6 @@ const PROJECT_DIRECTORY_ITEM: WorkspaceDirectoryItem = {
   role: 'owner',
   memberStatus: 'active',
   lifecycleState: 'active',
-};
-
-const AMBIENT_DIRECTORY_ITEM: WorkspaceDirectoryItem = {
-  workspaceId: 'ws-ambient',
-  workspaceMemberId: 'wm-ambient',
-  workspaceName: 'Ambient Workspace',
-  workspaceType: 'personal',
-  role: 'owner',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-};
-
-const PROJECT_WORKSPACE_CONTEXT: WorkspaceCollabContext = {
-  ...PROJECT_DIRECTORY_ITEM,
   displayName: 'Project Nova',
   billingState: 'active',
   planId: 'pro',
@@ -226,13 +202,6 @@ const PROJECT_WORKSPACE_CONTEXT: WorkspaceCollabContext = {
   workspaceSettingsUrl: 'https://cloud.example/settings?workspaceId=ws-project',
 };
 
-const AMBIENT_WORKSPACE_CONTEXT: WorkspaceCollabContext = {
-  ...PROJECT_WORKSPACE_CONTEXT,
-  ...AMBIENT_DIRECTORY_ITEM,
-  displayName: 'Ambient Bea',
-  workspaceSettingsUrl: 'https://cloud.example/settings?workspaceId=ws-ambient',
-};
-
 function stubFetchByUrl() {
   vi.stubGlobal(
     'fetch',
@@ -240,19 +209,20 @@ function stubFetchByUrl() {
       const url =
         typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       const body = url.includes('/api/workspace/directory')
-        ? { items: [PROJECT_DIRECTORY_ITEM, AMBIENT_DIRECTORY_ITEM] }
+        ? { items: [] }
         : url.includes('/api/workspace/context')
-          ? { context: AMBIENT_WORKSPACE_CONTEXT }
-          : {};
+          ? { context: null }
+          : url.includes('/api/github/open-design')
+            ? { stargazers_count: 40_000 }
+            : {};
       return new Response(JSON.stringify(body), { status: 200 });
     }),
   );
 }
 
-describe('project route — floating account cluster', () => {
+describe('project route — local top-right controls', () => {
   beforeEach(() => {
     resetWorkspaceContextCache();
-    resetWorkspaceDirectoryCache();
     useRouteMock.mockReturnValue(PROJECT_ROUTE);
     vi.mocked(daemonIsLive).mockResolvedValue(true);
     vi.mocked(fetchAgents).mockResolvedValue([]);
@@ -282,22 +252,20 @@ describe('project route — floating account cluster', () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     resetWorkspaceContextCache();
-    resetWorkspaceDirectoryCache();
   });
 
-  it('keeps the project-scoped account avatar mounted on an open project', async () => {
+  it('keeps GitHub controls mounted on an open project without an account avatar', async () => {
     render(<App />);
 
-    const avatar = await screen.findByTestId('entry-nav-account');
-    expect(avatar.closest('.entry-top-right-cluster')).not.toBeNull();
-    expect(avatar.getAttribute('aria-label')).toBe('Project Nova');
-    expect(screen.queryByTestId('entry-top-right-credits')).toBeNull();
+    const github = await screen.findByTestId('entry-top-right-github');
+    expect(github.closest('.entry-top-right-cluster')).not.toBeNull();
+    expect(screen.queryByTestId('entry-nav-account')).toBeNull();
   });
 
   it.each([
     ['signed out', false],
     ['workspace identity is still loading', true],
-  ])('renders no cluster when %s', async (_state, loading) => {
+  ])('keeps local controls independent when %s', async (_state, loading) => {
     useProjectRouteWorkspaceContextMock.mockReturnValue({
       context: null,
       loading,
@@ -311,10 +279,10 @@ describe('project route — floating account cluster', () => {
 
     await screen.findByText(loading ? 'Loading workspace…' : 'Project view');
     await waitFor(() => {
-      expect(document.querySelector('.entry-top-right-cluster')).toBeNull();
-      expect(screen.queryByTestId('entry-top-right-github')).toBeNull();
+      expect(document.querySelector('.entry-top-right-cluster')).not.toBeNull();
+      expect(screen.queryByTestId('entry-top-right-github')).not.toBeNull();
       expect(screen.queryByTestId('entry-nav-account')).toBeNull();
-      expect(screen.queryByTestId('entry-nav-account-updater')).toBeNull();
+      expect(screen.queryByTestId('entry-nav-updater-host')).toBeNull();
     });
   });
 
