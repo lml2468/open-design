@@ -314,9 +314,9 @@ describe('useProjectCollab', () => {
     expect(result.current.viewerOnly).toBe(true);
   });
 
-  it('does not auto-pull for a locked workspace owner', async () => {
+  it('never pulls legacy content while observing project status', async () => {
     const calls: Array<{ pathname: string; method: string }> = [];
-    const owner = makeContext({ role: 'owner', lifecycleState: 'locked', workspaceMemberId: 'wm-owner' });
+    const owner = makeContext({ role: 'member', workspaceMemberId: 'wm-viewer' });
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const pathname = new URL(String(input), 'http://d.local').pathname;
       calls.push({ pathname, method: init?.method ?? 'GET' });

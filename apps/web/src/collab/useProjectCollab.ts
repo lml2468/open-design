@@ -42,40 +42,6 @@ export function resetProjectsCreatedByViewerCache(): void {
   projectScopesCreatedByViewerThisSession.clear();
 }
 
-/**
- * Whether the project's local file list must be read as "not downloaded yet"
- * rather than "this project is empty". Drives the syncing state that replaces
- * DesignFilesPanel's empty state and its create-a-file CTAs.
- *
- * Invariant: a shared project this daemon has never materialized is ALWAYS
- * download-pending, whatever the status poll has managed to learn about the
- * hub. `awaitingFirstMaterialization` is a purely local daemon fact (it holds
- * only a placeholder record for the project), so it is the one signal
- * available on the very first status response. The other three all need remote
- * enrichment that a fresh install's first response cannot carry, which is why
- * a brand-new member's first open showed an empty project with "create a new
- * sketch" CTAs over content that was still on its way.
- *
- * It also deliberately bypasses `shouldAutoPull` (member-of-a-shared-project).
- * The owner of a placeholder they have not materialized either — the reinstall
- * case, where the daemon self-pulls on their behalf — is looking at the same
- * empty directory, and "these files are not the content" is a fact about the
- * local record, not about who is allowed to pull it.
- */
-function localFilesAreNotTheContentYet(signals: {
-  awaitingFirstMaterialization: boolean;
-  shouldAutoPull: boolean;
-  transferring: boolean;
-  behindPublishedHead: boolean;
-  pullInFlight: boolean;
-}): boolean {
-  if (signals.awaitingFirstMaterialization) return true;
-  return (
-    signals.shouldAutoPull
-    && (signals.transferring || signals.behindPublishedHead || signals.pullInFlight)
-  );
-}
-
 export interface UseProjectCollabOptions {
   /**
    * Project-bound Workspace authority. Production project views pass the
@@ -377,125 +343,10 @@ export function useProjectCollab(
     && ((shared && statusNamedDifferentOwner)
       || lostAccessAfterUnshare);
 
-  // Member content auto-sync (the last link): when a read-only member sees the
-  // resource-hub head (`publishedVersion`) advance past what we last pulled,
-  // pull the new content into the local project directory. The daemon
-  // materializes it and its file watcher then fires the existing live-reload SSE
-  // (`useProjectFileEvents` in ProjectView, gated on `daemonLive`), so the
-  // FileViewer refreshes on its own — no extra reload wiring is needed here.
-  //
-  // Only non-owner members of a shared project pull. The owner is the single
-  // writer; their local copy is already the newest, and pulling could clobber
-  // unpublished edits. A workspace-level read-only freeze also must not make the
-  // owner auto-pull over their own working tree, so this gate keys off explicit
-  // project ownership instead of the broader `viewerOnly` flag.
-  //
-  // The cursor seeds from the daemon's durable materializedVersion. A missing
-  // cursor fails closed to 0 and pulls; an exact match proves this daemon
-  // already has the published head, including across tab remounts/restarts.
-  const pullCursorRef = useRef<{ scopeKey: string | null; version: number }>({
-    scopeKey: null,
-    version: 0,
-  });
-  const pullInFlightRef = useRef(false);
-  // Bumped after each successful pull to re-evaluate immediately — this catches
-  // a head that advanced while a pull was in flight (the plain publishedVersion
-  // dep would otherwise not re-fire once it settles on the newer number).
-  const [pullTick, setPullTick] = useState(0);
-  const projectKey = projectId ? `${workspaceIdentity}:${projectId}` : null;
-  if (pullCursorRef.current.scopeKey !== projectKey) {
-    pullCursorRef.current = {
-      scopeKey: projectKey,
-      version: collab.materializedVersion ?? 0,
-    };
-  } else if (
-    collab.materializedVersion != null
-    && collab.materializedVersion > pullCursorRef.current.version
-  ) {
-    // The daemon's durable, owner-scoped cursor is the cold-start truth. Keep
-    // the optimistic response cursor below only when it is newer than the
-    // latest status response (a pull can finish just before its refresh lands).
-    pullCursorRef.current.version = collab.materializedVersion;
-  }
-  // A pull from the prior project can resolve after navigation. Epoch-gate all
-  // async writes so that late completion cannot overwrite the new project's
-  // cursor or release its in-flight lock.
-  const projectEpochRef = useRef(0);
-  useEffect(() => {
-    const epoch = projectEpochRef.current + 1;
-    projectEpochRef.current = epoch;
-    pullInFlightRef.current = false;
-    return () => {
-      if (projectEpochRef.current === epoch) {
-        projectEpochRef.current += 1;
-        pullInFlightRef.current = false;
-      }
-    };
-  }, [projectId, workspaceIdentity]);
-  const { publishedVersion } = collab;
-  const pull = collab.pull;
-  const checkStatusNow = collab.checkStatusNow;
-  const shouldAutoPull = decision.enabled && shared && !isOwner;
-  useEffect(() => {
-    if (!shouldAutoPull) return;
-    if (publishedVersion == null) return;
-    if (publishedVersion <= pullCursorRef.current.version) return;
-    if (pullInFlightRef.current) return;
-    const epoch = projectEpochRef.current;
-    pullInFlightRef.current = true;
-    void (async () => {
-      let advanced = false;
-      try {
-        const pulledVersion = await pull();
-        if (projectEpochRef.current !== epoch) return;
-        // Advance from the daemon's ACTUAL pull response, never from the
-        // requested target. A null response cannot prove bytes landed and must
-        // remain retryable on the next successful status poll.
-        if (pulledVersion != null) {
-          pullCursorRef.current.version = Math.max(
-            pullCursorRef.current.version,
-            pulledVersion,
-          );
-          advanced = true;
-        }
-      } catch {
-        // Swallow: statusPollGeneration changes on every successful ~5s status
-        // response, even when publishedVersion is numerically unchanged, so the
-        // next poll retries while the durable/local cursor remains behind.
-      } finally {
-        if (projectEpochRef.current === epoch) {
-          pullInFlightRef.current = false;
-        }
-      }
-      if (advanced && projectEpochRef.current === epoch) {
-        setPullTick((n) => n + 1);
-        // Re-read the daemon's durable materialization cursor immediately;
-        // polling remains the bounded fallback if this refresh fails.
-        checkStatusNow();
-      }
-    })();
-  }, [
-    shouldAutoPull,
-    publishedVersion,
-    pull,
-    pullTick,
-    collab.statusPollGeneration,
-    checkStatusNow,
-  ]);
-
-  // Status latency alone is not a download: absent a placeholder, only replace
-  // local file rows with skeletons after status has confirmed this member
-  // should pull and the durable/local cursor is actually behind (or that pull
-  // is still active). `pullTick` is not read directly, but its state bump
-  // forces this render to observe the ref cursor written by a successful pull.
-  const downloadPending = localFilesAreNotTheContentYet({
-    awaitingFirstMaterialization: materializationPending,
-    shouldAutoPull,
-    transferring: collab.contentTransferState?.status === 'downloading',
-    behindPublishedHead:
-      publishedVersion != null && publishedVersion > pullCursorRef.current.version,
-    pullInFlight: pullInFlightRef.current,
-  });
+  // Legacy Team content is never fetched as a side effect of observing status.
+  // Keep only the local placeholder signal until the whole mirror surface is
+  // removed; an explicit retrieval path must own any remaining transition.
+  const downloadPending = materializationPending;
 
   return {
     enabled: collabEnabled,

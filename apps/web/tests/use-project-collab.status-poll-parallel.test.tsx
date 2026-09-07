@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe('useProjectCollab: status waits for explicit workspace authority', () => {
-  it('keeps project A status and pull on A when ambient context is B', async () => {
+  it('keeps project A status on A and never pulls when ambient context is B', async () => {
     const projectContext = teamContext({
       workspaceId: 'workspace-a',
       workspaceMemberId: 'member-a',
@@ -101,15 +101,11 @@ describe('useProjectCollab: status waits for explicit workspace authority', () =
 
     expect(contextReads).toBe(0);
     const projectCalls = scopedCalls.filter(({ pathname }) =>
-      pathname.endsWith('/collab/status')
-      || pathname.endsWith('/collab/pull'),
+      pathname.includes('/api/projects/project-a/collab/'),
     );
-    expect(projectCalls.map(({ pathname }) => pathname)).toEqual(
-      expect.arrayContaining([
-        '/api/projects/project-a/collab/status',
-        '/api/projects/project-a/collab/pull',
-      ]),
-    );
+    expect(projectCalls.map(({ pathname }) => pathname)).toEqual([
+      '/api/projects/project-a/collab/status',
+    ]);
     expect(
       projectCalls.every(
         ({ workspaceId, workspaceMemberId }) =>

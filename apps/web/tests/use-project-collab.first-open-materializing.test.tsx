@@ -143,10 +143,8 @@ describe('first open of an unmaterialized shared project (QA P0)', () => {
     expect(result.current.downloadPending).toBe(true);
   });
 
-  it('reports downloadPending for the OWNER of a placeholder they have not materialized either', async () => {
-    // The reinstall case (recvqzaDvUU6B3): the daemon self-pulls for the owner,
-    // but the owner never auto-pulls from the web, so the member-only
-    // `shouldAutoPull` gate would leave them staring at the same empty state.
+  it('reports downloadPending for the owner of an unmaterialized placeholder', async () => {
+    // The placeholder is a local fact independent of who owns the project.
     // A placeholder means "local files are not the content" for every viewer.
     const fetchImpl = daemonWith(firstOpenStatus(), OWNER_CONTEXT);
     const { result } = renderHook(() =>
