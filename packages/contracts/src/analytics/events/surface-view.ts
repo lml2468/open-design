@@ -76,9 +76,8 @@ export interface DesignSystemsTemplatesModalSurfaceViewProps {
   templates_type?: string;
 }
 
-// Impression of the hosted-AMR nudge under a failed run's error toast. Fires
-// once per render of the toast for a non-AMR agent whose failure is a
-// model/auth/quota error (`error_code` carries the specific class).
+// Impression of a failed run's error toast. Fires once per render;
+// `error_code` carries the provider-independent failure class.
 export interface RunFailedToastSurfaceViewProps {
   page_name: 'chat_panel';
   area: 'chat_panel';

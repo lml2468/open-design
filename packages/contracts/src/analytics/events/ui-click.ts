@@ -6,7 +6,7 @@ import type { DesignSystemEnrichClickProps, TrackingDesignSystemEditSurface } fr
 import type { TrackingPageName, TrackingSettingsPage } from './event-names.js';
 import type { OnboardingClickProps, TrackingOnboardingFirstLoopStep, TrackingOnboardingProductType, TrackingOnboardingRole, TrackingOnboardingUseCase } from './onboarding.js';
 import type { TrackingRunRecoveryActionType } from './result-events.js';
-import type { TrackingAmrEntrySource, TrackingArtifactKind, TrackingByokProviderId, TrackingCliProviderId, TrackingExecutionMode, TrackingExportFormat, TrackingFeedbackProviderId, TrackingNewProjectTab, TrackingProjectKind, TrackingProjectSource } from './shared-enums.js';
+import type { TrackingArtifactKind, TrackingByokProviderId, TrackingCliProviderId, TrackingExecutionMode, TrackingExportFormat, TrackingFeedbackProviderId, TrackingNewProjectTab, TrackingProjectKind, TrackingProjectSource } from './shared-enums.js';
 import type { AccountMenuClickProps, CommunityTemplateClickProps, EntryNavigationClickProps, ExtensionMarketplaceClickProps, ProjectCollectionClickProps, TrackingWorkspaceScope, WorkspaceInviteClickProps, WorkspaceSwitcherClickProps } from './workspace.js';
 // ---- ui_click ------------------------------------------------------------
 //
@@ -930,14 +930,6 @@ export interface QuestionsFormClickProps {
   project_id: string;
 }
 
-// Hosted-AMR nudge shown under a non-AMR agent's model/auth/quota failure.
-// `go_amr` is the link that opens https://open-design.ai/amr.
-export interface RunFailedToastClickProps {
-  page_name: 'chat_panel';
-  area: 'chat_panel';
-  element: 'go_amr';
-}
-
 export interface RunRecoveryActionClickProps {
   page_name: 'chat_panel';
   area: 'chat_panel';
@@ -952,44 +944,6 @@ export interface RunRecoveryActionClickProps {
   failure_reason?: string;
   target_agent_provider_id?: string;
   target_model_id?: string;
-}
-
-export interface AmrEntryClickProps {
-  page_name: TrackingPageName;
-  area: 'amr_entry';
-  element: TrackingAmrEntrySource;
-  action: 'click_amr_entry';
-  entry_id: string;
-  source_product: 'open_design';
-  source_detail: TrackingAmrEntrySource;
-  entry_occurred_at: string;
-}
-
-// Terminal outcome of one AMR (vela) sign-in attempt, fired exactly once
-// per attempt when the login poll loop settles. This is the main-app-side
-// completion signal that pairs with the amr_entry click: dashboards count
-// AMR-authorized users from this event without joining the separate AMR
-// PostHog project. `result` semantics:
-//   success   — poll observed loggedIn=true within the budget
-//   failed    — `vela login` failed to spawn or exited before sign-in
-//   cancelled — the user clicked Cancel (or backed out mid-start)
-//   timeout   — the 5-minute poll budget elapsed
-export interface AmrAuthResultProps {
-  page_name: TrackingPageName;
-  area: 'amr_auth';
-  result: 'success' | 'failed' | 'cancelled' | 'timeout';
-  error_code?: string;
-  duration_ms: number;
-  // Attribution carried over from the amr_entry click that started this
-  // attempt; absent when login was started without a recorded entry.
-  entry_id?: string;
-  source_detail?: TrackingAmrEntrySource;
-  auth_attempt_id?: string;
-  last_stage?: import('./amr-auth.js').AmrAuthStage;
-  last_stage_result?: import('./amr-auth.js').AmrAuthStageResult;
-  last_error_kind?: import('./amr-auth.js').AmrAuthErrorKind;
-  network_path?: import('./amr-auth.js').AmrAuthNetworkPath;
-  fallback_used?: boolean;
 }
 
 export interface ChatPanelResourcesPopoverClickProps {
@@ -1265,9 +1219,7 @@ export interface HandoffClickProps {
     // Launch a specific editor target (or the Finder/Explorer fallback).
     | 'open_editor'
     // Copy the hand-off prompt for a specific CLI agent.
-    | 'copy_cli_prompt'
-    // Open the OpenDesign AMR website link.
-    | 'amr_website';
+    | 'copy_cli_prompt';
   // Bounded enum id of the editor / CLI target, present for `open_editor`,
   // `copy_cli_prompt`, and for `trigger` when it directly launches the
   // preferred editor. Normalized via `handoffTargetIdToTracking` so it is
@@ -1691,9 +1643,7 @@ export type UiClickProps =
   | ComposerBarClickProps
   | NextStepActionClickProps
   | QuestionsFormClickProps
-  | RunFailedToastClickProps
   | RunRecoveryActionClickProps
-  | AmrEntryClickProps
   | ChatPanelResourcesPopoverClickProps
   | ChatPanelMessageQueueClickProps
   | FileManagerClickProps

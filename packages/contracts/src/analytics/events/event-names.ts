@@ -77,9 +77,6 @@ export type AnalyticsEventName =
   // that learns an installed CLI cannot actually be used; without this, the
   // only way we hear about it is a user filing a report with a diagnostics zip.
   | 'agent_detect_diagnostic'
-  // AMR (hosted model) account auth result.
-  | 'amr_auth_stage'
-  | 'amr_auth_result'
   // Onboarding-only result events. UI clicks + page_views inside the
   // onboarding flow reuse the generic `ui_click` / `page_view` shapes
   // with `page_name=onboarding`; the three `onboarding_*` names below

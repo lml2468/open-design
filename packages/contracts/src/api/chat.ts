@@ -865,7 +865,7 @@ export interface ChatCommentAttachment {
 export type PersistedAgentEvent =
   // `code` carries the structured API error code for `label: 'error'`
   // status events (e.g. AGENT_AUTH_REQUIRED, RATE_LIMITED). Clients use it to
-  // decide error-specific affordances such as the hosted-AMR nudge.
+  // decide error-specific recovery affordances.
   // `failureCategory` / `failureDetail` carry the daemon's finer classification
   // for the same failure, so the error card can name a specific type + fix even
   // when many causes share one `code` (e.g. hard_quota vs a transient 429).

@@ -5,15 +5,6 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 
 import { createCommandInvocation } from '@open-design/platform';
-import type {
-  AmrAuthErrorKind,
-  AmrAuthNetworkPath,
-  AmrAuthStage,
-  AmrAuthStageResult,
-  AmrEntryAttribution,
-  TrackingAmrEntrySource,
-  TrackingPageName,
-} from '@open-design/contracts/analytics';
 import type { AmrSessionState } from '@open-design/contracts';
 
 import { resolveAgentLaunch } from '../runtimes/launch.js';
@@ -24,166 +15,9 @@ import { resolveEffectiveVelaConsoleOrigin } from './vela-console-origin.js';
 
 export { resolveAmrProfile } from './vela-profile.js';
 
-const AMR_ENTRY_SOURCES: ReadonlySet<TrackingAmrEntrySource> = new Set([
-  'onboarding_amr_card',
-  'onboarding_amr_sign_in_continue',
-  'inline_model_switcher_amr_row',
-  'settings_amr_agent_card',
-  'settings_amr_authorize',
-  'settings_cloud_callout',
-  'settings_amr_console',
-  'settings_amr_install',
-  'avatar_amr_console',
-  'handoff_amr_website',
-  'chat_error_recharge',
-  'chat_error_upgrade',
-  'chat_error_switch_retry_card',
-  'generation_preview_authorize_retry',
-  'generation_preview_recharge',
-  'generation_preview_switch_retry_card',
-  'settings_amr_upgrade',
-  'inline_amr_upgrade',
-  'avatar_amr_upgrade',
-  'avatar_amr_agent_card',
-  'artifact_success_upgrade',
-  'home_artifact_upgrade',
-]);
-
 function isCanonicalAmrAuthAttemptId(value: unknown): value is string {
   return typeof value === 'string'
     && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
-}
-
-const AMR_ONBOARDING_PROFILE_SOURCES: ReadonlySet<TrackingAmrEntrySource> = new Set([
-  'onboarding_amr_card',
-  'onboarding_amr_sign_in_continue',
-]);
-
-type AmrEntrySourcePageName = Extract<
-  TrackingPageName,
-  'onboarding' | 'chat_panel' | 'settings' | 'file_manager' | 'artifact' | 'home'
->;
-
-const AMR_ENTRY_SOURCE_PAGES: ReadonlySet<AmrEntrySourcePageName> = new Set([
-  'onboarding',
-  'chat_panel',
-  'settings',
-  'file_manager',
-  'artifact',
-  'home',
-]);
-
-const AMR_ENTRY_SOURCE_PAGE_BY_SOURCE: Record<
-  TrackingAmrEntrySource,
-  AmrEntrySourcePageName
-> = {
-  onboarding_amr_card: 'onboarding',
-  onboarding_amr_sign_in_continue: 'onboarding',
-  inline_model_switcher_amr_row: 'chat_panel',
-  settings_amr_agent_card: 'settings',
-  settings_amr_authorize: 'settings',
-  settings_cloud_callout: 'settings',
-  settings_amr_console: 'settings',
-  settings_amr_install: 'settings',
-  avatar_amr_console: 'chat_panel',
-  handoff_amr_website: 'artifact',
-  chat_error_recharge: 'chat_panel',
-  chat_error_upgrade: 'chat_panel',
-  chat_error_switch_retry_card: 'chat_panel',
-  generation_preview_authorize_retry: 'file_manager',
-  generation_preview_recharge: 'file_manager',
-  generation_preview_switch_retry_card: 'file_manager',
-  settings_amr_upgrade: 'settings',
-  inline_amr_upgrade: 'chat_panel',
-  avatar_amr_upgrade: 'chat_panel',
-  avatar_amr_agent_card: 'chat_panel',
-  artifact_success_upgrade: 'artifact',
-  home_artifact_upgrade: 'home',
-};
-
-const AMR_ANALYTICS_EVENTS_URL =
-  'https://amr-api.open-design.ai/api/v1/analytics/events';
-const AMR_ANALYTICS_TIMEOUT_MS = 1500;
-const OD_DEVICE_ID_MAX_LENGTH = 128;
-
-type AmrAnalyticsEnv = 'local' | 'test' | 'staging' | 'production';
-
-const AMR_ANALYTICS_ENVS: ReadonlySet<AmrAnalyticsEnv> = new Set([
-  'local',
-  'test',
-  'staging',
-  'production',
-]);
-
-export interface AmrEntryAnalyticsPayload {
-  pageName: 'open_design';
-  sourcePageName: AmrEntrySourcePageName;
-  area: 'amr_entry';
-  element: TrackingAmrEntrySource;
-  action: 'click_amr_entry';
-  entryId: string;
-  sourceProduct: 'open_design';
-  sourceDetail: TrackingAmrEntrySource;
-  entryOccurredAt: string;
-  // Optional self-reported onboarding profile, forwarded to AMR for paid-
-  // conversion segmentation. Open strings (not a union) so a new onboarding
-  // option never forces a contract bump on either side. useCase is multi-select.
-  odRole?: string;
-  odOrgSize?: string;
-  odUseCase?: string[];
-  odSource?: string;
-}
-
-export interface AmrOnboardingProfileAnalyticsPayload {
-  pageName: 'open_design';
-  sourcePageName: 'onboarding';
-  area: 'onboarding';
-  element: 'about_you_submit';
-  action: 'submit_profile';
-  entryId: string;
-  sourceProduct: 'open_design';
-  sourceDetail: TrackingAmrEntrySource;
-  entryOccurredAt: string;
-  profileOccurredAt: string;
-  odDeviceId?: string;
-  odRole?: string;
-  odOrgSize?: string;
-  odUseCase?: string[];
-  odSource?: string;
-}
-
-export interface AmrEntryAnalyticsContext {
-  deviceId?: string | null;
-  sessionId?: string | null;
-  locale?: string | null;
-}
-
-interface FetchResponseLike {
-  ok: boolean;
-  status: number;
-}
-
-type FetchLike = (
-  input: string,
-  init: {
-    method: 'POST';
-    headers: Record<string, string>;
-    body: string;
-    signal?: AbortSignal;
-  },
-) => Promise<FetchResponseLike>;
-
-export interface MirrorAmrEntryAnalyticsDeps {
-  analyticsContext?: AmrEntryAnalyticsContext | null;
-  appVersion?: string | null;
-  env?: NodeJS.ProcessEnv;
-  fetchImpl?: FetchLike;
-}
-
-export interface MirrorAmrEntryAnalyticsResult {
-  mirrored: boolean;
-  status?: number;
-  error?: string;
 }
 
 export interface VelaUser {
@@ -234,9 +68,6 @@ export interface VelaLoginStatus {
    */
   consoleOrigin?: string;
   authAttemptId?: string;
-  authStages?: VelaLoginAuthStage[];
-  authRoute?: AmrAuthNetworkPath;
-  fallbackUsed?: boolean;
 }
 
 /**
@@ -257,21 +88,8 @@ export function resolveVelaConsoleOrigin(
   return resolveEffectiveVelaConsoleOrigin(env, configuredEnv);
 }
 
-export interface VelaLoginAuthStage {
-  sequence: number;
-  stage: AmrAuthStage;
-  result: AmrAuthStageResult;
-  source: 'daemon';
-  occurredAt: string;
-  route: AmrAuthNetworkPath;
-  errorKind?: AmrAuthErrorKind;
-}
-
-export interface VelaLoginAttemptSnapshot {
+interface VelaLoginAttemptSnapshot {
   authAttemptId?: string;
-  authStages?: VelaLoginAuthStage[];
-  authRoute?: AmrAuthNetworkPath;
-  fallbackUsed?: boolean;
 }
 
 export interface VelaLoginActivation {
@@ -784,9 +602,6 @@ interface VelaLoginAttemptState extends VelaLoginAttemptRef {
   fallbackPending: boolean;
   fallbackStarted: boolean;
   currentPid: number | null;
-  route: AmrAuthNetworkPath;
-  fallbackUsed: boolean;
-  stages: VelaLoginAuthStage[];
 }
 
 let loginGeneration = 0;
@@ -821,36 +636,6 @@ interface VelaLoginActivationCapture {
   activation: VelaLoginActivation;
   stdout: string;
   stderr: string;
-}
-
-function recordVelaAuthStage(
-  attempt: VelaLoginAttemptRef,
-  signal: {
-    stage: AmrAuthStage;
-    result: AmrAuthStageResult;
-    errorKind?: AmrAuthErrorKind;
-  },
-  source: 'daemon',
-): void {
-  const current = currentVelaLoginAttempt(attempt);
-  if (!current) return;
-  const duplicate = current.stages.some((stage) =>
-    stage.stage === signal.stage
-      && stage.result === signal.result
-      && stage.route === current.route
-      && stage.errorKind === signal.errorKind,
-  );
-  if (duplicate) return;
-  if (current.stages.length >= 32) return;
-  current.stages.push({
-    sequence: current.stages.length + 1,
-    stage: signal.stage,
-    result: signal.result,
-    source,
-    occurredAt: new Date().toISOString(),
-    route: current.route,
-    ...(signal.errorKind ? { errorKind: signal.errorKind } : {}),
-  });
 }
 
 function appendHumanVelaLoginStdout(
@@ -896,22 +681,9 @@ function beginLoginActivationCapture(
     if (!ownsCapture()) return;
     const text = String(chunk);
     appendHumanVelaLoginStdout(capture, text);
-    const activationWasReady = Boolean(activation.activationUrl);
     const parsed = parseVelaLoginActivation(capture.stdout, capture.stderr);
     if (parsed.activationUrl) activation.activationUrl = parsed.activationUrl;
     if (parsed.userCode) activation.userCode = parsed.userCode;
-    if (!activationWasReady && activation.activationUrl) {
-      recordVelaAuthStage(
-        attempt,
-        { stage: 'device_auth_create_result', result: 'success' },
-        'daemon',
-      );
-      recordVelaAuthStage(
-        attempt,
-        { stage: 'activation_ready', result: 'success' },
-        'daemon',
-      );
-    }
   });
   child.stderr?.on('data', (chunk) => {
     if (!ownsCapture()) return;
@@ -923,15 +695,6 @@ function beginLoginActivationCapture(
       && parseVelaLoginActivation('', capture.stderr).browserOpenFailed
     ) {
       activation.browserOpenFailed = true;
-      recordVelaAuthStage(
-        attempt,
-        {
-          stage: 'browser_open_result',
-          result: 'failed',
-          errorKind: 'browser_open_error',
-        },
-        'daemon',
-      );
     }
   });
   return capture;
@@ -1028,7 +791,6 @@ export function cancelVelaLogin(
 export interface SpawnVelaLoginDeps {
   configuredEnv?: Record<string, string>;
   baseEnv?: NodeJS.ProcessEnv;
-  attribution?: AmrEntryAttribution | null;
   correlationEnv?: Record<string, string>;
   defaultApiUrl?: string | null;
   // When set, block until the direct attempt reaches device-auth steady state
@@ -1074,16 +836,8 @@ function beginVelaLoginAttempt(
     fallbackPending: false,
     fallbackStarted: false,
     currentPid: null,
-    route: 'direct',
-    fallbackUsed: false,
-    stages: [],
   };
   latestLoginAttempt = attempt;
-  recordVelaAuthStage(
-    attempt,
-    { stage: 'attempt_started', result: 'started' },
-    'daemon',
-  );
   return attempt;
 }
 
@@ -1100,15 +854,10 @@ function currentVelaLoginAttempt(
     : null;
 }
 
-export function readVelaLoginAttemptSnapshot(): VelaLoginAttemptSnapshot {
+function readVelaLoginAttemptSnapshot(): VelaLoginAttemptSnapshot {
   const attempt = latestLoginAttempt;
   return attempt
-    ? {
-        authAttemptId: attempt.authAttemptId,
-        authStages: attempt.stages.map((stage) => ({ ...stage })),
-        authRoute: attempt.route,
-        fallbackUsed: attempt.fallbackUsed,
-      }
+    ? { authAttemptId: attempt.authAttemptId }
     : {};
 }
 
@@ -1220,14 +969,7 @@ async function spawnVelaLoginAttempt(
   if (!attemptState) throw new Error('vela login attempt is no longer active');
   if (hasRunningVelaLoginChild()) throw new Error('vela login already running');
   const def = getAgentDef('amr');
-  if (!def) {
-    recordVelaAuthStage(
-      deps.attempt,
-      { stage: 'spawn_result', result: 'failed', errorKind: 'internal_error' },
-      'daemon',
-    );
-    throw new Error('AMR runtime def not registered');
-  }
+  if (!def) throw new Error('AMR runtime def not registered');
   const baseEnv = deps.baseEnv ?? process.env;
   const configuredEnv = withDefaultVelaApiUrl(
     deps.configuredEnv ?? {},
@@ -1236,17 +978,9 @@ async function spawnVelaLoginAttempt(
   );
   const launch = resolveAgentLaunch(def, configuredEnv);
   const bin = launch.selectedPath;
-  if (!bin) {
-    recordVelaAuthStage(
-      deps.attempt,
-      { stage: 'spawn_result', result: 'failed', errorKind: 'internal_error' },
-      'daemon',
-    );
-    throw new Error('vela binary not found; install vela or configure VELA_BIN');
-  }
+  if (!bin) throw new Error('vela binary not found; install vela or configure VELA_BIN');
   const env: NodeJS.ProcessEnv = {
     ...spawnEnvForAgent('amr', baseEnv, configuredEnv),
-    ...velaLoginAttributionEnv(deps.attribution),
     ...(deps.correlationEnv ?? {}),
     // The UUID is daemon-owned and written after configured/base env so a
     // child cannot replace the correlation key selected for this attempt.
@@ -1270,29 +1004,12 @@ async function spawnVelaLoginAttempt(
       windowsVerbatimArguments: invocation.windowsVerbatimArguments,
     });
   } catch (error) {
-    recordVelaAuthStage(
-      deps.attempt,
-      { stage: 'spawn_result', result: 'failed', errorKind: 'internal_error' },
-      'daemon',
-    );
     throw error;
   }
-  if (typeof child.pid !== 'number') {
-    recordVelaAuthStage(
-      deps.attempt,
-      { stage: 'spawn_result', result: 'failed', errorKind: 'internal_error' },
-      'daemon',
-    );
-    throw new Error('failed to spawn vela login');
-  }
+  if (typeof child.pid !== 'number') throw new Error('failed to spawn vela login');
   activeLoginProcs.set(child.pid, child);
   pendingVelaLoginTerminals += 1;
   attemptState.currentPid = child.pid;
-  recordVelaAuthStage(
-    deps.attempt,
-    { stage: 'spawn_result', result: 'success' },
-    'daemon',
-  );
   let spawnReturned = false;
   let terminalHandled = false;
   let activationCapture: VelaLoginActivationCapture | null = null;
@@ -1300,9 +1017,7 @@ async function spawnVelaLoginAttempt(
   const terminal = new Promise<VelaLoginChildTerminal>((resolve) => {
     settleTerminal = resolve;
   });
-  const handleTerminal = (
-    terminalKind: 'exit' | 'error',
-  ) => {
+  const handleTerminal = () => {
     if (terminalHandled) return;
     terminalHandled = true;
     pendingVelaLoginTerminals = Math.max(0, pendingVelaLoginTerminals - 1);
@@ -1310,31 +1025,8 @@ async function spawnVelaLoginAttempt(
     const current = currentVelaLoginAttempt(deps.attempt);
     if (!current || current.currentPid !== child.pid) return;
     current.currentPid = null;
-    const exitedBeforeActivation =
-      terminalKind === 'exit' && !activationCapture?.activation.activationUrl;
     const terminatedBeforeActivation =
       !activationCapture?.activation.activationUrl;
-    if (
-      exitedBeforeActivation
-      && !current.stages.some((stage) =>
-        stage.route === current.route
-          && stage.stage === 'device_auth_create_result'
-          && stage.result === 'failed',
-      )
-    ) {
-      // Legacy Vela has no structured stage output. A real child exit after
-      // spawn but before activation is the strongest safe boundary we can
-      // infer without classifying raw stderr.
-      recordVelaAuthStage(
-        deps.attempt,
-        {
-          stage: 'device_auth_create_result',
-          result: 'failed',
-          errorKind: 'unknown',
-        },
-        'daemon',
-      );
-    }
     const shouldFallback = Boolean(
       terminatedBeforeActivation
         && spawnReturned
@@ -1353,17 +1045,7 @@ async function spawnVelaLoginAttempt(
     current.fallbackPending = true;
     activeLoginActivation = null;
     void deps.onLatePreActivationFailure?.()
-      .catch(() => {
-        recordVelaAuthStage(
-          deps.attempt,
-          {
-            stage: 'device_auth_create_result',
-            result: 'failed',
-            errorKind: 'internal_error',
-          },
-          'daemon',
-        );
-      })
+      .catch(() => undefined)
       .finally(() => {
         const stillCurrent = currentVelaLoginAttempt(deps.attempt);
         if (stillCurrent) stillCurrent.fallbackPending = false;
@@ -1383,16 +1065,11 @@ async function spawnVelaLoginAttempt(
     }
   });
   child.once('close', (code, signal) => {
-    handleTerminal('exit');
+    handleTerminal();
     settleTerminal({ kind: 'exit', code, signal });
   });
   child.once('error', (error) => {
-    recordVelaAuthStage(
-      deps.attempt,
-      { stage: 'spawn_result', result: 'failed', errorKind: 'internal_error' },
-      'daemon',
-    );
-    handleTerminal('error');
+    handleTerminal();
     settleTerminal({ kind: 'error', error });
   });
   // Capture the activation URL/code/warning for the whole login (not just the
@@ -1435,7 +1112,6 @@ export async function spawnVelaLoginWithFallback(
   const sharedSpawnDeps: SpawnVelaLoginDeps = {
     ...(deps.configuredEnv ? { configuredEnv: deps.configuredEnv } : {}),
     ...(deps.baseEnv ? { baseEnv: deps.baseEnv } : {}),
-    ...(deps.attribution !== undefined ? { attribution: deps.attribution } : {}),
     ...(deps.correlationEnv ? { correlationEnv: deps.correlationEnv } : {}),
     ...(deps.waitForActivation !== undefined
       ? { waitForActivation: deps.waitForActivation }
@@ -1446,13 +1122,6 @@ export async function spawnVelaLoginWithFallback(
     if (!current) throw new Error('vela login attempt is no longer active');
     current.fallbackStarted = true;
     current.fallbackPending = true;
-    current.fallbackUsed = true;
-    current.route = 'proxy';
-    recordVelaAuthStage(
-      attempt,
-      { stage: 'attempt_started', result: 'started' },
-      'daemon',
-    );
     try {
       return await spawnVelaLoginAttempt({
         ...sharedSpawnDeps,
@@ -1492,348 +1161,4 @@ function withDefaultVelaApiUrl(
   if ((configuredEnv.VELA_API_URL ?? '').trim()) return configuredEnv;
   if ((baseEnv.VELA_API_URL ?? '').trim()) return configuredEnv;
   return { ...configuredEnv, VELA_API_URL: trimmed };
-}
-
-export function parseVelaLoginAttribution(input: unknown): AmrEntryAttribution | null {
-  const raw = input && typeof input === 'object' && 'attribution' in input
-    ? (input as { attribution?: unknown }).attribution
-    : null;
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const value = raw as Partial<AmrEntryAttribution>;
-  if (
-    typeof value.entryId !== 'string'
-    || value.entryId.length === 0
-    || value.sourceProduct !== 'open_design'
-    || typeof value.sourceDetail !== 'string'
-    || !AMR_ENTRY_SOURCES.has(value.sourceDetail as TrackingAmrEntrySource)
-    || typeof value.occurredAt !== 'string'
-    || !Number.isFinite(Date.parse(value.occurredAt))
-  ) {
-    return null;
-  }
-  const odDeviceId = sanitizeOpenDesignDeviceId(value.odDeviceId);
-  return {
-    entryId: value.entryId,
-    sourceProduct: value.sourceProduct,
-    sourceDetail: value.sourceDetail as TrackingAmrEntrySource,
-    occurredAt: value.occurredAt,
-    ...(odDeviceId ? { odDeviceId } : {}),
-  };
-}
-
-export function parseAmrEntryAnalyticsPayload(
-  input: unknown,
-): AmrEntryAnalyticsPayload | null {
-  const raw = isRecord(input) && 'payload' in input ? input.payload : input;
-  if (!isRecord(raw)) return null;
-  const pageName = raw.pageName;
-  const sourcePageName = raw.sourcePageName;
-  const area = raw.area;
-  const element = raw.element;
-  const action = raw.action;
-  const entryId = raw.entryId;
-  const sourceProduct = raw.sourceProduct;
-  const sourceDetail = raw.sourceDetail;
-  const entryOccurredAt = raw.entryOccurredAt;
-  const odRole = sanitizeOptionalProfileValue(raw.odRole);
-  const odOrgSize = sanitizeOptionalProfileValue(raw.odOrgSize);
-  const odSource = sanitizeOptionalProfileValue(raw.odSource);
-  const odUseCase = sanitizeOptionalProfileList(raw.odUseCase);
-  if (
-    pageName !== 'open_design'
-    || typeof sourcePageName !== 'string'
-    || !AMR_ENTRY_SOURCE_PAGES.has(sourcePageName as AmrEntrySourcePageName)
-    || area !== 'amr_entry'
-    || typeof element !== 'string'
-    || !AMR_ENTRY_SOURCES.has(element as TrackingAmrEntrySource)
-    || action !== 'click_amr_entry'
-    || typeof entryId !== 'string'
-    || entryId.length === 0
-    || sourceProduct !== 'open_design'
-    || typeof sourceDetail !== 'string'
-    || !AMR_ENTRY_SOURCES.has(sourceDetail as TrackingAmrEntrySource)
-    || sourceDetail !== element
-    || sourcePageName
-      !== AMR_ENTRY_SOURCE_PAGE_BY_SOURCE[sourceDetail as TrackingAmrEntrySource]
-    || typeof entryOccurredAt !== 'string'
-    || !Number.isFinite(Date.parse(entryOccurredAt))
-    || odRole === INVALID_PROFILE_VALUE
-    || odOrgSize === INVALID_PROFILE_VALUE
-    || odSource === INVALID_PROFILE_VALUE
-    || odUseCase === INVALID_PROFILE_VALUE
-  ) {
-    return null;
-  }
-  return {
-    pageName,
-    sourcePageName: sourcePageName as AmrEntrySourcePageName,
-    area,
-    element: element as TrackingAmrEntrySource,
-    action,
-    entryId,
-    sourceProduct,
-    sourceDetail: sourceDetail as TrackingAmrEntrySource,
-    entryOccurredAt,
-    ...(odRole ? { odRole } : {}),
-    ...(odOrgSize ? { odOrgSize } : {}),
-    ...(odUseCase ? { odUseCase } : {}),
-    ...(odSource ? { odSource } : {}),
-  };
-}
-
-export function parseAmrOnboardingProfileAnalyticsPayload(
-  input: unknown,
-): AmrOnboardingProfileAnalyticsPayload | null {
-  const raw = isRecord(input) && 'payload' in input ? input.payload : input;
-  if (!isRecord(raw)) return null;
-  const pageName = raw.pageName;
-  const sourcePageName = raw.sourcePageName;
-  const area = raw.area;
-  const element = raw.element;
-  const action = raw.action;
-  const entryId = raw.entryId;
-  const sourceProduct = raw.sourceProduct;
-  const sourceDetail = raw.sourceDetail;
-  const entryOccurredAt = raw.entryOccurredAt;
-  const profileOccurredAt = raw.profileOccurredAt;
-  const odDeviceId = sanitizeOpenDesignDeviceId(raw.odDeviceId);
-  const odRole = sanitizeOptionalProfileValue(raw.odRole);
-  const odOrgSize = sanitizeOptionalProfileValue(raw.odOrgSize);
-  const odSource = sanitizeOptionalProfileValue(raw.odSource);
-  const odUseCase = sanitizeOptionalProfileList(raw.odUseCase);
-  if (
-    pageName !== 'open_design'
-    || sourcePageName !== 'onboarding'
-    || area !== 'onboarding'
-    || element !== 'about_you_submit'
-    || action !== 'submit_profile'
-    || typeof entryId !== 'string'
-    || entryId.length === 0
-    || sourceProduct !== 'open_design'
-    || typeof sourceDetail !== 'string'
-    || !AMR_ENTRY_SOURCES.has(sourceDetail as TrackingAmrEntrySource)
-    || !AMR_ONBOARDING_PROFILE_SOURCES.has(sourceDetail as TrackingAmrEntrySource)
-    || typeof entryOccurredAt !== 'string'
-    || !Number.isFinite(Date.parse(entryOccurredAt))
-    || typeof profileOccurredAt !== 'string'
-    || !Number.isFinite(Date.parse(profileOccurredAt))
-    || odRole === INVALID_PROFILE_VALUE
-    || odOrgSize === INVALID_PROFILE_VALUE
-    || odSource === INVALID_PROFILE_VALUE
-    || odUseCase === INVALID_PROFILE_VALUE
-    || (!odRole && !odOrgSize && !odSource && !odUseCase)
-  ) {
-    return null;
-  }
-  return {
-    pageName,
-    sourcePageName,
-    area,
-    element,
-    action,
-    entryId,
-    sourceProduct,
-    sourceDetail: sourceDetail as TrackingAmrEntrySource,
-    entryOccurredAt,
-    profileOccurredAt,
-    ...(odDeviceId ? { odDeviceId } : {}),
-    ...(odRole ? { odRole } : {}),
-    ...(odOrgSize ? { odOrgSize } : {}),
-    ...(odUseCase ? { odUseCase } : {}),
-    ...(odSource ? { odSource } : {}),
-  };
-}
-
-// Optional profile values are open strings; we accept absent/undefined, reject
-// a present-but-wrong type or an over-long value (matches AMR's 64-char cap),
-// and otherwise pass the trimmed string through.
-const INVALID_PROFILE_VALUE = Symbol('invalid_profile_value');
-
-function sanitizeOptionalProfileValue(
-  value: unknown,
-): string | undefined | typeof INVALID_PROFILE_VALUE {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== 'string') return INVALID_PROFILE_VALUE;
-  const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > 64) return INVALID_PROFILE_VALUE;
-  return trimmed;
-}
-
-// useCase is multi-select: accept absent/undefined, reject a non-array or any
-// element that fails the open-string check, cap the count (matches AMR's array
-// bound), and pass the trimmed list through.
-function sanitizeOptionalProfileList(
-  value: unknown,
-): string[] | undefined | typeof INVALID_PROFILE_VALUE {
-  if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value) || value.length > 20) return INVALID_PROFILE_VALUE;
-  const cleaned: string[] = [];
-  for (const entry of value) {
-    const sanitized = sanitizeOptionalProfileValue(entry);
-    if (sanitized === INVALID_PROFILE_VALUE || sanitized === undefined) {
-      return INVALID_PROFILE_VALUE;
-    }
-    cleaned.push(sanitized);
-  }
-  return cleaned.length > 0 ? cleaned : undefined;
-}
-
-function sanitizeOpenDesignDeviceId(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > OD_DEVICE_ID_MAX_LENGTH) return null;
-  return trimmed;
-}
-
-export async function mirrorAmrEntryAnalytics(
-  payload: AmrEntryAnalyticsPayload,
-  deps: MirrorAmrEntryAnalyticsDeps = {},
-): Promise<MirrorAmrEntryAnalyticsResult> {
-  return mirrorAmrAnalyticsEvent(buildAmrEntryAnalyticsCommon(payload, deps), payload, deps);
-}
-
-export async function mirrorAmrOnboardingProfileAnalytics(
-  payload: AmrOnboardingProfileAnalyticsPayload,
-  deps: MirrorAmrEntryAnalyticsDeps = {},
-): Promise<MirrorAmrEntryAnalyticsResult> {
-  return mirrorAmrAnalyticsEvent(
-    buildAmrOnboardingProfileAnalyticsCommon(payload, deps),
-    payload,
-    deps,
-  );
-}
-
-async function mirrorAmrAnalyticsEvent(
-  common: Record<string, unknown>,
-  payload: AmrEntryAnalyticsPayload | AmrOnboardingProfileAnalyticsPayload,
-  deps: MirrorAmrEntryAnalyticsDeps,
-): Promise<MirrorAmrEntryAnalyticsResult> {
-  const fetchImpl = deps.fetchImpl ?? (globalThis.fetch as unknown as FetchLike | undefined);
-  if (!fetchImpl) return { mirrored: false };
-  const env = deps.env ?? process.env;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AMR_ANALYTICS_TIMEOUT_MS);
-  timeout.unref?.();
-  try {
-    const response = await fetchImpl(resolveAmrAnalyticsEventsUrl(env), {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        events: [
-          {
-            common,
-            payload,
-          },
-        ],
-      }),
-    });
-    return { mirrored: response.ok, status: response.status };
-  } catch (err) {
-    return {
-      mirrored: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function velaLoginAttributionEnv(
-  attribution: AmrEntryAttribution | null | undefined,
-): Record<string, string> {
-  if (!attribution) return {};
-  return {
-    OPEN_DESIGN_AMR_ENTRY_ID: attribution.entryId,
-    OPEN_DESIGN_AMR_ENTRY_SOURCE: attribution.sourceDetail,
-    OPEN_DESIGN_AMR_ENTRY_AT: attribution.occurredAt,
-    OPEN_DESIGN_AMR_ORIGIN: attribution.sourceProduct,
-    ...(attribution.odDeviceId
-      ? { OPEN_DESIGN_AMR_DEVICE_ID: attribution.odDeviceId }
-      : {}),
-  };
-}
-
-function buildAmrEntryAnalyticsCommon(
-  payload: AmrEntryAnalyticsPayload,
-  deps: MirrorAmrEntryAnalyticsDeps,
-) {
-  const context = deps.analyticsContext ?? null;
-  const anonymousId = context?.deviceId?.trim() || payload.entryId;
-  const sessionId = context?.sessionId?.trim() || payload.entryId;
-  return {
-    eventId: `od-amr-entry-${payload.entryId}`,
-    eventTime: payload.entryOccurredAt,
-    registryKey: 'open_design_amr_entry',
-    eventName: 'amr_entry',
-    eventType: 'click',
-    platform: 'web',
-    env: resolveAmrAnalyticsEnv(deps.env ?? process.env),
-    userId: null,
-    anonymousId,
-    sessionId,
-    appVersion: deps.appVersion ?? null,
-    locale: context?.locale?.trim() || null,
-    timezone: null,
-    deviceType: null,
-    browser: null,
-    os: null,
-    arch: null,
-    cliVersion: null,
-    traceId: payload.entryId,
-    walletBalance: null,
-  };
-}
-
-function buildAmrOnboardingProfileAnalyticsCommon(
-  payload: AmrOnboardingProfileAnalyticsPayload,
-  deps: MirrorAmrEntryAnalyticsDeps,
-) {
-  const context = deps.analyticsContext ?? null;
-  const anonymousId =
-    context?.deviceId?.trim() || payload.odDeviceId || payload.entryId;
-  const sessionId = context?.sessionId?.trim() || payload.entryId;
-  return {
-    eventId: `od-onboarding-profile-${payload.entryId}`,
-    eventTime: payload.profileOccurredAt,
-    registryKey: 'open_design_onboarding_profile',
-    eventName: 'onboarding_profile',
-    eventType: 'result',
-    platform: 'web',
-    env: resolveAmrAnalyticsEnv(deps.env ?? process.env),
-    userId: null,
-    anonymousId,
-    sessionId,
-    appVersion: deps.appVersion ?? null,
-    locale: context?.locale?.trim() || null,
-    timezone: null,
-    deviceType: null,
-    browser: null,
-    os: null,
-    arch: null,
-    cliVersion: null,
-    traceId: payload.entryId,
-    walletBalance: null,
-  };
-}
-
-function resolveAmrAnalyticsEventsUrl(env: NodeJS.ProcessEnv): string {
-  return env.OPEN_DESIGN_AMR_ANALYTICS_URL?.trim() || AMR_ANALYTICS_EVENTS_URL;
-}
-
-function resolveAmrAnalyticsEnv(env: NodeJS.ProcessEnv): AmrAnalyticsEnv {
-  const raw = env.OPEN_DESIGN_AMR_ANALYTICS_ENV?.trim();
-  if (raw && AMR_ANALYTICS_ENVS.has(raw as AmrAnalyticsEnv)) {
-    return raw as AmrAnalyticsEnv;
-  }
-  if (env.NODE_ENV === 'production') return 'production';
-  if (env.NODE_ENV === 'test') return 'test';
-  return 'local';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

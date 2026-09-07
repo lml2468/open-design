@@ -3,14 +3,13 @@
  * Discriminated union of all analytics event payloads.
  */
 import type { AnalyticsEventName } from './event-names.js';
-import type { AmrAuthStageProps } from './amr-auth.js';
 import type { DesignSystemApplyResultProps, DesignSystemCreateResultProps, DesignSystemEnrichResultProps, DesignSystemReviewResultProps, DesignSystemSourceIngestResultProps, DesignSystemStatusResultProps } from './design-systems.js';
 import type { OnboardingCompletedProps, OnboardingCompleteResultProps, OnboardingFirstGenerationCompletedProps, OnboardingFirstPromptSentProps, OnboardingPromptPrefilledProps, OnboardingRuntimeScanResultProps } from './onboarding.js';
 import type { PageViewProps } from './page-view.js';
 import type {
   AgentDetectDiagnosticProps, ArtifactDeployResultProps, ArtifactEditResultProps, ArtifactExportResultProps, ArtifactPublishResultProps, AssistantFeedbackClickProps, AssistantFeedbackReasonClickProps, AssistantFeedbackReasonSubmitProps, AssistantFeedbackReasonViewProps, ByokPreflightBlockedProps, ContextLinkResultProps, ConversationForkResultProps, FeedbackSubmitResultProps, FileUploadResultProps, FileVersionRestoreResultProps, LabsItemToggledProps, LangfuseReportResultProps, MediaGenerationResultProps, PackagedRuntimeFailedProps, PluginImportResultProps, PluginReplacementResultProps, ProjectCreateResultProps, RunCreatedProps, RunFinishedProps, RunRetryAttemptedProps, RunRetryFinishedProps, SettingsByokModelsFetchResultProps, SettingsByokTestResultProps, SettingsCliTestResultProps, SettingsConnectorAuthResultProps, SettingsViewProps, SketchExportResultProps, SketchSaveResultProps, SpeakerNotesSaveResultProps, UpdateApplyObservedProps, UpdateCheckResultProps, UpdateInstallResultProps } from './result-events.js';
 import type { SurfaceViewProps } from './surface-view.js';
-import type { AmrAuthResultProps, UiClickProps } from './ui-click.js';
+import type { UiClickProps } from './ui-click.js';
 import type {
   McpSessionInitializedProps,
   McpToolFinishedProps,
@@ -81,8 +80,6 @@ export type AnalyticsEventPayload =
   | { event: 'byok_preflight_blocked'; props: ByokPreflightBlockedProps }
   | { event: 'settings_connector_auth_result'; props: SettingsConnectorAuthResultProps }
   | { event: 'agent_detect_diagnostic'; props: AgentDetectDiagnosticProps }
-  | { event: 'amr_auth_stage'; props: AmrAuthStageProps }
-  | { event: 'amr_auth_result'; props: AmrAuthResultProps }
   | { event: 'onboarding_runtime_scan_result'; props: OnboardingRuntimeScanResultProps }
   | { event: 'onboarding_complete_result'; props: OnboardingCompleteResultProps }
   | { event: 'onboarding_prompt_prefilled'; props: OnboardingPromptPrefilledProps }
