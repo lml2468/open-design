@@ -289,7 +289,7 @@ export interface ChatAnalyticsHints {
   recoveryActionType?: TrackingRunRecoveryActionType;
   recoveryActionInstanceId?: string;
   // Active execution runtime for THIS run, computed client-side at launch
-  // (the only layer that can tell BYOK from amr_cloud). The daemon stamps it
+  // (the only layer that can identify a BYOK run). The daemon stamps it
   // onto run_created / run_finished, overriding its own BYOK-blind
   // derivation. Omitted means "let the daemon keep its derived value".
   runtimeType?: TrackingRuntimeType;

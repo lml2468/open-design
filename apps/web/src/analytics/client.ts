@@ -42,7 +42,6 @@ let configureGlobals: AnalyticsConfigureGlobals = {
   runtime_type: 'none',
   cli_runnable: false,
   byok_runnable: false,
-  amr_runnable: false,
 };
 // Snapshot of the super-property payload sent on the most recent `loaded()`
 // init. `reset()` clears posthog-js's persisted super-properties as well as
@@ -94,78 +93,6 @@ export function setConfigureGlobals(next: AnalyticsConfigureGlobals): void {
   if (!client) return;
   try {
     client.register(configureGlobals as unknown as Record<string, unknown>);
-  } catch {
-    // best-effort — capture should never throw out of this path.
-  }
-}
-
-// AMR account id, registered as the `user_id` public param once sign-in
-// state is known. This is the only cross-project join key between the main
-// app's PostHog project and the AMR project (whose events carry the same
-// id as `app_user_id`), so it must survive reset()/identify() flows the
-// same way the configure globals do.
-let registeredUserId: string | null = null;
-let pendingPersonProperties: Record<string, unknown> | null = null;
-
-// Called from the AnalyticsProvider when the AMR login status resolves
-// (boot fetch or a login/logout mid-session). Passing null unregisters the
-// param so events after a logout stop carrying a stale account id.
-export function setAnalyticsUserId(userId: string | null): void {
-  if (registeredUserId === userId) return;
-  registeredUserId = userId;
-  if (lastRegisterPayload) {
-    if (userId) {
-      lastRegisterPayload = { ...lastRegisterPayload, user_id: userId };
-    } else {
-      const { user_id: _dropped, ...rest } = lastRegisterPayload;
-      lastRegisterPayload = rest;
-    }
-  }
-  if (!client) return;
-  try {
-    if (userId) {
-      client.register({ user_id: userId });
-    } else {
-      client.unregister('user_id');
-    }
-  } catch {
-    // best-effort — capture should never throw out of this path.
-  }
-}
-
-export function setAnalyticsPersonProperties(
-  properties: Record<string, unknown>,
-): void {
-  const compacted = compactPersonProperties(properties);
-  if (!compacted) return;
-  pendingPersonProperties = {
-    ...(pendingPersonProperties ?? {}),
-    ...compacted,
-  };
-  flushPersonProperties();
-}
-
-function flushPersonProperties(): void {
-  if (!client || !pendingPersonProperties) return;
-  try {
-    const properties = pendingPersonProperties;
-    const posthog = client as unknown as {
-      setPersonProperties?: (props: Record<string, unknown>) => void;
-      people?: { set?: (props: Record<string, unknown>) => void };
-      capture?: (event: string, props: Record<string, unknown>) => void;
-    };
-    if (typeof posthog.setPersonProperties === 'function') {
-      posthog.setPersonProperties(properties);
-      pendingPersonProperties = null;
-      return;
-    }
-    if (typeof posthog.people?.set === 'function') {
-      posthog.people.set(properties);
-      pendingPersonProperties = null;
-      return;
-    }
-    posthog.capture?.('$set', { $set: properties });
-    pendingPersonProperties = null;
   } catch {
     // best-effort — capture should never throw out of this path.
   }
@@ -369,12 +296,8 @@ export async function getAnalyticsClient(
             // installationId / local-UUID fallback.
             device_id: distinctId,
             ...(configureGlobals as unknown as Record<string, unknown>),
-            // AMR sign-in can resolve before consent-gated init finishes;
-            // fold the already-known account id into the first register.
-            ...(registeredUserId ? { user_id: registeredUserId } : {}),
           };
           instance.register(lastRegisterPayload);
-          flushPersonProperties();
           // Re-bridge the error-tracking context once posthog-js is fully
           // initialized. `bootstrapExceptionTracking` may have already
           // wired this up at app boot via its own fetch; this duplicate
@@ -400,7 +323,6 @@ export async function getAnalyticsClient(
       // marker on a boot where init actually failed and no session was ever
       // captured (see identity.ts#isFirstSession). Idempotent + best-effort.
       pinFirstSessionForCapture();
-      flushPersonProperties();
       return posthog;
     } catch {
       // Network failure, missing endpoint, third-party fork without keys —
@@ -489,35 +411,9 @@ function restoreSuperProperties(patch?: Record<string, unknown>): void {
   lastRegisterPayload = next;
   try {
     client.register(next);
-    flushPersonProperties();
   } catch {
     // best-effort.
   }
-}
-
-function compactPersonProperties(
-  properties: Record<string, unknown>,
-): Record<string, unknown> | null {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(properties)) {
-    if (!key || value == null) continue;
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed || trimmed === 'unknown') continue;
-      out[key] = trimmed;
-      continue;
-    }
-    if (Array.isArray(value)) {
-      const list = value
-        .filter((entry): entry is string => typeof entry === 'string')
-        .map((entry) => entry.trim())
-        .filter((entry) => entry && entry !== 'unknown');
-      if (list.length > 0) out[key] = list;
-      continue;
-    }
-    out[key] = value;
-  }
-  return Object.keys(out).length > 0 ? out : null;
 }
 
 export function capture(

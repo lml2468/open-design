@@ -7934,9 +7934,7 @@ export function ProjectView({
           hasExistingArtifact,
           runtimeType: daemonByokOpenCode
             ? ('byok' as const)
-            : config.agentId === 'amr'
-              ? ('amr_cloud' as const)
-              : ('local_cli' as const),
+            : ('local_cli' as const),
           taskExecutionId: taskAnalytics.taskExecutionId,
           initialRunId: taskAnalytics.initialRunId,
           sourceRunId: taskAnalytics.sourceRunId,

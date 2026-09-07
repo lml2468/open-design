@@ -147,7 +147,6 @@ export interface OnboardingPageViewProps {
 // source selection, etc.
 export type TrackingOnboardingClickElement =
   // Runtime / connect step
-  | 'amr_cloud'
   | 'local_coding_agent'
   | 'byok'
   // Action buttons

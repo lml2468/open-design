@@ -15,7 +15,7 @@
  * reports a `last_progress_age_ms` of a few hundred milliseconds.
  *
  * Field evidence: run 14b04dd3-56b0-4d44-926b-db6cee3017ab (2026-07-28, OD
- * 0.16.1, runtime_type=amr_cloud) ran 37.2 minutes, was ended by a watchdog
+ * 0.16.1) ran 37.2 minutes, was ended by a watchdog
  * after ~30 minutes of silence, and reported `last_progress_age_ms = 664`. That
  * reading is what made the incident look like "the process was still doing
  * something right up to the kill" and sent triage after the wrong window.

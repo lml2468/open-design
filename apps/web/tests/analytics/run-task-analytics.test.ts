@@ -9,10 +9,10 @@ import {
 
 describe('run task analytics lineage', () => {
   it('uses the canonical provider ids expected by the run dashboard', () => {
-    expect(['amr', 'claude', 'codex'].map(runAgentProviderId)).toEqual([
-      'amr',
+    expect(['claude', 'codex', 'opencode'].map(runAgentProviderId)).toEqual([
       'claude_code',
       'codex_cli',
+      'opencode',
     ]);
   });
 
