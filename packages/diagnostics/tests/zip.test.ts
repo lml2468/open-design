@@ -55,7 +55,7 @@ describe("buildDiagnosticsZip", () => {
       redaction: { username: "alice" },
       summaries: {
         "runtime-health.json": {
-          amr: { sessionState: "reauth_required", credentialRevision: "safe-digest" },
+          runtime: { sessionState: "reauth_required", credentialRevision: "safe-digest" },
           note: "/Users/alice/private",
         },
       },

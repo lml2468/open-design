@@ -92,53 +92,6 @@ describe('diagnostics export handler — non-sidecar launch', () => {
     ).toEqual([]);
   });
 
-  it('reports the AMR session from the Settings-backed agent environment', async () => {
-    const dataDir = join(tmpdir(), `od-diag-amr-settings-${randomUUID()}`);
-    const runtimeKey = 'settings-only-runtime-key';
-    try {
-      await mkdir(dataDir, { recursive: true });
-      await writeFile(
-        join(dataDir, 'app-config.json'),
-        JSON.stringify({
-          agentCliEnv: {
-            amr: {
-              OPEN_DESIGN_AMR_PROFILE: 'local',
-              VELA_LINK_URL: 'https://settings-only.example.test/link',
-              VELA_RUNTIME_KEY: runtimeKey,
-            },
-          },
-        }),
-        'utf8',
-      );
-
-      const handler = createDiagnosticsExportHandler({
-        runtime: null,
-        projectRoot: '/tmp/test-project',
-        dataDir,
-      });
-      const res = mockResponse();
-      await handler({} as never, res as never, () => undefined);
-
-      expect(res.capturedStatus).toBe(200);
-      const zip = await JSZip.loadAsync(res.capturedPayload!);
-      const runtimeHealthRaw = await zip.file('summary/runtime-health.json')!.async('string');
-      const runtimeHealth = JSON.parse(runtimeHealthRaw) as {
-        amr: {
-          profile?: string;
-          loggedIn?: boolean;
-          credentialRevision?: string;
-        };
-      };
-      expect(runtimeHealth.amr).toMatchObject({
-        profile: 'local',
-        loggedIn: true,
-        credentialRevision: expect.any(String),
-      });
-      expect(runtimeHealthRaw).not.toContain(runtimeKey);
-    } finally {
-      await rm(dataDir, { recursive: true, force: true });
-    }
-  });
 });
 
 describe('diagnostics export handler — packaged (runtime) layout', () => {
@@ -612,7 +565,8 @@ describe('diagnostics export handler — run event logs', () => {
   it('warns when runsDir is set but no per-run event logs were found', async () => {
     // An empty/absent runs dir adds no manifest file entries, so without an
     // explicit warning an empty bundle is indistinguishable from a healthy run
-    // — exactly the gap that made an AMR loop look like "nothing happened."
+    // — exactly the gap that can make an early runtime failure look like
+    // "nothing happened."
     const runsDir = join(tmpdir(), `od-diag-empty-runs-${randomUUID()}`);
     const handler = createDiagnosticsExportHandler({
       runtime: null,
