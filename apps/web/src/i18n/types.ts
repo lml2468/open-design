@@ -1073,17 +1073,6 @@ export interface Dict extends CollaborationSettingsDict {
   'entry.billingTierFree': string;
   'entry.billingTierPro': string;
   'entry.billingFamilyCreator': string;
-  'entry.creditsAria': string;
-  'entry.creditsAriaWithBalance': string;
-  'entry.creditsGrantTip': string;
-  'entry.creditsUpgrade': string;
-  'entry.creditsOpening': string;
-  'entry.creditsRemaining': string;
-  'entry.credits': string;
-  'entry.creditsUsage': string;
-  'entry.creditsMemberNoticeTitle': string;
-  'entry.creditsMemberNoticeBody': string;
-  'entry.creditsMemberNoticeAction': string;
   'entry.accountToggleTheme': string;
   'entry.accountSwitchLanguage': string;
   'entry.accountLanguageMeta': string;
@@ -2675,9 +2664,6 @@ export interface Dict extends CollaborationSettingsDict {
   'chat.amrCard.chipNoKey': string;
   'chat.amrCard.chipAutoRetry': string;
   'chat.amrCard.switchCta': string;
-  'chat.amrError.authMessage': string;
-  'chat.amrError.balanceMessage': string;
-  'chat.amrError.rechargeCta': string;
   'chat.amrBalanceGate.title': string;
   'chat.amrBalanceGate.plansCta': string;
   'chat.antigravityError.launchTerminalCta': string;

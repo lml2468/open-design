@@ -138,84 +138,14 @@ describe('i18n locales', () => {
     }
   });
 
-  it('labels USD spending power as allowance instead of points or account balance', async () => {
-    const expected: Record<Locale, string> = {
-      ar: 'الحصة',
-      de: 'Kontingent',
-      en: 'Allowance',
-      'es-ES': 'Cuota',
-      fa: 'سهمیه',
-      fr: 'Quota',
-      hu: 'Keret',
-      id: 'Kuota',
-      it: 'Quota',
-      ja: '利用枠',
-      ko: '사용 한도',
-      pl: 'Limit',
-      'pt-BR': 'Cota',
-      ru: 'Лимит',
-      th: 'โควตา',
-      tr: 'Kota',
-      uk: 'Ліміт',
-      'zh-CN': '额度',
-      'zh-TW': '額度',
-    };
-
-    for (const locale of LOCALES) {
-      const dict = await loadDict(locale);
-      expect(dict['entry.credits'], `${locale}.entry.credits`).toBe(expected[locale]);
-    }
-  });
-
-  it('keeps Chinese workspace wallet and run-error copy on the 额度 terminology', () => {
-    const keys: Array<keyof Dict> = [
-      'chat.amrError.balanceMessage',
-      'chat.runError.title.balance',
-      'entry.creditsAria',
-      'entry.creditsAriaWithBalance',
-      'entry.creditsGrantTip',
-      'entry.creditsRemaining',
-    ];
-
+  it('keeps Chinese provider quota errors on the 额度 terminology', () => {
     for (const [locale, dict, quota] of [
       ['zh-CN', zhCN, '额度'],
       ['zh-TW', zhTW, '額度'],
     ] as const) {
-      for (const key of keys) {
-        expect(dict[key], `${locale}.${key}`).toContain(quota);
-        expect(dict[key], `${locale}.${key}`).not.toMatch(/余额|餘額|积分|積分/);
-      }
-    }
-  });
-
-  it('keeps the recharge recovery action concise enough to sit beside retry', async () => {
-    const expected: Record<Locale, string> = {
-      ar: 'شحن',
-      de: 'Aufladen',
-      en: 'Top up',
-      'es-ES': 'Recargar',
-      fa: 'شارژ',
-      fr: 'Recharger',
-      hu: 'Feltöltés',
-      id: 'Isi ulang',
-      it: 'Ricarica',
-      ja: 'チャージ',
-      ko: '충전',
-      pl: 'Doładuj',
-      'pt-BR': 'Recarregar',
-      ru: 'Пополнить',
-      th: 'เติมเงิน',
-      tr: 'Bakiye yükle',
-      uk: 'Поповнити',
-      'zh-CN': '充值',
-      'zh-TW': '儲值',
-    };
-
-    for (const locale of LOCALES) {
-      const dict = await loadDict(locale);
-      expect(dict['chat.amrError.rechargeCta'], `${locale}.chat.amrError.rechargeCta`).toBe(
-        expected[locale],
-      );
+      const key = 'chat.runError.title.balance';
+      expect(dict[key], `${locale}.${key}`).toContain(quota);
+      expect(dict[key], `${locale}.${key}`).not.toMatch(/余额|餘額|积分|積分/);
     }
   });
 
