@@ -4210,7 +4210,6 @@ export async function startServer({
     verifyWorkspaceReadAuthority,
     verifyWorkspaceRequestAuthority,
     verifyPersonalProjectDeleteLeaseAuthority,
-    authorizeProjectRequest,
     fetchWorkspaceDirectory,
     configuredEnv: configuredAmrEnv,
     fetchProjectCreationWorkspaceDirectory,

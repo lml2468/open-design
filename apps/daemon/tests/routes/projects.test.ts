@@ -606,7 +606,7 @@ describe('GET /api/projects/:id resolvedDir', () => {
 
 
 
-  it('serves nested project html files through the raw route and allows Origin: null', async () => {
+  it('serves nested project html unchanged through the raw route and allows Origin: null', async () => {
     const projectId = `proj-raw-nested-${Date.now()}`;
     const createResp = await fetch(`${baseUrl}/api/projects`, {
       method: 'POST',
@@ -641,10 +641,8 @@ describe('GET /api/projects/:id resolvedDir', () => {
     expect(rawResp.headers.get('access-control-allow-origin')).toBe('*');
     const html = await rawResp.text();
     expect(html).toContain('<h1>nested ok</h1>');
-    expect(html).toContain(
-      `/api/projects/${projectId}/raw/fonts/inter.woff2?workspaceId=ws-cover&workspaceMemberId=wm-cover`,
-    );
-    expect(html).not.toContain('../../fonts/inter.woff2');
+    expect(html).toContain('../../fonts/inter.woff2');
+    expect(html).not.toContain('workspaceId=');
   });
   it('rejects non-boolean skipDiscoveryBrief on POST /api/projects', async () => {
     const projectId = `proj-skip-discovery-bad-${Date.now()}`;

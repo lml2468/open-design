@@ -244,8 +244,6 @@ export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | '
    * through `verifyWorkspaceRequestAuthority`.
    */
   verifyPersonalProjectDeleteLeaseAuthority?: VerifyWorkspaceRequestAuthority;
-  /** Shared local binding gate for all project data-plane routes. */
-  authorizeProjectRequest?: AuthorizeProjectRequest;
   /** Membership directory used by Workspace account and cloud boundaries. */
   fetchWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
   /** Current settings-backed AMR environment for synthesized project contexts. */
@@ -1902,7 +1900,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     removeProjectDir,
     stageProjectDirsForDelete,
     ensureWorkspaceProject,
-    getWorkspaceProject,
     getWorkspaceProjectByProjectId,
   } = ctx.projectStore;
   const { writeProjectFile, readProjectFile, ensureProject, listFiles, listTabs, setTabs, resolveProjectDir } = ctx.projectFiles;
@@ -1920,12 +1917,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       workspaceType: context.workspaceTypeAsserted,
     });
   };
-  const authorizeProjectRequest =
-    ctx.authorizeProjectRequest ??
-    createAuthorizeProjectRequest();
-  const enforceWorkspaceProjectMutation = createEnforceWorkspaceProjectMutation(
-    authorizeProjectRequest,
-  );
   // Duplicate/import paths use the same optional local attribution as ordinary
   // project creation. Cloud authority is checked only when a later operation
   // actually shares, syncs, or publishes the project.
@@ -1949,11 +1940,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
    * prevents old project-specific Workspace checks from disagreeing about the
    * newly created copy before those checks are removed.
    *
-   * Called only after `enforceWorkspaceProjectMutation` already allowed the
-   * duplicate/copy, which is proof `ctx` names an active, write-capable
-   * member of the workspace that owns the SOURCE project — exactly the right
-   * home for the copy too.
-   *
    * A request with no identity remains a true legacy/unbound copy. Modern web
    * callers lock and send the source project's persisted exact scope.
    */
@@ -1971,73 +1957,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       resourceState: 'active',
       createdByWorkspaceMemberId: ctx.workspaceMemberId,
       updatedByWorkspaceMemberId: ctx.workspaceMemberId,
-      syncState: 'local_only',
-      resourceHubResourceId: null,
-      cloudTombstonedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-  /**
-   * Claim a project this daemon has never bound to ANY workspace into the
-   * CURRENT mutating request's workspace, right before
-   * `enforceWorkspaceProjectMutation` evaluates it.
-   *
-   * The Workspace mutation gate denies any
-   * mutation the moment the two-key lookup comes back empty
-   * (`workspaceResourceMutationAllowed`'s `if (!row) return false;`) — right
-   * for a project genuinely bound to a DIFFERENT workspace than the one the
-   * caller claims, but wrong for a project this daemon has never bound
-   * anywhere at all. That exact state is reachable one call up this same
-   * route: `bindDuplicateIntoRequestWorkspace` above skips binding the COPY
-   * whenever the duplicating request carried no workspace headers
-   * (`ctx === null` — a legitimate legacy/pre-context caller, per its own doc
-   * comment), leaving the copy permanently unbound. The FIRST later mutation
-   * that DOES carry real headers — e.g. duplicating that same copy again once
-   * the client's `workspaceContext` has resolved — then 403s as "workspace
-   * project mutation is not allowed" even though nothing has ever claimed the
-   * project (recvqbhor3pai2, "复制的项目再次复制").
-   *
-   * Keyed on "does ANY `workspace_projects` row exist for this project id at
-   * all" (`getWorkspaceProjectByProjectId`), not on the current
-   * `ctx.workspaceId` — a project already bound elsewhere (including a
-   * remote team project a prior list read already reconciled, which always
-   * attributes the REAL hub owner, never the reader) is left exactly where it
-   * is; this only ever claims a true orphan, matching `ensureWorkspaceProject`'s
-   * own idempotency contract.
-   *
-   * Attributes an owner because an explicit mutation request naming this exact
-   * project is stronger evidence than the historical ownerless binding rows.
-   *
-   * A complete explicit pair may claim a true local orphan. Partial/headerless
-   * requests write nothing, and a project already bound anywhere is never
-   * re-homed. The daemon's loopback request boundary protects this local
-   * attribution; remote membership is enforced only at share/sync/publish.
-   */
-  function reconcileUnboundProjectBeforeMutation(
-    req: any,
-    projectId: string,
-    home: WorkspaceResourceContext | null,
-  ) {
-    const asserted = workspaceProjectContextFromRequest(req);
-    if (asserted === null || asserted === 'missing') return;
-    if (getWorkspaceProjectByProjectId(db, projectId)) return;
-    if (!home) return;
-    // The resolver and parser must agree on the exact local attribution pair.
-    if (
-      home.workspaceId !== asserted.workspaceId
-      || home.workspaceMemberId !== asserted.workspaceMemberId
-    ) {
-      return;
-    }
-    const now = Date.now();
-    ensureWorkspaceProject(db, {
-      projectId,
-      workspaceId: home.workspaceId,
-      visibility: 'personal',
-      resourceState: 'active',
-      createdByWorkspaceMemberId: home.workspaceMemberId,
-      updatedByWorkspaceMemberId: home.workspaceMemberId,
       syncState: 'local_only',
       resourceHubResourceId: null,
       cloudTombstonedAt: null,
@@ -2948,17 +2867,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     if (!project) {
       return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
     }
-    if (!await enforceWorkspaceProjectMutation(
-      req,
-      res,
-      sendApiError,
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      db,
-      project.id,
-      'rename',
-    )) return;
-
     const request = req.body as Partial<RestoreProjectAutomaticScenarioRequest> | null;
     if (!request || !Object.prototype.hasOwnProperty.call(request, 'expectedCurrentSnapshotId')) {
       return sendApiError(
@@ -3153,24 +3061,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
       }
       const createHome = await resolveCreatedProjectHome(req);
-      // recvqbhor3pai2: a project this daemon has never bound anywhere (e.g.
-      // a copy left unbound by an earlier headerless duplicate — see
-      // `bindDuplicateIntoRequestWorkspace`'s doc comment) must not be
-      // permanently un-duplicatable the moment a real, authenticated request
-      // finally comes in for it. Claim it into the caller's own workspace
-      // first, exactly like this same route already does for the COPY it is
-      // about to create.
-      reconcileUnboundProjectBeforeMutation(req, sourceProject.id, createHome);
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        sourceProject.id,
-        'duplicate',
-      )) return;
       if (isDesignSystemLikeProject(sourceProject)) {
         return sendApiError(
           res,
@@ -3278,20 +3168,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
       }
       const createHome = await resolveCreatedProjectHome(req);
-      // recvqbhor3pai2 — same reasoning as the sibling /duplicate route just
-      // above: a never-bound source project must not be permanently
-      // un-copyable once a real, authenticated request finally names it.
-      reconcileUnboundProjectBeforeMutation(req, sourceProject.id, createHome);
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        sourceProject.id,
-        'duplicate',
-      )) return;
       if (isDesignSystemLikeProject(sourceProject)) {
         return sendApiError(
           res,
@@ -3451,7 +3327,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     const locations = await configuredProjectLocations();
     if (!project || !projectVisibleForLocations(project, locations))
       return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
-    if (!await authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
     // When a caller is about to *reference* this project (add it as read-only
     // context for another run), materialize its managed folder first so the
     // reference resolves to a real directory. See ensureReferencedProjectDir.
@@ -3486,16 +3361,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       if (!patchProject) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
       }
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        patchProject.id,
-        'rename',
-      )) return;
       // baseDir / folder-import state is privileged: it's set only by the
       // import endpoint and otherwise immutable. Two failure modes to
       // guard against here:
@@ -3768,16 +3633,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
       }
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        project.id,
-        'delete',
-      )) return;
       // Stop any live agent run in this project before its row and directory
       // are removed, otherwise the CLI subprocess is orphaned — it keeps
       // billing and writes into a directory that no longer exists (#5468).
@@ -3838,13 +3693,8 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     }
   });
 
-  // Comments have no workspace binding of their own — thread down the SAME
-  // authoritative `enforceWorkspaceProjectMutation` instance so a comment's
-  // gate matches its parent project's exactly, instead of comments quietly
-  // shipping a second, weaker copy.
   registerProjectConversationRoutes(app, {
     ...ctx,
-    enforceWorkspaceProjectMutation,
     sendApiError,
   });
 
@@ -3854,7 +3704,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     if (!getProject(db, req.params.id)) {
       return res.status(404).json({ error: 'project not found' });
     }
-    if (!await authorizeProjectRequest(req, res, req.params.id, { mode: 'read' })) return;
     res.json(listTabs(db, req.params.id));
   });
 
@@ -3862,16 +3711,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     if (!getProject(db, req.params.id)) {
       return res.status(404).json({ error: 'project not found' });
     }
-    if (!await enforceWorkspaceProjectMutation(
-      req,
-      res,
-      sendApiError,
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      db,
-      req.params.id,
-      'writeFiles',
-    )) return;
     const { tabs = [], active = null, browserTabs = [] } = req.body || {};
     if (!Array.isArray(tabs) || !tabs.every((t) => typeof t === 'string')) {
       return res.status(400).json({ error: 'tabs must be string[]' });
