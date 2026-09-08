@@ -1,10 +1,7 @@
 import type { Express } from 'express';
 import type { RouteDeps } from '../server-context.js';
-import type { AuthorizeProjectToolRequest } from '../collab/project-request-authority.js';
 
-export interface RegisterLiveArtifactRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'auth' | 'liveArtifacts' | 'projectStore'> {
-  authorizeProjectToolRequest: AuthorizeProjectToolRequest;
-}
+export type RegisterLiveArtifactRoutesDeps = RouteDeps<'db' | 'http' | 'paths' | 'auth' | 'liveArtifacts' | 'projectStore'>;
 
 export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifactRoutesDeps) {
   const { db } = ctx;
@@ -115,12 +112,6 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
           details: { suppliedRunId: createdByRunId },
         });
       }
-      if (!await ctx.authorizeProjectToolRequest(
-        res,
-        toolGrant.projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
-
       const record = await createLiveArtifact({
         projectsRoot: PROJECTS_DIR,
         projectId: toolGrant.projectId,
@@ -146,12 +137,6 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
           details: { suppliedProjectId: projectId },
         });
       }
-      if (!await ctx.authorizeProjectToolRequest(
-        res,
-        toolGrant.projectId,
-        { mode: 'read' },
-      )) return;
-
       const artifacts = await listLiveArtifacts({
         projectsRoot: PROJECTS_DIR,
         projectId: toolGrant.projectId,
@@ -175,12 +160,6 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
       if (typeof artifactId !== 'string' || artifactId.length === 0) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'artifactId is required');
       }
-      if (!await ctx.authorizeProjectToolRequest(
-        res,
-        toolGrant.projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
-
       const record = await updateLiveArtifact({
         projectsRoot: PROJECTS_DIR,
         projectId: toolGrant.projectId,
@@ -209,12 +188,6 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
       if (typeof artifactId !== 'string' || artifactId.length === 0) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'artifactId is required');
       }
-      if (!await ctx.authorizeProjectToolRequest(
-        res,
-        toolGrant.projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
-
       let result;
       try {
         result = await refreshLiveArtifact({

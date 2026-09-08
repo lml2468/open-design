@@ -767,7 +767,7 @@ import { registerLiveArtifactRoutes } from './routes/live-artifact.js';
 import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
 import { registerMediaRoutes } from './routes/media.js';
-import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes, createEnforceWorkspaceProjectMutation } from './routes/project/index.js';
+import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './routes/project/index.js';
 import { registerFinalizeRoutes, registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
 import { registerHandoffRoutes } from './routes/handoff.js';
 import { EmptyTranscriptError, synthesizeHandoffPrompt } from './design/index.js';
@@ -793,9 +793,6 @@ import {
   workspaceResourceContext,
   workspaceResourceContextFromRequest,
 } from './collab/workspace-resource-mutation.js';
-import {
-  createAuthorizeProjectRequest,
-} from './collab/project-request-authority.js';
 import { withLastKnownWorkspaceContext } from './collab/workspace-context.js';
 import {
   createWorkspaceTypeRegistry,
@@ -3860,7 +3857,6 @@ export async function startServer({
     stageProjectDirsForDelete,
     validateLinkedDirs,
   };
-  const authorizeProjectRequest = createAuthorizeProjectRequest();
   registerCollaborationServerRoutes(app, {
     runtimeDataDir: RUNTIME_DATA_DIR,
     requireLocalDaemonRequest,
@@ -3891,40 +3887,6 @@ export async function startServer({
       )))();
     },
   });
-  // Legacy registrars still receive their historical mutation-gate callback,
-  // but local Project access no longer depends on Workspace metadata.
-  const enforceAuthoritativeProjectMutation = createEnforceWorkspaceProjectMutation(
-    authorizeProjectRequest,
-  );
-  const authorizeProjectToolRequest = async (
-    res,
-    projectId,
-    options,
-  ) => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    const localRequest = {
-      query: {},
-      get(name) {
-        const normalized = name.toLowerCase();
-        if (normalized === 'x-od-workspace-id') return binding?.workspaceId ?? undefined;
-        if (normalized === 'x-od-workspace-member-id') {
-          return binding?.workspaceId
-            ? binding.createdByWorkspaceMemberId ?? 'local-user'
-            : undefined;
-        }
-        return undefined;
-      },
-    };
-    if (!await authorizeProjectRequest(localRequest, res, projectId, options)) return null;
-    if (!binding?.workspaceId) return { workspace: null };
-    return {
-      workspace: {
-        workspaceId: binding.workspaceId,
-        workspaceMemberId:
-          binding.createdByWorkspaceMemberId ?? 'local-user',
-      },
-    };
-  };
   const projectFileDeps = {
     ensureProject,
     listFiles,
@@ -4144,7 +4106,6 @@ export async function startServer({
     conversations: conversationDeps,
     auth: authDeps,
     fetchProjectCreationWorkspaceDirectory,
-    enforceWorkspaceProjectMutation: enforceAuthoritativeProjectMutation,
   });
   app.post('/api/projects/:id/figma/import', (req, res) => {
     figmaUpload.single('file')(req, res, async (err) => {
@@ -4152,17 +4113,6 @@ export async function startServer({
       try {
         const project = getProject(db, req.params.id);
         if (!project) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
-        if (!await enforceAuthoritativeProjectMutation(
-          req,
-          res,
-          sendApiError,
-          getWorkspaceProject,
-          getWorkspaceProjectByProjectId,
-          db,
-          project.id,
-          'writeFiles',
-        )) return;
-
         const body = req.body && typeof req.body === 'object' ? req.body : {};
         const figmaUrl = typeof body.figmaUrl === 'string' ? body.figmaUrl.trim() : '';
         if (!req.file) {
@@ -4409,7 +4359,6 @@ export async function startServer({
     auth: authDeps,
     liveArtifacts: liveArtifactDeps,
     projectStore: projectStoreDeps,
-    authorizeProjectToolRequest,
   });
   registerDesignSystemToolRoutes(app, {
     auth: authDeps,
@@ -4465,7 +4414,6 @@ export async function startServer({
     projectFiles: projectFileDeps,
     validation: validationDeps,
     auth: authDeps,
-    authorizeProjectToolRequest,
     isApiTokenAuthorization,
     projectPreviewScopes,
   });
@@ -4497,7 +4445,6 @@ export async function startServer({
     projectFiles: projectFileDeps,
     conversations: conversationDeps,
     research: researchDeps,
-    authorizeProjectToolRequest,
   });
 
   const allowScopedPluginReplace = (
@@ -11851,8 +11798,6 @@ export async function startServer({
     uploads: uploadDeps,
     node: nodeDeps,
     projectStore: projectStoreDeps,
-    authorizeProjectRequest,
-    authorizeProjectToolRequest,
     isApiTokenAuthorization,
     projectFiles: projectFileDeps,
     conversations: conversationDeps,

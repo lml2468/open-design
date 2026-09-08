@@ -111,7 +111,6 @@ function buildDeps(input: {
       validateProjectDesignSystemId: vi.fn(async (id: string) => ({ ok: true, id })),
       validateProjectSkillId: vi.fn(async (id: string) => ({ ok: true, id })),
     },
-    authorizeProjectRequest: vi.fn(async () => true),
     fetchProjectCreationWorkspaceDirectory: vi.fn(async () => ({ ok: false, items: [] })),
     pluginScope: {
       loadRegistry: vi.fn(async () => ({

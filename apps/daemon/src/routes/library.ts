@@ -52,7 +52,6 @@ import {
   bindCreatedProjectToWorkspace,
   sendCreatedProjectWorkspaceError,
 } from '../collab/created-project-workspace.js';
-import type { BoundWorkspaceResourceMutationGate } from '../collab/workspace-resource-mutation.js';
 import type { WorkspaceDirectoryFetchResult } from '../collab/vela-workspace-context.js';
 import {
   confirmPairing,
@@ -66,7 +65,6 @@ export interface RegisterLibraryRoutesDeps
     'db' | 'http' | 'paths' | 'projectStore' | 'projectFiles' | 'conversations' | 'auth'
   > {
   fetchProjectCreationWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
-  enforceWorkspaceProjectMutation?: BoundWorkspaceResourceMutationGate;
 }
 
 const MAX_REMOTE_BYTES = 25 * 1024 * 1024;
@@ -176,26 +174,10 @@ export function registerLibraryRoutes(app: Express, ctx: RegisterLibraryRoutesDe
     getProject,
     insertProject,
     ensureWorkspaceProject,
-    getWorkspaceProject,
-    getWorkspaceProjectByProjectId,
   } = ctx.projectStore;
   const { writeProjectFile } = ctx.projectFiles;
   const { insertConversation } = ctx.conversations;
   const { authorizeToolRequest } = ctx.auth;
-  async function enforceProjectWrite(req: Request, res: Response, projectId: string) {
-    if (!ctx.enforceWorkspaceProjectMutation) return true;
-    return ctx.enforceWorkspaceProjectMutation(
-      req,
-      res,
-      sendApiError,
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      db,
-      projectId,
-      'writeFiles',
-    );
-  }
-
   // Copy an asset's bytes into a project (under a `library/` subdir) and record
   // the project usage as a source back-link. Shared by the loopback apply route
   // and the agent tool-token route.
@@ -609,7 +591,6 @@ export function registerLibraryRoutes(app: Express, ctx: RegisterLibraryRoutesDe
     if (!asset) return sendApiError(res, 404, 'NOT_FOUND', 'asset not found');
     const projectId = typeof req.body?.projectId === 'string' ? req.body.projectId : '';
     if (!projectId) return sendApiError(res, 400, 'BAD_REQUEST', 'projectId is required');
-    if (!await enforceProjectWrite(req, res, projectId)) return;
     try {
       const includeElement = req.body?.includeElement === true;
       const result = await applyAssetToProject(asset, projectId, 'manual-upload', req.body?.dir, includeElement);
@@ -720,7 +701,6 @@ export function registerLibraryRoutes(app: Express, ctx: RegisterLibraryRoutesDe
     if (!asset) return sendApiError(res, 404, 'NOT_FOUND', 'asset not found');
     const projectId = grant.projectId ?? (typeof req.body?.projectId === 'string' ? req.body.projectId : '');
     if (!projectId) return sendApiError(res, 400, 'BAD_REQUEST', 'projectId is required');
-    if (!await enforceProjectWrite(req, res, projectId)) return;
     try {
       const includeElement = req.body?.includeElement === true;
       const result = await applyAssetToProject(asset, projectId, 'agent-task', req.body?.dir, includeElement);

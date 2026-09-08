@@ -1,18 +1,12 @@
-// Workspace-resource mutation gate, shared by every resource type that binds
-// into the generic `workspace_resources` table (see `db.ts`): project,
-// plugin, and (later) skill / design system.
+// Workspace-resource mutation gate for resources that still bind into the
+// generic `workspace_resources` table (see `db.ts`): plugin, and (later)
+// skill / design system.
 //
 // This module is an EXTRACTION, not a new design. It used to live entirely
-// inside `apps/daemon/src/routes/project/index.ts` as
-// `enforceWorkspaceProjectMutation` / `projectAccess`, hard-coded to
-// "project". Project's own logic has been fixed three times this week alone
-// from dogfood feedback — a mistake here is easy to make and expensive to
-// repeat, so every other resource type should call THIS module rather than
-// forking its own copy. Project's route file still owns the project-specific
-// affordances (canMoveToTeam / canMoveToPersonal / canOpen / canExport /
-// canSendTo) that only make sense for a project; this module owns the part
-// that generalizes cleanly: reading the caller's workspace identity off
-// headers, and deciding whether a caller may mutate a bound resource row.
+// inside `apps/daemon/src/routes/project/index.ts`, hard-coded to "project".
+// Local Projects no longer consume this gate; remaining Workspace-scoped
+// resources should call this module rather than forking its parsing and
+// permission logic.
 import type { WorkspaceCollabContext } from '@open-design/contracts';
 import type { Response } from 'express';
 
@@ -573,33 +567,6 @@ function workspaceResourceMutationAllowed(
  * No production route calls this function. New code must use
  * `enforceVerifiedWorkspaceResourceMutation`.
  */
-/**
- * The shape `createEnforceWorkspaceProjectMutation` (routes/project/index.ts)
- * returns: `enforceWorkspaceResourceMutation` with `resourceType` (and, for
- * project, the last-known-membership cross-check) already bound. Exported so a
- * resource type with no workspace binding of its own — a project comment — can
- * borrow another resource type's ALREADY-BUILT gate instance instead of
- * re-deriving one, and so the two ends of that hand-off (the builder in
- * routes/project/index.ts, the consumer in routes/project/comments.ts) share
- * one type instead of drifting.
- */
-export type BoundWorkspaceResourceMutationGate = (
-  req: any,
-  res: Response,
-  sendApiError: (
-    res: Response,
-    status: number,
-    code: string,
-    message: string,
-    details?: Record<string, unknown>,
-  ) => unknown,
-  getWorkspaceResource: (db: unknown, workspaceId: string, resourceId: string) => WorkspaceResourceAccessInput | null | undefined,
-  getWorkspaceResourceByResourceId: (db: unknown, resourceId: string) => WorkspaceResourceAccessInput | null | undefined,
-  db: unknown,
-  resourceId: string,
-  capability: WorkspaceResourceMutationCapability,
-) => Promise<boolean>;
-
 /**
  * Deprecated synchronous counterpart retained for legacy tests. Production
  * routes use `requestCanMutateVerifiedWorkspaceResource`.

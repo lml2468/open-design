@@ -10,7 +10,7 @@ import { workspaceContextFromDirectoryItem } from '../../src/collab/vela-workspa
 
 // Cheapest layer that can see the symptom: exercise the shared gate directly
 // against fake req/res/db seams, without spinning up an Express server or a
-// real SQLite file. `enforceWorkspaceProjectMutation` in
+// real SQLite file. The legacy project mutation gate in
 // routes/project/index.ts is now a one-line delegation to this function, and
 // `tests/routes/workspace-projects.test.ts` covers the end-to-end HTTP
 // behavior for project; this file covers the shared decision logic itself so

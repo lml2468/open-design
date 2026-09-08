@@ -114,14 +114,8 @@ import {
 import {
   workspaceResourceContextFromRequest as workspaceProjectContextFromRequest,
   type VerifyWorkspaceRequestAuthority,
-  type WorkspaceResourceAccessInput,
   type WorkspaceResourceContext,
-  type WorkspaceResourceMutationCapability,
 } from '../../collab/workspace-resource-mutation.js';
-import {
-  createAuthorizeProjectRequest,
-  type AuthorizeProjectRequest,
-} from '../../collab/project-request-authority.js';
 import {
   bindCreatedProjectToWorkspace,
   createCreatedProjectWorkspaceResolver,
@@ -292,16 +286,10 @@ export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | '
   workspaceTypes?: Pick<WorkspaceTypeRegistry, 'isKnownPersonal' | 'learn' | 'typeOf'>;
 }
 
-// `WorkspaceProjectContext`/`WorkspaceProjectMutationCapability`/
-// `WorkspaceProjectAccessInput` and the header-reading helpers used to be
-// defined here, hard-coded to "project". They now live in
-// `collab/workspace-resource-mutation.ts` as the resource-agnostic
-// `WorkspaceResource*` shapes (imported above and aliased back to these
-// project-flavored names) so plugin/skill/design-system callers share the
-// exact same header-parsing and mutation-gate logic instead of forking it.
+// The request-context helper used to be defined here, hard-coded to
+// "project". It now lives in `collab/workspace-resource-mutation.ts` so the
+// remaining Workspace-scoped resource callers share one parser.
 type WorkspaceProjectContext = WorkspaceResourceContext;
-type WorkspaceProjectMutationCapability = WorkspaceResourceMutationCapability;
-type WorkspaceProjectAccessInput = WorkspaceResourceAccessInput;
 
 /**
  * Can a team share be RECORDED in the workspace this request is acting in?
@@ -324,51 +312,6 @@ function teamShareRefusalFor(
     assertedType: ctx.workspaceTypeAsserted,
     ...(workspaceTypes ? { registry: workspaceTypes } : {}),
   });
-}
-
-/**
- * The non-rejecting counterpart of `createEnforceWorkspaceProjectMutation`,
- * for a read route that would otherwise write as a local side effect.
- */
-export function createWorkspaceProjectWriteAuthorityCheck() {
-  return async function requestCanWriteWorkspaceProject(
-    _req: any,
-    _getWorkspaceProject: (db: unknown, workspaceId: string, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
-    _getWorkspaceProjectByProjectId: (db: unknown, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
-    _db: unknown,
-    _projectId: string,
-  ): Promise<boolean> {
-    return true;
-  };
-}
-
-export function createEnforceWorkspaceProjectMutation(
-  authorizeProjectRequest?: AuthorizeProjectRequest,
-) {
-  return async function enforceWorkspaceProjectMutation(
-    req: any,
-    res: Response,
-    _sendApiError: (
-      res: Response,
-      status: number,
-      code: string,
-      message: string,
-      details?: Record<string, unknown>,
-    ) => unknown,
-    _getWorkspaceProject: (db: unknown, workspaceId: string, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
-    _getWorkspaceProjectByProjectId: (db: unknown, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
-    _db: unknown,
-    projectId: string,
-    capability: WorkspaceProjectMutationCapability,
-  ): Promise<boolean> {
-    if (authorizeProjectRequest) {
-      return authorizeProjectRequest(req, res, projectId, {
-        mode: 'write',
-        capability,
-      });
-    }
-    return true;
-  };
 }
 
 function projectDetailResolvedDir(

@@ -10,10 +10,6 @@ import { readFile, rm } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
 import { isBlocked as isBlockedSystemDir } from './linked-dirs.js';
 import type { RouteDeps } from './server-context.js';
-import type {
-  AuthorizedProjectToolRequest,
-  AuthorizeProjectToolRequest,
-} from './collab/project-request-authority.js';
 import { PROJECT_EXPORT_TOOL_ENDPOINT } from './tool-tokens.js';
 import {
   InlineAssetsLimitError,
@@ -521,7 +517,7 @@ const SCREENSHOT_RENDER_PREVIEW_SCOPE_TTL_MS =
   DESKTOP_RENDERER_IPC_TIMEOUT_MS + RENDERER_PREVIEW_SCOPE_SETUP_MARGIN_MS;
 
 type AuthorizedExportRead = {
-  readonly previewWorkspace: AuthorizedProjectToolRequest['workspace'];
+  readonly previewWorkspace: null;
 };
 
 type ScreenshotExportBody = {
@@ -542,7 +538,6 @@ type ScreenshotExportRequest = {
 };
 
 export interface RegisterProjectExportRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'node' | 'ids' | 'projectStore' | 'exports' | 'projectFiles' | 'validation' | 'auth' | 'projectPreviewScopes'> {
-  authorizeProjectToolRequest: AuthorizeProjectToolRequest;
   isApiTokenAuthorization: (authorization: string | undefined) => boolean;
 }
 
@@ -600,12 +595,7 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
         sendApiError(res, 403, 'FORBIDDEN', 'tool token belongs to a different project');
         return null;
       }
-      const authority = await ctx.authorizeProjectToolRequest(
-        res,
-        grant.projectId,
-        { mode: 'read' },
-      );
-      return authority ? { previewWorkspace: authority.workspace } : null;
+      return { previewWorkspace: null };
     }
     return { previewWorkspace: null };
   }

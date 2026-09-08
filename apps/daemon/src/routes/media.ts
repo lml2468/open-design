@@ -13,7 +13,6 @@ import { findMediaModel } from '../media/models.js';
 import type { MediaTaskError } from '../media/tasks.js';
 import type { ImageGenerationRequestSummary } from '../media/image-generation-retry.js';
 import type { RouteDeps } from '../server-context.js';
-import type { AuthorizeProjectToolRequest } from '../collab/project-request-authority.js';
 import { proxyDispatcherRequestInit } from '../connectionTest.js';
 import {
   aihubmixCatalogUrl,
@@ -46,9 +45,7 @@ function mediaProviderId(model: string): string | undefined {
 const AIHUBMIX_CATALOG_TTL_MS = 5 * 60 * 1000;
 const aihubmixCatalogCache = new Map<string, { at: number; models: Array<{ id: string; label: string }> }>();
 
-export interface RegisterMediaRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'ids' | 'auth' | 'media' | 'appConfig' | 'orbit' | 'nativeDialogs' | 'projectStore' | 'projectFiles' | 'conversations' | 'research'> {
-  authorizeProjectToolRequest: AuthorizeProjectToolRequest;
-}
+export type RegisterMediaRoutesDeps = RouteDeps<'db' | 'design' | 'http' | 'paths' | 'ids' | 'auth' | 'media' | 'appConfig' | 'orbit' | 'nativeDialogs' | 'projectStore' | 'projectFiles' | 'conversations' | 'research'>;
 
 export type LegacyMediaRouteGrantDecision =
   | { ok: true; grant: ToolTokenGrant | null }
@@ -796,11 +793,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     });
     if (!grant) return;
     try {
-      if (!await ctx.authorizeProjectToolRequest(
-        res,
-        grant.projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
       await handleHyperFramesScaffold(req, res, grant.projectId);
     } catch (err: any) {
       const status = typeof err?.status === 'number' ? err.status : 400;
@@ -854,11 +846,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     const grant = authorizeToolRequest(req, res, 'media:generate');
     if (!grant) return;
     try {
-      if (!await ctx.authorizeProjectToolRequest(
-        res,
-        grant.projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
       await handleGenerate(req, res, { projectId: grant.projectId, grant });
     } catch (err: any) {
       const status = typeof err?.status === 'number' ? err.status : 400;
@@ -927,15 +914,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
         )
       : null;
     if (typeof authorizationHeader === 'string' && !toolGrant) return;
-    if (
-      toolGrant
-      && !await ctx.authorizeProjectToolRequest(
-        res,
-        toolGrant.projectId,
-        { mode: 'read' },
-      )
-    ) return;
-
     // Token callers must prove their grant targets the persisted local project
     // before task lookup; cloud availability is irrelevant to this local wait.
     const taskId = req.params.id;

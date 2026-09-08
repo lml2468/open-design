@@ -66,7 +66,6 @@ async function startServer() {
     projectFiles: functionProxy({ resolveProjectDir: () => projectDir }),
     conversations: functionProxy(),
     research: functionProxy({ ResearchError: class ResearchError extends Error {} }),
-    authorizeProjectToolRequest: async () => true,
   } as unknown as Parameters<typeof registerMediaRoutes>[1];
 
   const app = express();

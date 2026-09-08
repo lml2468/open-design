@@ -152,7 +152,6 @@ describe('Workspace resource read authority wiring', () => {
         prepare: () => ({ all: () => [], get: () => null, run: () => undefined }),
         transaction: (run: () => unknown) => () => run(),
       },
-      authorizeProjectRequest: async () => ({ ok: true }),
       paths: {
         PROJECTS_DIR: '',
         PLUGIN_REGISTRY_ROOTS: [],
