@@ -64,7 +64,7 @@ describe("payload desktop delegation", () => {
   });
 
   it("forwards only the OS invite URL across an outer-to-payload cold start", () => {
-    const deeplink = "opendesign://workspace/invite/continue?nonce=payload-cold-start";
+    const deeplink = "opendesign://collaboration/review/open?server=https%3A%2F%2Fdesign.example.com&project_id=prj-1&version_id=ver-1";
     expect(findPackagedDeeplinkArg(["Open Design.exe", "--unrelated", deeplink])).toBe(deeplink);
     expect(findPackagedDeeplinkArg(["Open Design.exe", "--unrelated"])).toBeNull();
     const plan = planPackagedPayloadDesktopDelegation(fakeRuntime(false), {

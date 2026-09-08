@@ -4687,8 +4687,6 @@ export async function startServer({
     // workspace type it carries is memoized for the team-share invariant.
     listWorkspaceDirectory,
     fetchWorkspaceDirectory: fetchWorkspaceDirectoryForAccountSurface,
-    refreshWorkspaceDirectoryAfterMutation:
-      workspaceDirectoryAuthority.refreshAfterMutation,
     // Reuse the shared team-projects lister (which holds the shared vela-cli
     // catalog adapter). Without this the endpoint built a fresh adapter per
     // request and re-ran the one-off `vela team-projects --help` capability

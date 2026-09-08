@@ -387,6 +387,7 @@ export type DesktopRuntime = {
   click(input: DesktopClickInput): Promise<DesktopClickResult>;
   console(): DesktopConsoleResult;
   eval(input: DesktopEvalInput): Promise<DesktopEvalResult>;
+  navigate(path: string): Promise<void>;
   exportArtifact(input: DesktopExportArtifactInput): Promise<DesktopExportArtifactResult>;
   exportPdf(input: DesktopExportPdfInput): Promise<DesktopExportPdfResult>;
   openUpdateDialog(request: OpenDesignHostUpdaterOpenDialogRequest): void;
@@ -3066,6 +3067,20 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
         });
         return { error: error instanceof Error ? error.message : String(error), ok: false };
       }
+    },
+    async navigate(path) {
+      if (window.isDestroyed()) throw new Error("desktop window is destroyed");
+      if (!path.startsWith("/") || path.startsWith("//")) {
+        throw new Error("desktop navigation path must be app-local");
+      }
+      const target = JSON.stringify(path);
+      // Deep links can carry one-time invitation secrets. Keep this operation
+      // separate from eval(), whose observability intentionally records an
+      // expression preview for developer tooling.
+      await window.webContents.executeJavaScript(
+        `(() => { const target = ${target}; history.pushState(history.state, '', target); window.dispatchEvent(new PopStateEvent('popstate')); })()`,
+        true,
+      );
     },
     exportArtifact(input) {
       return exportArtifactFromHtml(input);

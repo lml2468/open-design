@@ -225,7 +225,7 @@ const DIAGNOSTICS_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const CONFIG_STRING_FLAGS = new Set(['daemon-url', 'value', 'value-json']);
 const CONFIG_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const COLLABORATION_STRING_FLAGS = new Set([
-  'daemon-url', 'email', 'device-name',
+  'daemon-url', 'email', 'device-name', 'display-name', 'invite-file',
 ]);
 const COLLABORATION_BOOLEAN_FLAGS = new Set([
   'help', 'h', 'json', 'password-stdin',
@@ -243,7 +243,7 @@ const PROJECT_STRING_FLAGS = new Set([
   'agent', 'model', 'service-tier', 'snapshot-id', 'inputs', 'grant-caps', 'editor',
   'title', 'label', 'against', 'seed-from', 'fork-after', 'mode',
   'source', 'remote-project', 'entrypoint',
-  'input', 'version',
+  'input', 'version', 'email', 'invitation', 'user',
 ]);
 const PROJECT_RESOURCE_STRING_FLAGS = new Set([
   ...PROJECT_STRING_FLAGS,
@@ -1065,6 +1065,8 @@ function printCollaborationHelp() {
   od collaboration server status [--json] [--daemon-url <url>]
   od collaboration server set <origin> [--json] [--daemon-url <url>]
   od collaboration login --email <email> --password-stdin [--device-name <name>] [--json] [--daemon-url <url>]
+  od collaboration invitation accept --invite-file <path> --password-stdin
+                    [--display-name <name>] [--device-name <name>] [--json]
   od collaboration logout [--json] [--daemon-url <url>]
   od collaboration projects [--json] [--daemon-url <url>]
 
@@ -1077,6 +1079,7 @@ Options:
   --password-stdin       Read the password from stdin. Password argv flags are
                          intentionally unsupported.
   --device-name <name>  Session label (default: OpenDesign CLI).
+  --invite-file <path>  File containing one opendesign://collaboration invite URL.
   --json                Emit the daemon response as JSON.
   --daemon-url <url>    Override the local OpenDesign daemon HTTP base.
 
@@ -1167,6 +1170,64 @@ async function runCollaboration(args) {
     }
     console.error('usage: od collaboration server <status | set <origin>>');
     process.exit(2);
+  }
+
+  if (subcommand === 'invitation') {
+    if (action !== 'accept' || value !== undefined || extraPositionals.length > 0) {
+      console.error('usage: od collaboration invitation accept --invite-file <path> --password-stdin');
+      process.exit(2);
+    }
+    if (!flags['invite-file'] || !flags['password-stdin']) {
+      console.error('invitation accept requires --invite-file <path> and --password-stdin');
+      process.exit(2);
+    }
+    let inviteUrl;
+    let password;
+    try {
+      inviteUrl = readFileSync(flags['invite-file'], 'utf8').trim();
+      password = readFileSync(0, 'utf8').replace(/[\r\n]+$/, '');
+    } catch (error) {
+      console.error(`failed to read invitation or password: ${error.message ?? error}`);
+      process.exit(2);
+    }
+    let parsed;
+    try {
+      parsed = new URL(inviteUrl);
+    } catch {
+      console.error('invite file does not contain a valid URL');
+      process.exit(2);
+    }
+    const origin = parsed.searchParams.get('server');
+    const invitationId = parsed.searchParams.get('invite_id');
+    const token = parsed.searchParams.get('nonce');
+    if (
+      parsed.protocol !== 'opendesign:'
+      || parsed.host !== 'collaboration'
+      || parsed.pathname.replace(/\/+$/, '') !== '/invite/continue'
+      || !origin
+      || !invitationId
+      || !token
+    ) {
+      console.error('invite file does not contain a Collaboration invitation URL');
+      process.exit(2);
+    }
+    const result = await collaborationDaemonRequest(
+      base,
+      'POST',
+      '/api/collaboration/invitations/accept',
+      {
+        origin,
+        invitationId,
+        token,
+        password,
+        deviceName: flags['device-name'] || 'OpenDesign CLI',
+        ...(flags['display-name'] ? { displayName: flags['display-name'] } : {}),
+      },
+    );
+    return emit(result, () => {
+      console.log(`Accepted\t${result.project.name}`);
+      console.log(`Project\t${result.project.id}`);
+    });
   }
 
   if (action !== undefined) {
@@ -6770,6 +6831,11 @@ async function runProject(args) {
   od project collaboration preview <id> [--entrypoint <file>] [--json]
   od project collaboration publish <id> --confirm [--entrypoint <file>] [--json]
   od project collaboration comments <id> [--version <id>] [--json]
+  od project collaboration members <id> [--json]
+  od project collaboration invitations <id> [--json]
+  od project collaboration invite <id> --email <reviewer> [--json]
+  od project collaboration revoke-invitation <id> --invitation <id> [--json]
+  od project collaboration remove-reviewer <id> --user <id> [--json]
   od project collaboration attach-comments <id> --conversation <id>
                     --version <id> --input <path|-> [--json]
   od project collaboration unbind <id> --confirm [--json]
@@ -6819,7 +6885,7 @@ Common options:
     case 'collaboration': {
       const [action, id, ...extra] = positionalArgs(rest, PROJECT_RESOURCE_STRING_FLAGS);
       if (!action || !id || extra.length > 0) {
-        console.error('Usage: od project collaboration <status|create|preview|publish|comments|attach-comments|unbind> <id>');
+        console.error('Usage: od project collaboration <status|create|preview|publish|comments|members|invitations|invite|revoke-invitation|remove-reviewer|attach-comments|unbind> <id>');
         process.exit(2);
       }
       const route = `/api/projects/${encodeURIComponent(id)}/collaboration`;
@@ -6896,6 +6962,50 @@ Common options:
         for (const comment of data.comments ?? []) {
           console.log(`${comment.id}\t${comment.status}\t${comment.source}\t${comment.note}`);
         }
+        return;
+      }
+      if (action === 'members' || action === 'invitations') {
+        const resp = await fetch(`${base}${route}/${action}`, { headers: workspaceHeaders });
+        if (!resp.ok) return structuredHttpFailure(resp);
+        const data = await resp.json();
+        if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+        const entries = action === 'members' ? data.members ?? [] : data.invitations ?? [];
+        if (entries.length === 0) {
+          console.log(action === 'members' ? 'No Project members.' : 'No Project invitations.');
+          return;
+        }
+        for (const entry of entries) {
+          console.log(action === 'members'
+            ? `${entry.userId}\t${entry.role}\t${entry.email}\t${entry.displayName}`
+            : `${entry.id}\t${entry.email}\t${entry.acceptedAt ? 'accepted' : entry.revokedAt ? 'revoked' : 'pending'}\t${entry.expiresAt}`);
+        }
+        return;
+      }
+      if (action === 'invite') {
+        if (typeof flags.email !== 'string') {
+          console.error('invite requires --email <reviewer>');
+          process.exit(2);
+        }
+        const data = await postJsonToDaemon(base, `${route}/invitations`, { email: flags.email }, workspaceHeaders);
+        if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+        console.log(`Invitation\t${data.invitation.id}`);
+        console.log(`Review link\t${data.invitation.desktopDeepLink}`);
+        return;
+      }
+      if (action === 'revoke-invitation' || action === 'remove-reviewer') {
+        const value = action === 'revoke-invitation' ? flags.invitation : flags.user;
+        if (typeof value !== 'string') {
+          console.error(`${action} requires ${action === 'revoke-invitation' ? '--invitation' : '--user'} <id>`);
+          process.exit(2);
+        }
+        const suffix = action === 'revoke-invitation'
+          ? `invitations/${encodeURIComponent(value)}`
+          : `members/${encodeURIComponent(value)}`;
+        const resp = await fetch(`${base}${route}/${suffix}`, { method: 'DELETE', headers: workspaceHeaders });
+        if (!resp.ok) return structuredHttpFailure(resp);
+        const data = await resp.json();
+        if (flags.json) return process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+        console.log(action === 'revoke-invitation' ? 'Invitation revoked.' : 'Reviewer removed.');
         return;
       }
       if (action === 'attach-comments') {
@@ -7244,7 +7354,6 @@ Common options:
 async function runWorkspace(args) {
   if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
     console.log(`Usage:
-  od workspace invite --workspace <id> --member <id> --email <addr> [--role admin|member] [--json]
   od workspace projects team --workspace <id> --member <id> [--json]
   od workspace projects list --workspace <id> --member <id> [--view recent|drafts|team|all] [--json]
   od workspace projects move <projectId> --workspace <id> --member <id> --visibility personal|team [--json]
@@ -7262,19 +7371,18 @@ Common options:
     process.exit(args.length === 0 ? 2 : 0);
   }
   const area = args[0];
-  if (!['invite', 'projects', 'members'].includes(area)) {
+  if (!['projects', 'members'].includes(area)) {
     console.error(`unknown subcommand: od workspace ${area}`);
     process.exit(2);
   }
   const sub = args[1] ?? 'list';
-  const rest = area === 'invite' ? args.slice(1) : args.slice(2);
+  const rest = args.slice(2);
   const flags = parseFlags(rest, { string: WORKSPACE_STRING_FLAGS, boolean: WORKSPACE_BOOLEAN_FLAGS });
   const base = (await projectDaemonUrl(flags)).replace(/\/$/, '');
 
   async function workspaceContextRequest(path, init) {
     const needsExplicitWorkspace =
-      path === '/api/workspace/invite'
-      || path === '/api/workspace/members'
+      path === '/api/workspace/members'
       || path === '/api/workspace/projects/team';
     const workspaceHeaders = needsExplicitWorkspace
       ? workspaceHeadersFromExplicitFlags(flags, true)
@@ -7292,29 +7400,6 @@ Common options:
       process.exit(1);
     }
     return data;
-  }
-
-  if (area === 'invite') {
-    const emails = repeatableFlagValues(rest, 'email');
-    const role = String(flags.role ?? 'member');
-    if (emails.length === 0 || !['admin', 'member'].includes(role)) {
-      console.error('Usage: od workspace invite --email <addr> [--role admin|member] [--json]');
-      process.exit(2);
-    }
-    const body = emails.length === 1
-      ? { email: emails[0], role }
-      : { invites: emails.map((email) => ({ email, role })) };
-    const data = await workspaceContextRequest('/api/workspace/invite', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-    const results = Array.isArray(data?.results) ? data.results : [];
-    for (const result of results) {
-      console.log(`${result.email}\t${result.ok ? 'invited' : `failed:${result.error ?? 'unknown'}`}`);
-    }
-    return;
   }
 
   if (area === 'members') {

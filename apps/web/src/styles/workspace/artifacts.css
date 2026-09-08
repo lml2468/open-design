@@ -2105,6 +2105,14 @@ button.agent-group-rescan-btn:hover:not(:disabled) {
   font-size: 12px;
 }
 
+.collaboration-settings__success {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--green-bg);
+  color: var(--green);
+  font-size: 12px;
+}
+
 @media (max-width: 720px) {
   .collaboration-settings__login-grid {
     grid-template-columns: 1fr;
@@ -2375,6 +2383,26 @@ button.agent-group-rescan-btn:hover:not(:disabled) {
   border-radius: 9px;
   background: var(--bg-subtle);
   cursor: pointer;
+}
+
+.project-collaboration-dialog__feedback-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px;
+  border-radius: 9px;
+  background: var(--bg-subtle);
+  font-size: 12px;
+}
+
+.project-collaboration-dialog__feedback-list > div > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .project-collaboration-dialog__feedback-list label strong {

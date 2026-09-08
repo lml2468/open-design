@@ -8,9 +8,6 @@ import type {
   WorkspaceCollabContext,
   WorkspaceContextResponse,
   WorkspaceActiveResponse,
-  WorkspaceInviteCreateResponse,
-  WorkspaceInviteCreateResult,
-  WorkspaceInviteRole,
   WorkspaceInvalidationSsePayload,
   WorkspaceTeamProjectsResponse,
 } from '@open-design/contracts';
@@ -20,15 +17,6 @@ import {
   type WorkspaceContextProvider,
 } from '../collab/workspace-context.js';
 import { createTeamProjectsLister } from '../collab/team-projects.js';
-import {
-  consumeInviteContinuation,
-  type InviteContinueOutcome,
-} from '../collab/invite-continue.js';
-import {
-  createWorkspaceInvite,
-  type CreateInviteOutcome,
-  type CreateWorkspaceInviteInput,
-} from '../collab/invite-create.js';
 import {
   listVelaWorkspaceDirectory,
   workspaceContextFromDirectoryItem,
@@ -115,10 +103,6 @@ export interface RegisterCollabContextRoutesDeps {
     req: Request,
     workspaceId: string,
   ) => WorkspaceCollabContext | null;
-  /** Injectable for tests; defaults to consuming against B with the vela session. */
-  consumeInvite?: (nonce: string) => Promise<InviteContinueOutcome>;
-  /** Injectable for tests; defaults to creating invites on B with the vela session. */
-  createInvite?: (input: CreateWorkspaceInviteInput) => Promise<CreateInviteOutcome>;
   /** Injectable for tests; defaults to the resource-hub team-project lister
    *  built from the same workspace context + env-configured hub client the share
    *  path uses. */
@@ -159,13 +143,6 @@ export interface RegisterCollabContextRoutesDeps {
    */
   fetchWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
   /**
-   * Force-refresh the membership authority after an invite continuation is
-   * consumed. The consume mutates B before the daemon's settled directory
-   * lease expires; refreshing here prevents the accepted Workspace from being
-   * rejected by the next exact-scope request as a stale non-membership.
-   */
-  refreshWorkspaceDirectoryAfterMutation?: () => Promise<WorkspaceDirectoryFetchResult>;
-  /**
    * Collab realtime hop-2 — the workspace-scoped invalidation SSE seams. When
    * both are provided the daemon registers `GET /api/workspace/events`; the route
    * adds its per-connection sink to `workspaceEventSinks` (fed by the
@@ -185,8 +162,6 @@ export interface RegisterCollabContextRoutesDeps {
     properties?: Record<string, unknown>,
   ) => Promise<void> | void;
 }
-
-const ASSIGNABLE_ROLES = new Set<WorkspaceInviteRole>(['admin', 'member']);
 
 /**
  * Enrichment may add billing and display metadata, but it must not rewrite the
@@ -240,37 +215,6 @@ function workspaceGroupProperties(
 }
 
 /**
- * Normalize an invite-create request body into validated { email, role } items.
- * Accepts either the canonical `{ invites: [...] }` batch shape or a single
- * top-level `{ email, role }`. Rows without a non-empty email are dropped; a
- * missing/unknown role defaults to 'member' (never 'owner').
- */
-function parseInviteCreateItems(
-  body: unknown,
-): Array<{ email: string; role: WorkspaceInviteRole }> {
-  const raw = body as { invites?: unknown; email?: unknown; role?: unknown } | null;
-  const source: unknown[] = Array.isArray(raw?.invites)
-    ? raw!.invites
-    : raw && typeof raw === 'object' && typeof raw.email === 'string'
-      ? [raw]
-      : [];
-  const items: Array<{ email: string; role: WorkspaceInviteRole }> = [];
-  for (const entry of source) {
-    if (!entry || typeof entry !== 'object') continue;
-    const rec = entry as { email?: unknown; role?: unknown };
-    if (typeof rec.email !== 'string') continue;
-    const email = rec.email.trim();
-    if (!email) continue;
-    const role: WorkspaceInviteRole =
-      typeof rec.role === 'string' && ASSIGNABLE_ROLES.has(rec.role as WorkspaceInviteRole)
-        ? (rec.role as WorkspaceInviteRole)
-        : 'member';
-    items.push({ email, role });
-  }
-  return items;
-}
-
-/**
  * Workspace-context route : the daemon's single B-integration seam. The
  * web client fetches an explicitly selected workspace context here to decide
  * whether collab runs and who the present member is (resolveCollabSession). In
@@ -280,11 +224,6 @@ function parseInviteCreateItems(
 export function registerCollabContextRoutes(app: Express, deps: RegisterCollabContextRoutesDeps): void {
   const { workspaceContext } = deps;
   const configuredEnv = () => deps.configuredEnv?.() ?? {};
-  const consumeInvite = deps.consumeInvite ?? ((nonce: string) => consumeInviteContinuation(nonce, {
-    configuredEnv: configuredEnv(),
-  }));
-  const createInvite =
-    deps.createInvite ?? ((input: CreateWorkspaceInviteInput) => createWorkspaceInvite(input));
   const rawTeamProjectsLister = createTeamProjectsLister({});
   const listTeamProjects =
     deps.listTeamProjects ??
@@ -313,74 +252,6 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
         message: verified.message,
         ...(verified.retryable ? { retryable: true } : {}),
       });
-
-  // Desktop invite hand-off ("桌面唤起和本地恢复"): the desktop app parses the
-  // opendesign:// invite deeplink and POSTs the nonce here. The daemon consumes
-  // the one-time continuation on B with the signed-in vela session and returns
-  // the resolved workspace context so the client can switch into the team
-  // workspace. The nonce is single-use — B enforces subject match + one consume.
-  app.post('/api/workspace/invite/continue', async (req, res) => {
-    const body = req.body as { nonce?: unknown } | null;
-    const nonce = body && typeof body.nonce === 'string' ? body.nonce : '';
-    if (!nonce.trim()) return res.status(400).json({ error: 'missing_nonce' });
-    const outcome = await consumeInvite(nonce);
-    if (!outcome.ok) return res.status(outcome.status).json({ error: outcome.error });
-    // Consuming the one-time nonce has already committed the membership on B.
-    // Refresh the daemon's settled authority lease before the renderer makes
-    // its first exact-scope read. A refresh outage must not turn a successfully
-    // consumed, non-repeatable continuation into an HTTP failure.
-    await deps.refreshWorkspaceDirectoryAfterMutation?.().catch(() => undefined);
-    if (outcome.context) {
-      void deps.observeWorkspace?.(
-        req,
-        outcome.context,
-        workspaceGroupProperties(outcome.context),
-      );
-    }
-    return res.json({ context: outcome.context, workspaceMemberId: outcome.workspaceMemberId });
-  });
-
-  // Invite CREATE (the inviter/host flow): the team switcher's "邀请同事" dialog
-  // POSTs one or more { email, role } pairs here. The daemon derives the current
-  // workspaceId from the caller's workspace context and creates each invite on B
-  // with the signed-in vela session. Every outcome is typed: a missing session
-  // 401s, a missing workspace 409s, and B's per-invite failures (including a 404
-  // when B's create endpoint is absent locally) come back as `ok: false` results
-  // — the endpoint never crashes on the backend being unavailable.
-  app.post('/api/workspace/invite', async (req, res) => {
-    const items = parseInviteCreateItems(req.body);
-    if (items.length === 0) return res.status(400).json({ error: 'missing_invites' });
-
-    const verified = await verifyWorkspaceRequestContext({
-      req,
-      fetchWorkspaceDirectory,
-      configuredEnv: configuredEnv(),
-      requireTeam: true,
-    });
-    if (!verified.ok) return sendWorkspaceVerificationFailure(res, verified);
-    const context = verified.context;
-    const workspaceId = context.workspaceId;
-    if (!context.permissions.canInviteMembers) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const results: WorkspaceInviteCreateResult[] = [];
-    for (const item of items) {
-      const outcome = await createInvite({ email: item.email, role: item.role, workspaceId });
-      // The vela session is workspace-wide: if it is missing for one invite it is
-      // missing for all, so short-circuit to a single 401 instead of N failures.
-      if (!outcome.ok && outcome.error === 'no_session') {
-        return res.status(401).json({ error: 'no_session' });
-      }
-      results.push(
-        outcome.ok
-          ? { email: item.email, ok: true, inviteId: outcome.inviteId }
-          : { email: item.email, ok: false, error: outcome.error },
-      );
-    }
-    const body: WorkspaceInviteCreateResponse = { results };
-    return res.json(body);
-  });
 
   app.get('/api/workspace/context', async (req, res) => {
     const authorization = req.header('authorization') ?? undefined;

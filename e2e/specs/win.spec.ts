@@ -61,8 +61,8 @@ const updateFixturePort = resolveOptionalFixturePort(process.env.OD_PACKAGED_E2E
 const updateFixtureMode = resolveUpdateFixtureMode(process.env.OD_PACKAGED_E2E_WIN_UPDATE_MODE);
 const releaseChannel = process.env.OD_PACKAGED_E2E_RELEASE_CHANNEL;
 const releaseVersion = process.env.OD_PACKAGED_E2E_RELEASE_VERSION;
-const packagedInviteDeeplink =
-  'opendesign://workspace/invite/continue?workspace_id=packaged-smoke-workspace&member_id=packaged-smoke-member&invite_id=packaged-smoke-invite&nonce=packaged-smoke-nonce';
+const packagedCollaborationDeeplink =
+  'opendesign://collaboration/review/open?server=https%3A%2F%2Fdesign.example.com&project_id=packaged-smoke-project&version_id=packaged-smoke-version';
 const updateScenario = resolvePackagedUpdateScenario({ releaseChannel, releaseVersion });
 const installIdentity = resolvePackagedWinInstallIdentity({ namespace, releaseVersion });
 
@@ -615,7 +615,7 @@ winDescribe('packaged windows runtime smoke', () => {
       expect(install.registryEntries.length).toBeGreaterThan(0);
       expect(JSON.stringify(install.registryEntries)).toContain(installIdentity.displayName);
       expect(JSON.stringify(install.registryEntries)).toContain(`Open Design-${installIdentity.namespaceToken}`);
-      await assertWindowsInviteProtocolRegistration(install.installDir);
+      await assertWindowsCollaborationProtocolRegistration(install.installDir);
       expect(install.installPayload.fileCount).toBeGreaterThan(0);
       expect(install.installPayload.totalBytes).toBeGreaterThan(0);
       expect(install.installPayload.topLevel.length).toBeGreaterThan(0);
@@ -767,16 +767,16 @@ winDescribe('packaged windows runtime smoke', () => {
 
       // Runtime registration must preserve the stable installed outer path;
       // pointing at a versioned payload would break the scheme after cleanup.
-      await assertWindowsInviteProtocolRegistration(install.installDir);
+      await assertWindowsCollaborationProtocolRegistration(install.installDir);
       const protocolHotPid = inspect.status?.pid ?? start.pid;
-      const protocolHotContinuationCount = await countInviteContinuationResults();
-      await invokeWindowsInviteDeeplink();
+      const protocolHotContinuationCount = await countCollaborationDeeplinkResults();
+      await invokeWindowsCollaborationDeeplink();
       const [protocolHotInspect, protocolHotContinuation] = await measureSmokeStep(
         timings,
-        'invite protocol hot delivery',
+        'collaboration protocol hot delivery',
         async () => Promise.all([
           waitForHealthyDesktop(),
-          waitForInviteContinuationResult(protocolHotContinuationCount),
+          waitForCollaborationDeeplinkResult(protocolHotContinuationCount),
         ]),
       );
       expect(protocolHotInspect.status?.pid).toBe(protocolHotPid);
@@ -786,23 +786,23 @@ winDescribe('packaged windows runtime smoke', () => {
       if (verifyCoreOnly) {
         const protocolStop = await measureSmokeStep(
           timings,
-          'stop before invite protocol cold delivery',
+          'stop before collaboration protocol cold delivery',
           async () => runToolsPackJson<WinStopResult>('stop'),
         );
         started = false;
         expect(protocolStop.status).not.toBe('partial');
         expect(protocolStop.remainingPids).toEqual([]);
 
-        await invokeWindowsInviteDeeplink();
+        await invokeWindowsCollaborationDeeplink();
         started = true;
         const protocolColdInspect = await measureSmokeStep(
           timings,
-          'invite protocol cold delivery',
+          'collaboration protocol cold delivery',
           async () => waitForHealthyDesktop(),
         );
         expect(protocolColdInspect.status?.state).toBe('running');
         expect(protocolColdInspect.status?.pid).not.toBe(protocolHotPid);
-        await assertWindowsInviteProtocolRegistration(install.installDir);
+        await assertWindowsCollaborationProtocolRegistration(install.installDir);
       }
 
       if (!inspect.desktopIpcUnavailable) {
@@ -1010,7 +1010,7 @@ winDescribe('packaged windows runtime smoke', () => {
       expect(uninstall.residueObservation?.uninstallerExists).toBe(false);
       expect(uninstall.residueObservation?.startMenuShortcutExists).toBe(false);
       expect(uninstall.residueObservation?.userDesktopShortcutExists).toBe(false);
-      await assertWindowsInviteProtocolRemoved();
+      await assertWindowsCollaborationProtocolRemoved();
       await report.saveSummary({
         appShell,
         onboarding: {
@@ -2638,7 +2638,7 @@ function expectWindowsDaemonUrl(value: string | null | undefined): void {
   expect(value).toEqual(expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/?$/));
 }
 
-async function assertWindowsInviteProtocolRegistration(installDir: string): Promise<void> {
+async function assertWindowsCollaborationProtocolRegistration(installDir: string): Promise<void> {
   const { stdout } = await execFileAsync('reg.exe', [
     'query',
     'HKCU\\Software\\Classes\\opendesign\\shell\\open\\command',
@@ -2650,8 +2650,8 @@ async function assertWindowsInviteProtocolRegistration(installDir: string): Prom
   expect(normalized).not.toContain('\\versions\\');
 }
 
-async function invokeWindowsInviteDeeplink(): Promise<void> {
-  const escaped = packagedInviteDeeplink.replaceAll("'", "''");
+async function invokeWindowsCollaborationDeeplink(): Promise<void> {
+  const escaped = packagedCollaborationDeeplink.replaceAll("'", "''");
   await execFileAsync('powershell.exe', [
     '-NoProfile',
     '-NonInteractive',
@@ -2660,37 +2660,37 @@ async function invokeWindowsInviteDeeplink(): Promise<void> {
   ]);
 }
 
-type InviteContinuationResult = {
+type CollaborationDeeplinkResult = {
   ok: boolean;
   reason?: string;
   status?: number;
 };
 
-async function countInviteContinuationResults(): Promise<number> {
-  return (await readInviteContinuationResults()).length;
+async function countCollaborationDeeplinkResults(): Promise<number> {
+  return (await readCollaborationDeeplinkResults()).length;
 }
 
-async function waitForInviteContinuationResult(
+async function waitForCollaborationDeeplinkResult(
   priorCount: number,
   timeoutMs = 30_000,
-): Promise<InviteContinuationResult> {
+): Promise<CollaborationDeeplinkResult> {
   const startedAt = Date.now();
   let lastCount = priorCount;
   while (Date.now() - startedAt < timeoutMs) {
-    const results = await readInviteContinuationResults();
+    const results = await readCollaborationDeeplinkResults();
     lastCount = results.length;
     if (results.length > priorCount) return results.at(-1)!;
     await delay(250);
   }
   throw new Error(
-    `invite deeplink did not produce a continuation result within ${timeoutMs}ms (before=${priorCount}, after=${lastCount})`,
+    `collaboration deeplink did not produce a result within ${timeoutMs}ms (before=${priorCount}, after=${lastCount})`,
   );
 }
 
-async function readInviteContinuationResults(): Promise<InviteContinuationResult[]> {
+async function readCollaborationDeeplinkResults(): Promise<CollaborationDeeplinkResult[]> {
   const logPath = join(runtimeNamespaceRoot, 'logs', 'desktop', 'latest.log');
   const content = await readFile(logPath, 'utf8').catch(() => '');
-  const results: InviteContinuationResult[] = [];
+  const results: CollaborationDeeplinkResult[] = [];
   for (const line of content.split(/\r?\n/u)) {
     if (line.trim().length === 0) continue;
     let entry: unknown;
@@ -2701,7 +2701,7 @@ async function readInviteContinuationResults(): Promise<InviteContinuationResult
     }
     if (!isRecord(entry) || entry.message !== 'console.info' || !isRecord(entry.meta)) continue;
     const args = entry.meta.args;
-    if (!Array.isArray(args) || args[0] !== '[open-design desktop] invite deeplink continuation completed') continue;
+    if (!Array.isArray(args) || args[0] !== '[open-design desktop] collaboration deeplink completed') continue;
     const outcome = args[1];
     if (!isRecord(outcome) || typeof outcome.ok !== 'boolean') continue;
     results.push({
@@ -2713,7 +2713,7 @@ async function readInviteContinuationResults(): Promise<InviteContinuationResult
   return results;
 }
 
-async function assertWindowsInviteProtocolRemoved(): Promise<void> {
+async function assertWindowsCollaborationProtocolRemoved(): Promise<void> {
   await expect(
     execFileAsync('reg.exe', [
       'query',

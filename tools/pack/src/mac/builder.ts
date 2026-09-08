@@ -138,15 +138,15 @@ export async function runElectronBuilder(
       notarize: config.macNotarize ? undefined : false,
       target: targets,
     },
-    // Register the workspace-invite deeplink scheme so macOS routes
-    // `opendesign://workspace/invite/continue?...` to this app (electron-builder
+    // Register the Collaboration deeplink scheme so macOS routes
+    // `opendesign://collaboration/*` to this app (electron-builder
     // writes it into Info.plist CFBundleURLTypes; a runtime
     // setAsDefaultProtocolClient alone is unreliable on macOS). The scheme string
-    // must match INVITE_DEEPLINK_SCHEME in
-    // apps/desktop/src/main/invite-deeplink-core.ts.
+    // must match COLLABORATION_DEEPLINK_SCHEME in
+    // apps/desktop/src/main/collaboration-deeplink-core.ts.
     protocols: [
       {
-        name: `${PRODUCT_NAME} Invite`,
+        name: `${PRODUCT_NAME} Collaboration`,
         schemes: ["opendesign"],
       },
     ],

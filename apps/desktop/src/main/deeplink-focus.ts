@@ -1,5 +1,5 @@
 // Focus target for the `opendesign://` deeplink hand-off. Kept out of
-// `invite-deeplink.ts` so it stays electron-free and unit testable.
+// `collaboration-deeplink.ts` so it stays electron-free and unit testable.
 
 /** Minimal view of the desktop runtime the hand-off needs. */
 export type DeeplinkFocusTarget = {

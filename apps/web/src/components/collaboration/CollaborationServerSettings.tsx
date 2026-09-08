@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@open-design/components';
 import type {
+  CollaborationInvitationAcceptanceResult,
   CollaborationProject,
   CollaborationProjectList,
   CollaborationServerState,
@@ -13,7 +14,33 @@ const CollaborationReviewDialog = lazy(async () => {
   return { default: module.CollaborationReviewDialog };
 });
 
-type PendingAction = 'configure' | 'login' | 'logout' | 'refresh' | null;
+type PendingAction = 'configure' | 'login' | 'logout' | 'refresh' | 'accept-invitation' | null;
+
+type CollaborationDeeplinkIntent =
+  | { kind: 'invitation'; origin: string; invitationId: string; token: string }
+  | { kind: 'review'; origin: string; projectId: string; versionId: string };
+
+function readCollaborationDeeplinkIntent(): CollaborationDeeplinkIntent | null {
+  const query = new URLSearchParams(window.location.search);
+  const action = query.get('collaboration_action');
+  const origin = query.get('server')?.trim() ?? '';
+  if (!origin) return null;
+  if (action === 'invitation') {
+    const invitationId = query.get('invitation_id')?.trim() ?? '';
+    const token = query.get('token')?.trim() ?? '';
+    return invitationId && token ? { kind: 'invitation', origin, invitationId, token } : null;
+  }
+  if (action === 'review') {
+    const projectId = query.get('project_id')?.trim() ?? '';
+    const versionId = query.get('version_id')?.trim() ?? '';
+    return projectId && versionId ? { kind: 'review', origin, projectId, versionId } : null;
+  }
+  return null;
+}
+
+function clearCollaborationDeeplinkIntent(): void {
+  window.history.replaceState(window.history.state, '', '/settings');
+}
 
 async function daemonJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -55,15 +82,41 @@ export function CollaborationServerSettings() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [deviceName, setDeviceName] = useState('OpenDesign Desktop');
+  const [displayName, setDisplayName] = useState('');
   const [pending, setPending] = useState<PendingAction>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reviewProject, setReviewProject] = useState<CollaborationProject | null>(null);
+  const [reviewVersionId, setReviewVersionId] = useState<string | null>(null);
+  const [deeplinkIntent, setDeeplinkIntent] = useState<CollaborationDeeplinkIntent | null>(
+    () => readCollaborationDeeplinkIntent(),
+  );
+  const [invitationAccepted, setInvitationAccepted] = useState(false);
+
+  useEffect(() => {
+    const onLocationChange = () => setDeeplinkIntent(readCollaborationDeeplinkIntent());
+    window.addEventListener('popstate', onLocationChange);
+    return () => window.removeEventListener('popstate', onLocationChange);
+  }, []);
 
   const loadProjects = useCallback(async () => {
     const result = await daemonJson<CollaborationProjectList>('/api/collaboration/projects');
     setProjects(result.projects);
   }, []);
+
+  useEffect(() => {
+    if (deeplinkIntent?.kind !== 'review' || !serverState?.session) return;
+    if (serverState.profile?.origin !== deeplinkIntent.origin) {
+      setError(`This review link belongs to ${deeplinkIntent.origin}. Connect and sign in to that server first.`);
+      return;
+    }
+    const target = projects.find((project) => project.id === deeplinkIntent.projectId);
+    if (!target) return;
+    setReviewProject(target);
+    setReviewVersionId(deeplinkIntent.versionId);
+    clearCollaborationDeeplinkIntent();
+    setDeeplinkIntent(null);
+  }, [deeplinkIntent, projects, serverState]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -147,6 +200,44 @@ export function CollaborationServerSettings() {
     }
   };
 
+  const acceptInvitation = async (event: FormEvent) => {
+    event.preventDefault();
+    if (deeplinkIntent?.kind !== 'invitation') return;
+    setPending('accept-invitation');
+    setError(null);
+    setInvitationAccepted(false);
+    try {
+      const accepted = await daemonJson<CollaborationInvitationAcceptanceResult>(
+        '/api/collaboration/invitations/accept',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            origin: deeplinkIntent.origin,
+            invitationId: deeplinkIntent.invitationId,
+            token: deeplinkIntent.token,
+            password,
+            deviceName,
+            ...(displayName.trim() ? { displayName: displayName.trim() } : {}),
+          }),
+        },
+      );
+      setServerState(accepted.state);
+      setOrigin(accepted.state.profile?.origin ?? deeplinkIntent.origin);
+      setEmail(accepted.state.session?.user.email ?? '');
+      setPassword('');
+      setDisplayName('');
+      setProjects([accepted.project]);
+      setInvitationAccepted(true);
+      clearCollaborationDeeplinkIntent();
+      setDeeplinkIntent(null);
+      await loadProjects();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPending(null);
+    }
+  };
+
   const refreshProjects = async () => {
     setPending('refresh');
     setError(null);
@@ -176,6 +267,62 @@ export function CollaborationServerSettings() {
   return (
     <section className="settings-section collaboration-settings">
       {error ? <div className="collaboration-settings__error" role="alert">{error}</div> : null}
+      {invitationAccepted ? (
+        <div className="collaboration-settings__success" role="status">
+          {t('collaboration.invitation.accepted')}
+        </div>
+      ) : null}
+
+      {deeplinkIntent?.kind === 'invitation' ? (
+        <form className="settings-section-card collaboration-settings__card" onSubmit={acceptInvitation}>
+          <div className="section-head collaboration-settings__head">
+            <div>
+              <h3>{t('collaboration.invitation.title')}</h3>
+              <p className="hint">{t('collaboration.invitation.description', { server: deeplinkIntent.origin })}</p>
+            </div>
+            <span className="collaboration-settings__status">
+              {t('collaboration.invitation.id', { id: deeplinkIntent.invitationId })}
+            </span>
+          </div>
+          <div className="collaboration-settings__login-grid">
+            <label className="field-label">
+              <span>{t('collaboration.invitation.displayName')}</span>
+              <input
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                disabled={pending !== null}
+                autoComplete="name"
+              />
+            </label>
+            <label className="field-label">
+              <span>{t('collaboration.session.password')}</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                disabled={pending !== null}
+                required
+                minLength={12}
+                autoComplete="current-password"
+              />
+            </label>
+            <label className="field-label collaboration-settings__device">
+              <span>{t('collaboration.session.deviceName')}</span>
+              <input
+                value={deviceName}
+                onChange={(event) => setDeviceName(event.target.value)}
+                disabled={pending !== null}
+                required
+              />
+            </label>
+            <Button type="submit" disabled={pending !== null || !password || !deviceName.trim()}>
+              {pending === 'accept-invitation'
+                ? t('collaboration.invitation.accepting')
+                : t('collaboration.invitation.accept')}
+            </Button>
+          </div>
+        </form>
+      ) : null}
 
       <form className="settings-section-card collaboration-settings__card" onSubmit={configureServer}>
         <div className="section-head collaboration-settings__head">
@@ -317,7 +464,10 @@ export function CollaborationServerSettings() {
                   <Button
                     type="button"
                     disabled={!project.publishedVersionId}
-                    onClick={() => setReviewProject(project)}
+                    onClick={() => {
+                      setReviewVersionId(null);
+                      setReviewProject(project);
+                    }}
                   >
                     {project.publishedVersionId
                       ? t('collaboration.projects.openReview')
@@ -334,7 +484,11 @@ export function CollaborationServerSettings() {
           <CollaborationReviewDialog
             project={reviewProject}
             session={session}
-            onClose={() => setReviewProject(null)}
+            initialVersionId={reviewVersionId}
+            onClose={() => {
+              setReviewProject(null);
+              setReviewVersionId(null);
+            }}
           />
         </Suspense>
       ) : null}

@@ -161,13 +161,11 @@ import type {
   EntryNavigationClickProps,
   AccountMenuClickProps,
   WorkspaceSwitcherClickProps,
-  WorkspaceInviteClickProps,
   ProjectCollectionClickProps,
   CommunityTemplateClickProps,
   ExtensionMarketplaceClickProps,
   WorkspaceSurfaceViewProps,
   WorkspaceSwitchResultProps,
-  WorkspaceInviteResultProps,
   WorkspaceProjectActionResultProps,
   WorkspaceSharedProjectOpenResultProps,
   WorkspaceResourceActionResultProps,
@@ -221,10 +219,6 @@ export function trackWorkspaceSwitcherClick(track: Track, props: WorkspaceSwitch
   send(track, 'ui_click', props);
 }
 
-export function trackWorkspaceInviteClick(track: Track, props: WorkspaceInviteClickProps, options?: TrackOptions): void {
-  send(track, 'ui_click', props, options);
-}
-
 export function trackProjectCollectionClick(track: Track, props: ProjectCollectionClickProps, options?: TrackOptions): void {
   send(track, 'ui_click', props, options);
 }
@@ -243,10 +237,6 @@ export function trackWorkspaceSurfaceView(track: Track, props: WorkspaceSurfaceV
 
 export function trackWorkspaceSwitchResult(track: Track, props: WorkspaceSwitchResultProps, options?: TrackOptions): void {
   send(track, 'workspace_switch_result', props, options);
-}
-
-export function trackWorkspaceInviteResult(track: Track, props: WorkspaceInviteResultProps, options?: TrackOptions): void {
-  send(track, 'workspace_invite_result', props, options);
 }
 
 export function trackWorkspaceProjectActionResult(track: Track, props: WorkspaceProjectActionResultProps, options?: TrackOptions): void {

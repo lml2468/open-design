@@ -106,6 +106,59 @@ async function jsonRequest(baseUrl: string, route: string, init?: RequestInit) {
 }
 
 describe('Collaboration Server routes', () => {
+  it('accepts a Project invitation through the daemon without exposing remote tokens', async () => {
+    const reviewerSession = {
+      ...session,
+      user: { id: 'reviewer-1', email: 'reviewer@example.test', displayName: 'Reviewer' },
+    };
+    const reviewerProject = { ...project, callerRole: 'reviewer', ownerUserId: 'owner-1' };
+    const remoteRequests: Array<{ path: string; body?: unknown }> = [];
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(input.toString());
+      remoteRequests.push({
+        path: url.pathname,
+        ...(typeof init?.body === 'string' ? { body: JSON.parse(init.body) } : {}),
+      });
+      if (url.pathname.endsWith('/capabilities')) return Response.json(capabilities);
+      if (url.pathname.endsWith('/invitations/accept')) {
+        return Response.json({ session: reviewerSession, project: reviewerProject, role: 'reviewer' });
+      }
+      if (url.pathname.endsWith('/projects')) return Response.json({ projects: [reviewerProject] });
+      return Response.json({ title: 'Not found' }, { status: 404 });
+    });
+    const baseUrl = await startRoutes(fetchImpl);
+    const result = await jsonRequest(baseUrl, '/api/collaboration/invitations/accept', {
+      method: 'POST',
+      body: JSON.stringify({
+        origin: 'https://design.example.test',
+        invitationId: 'inv-1',
+        token: 'abcdefghijklmnopqrstuvwxyz123456',
+        password: 'a-long-secret-password',
+        displayName: 'Reviewer',
+        deviceName: 'Reviewer Mac',
+      }),
+    });
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        state: { profile: { origin: 'https://design.example.test' }, session: { user: reviewerSession.user } },
+        project: reviewerProject,
+        role: 'reviewer',
+      },
+    });
+    expect(JSON.stringify(result.body)).not.toContain('access-token');
+    expect(JSON.stringify(result.body)).not.toContain('refresh-token');
+    expect(remoteRequests.at(-1)).toMatchObject({
+      path: '/api/v1/invitations/accept',
+      body: {
+        token: 'abcdefghijklmnopqrstuvwxyz123456',
+        password: 'a-long-secret-password',
+        displayName: 'Reviewer',
+        deviceName: 'Reviewer Mac',
+      },
+    });
+  });
+
   it('keeps remote credentials in the daemon while exposing profile, session summary, and projects', async () => {
     const remoteRequests: Array<{ url: string; method: string; authorization?: string; body?: unknown }> = [];
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
@@ -338,6 +391,73 @@ describe('Collaboration Server routes', () => {
     const publishRequest = remoteRequests.find(({ url }) => url.endsWith('/publishes'));
     expect(publishRequest?.headers.get('if-match')).toBe('"project-1"');
     expect(publishRequest?.headers.get('idempotency-key')).toBeTruthy();
+  });
+
+  it('manages Project reviewers and one-time invitations through a local binding', async () => {
+    let revision = 1;
+    const requests: Array<{ path: string; method: string; headers: Headers }> = [];
+    const currentProject = () => ({ ...project, revision });
+    const invitation = {
+      id: 'inv-1',
+      projectId: 'project-1',
+      email: 'reviewer@example.test',
+      role: 'reviewer',
+      expiresAt: '2026-09-15T00:00:00.000Z',
+      desktopDeepLink: 'opendesign://collaboration/invite/continue?server=https%3A%2F%2Fdesign.example.test&invite_id=inv-1&nonce=abcdefghijklmnopqrstuvwxyz123456',
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(input.toString());
+      const method = init?.method ?? 'GET';
+      requests.push({ path: url.pathname, method, headers: new Headers(init?.headers) });
+      if (url.pathname.endsWith('/capabilities')) return Response.json(capabilities);
+      if (url.pathname.endsWith('/auth/session')) return Response.json(session);
+      if (url.pathname === '/api/v1/projects' && method === 'POST') return Response.json(currentProject(), { status: 201 });
+      if (url.pathname === '/api/v1/projects/project-1') return Response.json(currentProject());
+      if (url.pathname.endsWith('/members') && method === 'GET') {
+        return Response.json({ members: [{ userId: user.id, displayName: user.displayName, email: user.email, role: 'owner', createdAt: project.createdAt }] });
+      }
+      if (url.pathname.endsWith('/invitations') && method === 'GET') {
+        return Response.json({ invitations: [] });
+      }
+      if (url.pathname.endsWith('/invitations') && method === 'POST') {
+        expect(new Headers(init?.headers).get('if-match')).toBe('"project-1"');
+        revision = 2;
+        return Response.json(invitation, { status: 201 });
+      }
+      if (url.pathname.endsWith('/invitations/inv-1') && method === 'DELETE') {
+        expect(new Headers(init?.headers).get('if-match')).toBe('"project-2"');
+        revision = 3;
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname.endsWith('/members/reviewer-1') && method === 'DELETE') {
+        expect(new Headers(init?.headers).get('if-match')).toBe('"project-3"');
+        revision = 4;
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ title: 'Not found' }, { status: 404 });
+    });
+    const baseUrl = await startRoutes(fetchImpl, undefined, {
+      project: { id: 'local-project-1', name: 'Launch Website' },
+      files: [],
+    });
+    await jsonRequest(baseUrl, '/api/collaboration/server', {
+      method: 'PUT', body: JSON.stringify({ origin: 'https://design.example.test' }),
+    });
+    await jsonRequest(baseUrl, '/api/collaboration/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: user.email, password: 'a-long-secret-password', deviceName: 'Owner Mac' }),
+    });
+    await jsonRequest(baseUrl, '/api/projects/local-project-1/collaboration', {
+      method: 'POST', body: JSON.stringify({ mode: 'create' }),
+    });
+    expect(await jsonRequest(baseUrl, '/api/projects/local-project-1/collaboration/members')).toMatchObject({ status: 200, body: { members: [{ role: 'owner' }] } });
+    expect(await jsonRequest(baseUrl, '/api/projects/local-project-1/collaboration/invitations')).toEqual({ status: 200, body: { invitations: [] } });
+    expect(await jsonRequest(baseUrl, '/api/projects/local-project-1/collaboration/invitations', {
+      method: 'POST', body: JSON.stringify({ email: invitation.email }),
+    })).toMatchObject({ status: 201, body: { invitation: { id: 'inv-1' }, binding: { remoteRevision: 2 } } });
+    expect(await jsonRequest(baseUrl, '/api/projects/local-project-1/collaboration/invitations/inv-1', { method: 'DELETE' })).toMatchObject({ status: 200, body: { binding: { remoteRevision: 3 } } });
+    expect(await jsonRequest(baseUrl, '/api/projects/local-project-1/collaboration/members/reviewer-1', { method: 'DELETE' })).toMatchObject({ status: 200, body: { binding: { remoteRevision: 4 } } });
+    expect(requests.some(({ path }) => path.endsWith('/members/reviewer-1'))).toBe(true);
   });
 
   it('materializes a verified reviewer Snapshot and relays human or Agent comments', async () => {

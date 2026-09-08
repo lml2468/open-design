@@ -157,6 +157,41 @@ export class CollaborationProjectBindingStore {
     });
   }
 
+  async recordRemoteProject(input: {
+    localProjectId: string;
+    serverOrigin: string;
+    remoteProjectId: string;
+    remoteRevision: number;
+    publishedVersionId: string | null;
+    now: string;
+  }): Promise<CollaborationProjectBinding> {
+    return withLock(this.dataDir, async () => {
+      const state = await readBindings(this.dataDir);
+      const index = state.bindings.findIndex(
+        (binding) => binding.localProjectId === input.localProjectId,
+      );
+      const existing = index >= 0 ? state.bindings[index] : null;
+      if (
+        !existing
+        || existing.serverOrigin !== input.serverOrigin
+        || existing.remoteProjectId !== input.remoteProjectId
+      ) {
+        throw new CollaborationProjectBindingConflictError(
+          'Collaboration binding changed while the remote Project was being updated',
+        );
+      }
+      const binding = CollaborationProjectBindingSchema.parse({
+        ...existing,
+        remoteRevision: input.remoteRevision,
+        publishedVersionId: input.publishedVersionId,
+        updatedAt: input.now,
+      });
+      state.bindings[index] = binding;
+      await writeBindings(this.dataDir, state);
+      return binding;
+    });
+  }
+
   async remove(localProjectId: string): Promise<boolean> {
     return withLock(this.dataDir, async () => {
       const state = await readBindings(this.dataDir);

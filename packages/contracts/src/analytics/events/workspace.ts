@@ -44,7 +44,6 @@ export interface EntryNavigationClickProps extends TrackingWorkspaceDimensions {
     | 'search'
     | 'account_menu_trigger'
     | 'workspace_switcher_trigger'
-    | 'invite_teammates'
     | 'create_team'
     | 'workspace_settings';
   target?: TrackingWorkspacePage | 'search' | 'account_menu' | 'workspace_switcher';
@@ -70,23 +69,9 @@ export interface AccountMenuClickProps extends TrackingWorkspaceDimensions {
 export interface WorkspaceSwitcherClickProps extends TrackingWorkspaceDimensions {
   page_name: TrackingWorkspacePage;
   area: 'workspace_switcher';
-  element: 'workspace_option' | 'invite_teammates' | 'create_team';
+  element: 'workspace_option' | 'create_team';
   target_workspace_type?: TrackingWorkspaceType;
   is_current_workspace?: boolean;
-}
-
-export interface WorkspaceInviteClickProps extends TrackingWorkspaceDimensions {
-  page_name: 'home' | 'all_projects';
-  area: 'workspace_invite_dialog';
-  element:
-    | 'submit'
-    | 'add_recipient_row'
-    | 'remove_recipient_row'
-    | 'role_select'
-    | 'upgrade'
-    | 'close';
-  entry_from: 'workspace_switcher' | 'all_projects';
-  invite_count_bucket?: TrackingCountBucket;
 }
 
 export type TrackingProjectCollectionPage = 'home' | 'drafts' | 'all_projects';
@@ -110,8 +95,7 @@ export interface ProjectCollectionClickProps extends TrackingWorkspaceDimensions
     | 'bulk_delete'
     | 'filter'
     | 'sort'
-    | 'view_toggle'
-    | 'invite_teammates';
+    | 'view_toggle';
   project_key?: string;
   project_relation?: TrackingProjectRelation;
   selection_count_bucket?: TrackingCountBucket;
@@ -143,7 +127,7 @@ export interface ExtensionMarketplaceClickProps extends TrackingWorkspaceDimensi
 
 export interface WorkspaceSurfaceViewProps extends TrackingWorkspaceDimensions {
   page_name: TrackingWorkspacePage;
-  area: 'account_menu' | 'workspace_switcher' | 'workspace_invite_dialog';
+  area: 'account_menu' | 'workspace_switcher';
   entry_from?: 'workspace_switcher' | 'all_projects';
 }
 
@@ -152,18 +136,6 @@ export interface WorkspaceSwitchResultProps extends TrackingWorkspaceDimensions 
   area: 'workspace_switcher';
   result: 'success' | 'failed';
   target_workspace_type?: TrackingWorkspaceType;
-  duration_ms: number;
-  error_code?: string;
-}
-
-export interface WorkspaceInviteResultProps extends TrackingWorkspaceDimensions {
-  page_name: 'home' | 'all_projects';
-  area: 'workspace_invite_dialog';
-  entry_from: 'workspace_switcher' | 'all_projects';
-  result: 'success' | 'partial_success' | 'failed';
-  requested_count: number;
-  succeeded_count: number;
-  failed_count: number;
   duration_ms: number;
   error_code?: string;
 }

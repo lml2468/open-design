@@ -152,10 +152,10 @@ describe("open-design sidecar contract", () => {
   it("validates desktop IPC message inputs", () => {
     expect(normalizeDesktopSidecarMessage({ type: SIDECAR_MESSAGES.SHOW })).toEqual({ type: "show" });
     expect(normalizeDesktopSidecarMessage({
-      input: { deeplinkUrl: "opendesign://workspace/invite/continue?nonce=hot" },
+      input: { deeplinkUrl: "opendesign://collaboration/review/open?server=https%3A%2F%2Fdesign.example.com&project_id=project-1&version_id=version-1" },
       type: SIDECAR_MESSAGES.SHOW,
     })).toEqual({
-      input: { deeplinkUrl: "opendesign://workspace/invite/continue?nonce=hot" },
+      input: { deeplinkUrl: "opendesign://collaboration/review/open?server=https%3A%2F%2Fdesign.example.com&project_id=project-1&version_id=version-1" },
       type: "show",
     });
     expect(() => normalizeDesktopSidecarMessage({

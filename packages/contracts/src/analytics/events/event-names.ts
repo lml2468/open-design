@@ -49,7 +49,6 @@ export type AnalyticsEventName =
   // Workspace redesign: authoritative outcome events. Clicks and impressions
   // continue to use the core ui_click/surface_view catalogue.
   | 'workspace_switch_result'
-  | 'workspace_invite_result'
   | 'workspace_project_action_result'
   | 'workspace_shared_project_open_result'
   | 'workspace_resource_action_result'

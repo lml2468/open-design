@@ -15,7 +15,7 @@ import type {
   McpToolFinishedProps,
   McpToolStartedProps,
 } from './mcp.js';
-import type { ProjectCommentCreateResultProps, WorkspaceInviteResultProps, WorkspaceProjectActionResultProps, WorkspaceResourceActionResultProps, WorkspaceSharedProjectOpenResultProps, WorkspaceSwitchResultProps } from './workspace.js';
+import type { ProjectCommentCreateResultProps, WorkspaceProjectActionResultProps, WorkspaceResourceActionResultProps, WorkspaceSharedProjectOpenResultProps, WorkspaceSwitchResultProps } from './workspace.js';
 // ---- Discriminated union of all event payloads ---------------------------
 
 export type AnalyticsEventPayload =
@@ -48,7 +48,6 @@ export type AnalyticsEventPayload =
   | { event: 'sketch_export_result'; props: SketchExportResultProps }
   | { event: 'file_version_restore_result'; props: FileVersionRestoreResultProps }
   | { event: 'workspace_switch_result'; props: WorkspaceSwitchResultProps }
-  | { event: 'workspace_invite_result'; props: WorkspaceInviteResultProps }
   | { event: 'workspace_project_action_result'; props: WorkspaceProjectActionResultProps }
   | { event: 'workspace_shared_project_open_result'; props: WorkspaceSharedProjectOpenResultProps }
   | { event: 'workspace_resource_action_result'; props: WorkspaceResourceActionResultProps }

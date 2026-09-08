@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
+import { tmpdir } from 'node:os';
 import { dirname, resolve as pathResolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -201,6 +203,50 @@ describe('od collaboration CLI', () => {
     expect(unsafe.stderr).toContain('unknown flag: --password');
   });
 
+  it('accepts a Project invitation from a file without exposing the password or token in argv', async () => {
+    const tempRoot = mkdtempSync(pathResolve(tmpdir(), 'od-collaboration-cli-'));
+    const invitePath = pathResolve(tempRoot, 'invitation.txt');
+    writeFileSync(
+      invitePath,
+      'opendesign://collaboration/invite/continue?server=https%3A%2F%2Fdesign.example.test&invite_id=inv-1&nonce=abcdefghijklmnopqrstuvwxyz123456\n',
+      'utf8',
+    );
+    stub.setResponder((request) => request.url === '/api/collaboration/invitations/accept'
+      ? {
+          status: 201,
+          body: {
+            state: { ...state, session: { sessionId: 's2', user: { id: 'u2', email: 'reviewer@example.test', displayName: 'Reviewer' } } },
+            project: { id: 'p1', name: 'Launch' },
+            role: 'reviewer',
+          },
+        }
+      : { status: 404, body: { error: { code: 'NOT_FOUND', message: 'unexpected' } } });
+
+    try {
+      const result = await runCli([
+        'collaboration', 'invitation', 'accept',
+        '--invite-file', invitePath,
+        '--password-stdin',
+        '--display-name', 'Reviewer',
+        '--device-name', 'Reviewer Mac',
+        '--json',
+        '--daemon-url', stub.baseUrl,
+      ], 'a-long-secret-password\n');
+
+      expect(result.code).toBe(0);
+      expect(JSON.parse(stub.requests[0]!.body)).toEqual({
+        origin: 'https://design.example.test',
+        invitationId: 'inv-1',
+        token: 'abcdefghijklmnopqrstuvwxyz123456',
+        password: 'a-long-secret-password',
+        displayName: 'Reviewer',
+        deviceName: 'Reviewer Mac',
+      });
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('logs out and lists collaboration projects through the local daemon', async () => {
     stub.setResponder((request) => {
       if (request.method === 'DELETE' && request.url === '/api/collaboration/session') {
@@ -280,6 +326,52 @@ describe('od collaboration CLI', () => {
       confirmedPaths: ['preview/index.html'],
     });
     expect(stub.requests.every(({ url }) => url.startsWith('/api/projects/'))).toBe(true);
+  });
+
+  it('manages Project reviewers and invitations through the local daemon', async () => {
+    stub.setResponder((request) => {
+      if (request.method === 'GET' && request.url.endsWith('/members')) {
+        return { status: 200, body: { members: [{ userId: 'u2', role: 'reviewer', email: 'reviewer@example.test', displayName: 'Reviewer' }] } };
+      }
+      if (request.method === 'GET' && request.url.endsWith('/invitations')) {
+        return { status: 200, body: { invitations: [{ id: 'inv-1', email: 'next@example.test', expiresAt: '2026-09-15T00:00:00.000Z' }] } };
+      }
+      if (request.method === 'POST' && request.url.endsWith('/invitations')) {
+        return {
+          status: 201,
+          body: {
+            invitation: {
+              id: 'inv-2',
+              desktopDeepLink: 'opendesign://collaboration/invite/continue?server=https%3A%2F%2Fdesign.example.test&invite_id=inv-2&nonce=abcdefghijklmnopqrstuvwxyz123456',
+            },
+          },
+        };
+      }
+      if (request.method === 'DELETE' && (request.url.endsWith('/invitations/inv-1') || request.url.endsWith('/members/u2'))) {
+        return { status: 200, body: { ok: true } };
+      }
+      return { status: 404, body: { error: { code: 'NOT_FOUND', message: 'unexpected' } } };
+    });
+
+    const commands = [
+      ['project', 'collaboration', 'members', 'local-project-1', '--json', '--daemon-url', stub.baseUrl],
+      ['project', 'collaboration', 'invitations', 'local-project-1', '--json', '--daemon-url', stub.baseUrl],
+      ['project', 'collaboration', 'invite', 'local-project-1', '--email', 'next@example.test', '--json', '--daemon-url', stub.baseUrl],
+      ['project', 'collaboration', 'revoke-invitation', 'local-project-1', '--invitation', 'inv-1', '--json', '--daemon-url', stub.baseUrl],
+      ['project', 'collaboration', 'remove-reviewer', 'local-project-1', '--user', 'u2', '--json', '--daemon-url', stub.baseUrl],
+    ];
+    const results = [];
+    for (const command of commands) results.push(await runCli(command));
+
+    expect(results.every(({ code }) => code === 0)).toBe(true);
+    expect(stub.requests.map(({ method, url }) => ({ method, url }))).toEqual([
+      { method: 'GET', url: '/api/projects/local-project-1/collaboration/members' },
+      { method: 'GET', url: '/api/projects/local-project-1/collaboration/invitations' },
+      { method: 'POST', url: '/api/projects/local-project-1/collaboration/invitations' },
+      { method: 'DELETE', url: '/api/projects/local-project-1/collaboration/invitations/inv-1' },
+      { method: 'DELETE', url: '/api/projects/local-project-1/collaboration/members/u2' },
+    ]);
+    expect(JSON.parse(stub.requests[2]!.body)).toEqual({ email: 'next@example.test' });
   });
 
   it('lets a local Reviewer Agent inspect comments and submit provenance-tagged feedback', async () => {

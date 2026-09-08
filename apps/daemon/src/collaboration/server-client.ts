@@ -1,5 +1,9 @@
 import {
+  CollaborationInvitationAcceptanceSchema,
   CollaborationProblemSchema,
+  CollaborationProjectInvitationSchema,
+  CollaborationProjectInvitationsSchema,
+  CollaborationProjectMembersSchema,
   CollaborationProjectSchema,
   CollaborationReviewBundleManifestSchema,
   CollaborationReviewCommentSchema,
@@ -12,6 +16,10 @@ import {
   CollaborationServerCapabilitiesSchema,
   type CollaborationProjectList,
   type CollaborationProject,
+  type CollaborationInvitationAcceptance,
+  type CollaborationProjectInvitation,
+  type CollaborationProjectInvitations,
+  type CollaborationProjectMembers,
   type CollaborationReviewBundleManifest,
   type CollaborationReviewComment,
   type CollaborationReviewComments,
@@ -101,6 +109,18 @@ export class CollaborationServerClient {
     });
   }
 
+  acceptInvitation(input: {
+    token: string;
+    displayName?: string;
+    password: string;
+    deviceName: string;
+  }): Promise<CollaborationInvitationAcceptance> {
+    return this.request('/api/v1/invitations/accept', CollaborationInvitationAcceptanceSchema, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
   listProjects(accessToken: string): Promise<CollaborationProjectList> {
     return this.request('/api/v1/projects', CollaborationRemoteProjectListSchema, {
       headers: { authorization: `Bearer ${accessToken}` },
@@ -131,6 +151,76 @@ export class CollaborationServerClient {
       `/api/v1/projects/${encodeURIComponent(projectId)}`,
       CollaborationProjectSchema,
       { headers: { authorization: `Bearer ${accessToken}` } },
+    );
+  }
+
+  listProjectMembers(accessToken: string, projectId: string): Promise<CollaborationProjectMembers> {
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/members`,
+      CollaborationProjectMembersSchema,
+      { headers: { authorization: `Bearer ${accessToken}` } },
+    );
+  }
+
+  listProjectInvitations(
+    accessToken: string,
+    projectId: string,
+  ): Promise<CollaborationProjectInvitations> {
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/invitations`,
+      CollaborationProjectInvitationsSchema,
+      { headers: { authorization: `Bearer ${accessToken}` } },
+    );
+  }
+
+  createProjectInvitation(
+    accessToken: string,
+    input: { projectId: string; projectRevision: number; email: string; idempotencyKey: string },
+  ): Promise<CollaborationProjectInvitation> {
+    return this.request(
+      `/api/v1/projects/${encodeURIComponent(input.projectId)}/invitations`,
+      CollaborationProjectInvitationSchema,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'idempotency-key': input.idempotencyKey,
+          'if-match': `"project-${input.projectRevision}"`,
+        },
+        body: JSON.stringify({ email: input.email }),
+      },
+    );
+  }
+
+  revokeProjectInvitation(
+    accessToken: string,
+    input: { projectId: string; invitationId: string; projectRevision: number },
+  ): Promise<void> {
+    return this.requestEmpty(
+      `/api/v1/projects/${encodeURIComponent(input.projectId)}/invitations/${encodeURIComponent(input.invitationId)}`,
+      {
+        method: 'DELETE',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'if-match': `"project-${input.projectRevision}"`,
+        },
+      },
+    );
+  }
+
+  removeProjectReviewer(
+    accessToken: string,
+    input: { projectId: string; userId: string; projectRevision: number },
+  ): Promise<void> {
+    return this.requestEmpty(
+      `/api/v1/projects/${encodeURIComponent(input.projectId)}/members/${encodeURIComponent(input.userId)}`,
+      {
+        method: 'DELETE',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'if-match': `"project-${input.projectRevision}"`,
+        },
+      },
     );
   }
 

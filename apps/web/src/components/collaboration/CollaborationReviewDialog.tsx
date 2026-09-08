@@ -43,15 +43,19 @@ async function daemonJson<T>(path: string, init?: RequestInit): Promise<T> {
 export function CollaborationReviewDialog({
   project,
   session,
+  initialVersionId,
   onClose,
 }: {
   project: CollaborationProject;
   session: CollaborationSessionSummary;
+  initialVersionId?: string | null;
   onClose: () => void;
 }) {
   const { t } = useI18n();
   const [versions, setVersions] = useState<CollaborationReviewVersion[]>([]);
-  const [selectedVersionId, setSelectedVersionId] = useState(project.publishedVersionId ?? '');
+  const [selectedVersionId, setSelectedVersionId] = useState(
+    initialVersionId ?? project.publishedVersionId ?? '',
+  );
   const [snapshot, setSnapshot] = useState<CollaborationReviewSnapshot | null>(null);
   const [comments, setComments] = useState<CollaborationReviewComment[]>([]);
   const [commentRevision, setCommentRevision] = useState(0);
@@ -111,7 +115,8 @@ export function CollaborationReviewDialog({
         const result = await daemonJson<CollaborationReviewVersionList>(`${route}/versions`);
         if (cancelled) return;
         setVersions(result.versions);
-        const initial = project.publishedVersionId
+        const initial = initialVersionId
+          ?? project.publishedVersionId
           ?? result.versions[0]?.id;
         if (initial) await loadSnapshot(initial);
         else {
@@ -126,7 +131,7 @@ export function CollaborationReviewDialog({
       }
     })();
     return () => { cancelled = true; };
-  }, [loadSnapshot, project.publishedVersionId, route, t]);
+  }, [initialVersionId, loadSnapshot, project.publishedVersionId, route, t]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

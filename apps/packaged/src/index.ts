@@ -390,7 +390,7 @@ async function main(): Promise<void> {
       }
     },
     windowTitle: resolvePackagedWindowTitle(activeConfig),
-    inviteProtocolClientPath:
+    collaborationProtocolClientPath:
       process.platform === "win32" ? launcherRuntime.installedLaunchPath : null,
     async onExternalShow() {
       await retireObsoleteInstalledOuter();
@@ -406,7 +406,7 @@ async function main(): Promise<void> {
         packagedLogger?.warn("failed to sync Windows uninstall registry version", { error });
       });
       secondInstanceHandoff.attach({
-        dispatchDeeplink: controls.dispatchInviteDeeplink,
+        dispatchDeeplink: controls.dispatchCollaborationDeeplink,
         show: controls.show,
       });
     },

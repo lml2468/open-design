@@ -51,8 +51,8 @@ const updateMetadataUrl = normalizeOptionalEnv(process.env.OD_PACKAGED_E2E_MAC_U
 const updateVersion = normalizeOptionalEnv(process.env.OD_PACKAGED_E2E_MAC_UPDATE_VERSION);
 const updateBuildJsonPath = normalizeOptionalEnv(process.env.OD_PACKAGED_E2E_MAC_UPDATE_BUILD_JSON_PATH);
 const updateFixture = normalizeOptionalEnv(process.env.OD_PACKAGED_E2E_MAC_UPDATE_FIXTURE);
-const packagedInviteDeeplink =
-  'opendesign://workspace/invite/continue?workspace_id=packaged-smoke-workspace&member_id=packaged-smoke-member&invite_id=packaged-smoke-invite&nonce=packaged-smoke-nonce';
+const packagedCollaborationDeeplink =
+  'opendesign://collaboration/review/open?server=https%3A%2F%2Fdesign.example.com&project_id=packaged-smoke-project&version_id=packaged-smoke-version';
 
 const outputNamespaceRoot = join(toolsPackDir, 'out', 'mac', 'namespaces', namespace);
 const runtimeNamespaceRoot = join(toolsPackDir, 'runtime', 'mac', 'namespaces', namespace);
@@ -509,7 +509,7 @@ macDescribe('packaged mac runtime smoke', () => {
       expect(install.detached).toBe(true);
       expectPathInside(install.dmgPath, join(outputNamespaceRoot, 'dmg'));
       expectPathInside(install.installedAppPath, join(outputNamespaceRoot, 'install', 'Applications'));
-      await assertMacInviteProtocolRegistration(install.installedAppPath);
+      await assertMacCollaborationProtocolRegistration(install.installedAppPath);
 
       await seedPackagedOnboardingComplete();
 
@@ -581,7 +581,7 @@ macDescribe('packaged mac runtime smoke', () => {
       assertLauncherPointer(inspect.launcher.lastSuccessful, updateScenario.expectedCurrentVersion, 0, 'initial lastSuccessful');
 
       const protocolHotPid = inspect.status?.pid ?? start.pid;
-      await invokeMacInviteDeeplink(install.installedAppPath);
+      await invokeMacCollaborationDeeplink(install.installedAppPath);
       const protocolHotInspect = await waitForHealthyDesktop();
       expect(protocolHotInspect.status?.pid).toBe(protocolHotPid);
 
@@ -591,7 +591,7 @@ macDescribe('packaged mac runtime smoke', () => {
         expect(protocolStop.status).not.toBe('partial');
         expect(protocolStop.remainingPids).toEqual([]);
 
-        await invokeMacInviteDeeplink(install.installedAppPath);
+        await invokeMacCollaborationDeeplink(install.installedAppPath);
         started = true;
         const protocolColdInspect = await waitForHealthyDesktop();
         expect(protocolColdInspect.status?.state).toBe('running');
@@ -2807,7 +2807,7 @@ function expectPathInside(filePath: string, expectedRoot: string): void {
   ).toBe(true);
 }
 
-async function assertMacInviteProtocolRegistration(installedAppPath: string): Promise<void> {
+async function assertMacCollaborationProtocolRegistration(installedAppPath: string): Promise<void> {
   const plistPath = join(installedAppPath, 'Contents', 'Info.plist');
   const { stdout } = await execFileAsync('/usr/bin/plutil', [
     '-convert',
@@ -2825,10 +2825,10 @@ async function assertMacInviteProtocolRegistration(installedAppPath: string): Pr
   expect(schemes).toContain('opendesign');
 }
 
-async function invokeMacInviteDeeplink(installedAppPath: string): Promise<void> {
+async function invokeMacCollaborationDeeplink(installedAppPath: string): Promise<void> {
   // `-a` pins delivery to this namespace's installed test bundle instead of a
   // developer's stable OpenDesign app that may own the same global scheme.
-  await execFileAsync('/usr/bin/open', ['-a', installedAppPath, packagedInviteDeeplink]);
+  await execFileAsync('/usr/bin/open', ['-a', installedAppPath, packagedCollaborationDeeplink]);
 }
 
 async function pathExists(filePath: string): Promise<boolean> {

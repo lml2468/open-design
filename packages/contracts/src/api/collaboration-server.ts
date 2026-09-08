@@ -68,6 +68,89 @@ export const CollaborationProjectSchema = z
   .strict();
 export type CollaborationProject = z.infer<typeof CollaborationProjectSchema>;
 
+export const CollaborationProjectMemberSchema = z
+  .object({
+    userId: z.string().min(1),
+    displayName: z.string().min(1).max(120),
+    email: z.string().email(),
+    role: z.enum(['owner', 'reviewer']),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+export type CollaborationProjectMember = z.infer<typeof CollaborationProjectMemberSchema>;
+
+export const CollaborationProjectMembersSchema = z
+  .object({ members: z.array(CollaborationProjectMemberSchema) })
+  .strict();
+export type CollaborationProjectMembers = z.infer<typeof CollaborationProjectMembersSchema>;
+
+export const CollaborationProjectInvitationSummarySchema = z
+  .object({
+    id: z.string().min(1),
+    projectId: z.string().min(1),
+    email: z.string().email(),
+    expiresAt: z.string().datetime(),
+    acceptedAt: z.string().datetime().nullable(),
+    revokedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+export type CollaborationProjectInvitationSummary = z.infer<
+  typeof CollaborationProjectInvitationSummarySchema
+>;
+
+export const CollaborationProjectInvitationsSchema = z
+  .object({ invitations: z.array(CollaborationProjectInvitationSummarySchema) })
+  .strict();
+export type CollaborationProjectInvitations = z.infer<
+  typeof CollaborationProjectInvitationsSchema
+>;
+
+export const CollaborationProjectInvitationSchema = z
+  .object({
+    id: z.string().min(1),
+    projectId: z.string().min(1),
+    email: z.string().email(),
+    role: z.literal('reviewer'),
+    expiresAt: z.string().datetime(),
+    desktopDeepLink: z.string().url().startsWith('opendesign://collaboration/invite/continue'),
+  })
+  .strict();
+export type CollaborationProjectInvitation = z.infer<
+  typeof CollaborationProjectInvitationSchema
+>;
+
+export const CreateCollaborationProjectInvitationSchema = z
+  .object({ email: z.string().trim().email() })
+  .strict();
+export type CreateCollaborationProjectInvitation = z.infer<
+  typeof CreateCollaborationProjectInvitationSchema
+>;
+
+export const AcceptCollaborationProjectInvitationSchema = z
+  .object({
+    origin: z.string().trim().min(1).max(2048),
+    invitationId: z.string().min(1).max(200),
+    token: z.string().min(32).max(512),
+    displayName: z.string().trim().min(1).max(120).optional(),
+    password: z.string().min(12).max(1024),
+    deviceName: z.string().trim().min(1).max(160),
+  })
+  .strict();
+export type AcceptCollaborationProjectInvitation = z.infer<
+  typeof AcceptCollaborationProjectInvitationSchema
+>;
+
+export const CollaborationInvitationAcceptanceSchema = z
+  .object({
+    session: CollaborationRemoteSessionSchema,
+    project: CollaborationProjectSchema,
+    role: z.literal('reviewer'),
+  })
+  .strict();
+export type CollaborationInvitationAcceptance = z.infer<
+  typeof CollaborationInvitationAcceptanceSchema
+>;
+
 export const CollaborationRemoteProjectListSchema = z
   .object({ projects: z.array(CollaborationProjectSchema) })
   .strict();
@@ -221,6 +304,27 @@ export const CollaborationProjectBindingStateSchema = z
   .strict();
 export type CollaborationProjectBindingState = z.infer<
   typeof CollaborationProjectBindingStateSchema
+>;
+
+export const CollaborationProjectInvitationMutationResultSchema = z
+  .object({
+    invitation: CollaborationProjectInvitationSchema,
+    binding: CollaborationProjectBindingSchema,
+  })
+  .strict();
+export type CollaborationProjectInvitationMutationResult = z.infer<
+  typeof CollaborationProjectInvitationMutationResultSchema
+>;
+
+export const CollaborationInvitationAcceptanceResultSchema = z
+  .object({
+    state: CollaborationServerStateSchema,
+    project: CollaborationProjectSchema,
+    role: z.literal('reviewer'),
+  })
+  .strict();
+export type CollaborationInvitationAcceptanceResult = z.infer<
+  typeof CollaborationInvitationAcceptanceResultSchema
 >;
 
 export const BindCollaborationProjectSchema = z.discriminatedUnion('mode', [

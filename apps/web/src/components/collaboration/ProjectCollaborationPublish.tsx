@@ -3,6 +3,11 @@ import { createPortal } from 'react-dom';
 import { Button } from '@open-design/components';
 import type {
   CollaborationProjectBindingState,
+  CollaborationProjectInvitationMutationResult,
+  CollaborationProjectInvitations,
+  CollaborationProjectInvitationSummary,
+  CollaborationProjectMember,
+  CollaborationProjectMembers,
   CollaborationPublishCandidate,
   CollaborationPublishResult,
   PreviewComment,
@@ -12,7 +17,7 @@ import type {
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 
-type PendingAction = 'load' | 'bind' | 'candidate' | 'publish' | 'feedback' | 'attach-feedback' | 'unbind' | null;
+type PendingAction = 'load' | 'bind' | 'candidate' | 'publish' | 'feedback' | 'attach-feedback' | 'team' | 'invite' | 'member-mutation' | 'unbind' | null;
 
 async function daemonJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -63,6 +68,10 @@ export function ProjectCollaborationPublish({
   const [candidate, setCandidate] = useState<CollaborationPublishCandidate | null>(null);
   const [result, setResult] = useState<CollaborationPublishResult | null>(null);
   const [feedback, setFeedback] = useState<ProjectCollaborationReviewComments | null>(null);
+  const [members, setMembers] = useState<CollaborationProjectMember[]>([]);
+  const [invitations, setInvitations] = useState<CollaborationProjectInvitationSummary[]>([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [latestInviteLink, setLatestInviteLink] = useState<string | null>(null);
   const [selectedFeedbackIds, setSelectedFeedbackIds] = useState<Set<string>>(() => new Set());
   const [attachedFeedbackCount, setAttachedFeedbackCount] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
@@ -88,12 +97,38 @@ export function ProjectCollaborationPublish({
     setCandidate(null);
     setResult(null);
     setFeedback(null);
+    setMembers([]);
+    setInvitations([]);
+    setInviteEmail('');
+    setLatestInviteLink(null);
     setSelectedFeedbackIds(new Set());
     setAttachedFeedbackCount(0);
     setConfirmed(false);
     setConfirmUnbind(false);
     void loadState();
   }, [loadState, open]);
+
+  const loadTeam = useCallback(async () => {
+    setPending('team');
+    setError(null);
+    try {
+      const [memberResult, invitationResult] = await Promise.all([
+        daemonJson<CollaborationProjectMembers>(`${route}/members`),
+        daemonJson<CollaborationProjectInvitations>(`${route}/invitations`),
+      ]);
+      setMembers(memberResult.members);
+      setInvitations(invitationResult.invitations);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPending(null);
+    }
+  }, [route]);
+
+  useEffect(() => {
+    if (!open || !state?.binding) return;
+    void loadTeam();
+  }, [loadTeam, open, state?.binding?.remoteProjectId]);
 
   const bindProject = async () => {
     setPending('bind');
@@ -209,6 +244,72 @@ export function ProjectCollaborationPublish({
     }
   };
 
+  const createInvitation = async () => {
+    if (!inviteEmail.trim()) return;
+    setPending('invite');
+    setError(null);
+    try {
+      const created = await daemonJson<CollaborationProjectInvitationMutationResult>(
+        `${route}/invitations`,
+        { method: 'POST', body: JSON.stringify({ email: inviteEmail.trim() }) },
+      );
+      setState({ localProjectId: projectId, binding: created.binding });
+      setInvitations((current) => [
+        {
+          id: created.invitation.id,
+          projectId: created.invitation.projectId,
+          email: created.invitation.email,
+          expiresAt: created.invitation.expiresAt,
+          acceptedAt: null,
+          revokedAt: null,
+        },
+        ...current.filter((item) => item.id !== created.invitation.id),
+      ]);
+      setLatestInviteLink(created.invitation.desktopDeepLink);
+      setInviteEmail('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const revokeInvitation = async (invitationId: string) => {
+    setPending('member-mutation');
+    setError(null);
+    try {
+      const next = await daemonJson<CollaborationProjectBindingState>(
+        `${route}/invitations/${encodeURIComponent(invitationId)}`,
+        { method: 'DELETE' },
+      );
+      setState(next);
+      setInvitations((current) => current.map((item) => (
+        item.id === invitationId ? { ...item, revokedAt: new Date().toISOString() } : item
+      )));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const removeReviewer = async (userId: string) => {
+    setPending('member-mutation');
+    setError(null);
+    try {
+      const next = await daemonJson<CollaborationProjectBindingState>(
+        `${route}/members/${encodeURIComponent(userId)}`,
+        { method: 'DELETE' },
+      );
+      setState(next);
+      setMembers((current) => current.filter((member) => member.userId !== userId));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPending(null);
+    }
+  };
+
   return (
     <>
       <button
@@ -311,6 +412,59 @@ export function ProjectCollaborationPublish({
                     <strong>{state.binding.lastPublishedVersionNumber ?? '—'}</strong>
                   </div>
                 </div>
+
+                <section className="project-collaboration-dialog__feedback">
+                  <div className="project-collaboration-dialog__feedback-head">
+                    <div>
+                      <strong>{t('collaboration.publish.membersTitle')}</strong>
+                      <span>{t('collaboration.publish.membersDescription')}</span>
+                    </div>
+                    <Button type="button" variant="ghost" onClick={() => void loadTeam()} disabled={pending !== null}>
+                      <Icon name={pending === 'team' ? 'spinner' : 'refresh'} size={14} className={pending === 'team' ? 'icon-spin' : undefined} />
+                      {t('collaboration.projects.refresh')}
+                    </Button>
+                  </div>
+                  <div className="project-collaboration-dialog__actions">
+                    <input
+                      type="email"
+                      aria-label={t('collaboration.publish.inviteEmail')}
+                      placeholder={t('collaboration.publish.inviteEmail')}
+                      value={inviteEmail}
+                      disabled={pending !== null}
+                      onChange={(event) => setInviteEmail(event.target.value)}
+                    />
+                    <Button type="button" onClick={() => void createInvitation()} disabled={pending !== null || !inviteEmail.trim()}>
+                      {pending === 'invite' ? t('collaboration.publish.inviting') : t('collaboration.publish.invite')}
+                    </Button>
+                  </div>
+                  {latestInviteLink ? (
+                    <Button type="button" variant="ghost" onClick={() => void navigator.clipboard.writeText(latestInviteLink)}>
+                      {t('collaboration.publish.copyInvite')}
+                    </Button>
+                  ) : null}
+                  <div className="project-collaboration-dialog__feedback-list">
+                    {members.filter((member) => member.role === 'reviewer').length === 0
+                      ? <span>{t('collaboration.publish.noReviewers')}</span>
+                      : members.filter((member) => member.role === 'reviewer').map((member) => (
+                        <div key={member.userId}>
+                          <span><strong>{member.displayName}</strong>{member.email}</span>
+                          <button type="button" disabled={pending !== null} onClick={() => void removeReviewer(member.userId)}>
+                            {t('collaboration.publish.removeReviewer')}
+                          </button>
+                        </div>
+                      ))}
+                    {invitations.filter((invitation) => !invitation.acceptedAt && !invitation.revokedAt).length === 0
+                      ? <span>{t('collaboration.publish.noInvitations')}</span>
+                      : invitations.filter((invitation) => !invitation.acceptedAt && !invitation.revokedAt).map((invitation) => (
+                        <div key={invitation.id}>
+                          <span>{invitation.email}</span>
+                          <button type="button" disabled={pending !== null} onClick={() => void revokeInvitation(invitation.id)}>
+                            {t('collaboration.publish.revokeInvite')}
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </section>
 
                 {state.binding.publishedVersionId ? (
                   <section className="project-collaboration-dialog__feedback">

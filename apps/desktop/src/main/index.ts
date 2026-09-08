@@ -38,7 +38,10 @@ import {
 } from "@open-design/sidecar";
 
 import { createDesktopRuntime, type DesktopRuntime } from "./runtime.js";
-import { dispatchInviteDeeplink, registerInviteDeeplink } from "./invite-deeplink.js";
+import {
+  dispatchCollaborationDeeplink,
+  registerCollaborationDeeplink,
+} from './collaboration-deeplink.js';
 import { focusDesktopForDeeplink } from "./deeplink-focus.js";
 import { setUpDesktopCrashReporter, writeDesktopGpuInfo } from "./crash-diagnostics.js";
 import { beginDesktopSession, clearReportedCrash, endDesktopSessionCleanly, markDesktopSessionRunning } from "./session-lifecycle.js";
@@ -170,11 +173,11 @@ export type DesktopMainOptions = {
   discoverDaemonUrl: () => Promise<string | null>;
   registerDesktopAuth: (secret: Buffer) => Promise<boolean>;
   /** Stable installed launcher used for Windows opendesign:// registration. */
-  inviteProtocolClientPath?: string | null;
+  collaborationProtocolClientPath?: string | null;
   preloadPath?: string;
   windowTitle?: string;
   onDesktopReady?: (controls: {
-    dispatchInviteDeeplink(url: string | null): void;
+    dispatchCollaborationDeeplink(url: string | null): void;
     show(): void;
   }) => void;
   /**
@@ -685,7 +688,7 @@ export async function runDesktopMain(
             return activeDesktop.console();
           case SIDECAR_MESSAGES.SHOW:
             activeDesktop.show();
-            dispatchInviteDeeplink(request.input?.deeplinkUrl ?? null);
+            dispatchCollaborationDeeplink(request.input?.deeplinkUrl ?? null);
             notifyDesktopExternalShow(options.onExternalShow);
             return { accepted: true };
           case SIDECAR_MESSAGES.CLICK:
@@ -762,7 +765,7 @@ export async function runDesktopMain(
   }
   console.info("[open-design desktop] desktop runtime created");
   options.onDesktopReady?.({
-    dispatchInviteDeeplink,
+    dispatchCollaborationDeeplink,
     show: () => {
       void Promise.resolve(options.onExternalShow?.()).finally(() => desktop?.show());
     },
@@ -794,14 +797,16 @@ export async function runDesktopMain(
   removeDiagnosticsIpc = registerDesktopDiagnosticsIpc({
     discoverDaemonBaseUrl: resolveDaemonBaseUrl(options),
   });
-  // Route opendesign:// team-invite deeplinks to the daemon (desktop wake-up).
-  registerInviteDeeplink({
-    resolveDaemonBaseUrl: resolveDaemonBaseUrl(options),
+  registerCollaborationDeeplink({
+    navigate: async (path) => {
+      if (!desktop) throw new Error('desktop renderer is unavailable');
+      await desktop.navigate(path);
+    },
     focus: () => focusDesktopForDeeplink(desktop),
     onCompleted: (outcome) => {
-      console.info("[open-design desktop] invite deeplink continuation completed", outcome);
+      console.info('[open-design desktop] collaboration deeplink completed', outcome);
     },
-    protocolClientPath: options.inviteProtocolClientPath,
+    protocolClientPath: options.collaborationProtocolClientPath,
   });
   const discoverUpdaterAppConfigBaseUrl = resolveDaemonBaseUrl(options);
   updateScheduler = createDesktopUpdaterScheduler(updater, {

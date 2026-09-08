@@ -51,6 +51,8 @@ describe('ProjectCollaborationPublish', () => {
         method,
         ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
       });
+      if (url.endsWith('/members')) return Response.json({ members: [] });
+      if (url.endsWith('/invitations')) return Response.json({ invitations: [] });
       if (method === 'GET') {
         return Response.json({ localProjectId: 'local-project-1', binding });
       }
@@ -134,6 +136,8 @@ describe('ProjectCollaborationPublish', () => {
           binding: { ...binding, publishedVersionId: 'ver_1', lastPublishedVersionNumber: 1 },
         });
       }
+      if (!init?.method && url.endsWith('/members')) return Response.json({ members: [] });
+      if (!init?.method && url.endsWith('/invitations')) return Response.json({ invitations: [] });
       if (!init?.method && url.endsWith('/review-comments')) {
         return Response.json({
           version: {
@@ -188,5 +192,52 @@ describe('ProjectCollaborationPublish', () => {
 
     expect(await screen.findByText('1 review comments are ready in the composer.')).toBeTruthy();
     expect(onAttachReviewComments).toHaveBeenCalledWith([projected]);
+  });
+
+  it('creates a one-time reviewer invitation and can remove an existing reviewer', async () => {
+    const clipboard = vi.fn(async (_value: string) => undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: clipboard } });
+    const inviteLink = 'opendesign://collaboration/invite/continue?server=https%3A%2F%2Fdesign.example.test&invite_id=inv-1&nonce=abcdefghijklmnopqrstuvwxyz123456';
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/collaboration') && method === 'GET') {
+        return Response.json({ localProjectId: 'local-project-1', binding });
+      }
+      if (url.endsWith('/members') && method === 'GET') {
+        return Response.json({ members: [
+          { userId: 'owner-1', displayName: 'Owner', email: 'owner@example.test', role: 'owner', createdAt: '2026-09-06T00:00:00.000Z' },
+          { userId: 'reviewer-1', displayName: 'Reviewer', email: 'reviewer@example.test', role: 'reviewer', createdAt: '2026-09-06T00:00:00.000Z' },
+        ] });
+      }
+      if (url.endsWith('/invitations') && method === 'GET') return Response.json({ invitations: [] });
+      if (url.endsWith('/invitations') && method === 'POST') {
+        return Response.json({
+          binding: { ...binding, remoteRevision: 2 },
+          invitation: {
+            id: 'inv-1', projectId: 'prj_1', email: 'next@example.test', role: 'reviewer',
+            expiresAt: '2026-09-15T00:00:00.000Z', desktopDeepLink: inviteLink,
+          },
+        }, { status: 201 });
+      }
+      if (url.endsWith('/members/reviewer-1') && method === 'DELETE') {
+        return Response.json({ localProjectId: 'local-project-1', binding: { ...binding, remoteRevision: 3 } });
+      }
+      return Response.json({ error: { message: 'unexpected request' } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <I18nProvider initial="en">
+        <ProjectCollaborationPublish projectId="local-project-1" onOpenSettings={() => undefined} />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Publish for team review' }));
+    expect(await screen.findByText('reviewer@example.test')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Reviewer email'), { target: { value: 'next@example.test' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create invitation' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy invitation link' }));
+    expect(clipboard).toHaveBeenCalledWith(inviteLink);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(await screen.findByText('No reviewers yet.')).toBeTruthy();
   });
 });

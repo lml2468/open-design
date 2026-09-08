@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Express, Request, RequestHandler, Response } from 'express';
 import {
+  AcceptCollaborationProjectInvitationSchema,
   BindCollaborationProjectSchema,
   CollaborationReviewCommentBatchSchema,
   CollaborationReviewSnapshotRequestSchema,
   CollaborationPublishCandidateRequestSchema,
   ConfigureCollaborationServerSchema,
+  CreateCollaborationProjectInvitationSchema,
   CreateCollaborationReviewCommentSchema,
   LoginCollaborationServerSchema,
   PublishCollaborationProjectSchema,
@@ -157,6 +159,54 @@ export function registerCollaborationServerRoutes(
       const session = await clientFor(stored.profile.origin).login(parsed.data);
       res.setHeader('Cache-Control', 'no-store');
       return res.json(await profiles.setSession(session, now().getTime()));
+    } catch (error) {
+      return sendCollaborationError(res, deps, error);
+    }
+  });
+
+  app.post('/api/collaboration/invitations/accept', deps.requireLocalDaemonRequest, async (req, res) => {
+    const parsed = AcceptCollaborationProjectInvitationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return deps.sendApiError(
+        res,
+        400,
+        'BAD_REQUEST',
+        'Server, invitation, password, and device name are required',
+      );
+    }
+    try {
+      const origin = normalizeCollaborationServerOrigin(parsed.data.origin);
+      const client = clientFor(origin);
+      const capabilities = await client.getCapabilities();
+      if (
+        !capabilities.authModes.includes('local')
+        || !capabilities.projectAuthorityModes.includes('local-authoritative')
+      ) {
+        return deps.sendApiError(
+          res,
+          409,
+          'COLLABORATION_SERVER_INCOMPATIBLE',
+          'Invitation Server does not support local-authoritative Desktop access',
+        );
+      }
+      const accepted = await client.acceptInvitation({
+        token: parsed.data.token,
+        password: parsed.data.password,
+        deviceName: parsed.data.deviceName,
+        ...(parsed.data.displayName ? { displayName: parsed.data.displayName } : {}),
+      });
+      await profiles.setProfile({
+        origin,
+        capabilities,
+        checkedAt: now().toISOString(),
+      });
+      const state = await profiles.setSession(accepted.session, now().getTime());
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).json({
+        state,
+        project: accepted.project,
+        role: accepted.role,
+      });
     } catch (error) {
       return sendCollaborationError(res, deps, error);
     }
@@ -410,6 +460,26 @@ export function registerCollaborationServerRoutes(
   if (!deps.getProject || !deps.listProjectFiles || !deps.authorizeProjectRequest) return;
   const projectOperations = new Map<string, Promise<unknown>>();
 
+  const loadOwnerBinding = async (localProjectId: string) => {
+    const binding = await bindings.read(localProjectId);
+    if (!binding) {
+      throw new CollaborationServerRequestError(
+        409,
+        'COLLABORATION_SERVER_NOT_CONFIGURED',
+        'Bind this local Project to a Collaboration Project first',
+      );
+    }
+    const stored = await profiles.readCredentials();
+    if (!stored.profile || stored.profile.origin !== binding.serverOrigin) {
+      throw new CollaborationServerRequestError(
+        409,
+        'COLLABORATION_SERVER_NOT_CONFIGURED',
+        'Switch to the Collaboration Server used by this Project binding',
+      );
+    }
+    return { binding, stored };
+  };
+
   const loadOwnerReview = async (localProjectId: string, versionId?: string) => {
     const binding = await bindings.read(localProjectId);
     if (!binding) {
@@ -522,6 +592,167 @@ export function registerCollaborationServerRoutes(
       if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
       await bindings.remove(project.id);
       return res.status(204).end();
+    },
+  );
+
+  app.get(
+    '/api/projects/:id/collaboration/members',
+    deps.requireLocalDaemonRequest,
+    async (req, res) => {
+      const project = deps.getProject!(projectIdParam(req));
+      if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
+      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'read' })) return;
+      try {
+        const { binding } = await loadOwnerBinding(project.id);
+        const result = await withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+          const remote = await client.getProject(accessToken, binding.remoteProjectId);
+          validateRemoteBindingProject(remote, project.id);
+          return client.listProjectMembers(accessToken, binding.remoteProjectId);
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        return res.json(result);
+      } catch (error) {
+        return sendCollaborationError(res, deps, error);
+      }
+    },
+  );
+
+  app.get(
+    '/api/projects/:id/collaboration/invitations',
+    deps.requireLocalDaemonRequest,
+    async (req, res) => {
+      const project = deps.getProject!(projectIdParam(req));
+      if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
+      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'read' })) return;
+      try {
+        const { binding } = await loadOwnerBinding(project.id);
+        const result = await withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+          const remote = await client.getProject(accessToken, binding.remoteProjectId);
+          validateRemoteBindingProject(remote, project.id);
+          return client.listProjectInvitations(accessToken, binding.remoteProjectId);
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        return res.json(result);
+      } catch (error) {
+        return sendCollaborationError(res, deps, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/projects/:id/collaboration/invitations',
+    deps.requireLocalDaemonRequest,
+    async (req, res) => {
+      const parsed = CreateCollaborationProjectInvitationSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return deps.sendApiError(res, 400, 'BAD_REQUEST', 'A valid Reviewer email is required');
+      }
+      const project = deps.getProject!(projectIdParam(req));
+      if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
+      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
+      try {
+        const result = await withProjectOperation(projectOperations, project.id, async () => {
+          const { binding } = await loadOwnerBinding(project.id);
+          return withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+            const remote = await client.getProject(accessToken, binding.remoteProjectId);
+            validateRemoteBindingProject(remote, project.id);
+            const invitation = await client.createProjectInvitation(accessToken, {
+              projectId: binding.remoteProjectId,
+              projectRevision: remote.revision,
+              email: parsed.data.email,
+              idempotencyKey: randomUUID(),
+            });
+            const updated = await client.getProject(accessToken, binding.remoteProjectId);
+            const nextBinding = await bindings.recordRemoteProject({
+              localProjectId: project.id,
+              serverOrigin: binding.serverOrigin,
+              remoteProjectId: binding.remoteProjectId,
+              remoteRevision: updated.revision,
+              publishedVersionId: updated.publishedVersionId,
+              now: now().toISOString(),
+            });
+            return { invitation, binding: nextBinding };
+          });
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(201).json(result);
+      } catch (error) {
+        return sendCollaborationError(res, deps, error);
+      }
+    },
+  );
+
+  app.delete(
+    '/api/projects/:id/collaboration/invitations/:invitationId',
+    deps.requireLocalDaemonRequest,
+    async (req, res) => {
+      const project = deps.getProject!(projectIdParam(req));
+      if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
+      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
+      try {
+        const binding = await withProjectOperation(projectOperations, project.id, async () => {
+          const current = await loadOwnerBinding(project.id);
+          return withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+            const remote = await client.getProject(accessToken, current.binding.remoteProjectId);
+            validateRemoteBindingProject(remote, project.id);
+            await client.revokeProjectInvitation(accessToken, {
+              projectId: current.binding.remoteProjectId,
+              invitationId: routeParam(req, 'invitationId'),
+              projectRevision: remote.revision,
+            });
+            const updated = await client.getProject(accessToken, current.binding.remoteProjectId);
+            return bindings.recordRemoteProject({
+              localProjectId: project.id,
+              serverOrigin: current.binding.serverOrigin,
+              remoteProjectId: current.binding.remoteProjectId,
+              remoteRevision: updated.revision,
+              publishedVersionId: updated.publishedVersionId,
+              now: now().toISOString(),
+            });
+          });
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        return res.json({ localProjectId: project.id, binding });
+      } catch (error) {
+        return sendCollaborationError(res, deps, error);
+      }
+    },
+  );
+
+  app.delete(
+    '/api/projects/:id/collaboration/members/:userId',
+    deps.requireLocalDaemonRequest,
+    async (req, res) => {
+      const project = deps.getProject!(projectIdParam(req));
+      if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
+      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
+      try {
+        const binding = await withProjectOperation(projectOperations, project.id, async () => {
+          const current = await loadOwnerBinding(project.id);
+          return withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+            const remote = await client.getProject(accessToken, current.binding.remoteProjectId);
+            validateRemoteBindingProject(remote, project.id);
+            await client.removeProjectReviewer(accessToken, {
+              projectId: current.binding.remoteProjectId,
+              userId: routeParam(req, 'userId'),
+              projectRevision: remote.revision,
+            });
+            const updated = await client.getProject(accessToken, current.binding.remoteProjectId);
+            return bindings.recordRemoteProject({
+              localProjectId: project.id,
+              serverOrigin: current.binding.serverOrigin,
+              remoteProjectId: current.binding.remoteProjectId,
+              remoteRevision: updated.revision,
+              publishedVersionId: updated.publishedVersionId,
+              now: now().toISOString(),
+            });
+          });
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        return res.json({ localProjectId: project.id, binding });
+      } catch (error) {
+        return sendCollaborationError(res, deps, error);
+      }
     },
   );
 

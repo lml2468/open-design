@@ -175,4 +175,48 @@ describe('CollaborationServerClient', () => {
       agent: { name: 'Review Bot', model: 'review-model' },
     });
   });
+
+  it('uses authenticated Project member and invitation endpoints with optimistic concurrency', async () => {
+    const calls: Array<{ path: string; method: string; headers: Headers; body?: unknown }> = [];
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(input.toString());
+      calls.push({
+        path: url.pathname,
+        method: init?.method ?? 'GET',
+        headers: new Headers(init?.headers),
+        ...(typeof init?.body === 'string' ? { body: JSON.parse(init.body) } : {}),
+      });
+      if (url.pathname.endsWith('/members')) return Response.json({ members: [] });
+      if (url.pathname.endsWith('/invitations') && init?.method === 'POST') {
+        return Response.json({
+          id: 'inv-1',
+          projectId: 'project-1',
+          email: 'reviewer@example.test',
+          role: 'reviewer',
+          expiresAt: '2026-09-15T00:00:00.000Z',
+          desktopDeepLink: 'opendesign://collaboration/invite/continue?server=https%3A%2F%2Fdesign.example.test&invite_id=inv-1&nonce=abcdefghijklmnopqrstuvwxyz123456',
+        }, { status: 201 });
+      }
+      if (url.pathname.endsWith('/invitations')) return Response.json({ invitations: [] });
+      return new Response(null, { status: 204 });
+    });
+    const client = new CollaborationServerClient('https://design.example.test', fetchImpl);
+    await client.listProjectMembers('access-token', 'project-1');
+    await client.listProjectInvitations('access-token', 'project-1');
+    await client.createProjectInvitation('access-token', {
+      projectId: 'project-1', projectRevision: 3, email: 'reviewer@example.test', idempotencyKey: 'invite-key',
+    });
+    await client.revokeProjectInvitation('access-token', {
+      projectId: 'project-1', invitationId: 'inv-1', projectRevision: 4,
+    });
+    await client.removeProjectReviewer('access-token', {
+      projectId: 'project-1', userId: 'reviewer-1', projectRevision: 5,
+    });
+    expect(calls[2]?.headers.get('if-match')).toBe('"project-3"');
+    expect(calls[2]?.headers.get('idempotency-key')).toBe('invite-key');
+    expect(calls[3]?.path).toContain('/invitations/inv-1');
+    expect(calls[3]?.headers.get('if-match')).toBe('"project-4"');
+    expect(calls[4]?.path).toContain('/members/reviewer-1');
+    expect(calls[4]?.headers.get('if-match')).toBe('"project-5"');
+  });
 });

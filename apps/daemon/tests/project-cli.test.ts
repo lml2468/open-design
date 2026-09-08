@@ -102,13 +102,6 @@ async function startProjectStubServer(): Promise<StubServer> {
         }));
         return;
       }
-      if (captured.method === 'POST' && captured.url === '/api/workspace/invite') {
-        res.statusCode = 200;
-        res.end(JSON.stringify({
-          results: [{ email: 'teammate@example.com', ok: true, inviteId: 'invite-1' }],
-        }));
-        return;
-      }
       if (captured.method === 'GET' && captured.url === '/api/workspace/projects/team') {
         res.statusCode = 200;
         res.end(JSON.stringify({
@@ -470,42 +463,6 @@ describe('od project CLI', () => {
     const catalogReq = requests.find((r) => r.method === 'GET' && r.url === '/api/projects');
     expect(dirReq).toBeDefined();
     expect(catalogReq).toBeDefined();
-  });
-
-  it('creates workspace invites through the workspace invite API', async () => {
-    stub = await startProjectStubServer();
-
-    const result = await runCli([
-      'workspace',
-      'invite',
-      '--email',
-      'teammate@example.com',
-      '--role',
-      'member',
-      '--workspace',
-      'ws-1',
-      '--member',
-      'member-1',
-      '--json',
-      '--daemon-url',
-      stub.baseUrl,
-    ]);
-
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
-    expect(JSON.parse(result.stdout)).toEqual({
-      results: [{ email: 'teammate@example.com', ok: true, inviteId: 'invite-1' }],
-    });
-    expect(stub.requests).toHaveLength(1);
-    expect(stub.requests[0]).toMatchObject({
-      method: 'POST',
-      url: '/api/workspace/invite',
-      body: JSON.stringify({ email: 'teammate@example.com', role: 'member' }),
-    });
-    expect(stub.requests[0]!.headers).toMatchObject({
-      'x-od-workspace-id': 'ws-1',
-      'x-od-workspace-member-id': 'member-1',
-    });
   });
 
   it('lists team projects through the workspace discovery API', async () => {
