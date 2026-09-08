@@ -16,7 +16,6 @@ import {
   importClaudeDesignZip,
   importFolderProject,
   deleteTemplate,
-  invalidateProjectList,
   listTemplates,
   installGeneratedPluginFolder,
   installPluginSource,
@@ -39,12 +38,6 @@ import {
   buildWorkspaceSeatSummary,
   type WorkspaceCollabContext,
 } from '@open-design/contracts';
-import {
-  projectDisplaySnapshotKey,
-  readProjectDisplaySnapshot,
-  resetProjectDisplaySnapshots,
-  writeProjectDisplaySnapshot,
-} from '../../src/state/project-display-cache';
 import {
   designBrowserHistoryStorageKey,
   designBrowserViewportStorageKey,
@@ -514,7 +507,7 @@ describe('listProjects', () => {
     expect(c).toBe(a);
   });
 
-  it('uses one local catalog even when legacy callers still pass Workspace options', async () => {
+  it('uses one local catalog for concurrent strict reads', async () => {
     const projects = [{ id: 'p1', name: 'Local project' }];
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(JSON.stringify({ projects }), {
@@ -523,18 +516,9 @@ describe('listProjects', () => {
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const workspaceA = teamWorkspaceContext({
-      workspaceId: 'workspace-wrapper-a',
-      workspaceMemberId: 'member-a',
-    });
-    const workspaceB = teamWorkspaceContext({
-      workspaceId: 'workspace-wrapper-b',
-      workspaceMemberId: 'member-b',
-    });
-
     const [fromA, fromB] = await Promise.all([
-      listProjects({ workspaceContext: workspaceA, workspaceView: 'recent', throwOnError: true }),
-      listProjects({ workspaceContext: workspaceB, workspaceView: 'team', throwOnError: true }),
+      listProjects({ throwOnError: true }),
+      listProjects({ throwOnError: true }),
     ]);
 
     expect(fromA).toEqual(projects);
@@ -1901,10 +1885,9 @@ describe('pickLocalFolderPath', () => {
 describe('project list cache invalidation', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    resetProjectDisplaySnapshots();
   });
 
-  it('invalidates the local catalog after a scoped project patch', async () => {
+  it('invalidates the local catalog after a project patch with legacy authority', async () => {
     const context = teamWorkspaceContext({
       workspaceId: 'ws-patch-cache-invalidation',
       workspaceMemberId: 'wm-patch-cache-invalidation',
@@ -1921,11 +1904,11 @@ describe('project list cache invalidation', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(listProjects({ workspaceContext: context, workspaceView: 'recent' }))
+    await expect(listProjects())
       .resolves.toMatchObject([{ name: 'Before rename' }]);
     await expect(patchProject('p1', { name: 'After rename' }, context))
       .resolves.toMatchObject({ id: 'p1', name: 'After rename' });
-    await expect(listProjects({ workspaceContext: context, workspaceView: 'all' }))
+    await expect(listProjects())
       .resolves.toMatchObject([{ name: 'After rename' }]);
     expect(listReads).toBe(2);
   });
@@ -1947,24 +1930,6 @@ describe('project list cache invalidation', () => {
       .resolves.toMatchObject({ id: 'p1', name: 'After rename' });
     await expect(listProjects()).resolves.toMatchObject([{ name: 'After rename' }]);
     expect(listReads).toBe(2);
-  });
-
-  it('invalidates display snapshots only for the current account generation', () => {
-    const context = teamWorkspaceContext({
-      workspaceId: 'ws-external-catalog-invalidation',
-      workspaceMemberId: 'wm-external-catalog-invalidation',
-    });
-    const currentScope = { accountGeneration: 7, context, view: 'recent' as const };
-    const previousAccountScope = { accountGeneration: 6, context, view: 'recent' as const };
-    writeProjectDisplaySnapshot(currentScope, []);
-    writeProjectDisplaySnapshot(previousAccountScope, []);
-
-    invalidateProjectList(context, 7);
-
-    expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey(currentScope))?.dirty)
-      .toBe(true);
-    expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey(previousAccountScope))?.dirty)
-      .toBe(false);
   });
 });
 

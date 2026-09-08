@@ -12,9 +12,6 @@ import {
 import { coalescedGet, forceCoalescedGet } from '../lib/coalesced-get';
 import { BackoffController, type BackoffOptions } from '../lib/backoff';
 import {
-  markProjectDisplaySnapshotsDirty,
-} from '../state/project-display-cache';
-import {
   advanceWorkspaceAccountGeneration,
   beginWorkspaceScopedRead,
   currentWorkspaceAccountGeneration,

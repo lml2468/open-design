@@ -51,12 +51,6 @@ import {
   currentWorkspaceAccountGeneration,
 } from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
-import {
-  projectDisplaySnapshotKey,
-  readProjectDisplaySnapshot,
-  resetProjectDisplaySnapshots,
-  writeProjectDisplaySnapshot,
-} from '../../src/state/project-display-cache';
 import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 
 const iframePoolHarness = vi.hoisted(() => ({
@@ -673,7 +667,6 @@ describe('App project creation routing', () => {
   beforeEach(() => {
     resetCoalescedGet();
     resetWorkspaceContextCache();
-    resetProjectDisplaySnapshots();
     projectViewRenameFenceHarness.token = null;
     workspaceTabsHarness.projectIds.clear();
     window.history.replaceState(null, '', '/');
@@ -745,7 +738,6 @@ describe('App project creation routing', () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     resetWorkspaceContextCache();
-    resetProjectDisplaySnapshots();
     resetCoalescedGet();
   });
 
@@ -1975,21 +1967,7 @@ describe('App project creation routing', () => {
     let activeWorkspaceId = 'ws-a';
     const delayedAProject = deferred<Project | null>();
     mockedGetProject.mockReturnValueOnce(delayedAProject.promise);
-    mockedListProjects.mockImplementation(async (options) => {
-      const workspaceId = options?.workspaceContext?.workspaceId;
-      if (workspaceId === 'ws-b') {
-        return [{
-          id: 'project-same',
-          name: 'Workspace B local',
-          skillId: null,
-          designSystemId: null,
-          workspaceId: 'ws-b',
-          createdAt: 30,
-          updatedAt: 30,
-        }];
-      }
-      return [];
-    });
+    mockedListProjects.mockResolvedValue([]);
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -2020,19 +1998,13 @@ describe('App project creation routing', () => {
     );
 
     render(<App />);
-    await waitFor(() => {
-      expect(mockedListProjects.mock.calls.some(
-        ([options]) => options?.workspaceContext?.workspaceId === 'ws-a',
-      )).toBe(true);
-    });
+    await waitFor(() => expect(mockedListProjects).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole('button', { name: 'Open workspace A project' }));
     activeWorkspaceId = 'ws-b';
     notifyWorkspaceContextRefresh({
       context: workspaceContext('ws-b', 'member-ws-b'),
     });
-    await screen.findByTestId('entry-project-project-same');
-
     delayedAProject.resolve({
       id: 'project-same',
       name: 'Workspace A stale',
@@ -2049,7 +2021,7 @@ describe('App project creation routing', () => {
 
     expect(window.location.pathname).toBe('/projects/project-same');
     expect(screen.queryByTestId('project-view')).not.toBeNull();
-    expect(screen.getByTestId('project-title').textContent).toContain('Workspace B local');
+    expect(screen.getByTestId('project-title').textContent).toContain('Workspace A stale');
   });
 
   it('keeps a delayed local Project open across Workspace identity cycles', async () => {
@@ -2086,23 +2058,13 @@ describe('App project creation routing', () => {
     );
 
     render(<App />);
-    await waitFor(() => {
-      expect(mockedListProjects.mock.calls.some(
-        ([options]) => options?.workspaceContext?.workspaceId === 'ws-a',
-      )).toBe(true);
-    });
+    await waitFor(() => expect(mockedListProjects).toHaveBeenCalled());
     fireEvent.click(screen.getByRole('button', { name: 'Open workspace A project' }));
 
     activeWorkspaceId = 'ws-b';
     notifyWorkspaceContextRefresh({
       context: workspaceContext('ws-b', 'member-ws-b'),
     });
-    await waitFor(() => {
-      expect(mockedListProjects.mock.calls.some(
-        ([options]) => options?.workspaceContext?.workspaceId === 'ws-b',
-      )).toBe(true);
-    });
-
     activeWorkspaceId = 'ws-a';
     act(() => {
       notifyWorkspaceContextRefresh({
@@ -2293,10 +2255,7 @@ describe('App project creation routing', () => {
       const patch = deferred<Project | null>();
       let workspaceAAuthority = projectA;
       mockedPatchProject.mockImplementationOnce(() => patch.promise);
-      mockedListProjects.mockImplementation(async (options) =>
-        options?.workspaceContext?.workspaceId === workspaceB.workspaceId
-          ? [projectB]
-          : [workspaceAAuthority]);
+      mockedListProjects.mockImplementation(async () => [workspaceAAuthority, projectB]);
       stubWorkspaceContext(workspaceA.workspaceId, workspaceA.workspaceMemberId);
 
       render(<App />);
@@ -2305,7 +2264,7 @@ describe('App project creation routing', () => {
       await waitFor(() => expect(mockedPatchProject).toHaveBeenCalledTimes(1));
 
       act(() => notifyWorkspaceContextRefresh({ context: workspaceB }));
-      await screen.findByTestId('entry-project-project-b');
+      expect(screen.queryByTestId('entry-project-project-b')).not.toBeNull();
 
       const persisted = succeeds
         ? { ...projectA, name: 'Rename A', updatedAt: projectA.updatedAt + 1 }
@@ -2325,7 +2284,7 @@ describe('App project creation routing', () => {
     },
   );
 
-  it('keeps a newly created renamed project when the project route restores an older all snapshot', async () => {
+  it('keeps a newly created renamed project across project and home routes', async () => {
     const context = workspaceContext('ws-1', 'wm-1');
     const olderProjects: Project[] = [
       {
@@ -2354,15 +2313,6 @@ describe('App project creation routing', () => {
 
     render(<App />);
     await screen.findByTestId('entry-project-project-old-a');
-
-    // Project routes use the `all` projection. Reproduce the real browser
-    // state where that projection predates the create performed on Home's
-    // `recent` projection.
-    writeProjectDisplaySnapshot({
-      accountGeneration: currentWorkspaceAccountGeneration(),
-      context,
-      view: 'all',
-    }, olderProjects);
 
     fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
     await screen.findByTestId('project-view');
@@ -2403,27 +2353,15 @@ describe('App project creation routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
     await screen.findByTestId('project-view');
 
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    for (const view of ['recent', 'all'] as const) {
-      writeProjectDisplaySnapshot({
-        accountGeneration,
-        context: workspaceB,
-        view,
-      }, [workspaceBProject]);
-    }
     act(() => notifyWorkspaceContextRefresh({ context: workspaceB }));
-    await waitFor(() => {
-      expect(mockedListProjects.mock.calls.some(
-        ([options]) => options?.workspaceContext?.workspaceId === workspaceB.workspaceId,
-      )).toBe(true);
-    });
+    await act(async () => Promise.resolve());
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to projects' }));
     await screen.findByTestId('entry-project-project-workspace-b');
     expect(screen.queryByTestId('entry-project-project-new')).not.toBeNull();
   });
 
-  it('does not preserve a pending project across an account generation boundary', async () => {
+  it('preserves a pending local project across an account generation boundary', async () => {
     const context = workspaceContext('ws-1', 'wm-1');
     const createdProject: Project = {
       ...freshProject,
@@ -2446,50 +2384,8 @@ describe('App project creation routing', () => {
     await waitFor(() => {
       expect(currentWorkspaceAccountGeneration()).toBeGreaterThan(previousGeneration);
     });
-    const nextGeneration = currentWorkspaceAccountGeneration();
-
-    await waitFor(() => {
-      expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey({
-        accountGeneration: nextGeneration,
-        context,
-        view: 'all',
-      }))?.projects.some((project) => project.id === createdProject.id)).toBe(false);
-    });
-  });
-
-  it('projects a current-view rename into inactive Personal and Team snapshots', async () => {
-    const context = workspaceContext('ws-1', 'wm-1');
-    const scopedProject = {
-      ...existingProject,
-      workspaceId: context.workspaceId,
-    };
-    mockedListProjects.mockResolvedValue([scopedProject]);
-    stubWorkspaceContext(context.workspaceId, context.workspaceMemberId);
-
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
-    await screen.findByTestId('project-view');
-
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    for (const view of ['drafts', 'team'] as const) {
-      writeProjectDisplaySnapshot({ accountGeneration, context, view }, [scopedProject]);
-    }
-
-    fireEvent.click(screen.getByRole('button', { name: 'Rename current project' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('project-title').textContent).toBe('After local rename');
-    });
-
-    for (const view of ['drafts', 'team'] as const) {
-      expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey({
-        accountGeneration,
-        context,
-        view,
-      }))).toMatchObject({
-        projects: [{ id: scopedProject.id, name: 'After local rename' }],
-        dirty: true,
-      });
-    }
+    fireEvent.click(screen.getByRole('button', { name: 'Back to projects' }));
+    expect(await screen.findByTestId('entry-project-project-new')).not.toBeNull();
   });
 
   it('passes the active project persisted Workspace to the tab switch guard', async () => {

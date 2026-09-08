@@ -152,16 +152,7 @@ import { resumeThumbnailLoads, suspendThumbnailLoads } from './lib/thumbnail-loa
 import type {
   PluginShareAction,
   PluginShareProjectOutcome,
-  WorkspaceProjectListView,
 } from './state/projects';
-import {
-  markProjectDisplaySnapshotsDirty,
-  patchProjectDisplaySnapshots,
-  projectDisplaySnapshotKey,
-  readProjectDisplaySnapshot,
-  removeProjectFromDisplaySnapshots,
-  writeProjectDisplaySnapshot,
-} from './state/project-display-cache';
 import { getOpenDesignHost, type OpenDesignHostProjectImportSuccess } from '@open-design/host';
 import { useI18n } from './i18n';
 import { liveArtifactTabId } from './types';
@@ -238,11 +229,6 @@ export function shouldRouteToFirstRunOnboarding(
   return true;
 }
 
-function workspaceProjectListViewForRoute(route: Route): WorkspaceProjectListView {
-  if (route.kind === 'project') return 'all';
-  return 'recent';
-}
-
 export function shouldSyncMediaProvidersOnSave(
   mediaProviders: AppConfig['mediaProviders'],
   options?: { force?: boolean },
@@ -293,15 +279,9 @@ export function mergeAgentModelChoice(
 type ProjectListRequest = {
   generation: number;
   mutationVersion: number;
-  accountGeneration: number;
-  scopeKey: string;
-  displayKey: string;
-  workspaceView: WorkspaceProjectListView | undefined;
 };
 
 type PendingProjectNameProjection = {
-  accountGeneration: number;
-  scopeKey: string;
   project: Project;
   mutationVersion: number;
   confirmed: boolean;
@@ -313,22 +293,6 @@ type QueuedProjectRenameState = {
   pending: number;
   tail: Promise<void>;
 };
-
-/**
- * The scope key for a caller with NO resolved workspace identity — either the
- * context has not landed yet (every fresh boot passes through this) or the
- * daemon has no workspace plane at all. It is deliberately NOT treated as "a
- * workspace you left": a boot that lists projects before the context resolves
- * did not read another workspace's data, so promoting `local` → `ws:member`
- * must not discard the list it just loaded.
- */
-const UNRESOLVED_PROJECT_LIST_SCOPE = 'local';
-
-function projectListScopeKey(context: WorkspaceCollabContext | null): string {
-  return context
-    ? `workspace:${workspaceIdentityCacheKey(context)}`
-    : UNRESOLVED_PROJECT_LIST_SCOPE;
-}
 
 export async function persistComposioConfigChange(
   current: AppConfig,
@@ -529,15 +493,8 @@ function AppInner() {
   const workspaceContextStateRef = useRef(workspaceContextState);
   workspaceContextRef.current = workspaceContext;
   workspaceContextStateRef.current = workspaceContextState;
-  const listCurrentWorkspaceProjects = useCallback(
-    (options?: { throwOnError?: boolean; workspaceView?: WorkspaceProjectListView }) => {
-      const context = workspaceContextRef.current;
-      return listProjects({
-        ...options,
-        workspaceContext: context,
-        workspaceView: context ? options?.workspaceView ?? 'recent' : undefined,
-      });
-    },
+  const listLocalProjects = useCallback(
+    (options?: { throwOnError?: boolean }) => listProjects(options),
     [],
   );
   useEffect(() => {
@@ -690,9 +647,7 @@ function AppInner() {
   const [pendingProjectCreation, setPendingProjectCreation] =
     useState<PendingProjectCreation | null>(null);
   const [appliedProjectListWitness, setAppliedProjectListWitness] = useState<{
-    scopeKey: string;
     generation: number;
-    workspaceView: WorkspaceProjectListView | undefined;
     projectIds: ReadonlySet<string>;
   } | null>(null);
   const projectsRef = useRef<Project[]>(projects);
@@ -715,22 +670,6 @@ function AppInner() {
     [],
   );
   const pendingLocalProjectIdsRef = useRef<Set<string>>(new Set());
-  const currentProjectListScope = projectListScopeKey(workspaceContext);
-  const currentPendingLocalProjectScope = [
-    currentWorkspaceAccountGeneration(),
-    currentProjectListScope,
-  ].join(':');
-  const pendingLocalProjectScopeRef = useRef(currentPendingLocalProjectScope);
-  const projectAuthorizationScopeRef = useRef(currentProjectListScope);
-  const projectAuthorizationGenerationRef = useRef(0);
-  if (projectAuthorizationScopeRef.current !== currentProjectListScope) {
-    projectAuthorizationScopeRef.current = currentProjectListScope;
-    projectAuthorizationGenerationRef.current += 1;
-  }
-  if (pendingLocalProjectScopeRef.current !== currentPendingLocalProjectScope) {
-    pendingLocalProjectScopeRef.current = currentPendingLocalProjectScope;
-    pendingLocalProjectIdsRef.current.clear();
-  }
   const locallyDeletedProjectIdsRef = useRef<Map<string, number>>(new Map());
   const projectListMutationVersionRef = useRef(0);
   const projectRenameStatesRef = useRef<Map<string, QueuedProjectRenameState>>(new Map());
@@ -800,72 +739,6 @@ function AppInner() {
   const routeRef = useRef(route);
   routeRef.current = route;
   const settingsReturnTargetRef = useRef<SettingsReturnTarget | null>(null);
-  const workspaceProjectView = workspaceProjectListViewForRoute(route);
-  // Read-only mirror for the boot effect. The boot pass needs to know which
-  // project list to seed, but it must NOT restart when that answer changes:
-  // see the "boot is a one-shot" note on the bootstrap effect below. A
-  // dedicated effect already re-lists projects whenever the view or the
-  // workspace changes, so nothing is lost by the boot pass not reacting.
-  const workspaceProjectViewRef = useRef(workspaceProjectView);
-  workspaceProjectViewRef.current = workspaceProjectView;
-  // `listCurrentWorkspaceProjects` already collapses `workspaceView` to
-  // `undefined` when there is no resolved `workspaceContext` (see its
-  // `context ? options?.workspaceView ?? 'recent' : undefined` above), so the
-  // request it sends never actually varies by home tab outside a workspace.
-  // But the raw route-derived `workspaceProjectView` still changes string
-  // value on every 最近/全部/草稿 tab switch, and that alone is enough to
-  // re-run the effect below (dependency arrays compare the value passed in,
-  // not what the callback does with it) — re-fetching the identical list on
-  // every click. Mirror the callback's own collapse here so the effect's
-  // dependency is stable outside a workspace, matching the fetch it triggers.
-  const effectiveWorkspaceProjectView = workspaceContext ? workspaceProjectView : undefined;
-  const projectDisplayAccountGeneration = currentWorkspaceAccountGeneration();
-  const currentProjectDisplayKey = projectDisplaySnapshotKey({
-    accountGeneration: projectDisplayAccountGeneration,
-    context: workspaceContext,
-    view: effectiveWorkspaceProjectView,
-  });
-  // Display snapshots are deliberately separate from authorization. They may
-  // prevent a warm view from flashing a loader, but every network read and
-  // mutation still carries the current request's independently verified
-  // Workspace context. An exact account/workspace/member+view hit is safe to
-  // render while it revalidates; any other identity is cleared before paint.
-  const projectListScopeRef = useRef(currentProjectListScope);
-  const projectDisplayKeyRef = useRef(currentProjectDisplayKey);
-  if (projectDisplayKeyRef.current !== currentProjectDisplayKey) {
-    const leftAResolvedWorkspace =
-      projectListScopeRef.current !== UNRESOLVED_PROJECT_LIST_SCOPE;
-    const snapshot = readProjectDisplaySnapshot(currentProjectDisplayKey);
-    // A create/import is immediately projected into `projects`, but opening
-    // that project changes the list projection from Home's `recent` to `all`.
-    // An older exact-scope `all` snapshot must not erase the pending local row:
-    // ProjectView can keep rendering from its route snapshot, while later
-    // rename callbacks then have no list row to update and Back restores the
-    // stale Home cards. Personal creates belong to recent/all/drafts; Team is
-    // intentionally excluded until the share mutation is authoritative.
-    const pendingProjects = effectiveWorkspaceProjectView === 'team'
-      ? []
-      : projects.filter((project) =>
-          pendingLocalProjectScopeRef.current === currentPendingLocalProjectScope
-          && pendingLocalProjectIdsRef.current.has(project.id)
-          && (
-            workspaceContext === null
-              ? project.workspaceId == null
-              : project.workspaceId === workspaceContext.workspaceId
-          ));
-    projectListScopeRef.current = currentProjectListScope;
-    projectDisplayKeyRef.current = currentProjectDisplayKey;
-    if (snapshot) {
-      const snapshotIds = new Set(snapshot.projects.map((project) => project.id));
-      const preserved = pendingProjects.filter((project) => !snapshotIds.has(project.id));
-      setProjects(preserved.length > 0 ? [...preserved, ...snapshot.projects] : snapshot.projects);
-      setProjectsLoading(false);
-    } else if (leftAResolvedWorkspace) {
-      setProjects(pendingProjects);
-      setProjectsLoading(true);
-    }
-  }
-  const projectScopeRefreshMountedRef = useRef(false);
   const analytics = useAnalytics();
 
   // Single-flight guard for `/api/agents?stream=1`: beginning a new request
@@ -896,13 +769,6 @@ function AppInner() {
     pendingLocalProjectIdsRef.current.add(projectId);
     locallyDeletedProjectIdsRef.current.delete(projectId);
     projectListMutationVersionRef.current += 1;
-    const context = workspaceContextRef.current;
-    if (context) {
-      markProjectDisplaySnapshotsDirty({
-        accountGeneration: currentWorkspaceAccountGeneration(),
-        context,
-      });
-    }
   }, []);
 
   const clearLocalProject = useCallback((projectId: string, options?: { deleted?: boolean }) => {
@@ -916,41 +782,17 @@ function AppInner() {
     }
   }, []);
 
-  const beginProjectListRequest = useCallback((
-    workspaceView: WorkspaceProjectListView | undefined,
-  ): ProjectListRequest => {
+  const beginProjectListRequest = useCallback((): ProjectListRequest => {
     projectListRequestGenerationRef.current += 1;
-    const issuedContext = workspaceContextRef.current;
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    const effectiveView = issuedContext ? workspaceView ?? 'recent' : undefined;
     return {
       generation: projectListRequestGenerationRef.current,
       mutationVersion: projectListMutationVersionRef.current,
-      accountGeneration,
-      scopeKey: projectListScopeKey(issuedContext),
-      displayKey: projectDisplaySnapshotKey({
-        accountGeneration,
-        context: issuedContext,
-        view: effectiveView,
-      }),
-      workspaceView: effectiveView,
     };
   }, []);
 
   const reconcileFetchedProjects = useCallback((list: Project[], request: ProjectListRequest) => {
-    if (
-      request.accountGeneration !== currentWorkspaceAccountGeneration()
-      || request.scopeKey !== projectListScopeKey(workspaceContextRef.current)
-    ) {
-      return false;
-    }
     const projectedList = list.map((project) => {
-      const key = JSON.stringify([
-        request.accountGeneration,
-        request.scopeKey,
-        project.id,
-      ]);
-      const pending = pendingProjectNameProjectionsRef.current.get(key);
+      const pending = pendingProjectNameProjectionsRef.current.get(project.id);
       if (!pending) return project;
       if (
         pending.confirmed
@@ -961,7 +803,7 @@ function AppInner() {
         // only protects requests that were already in flight when the local
         // optimistic rename began; keeping it past the first post-write read
         // would permanently hide later remote renames.
-        pendingProjectNameProjectionsRef.current.delete(key);
+        pendingProjectNameProjectionsRef.current.delete(project.id);
         return project;
       }
       return {
@@ -1013,9 +855,7 @@ function AppInner() {
     }
     latestAppliedProjectListGenerationRef.current = request.generation;
     setAppliedProjectListWitness({
-      scopeKey: request.scopeKey,
       generation: request.generation,
-      workspaceView: request.workspaceView,
       projectIds: fetchedIds,
     });
     for (const id of fetchedIds) pendingLocalProjectIds.delete(id);
@@ -1036,11 +876,6 @@ function AppInner() {
       activeDeletedProjectIds.size > 0
         ? new Set(visibleList.map((project) => project.id))
         : fetchedIds;
-    writeProjectDisplaySnapshot({
-      accountGeneration: request.accountGeneration,
-      context: workspaceContextRef.current,
-      view: request.workspaceView,
-    }, visibleList);
     setProjects((current) => {
       const preserved = current.filter(
         (project) =>
@@ -1200,9 +1035,8 @@ function AppInner() {
   // rewrites the merged config back to localStorage + the daemon. Re-running it
   // on navigation replays both: a user is re-judged against a config read that
   // may lag their own completion, and gets bounced into the first-run flow they
-  // already finished. Anything route- or workspace-derived that boot needs must
-  // be read through a ref (see `workspaceProjectViewRef`), and anything that
-  // must react to those changes belongs in its own effect.
+  // already finished. Anything that must react to navigation or identity
+  // changes belongs in its own effect.
   useEffect(() => {
     let cancelled = false;
     let effectAgentStreamAbort: AbortController | null = null;
@@ -1305,10 +1139,8 @@ function AppInner() {
         setDsLoading(false);
       });
 
-      const request = beginProjectListRequest(workspaceProjectViewRef.current);
-      void listCurrentWorkspaceProjects({
-        workspaceView: workspaceProjectViewRef.current,
-      }).then((list) => {
+      const request = beginProjectListRequest();
+      void listLocalProjects().then((list) => {
         if (cancelled) return;
         reconcileFetchedProjects(list, request);
         setProjectsLoading(false);
@@ -1430,35 +1262,13 @@ function AppInner() {
       cancelled = true;
       effectAgentStreamAbort?.abort();
     };
-    // `workspaceProjectView` is intentionally absent: it is route-derived, and
-    // depending on it would turn this one-shot boot pass into a per-navigation
-    // one. It is read through `workspaceProjectViewRef` instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     beginAgentStreamRequest,
     beginProjectListRequest,
     isCurrentAgentStreamRequest,
-    listCurrentWorkspaceProjects,
+    listLocalProjects,
     reconcileFetchedProjects,
-  ]);
-
-  // Keep the active projection's last-good display in sync with optimistic
-  // local mutations (rename/delete/create). Related projections are marked
-  // dirty by the mutation helpers and still revalidate when selected.
-  useEffect(() => {
-    if (projectsLoading) return;
-    writeProjectDisplaySnapshot({
-      accountGeneration: projectDisplayAccountGeneration,
-      context: workspaceContext,
-      view: effectiveWorkspaceProjectView,
-    }, projects);
-  }, [
-    currentProjectDisplayKey,
-    effectiveWorkspaceProjectView,
-    projectDisplayAccountGeneration,
-    projects,
-    projectsLoading,
-    workspaceContext,
   ]);
 
   // Auto-pick the first available agent once both the daemon-stored config
@@ -1540,76 +1350,16 @@ function AppInner() {
   }, []);
 
   const refreshProjects = useCallback(async () => {
-    const request = beginProjectListRequest(workspaceProjectView);
-    const list = await listCurrentWorkspaceProjects({ workspaceView: workspaceProjectView });
+    const request = beginProjectListRequest();
+    const list = await listLocalProjects();
     reconcileFetchedProjects(list, request);
-  }, [beginProjectListRequest, listCurrentWorkspaceProjects, reconcileFetchedProjects, workspaceProjectView]);
+  }, [beginProjectListRequest, listLocalProjects, reconcileFetchedProjects]);
 
   const refreshProjectsStrict = useCallback(async () => {
-    const request = beginProjectListRequest(workspaceProjectView);
-    const list = await listCurrentWorkspaceProjects({
-      throwOnError: true,
-      workspaceView: workspaceProjectView,
-    });
+    const request = beginProjectListRequest();
+    const list = await listLocalProjects({ throwOnError: true });
     reconcileFetchedProjects(list, request);
-  }, [beginProjectListRequest, listCurrentWorkspaceProjects, reconcileFetchedProjects, workspaceProjectView]);
-
-  useEffect(() => {
-    // Bootstrap already reads this exact scope on mount. Only re-list after
-    // the resolved workspace identity or a workspace-specific route changes;
-    // local navigation does not alter the unscoped project catalogue.
-    if (!projectScopeRefreshMountedRef.current) {
-      projectScopeRefreshMountedRef.current = true;
-      return;
-    }
-    let cancelled = false;
-    const request = beginProjectListRequest(effectiveWorkspaceProjectView);
-    const snapshot = readProjectDisplaySnapshot(request.displayKey);
-    if (snapshot) {
-      setProjects(snapshot.projects);
-      setProjectsLoading(false);
-    } else {
-      setProjectsLoading(true);
-    }
-    (async () => {
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const list = await listCurrentWorkspaceProjects({
-            throwOnError: true,
-            workspaceView: effectiveWorkspaceProjectView,
-          });
-          if (!cancelled) reconcileFetchedProjects(list, request);
-          return;
-        } catch (err) {
-          if (cancelled) return;
-          if (attempt === 0) {
-            // Switching into a team workspace can race the daemon's remote
-            // team-project-catalog session warming up for it (recvqaeREM6pdv:
-            // a transient 502 here used to be silently downgraded to an empty
-            // list, which HomeView cannot tell apart from a genuinely empty
-            // workspace and renders as the first-run empty state). Retry once
-            // before giving up instead of reconciling a failure as "no
-            // projects".
-            await new Promise((resolve) => setTimeout(resolve, 1200));
-            continue;
-          }
-          console.error('[projects] failed to refresh after workspace switch', err);
-        }
-      }
-    })().finally(() => {
-      if (!cancelled) setProjectsLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    workspaceContext?.workspaceId,
-    beginProjectListRequest,
-    currentProjectDisplayKey,
-    effectiveWorkspaceProjectView,
-    listCurrentWorkspaceProjects,
-    reconcileFetchedProjects,
-  ]);
+  }, [beginProjectListRequest, listLocalProjects, reconcileFetchedProjects]);
 
   const refreshDesignSystems = useCallback(async () => {
     // Carry the captured Workspace/member identity on the request. The daemon
@@ -2617,8 +2367,8 @@ function AppInner() {
         updatedAt: Date.now(),
       };
       setProjects((curr) => [stub, ...curr.filter((p) => p.id !== stub.id)]);
-      const request = beginProjectListRequest(workspaceProjectView);
-      const list = await listCurrentWorkspaceProjects({ workspaceView: workspaceProjectView });
+      const request = beginProjectListRequest();
+      const list = await listLocalProjects();
       reconcileFetchedProjects(list, request);
     }
     navigate({
@@ -2626,7 +2376,7 @@ function AppInner() {
       projectId: result.projectId,
       fileName: null,
     });
-  }, [beginProjectListRequest, listCurrentWorkspaceProjects, rememberLocalProject, reconcileFetchedProjects, workspaceProjectView]);
+  }, [beginProjectListRequest, listLocalProjects, rememberLocalProject, reconcileFetchedProjects]);
 
   const handleOpenProject = useCallback(async (
     id: string,
@@ -2649,8 +2399,8 @@ function AppInner() {
         ]);
         return navigateToOpenedProject();
       }
-      const request = beginProjectListRequest('all');
-      const list = await listCurrentWorkspaceProjects({ workspaceView: 'all' });
+      const request = beginProjectListRequest();
+      const list = await listLocalProjects();
       reconcileFetchedProjects(list, request);
       const fetchedProject = locallyDeletedProjectIdsRef.current.has(id)
         ? undefined
@@ -2667,7 +2417,7 @@ function AppInner() {
     return false;
   }, [
     beginProjectListRequest,
-    listCurrentWorkspaceProjects,
+    listLocalProjects,
     reconcileFetchedProjects,
     t,
   ]);
@@ -2708,15 +2458,7 @@ function AppInner() {
     // (recvq5ecTkar91: a leaked-in project was really deletable, not just
     // visible, because this call sent no workspace headers at all).
     const mutationContext = workspaceContextRef.current;
-    const mutationAccountGeneration = currentWorkspaceAccountGeneration();
     await deleteProjectApi(id, mutationContext);
-    if (mutationContext) {
-      removeProjectFromDisplaySnapshots({
-        accountGeneration: mutationAccountGeneration,
-        context: mutationContext,
-        projectId: id,
-      });
-    }
     clearLocalProject(id, { deleted: true });
     removeWorkspaceProjectTabs(id);
     iframeKeepAlivePool.evictProject(id, { includeActive: true });
@@ -2732,13 +2474,7 @@ function AppInner() {
     if (!trimmed) return;
     const previous = projectsRef.current.find((project) => project.id === id) ?? null;
     const renameContext = workspaceContextRef.current;
-    const renameAccountGeneration = currentWorkspaceAccountGeneration();
-    const renameScopeKey = projectListScopeKey(renameContext);
-    const renameProjectionKey = JSON.stringify([
-      renameAccountGeneration,
-      renameScopeKey,
-      id,
-    ]);
+    const renameProjectionKey = id;
     let renameState = projectRenameStatesRef.current.get(renameProjectionKey);
     if (!renameState || renameState.pending === 0) {
       if (!previous) return;
@@ -2756,8 +2492,6 @@ function AppInner() {
     const renameMutationVersion = projectListMutationVersionRef.current;
     const optimistic = { ...(previous ?? renameState.confirmed), name: trimmed };
     pendingProjectNameProjectionsRef.current.set(renameProjectionKey, {
-      accountGeneration: renameAccountGeneration,
-      scopeKey: renameScopeKey,
       project: optimistic,
       mutationVersion: renameMutationVersion,
       confirmed: false,
@@ -2765,14 +2499,6 @@ function AppInner() {
     setProjects((curr) =>
       curr.map((p) => (p.id === id ? { ...p, name: trimmed } : p)),
     );
-    if (renameContext) {
-      patchProjectDisplaySnapshots({
-        accountGeneration: renameAccountGeneration,
-        context: renameContext,
-        patch: (cachedProjects) => cachedProjects.map((project) =>
-          project.id === id ? { ...project, name: trimmed } : project),
-      });
-    }
     const runRename = async () => {
       const persisted = await patchProject(id, { name: trimmed }, renameContext);
       if (persisted) renameState.confirmed = persisted;
@@ -2786,25 +2512,6 @@ function AppInner() {
         pendingProjection.project = nextProject;
         pendingProjection.confirmed = true;
       }
-      if (renameContext) {
-        patchProjectDisplaySnapshots({
-          accountGeneration: renameAccountGeneration,
-          context: renameContext,
-          patch: (cachedProjects) => cachedProjects.map((project) =>
-            project.id === id && (persisted || project.name === trimmed)
-              ? {
-                  ...project,
-                  name: nextProject.name,
-                  metadata: nextProject.metadata,
-                  updatedAt: nextProject.updatedAt,
-                }
-              : project),
-        });
-      }
-      const isCurrentScope =
-        currentWorkspaceAccountGeneration() === renameAccountGeneration
-        && projectListScopeKey(workspaceContextRef.current) === renameScopeKey;
-      if (!isCurrentScope) return;
       if (!persisted) {
         setProjects((current) => current.map((project) =>
           project.id === id && project.name === trimmed
@@ -2869,14 +2576,6 @@ function AppInner() {
       ),
     );
     const mutationContext = workspaceContextRef.current;
-    if (mutationContext) {
-      patchProjectDisplaySnapshots({
-        accountGeneration: currentWorkspaceAccountGeneration(),
-        context: mutationContext,
-        patch: (cachedProjects) => cachedProjects.map((project) =>
-          project.id === projectId ? { ...project, pendingPrompt: undefined } : project),
-      });
-    }
     void patchProject(projectId, { pendingPrompt: null }, mutationContext);
   }, [route]);
 
@@ -2888,20 +2587,10 @@ function AppInner() {
       curr.map((p) => (p.id === projectId ? { ...p, updatedAt } : p)),
     );
     const mutationContext = workspaceContextRef.current;
-    if (mutationContext) {
-      patchProjectDisplaySnapshots({
-        accountGeneration: currentWorkspaceAccountGeneration(),
-        context: mutationContext,
-        patch: (cachedProjects) => cachedProjects.map((project) =>
-          project.id === projectId ? { ...project, updatedAt } : project),
-      });
-    }
     void patchProject(projectId, { updatedAt }, mutationContext);
   }, [route]);
 
   const handleProjectChange = useCallback((updated: Project) => {
-    const projectContext = workspaceContextRef.current;
-    const accountGeneration = currentWorkspaceAccountGeneration();
     // A cold deep link can mount from this route-owned snapshot before the
     // local project list resolves. Keep that independent row current too.
     const routeSnapshot = routeProjectSnapshotRef.current;
@@ -2930,38 +2619,23 @@ function AppInner() {
       }
       return curr.map((p) => (p.id === updated.id ? updated : p));
     });
-    if (projectContext) {
-      patchProjectDisplaySnapshots({
-        accountGeneration,
-        context: projectContext,
-        patch: (cachedProjects) => cachedProjects.map((project) =>
-          project.id === updated.id ? { ...project, ...updated } : project),
-      });
-    }
   }, [iframeKeepAlivePool]);
 
   const handleProjectRenameStarted = useCallback((
     optimistic: Project,
   ): ProjectRenameFenceToken => {
-    const context = workspaceContextRef.current;
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    const scopeKey = projectListScopeKey(context);
     projectListMutationVersionRef.current += 1;
     const mutationVersion = projectListMutationVersionRef.current;
-    const key = JSON.stringify([accountGeneration, scopeKey, optimistic.id]);
+    const key = optimistic.id;
     pendingProjectNameProjectionsRef.current.set(
       key,
       {
-        accountGeneration,
-        scopeKey,
         project: optimistic,
         mutationVersion,
         confirmed: false,
       },
     );
     return {
-      accountGeneration,
-      scopeKey,
       projectId: optimistic.id,
       mutationVersion,
     };
@@ -2972,7 +2646,7 @@ function AppInner() {
     confirmed: Project,
   ) => {
     if (!token || token.projectId !== confirmed.id) return;
-    const key = JSON.stringify([token.accountGeneration, token.scopeKey, token.projectId]);
+    const key = token.projectId;
     const pending = pendingProjectNameProjectionsRef.current.get(key);
     if (!pending || pending.mutationVersion !== token.mutationVersion) return;
     pending.project = confirmed;
@@ -3083,8 +2757,7 @@ function AppInner() {
     } else if (
       routeProjectSnapshotRef.current?.project.id !== route.projectId
       || (
-        appliedProjectListWitness?.scopeKey === currentProjectListScope
-        && appliedProjectListWitness.workspaceView === 'all'
+        appliedProjectListWitness !== null
         && appliedProjectListWitness.generation
           > routeProjectSnapshotRef.current.capturedAfterListGeneration
         && !appliedProjectListWitness.projectIds.has(route.projectId)
@@ -3148,13 +2821,10 @@ function AppInner() {
         return;
       }
       if (projectsLoading || !daemonLive) return;
-      const request = beginProjectListRequest('all');
+      const request = beginProjectListRequest();
       let list: Project[];
       try {
-        list = await listCurrentWorkspaceProjects({
-          throwOnError: true,
-          workspaceView: 'all',
-        });
+        list = await listLocalProjects({ throwOnError: true });
       } catch {
         setDeepLinkResolutionFailure({
           projectId,
@@ -3192,7 +2862,7 @@ function AppInner() {
     daemonLive,
     deepLinkRetryRevision,
     beginProjectListRequest,
-    listCurrentWorkspaceProjects,
+    listLocalProjects,
     reconcileFetchedProjects,
   ]);
 

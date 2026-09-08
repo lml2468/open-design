@@ -536,7 +536,7 @@ export function RoutinesSection({ onClose }: RoutinesSectionProps) {
             ? workspaceProjectHeaders(requestWorkspaceContext)
             : {},
         }),
-        listProjects({ workspaceContext: requestWorkspaceContext, workspaceView: 'all' }),
+        listProjects(),
       ]);
       if (!rRes.ok) throw new Error(`routines: ${rRes.status}`);
       const rJson = await rRes.json();
@@ -554,9 +554,9 @@ export function RoutinesSection({ onClose }: RoutinesSectionProps) {
 
   useEffect(() => {
     void refresh();
-    // Re-run on workspace switch (not just mount), same as PluginsView, so the
-    // project picker reflects the newly active workspace's projects instead of
-    // staying stuck on whatever was visible before the context resolved.
+    // Routines remain Workspace-scoped during the transition, so refresh their
+    // mutation surface when that identity changes. The project picker itself
+    // always reads the complete local catalog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     routinesWorkspaceContext?.workspaceId,

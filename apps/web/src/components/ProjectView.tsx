@@ -609,8 +609,6 @@ interface Props {
 }
 
 export type ProjectRenameFenceToken = Readonly<{
-  accountGeneration: number;
-  scopeKey: string;
   projectId: string;
   mutationVersion: number;
 }>;

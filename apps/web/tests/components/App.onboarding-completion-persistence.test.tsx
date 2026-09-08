@@ -9,10 +9,9 @@
 //      must not roll it back. The merged config is written straight back to
 //      BOTH stores, so a single rollback is self-reinforcing — the user meets
 //      onboarding on every launch from then on.
-//   2. First-run routing is a boot decision. The bootstrap effect became
-//      route-dependent on the workspace-team branch (`workspaceProjectView` is
-//      derived from the route), so it re-runs — and re-decides the first-run
-//      redirect — on ordinary navigation.
+//   2. First-run routing is a boot decision. The bootstrap effect must remain
+//      independent of route-derived state, or ordinary navigation can re-run it
+//      and re-decide the first-run redirect.
 
 import { cleanup, act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

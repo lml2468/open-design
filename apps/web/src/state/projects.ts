@@ -32,7 +32,6 @@ import type {
   WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { randomUUID } from '../utils/uuid';
-import { markProjectDisplaySnapshotsDirty } from './project-display-cache';
 import {
   workspaceIdentityCacheKey,
   workspaceProjectHeaders,
@@ -58,14 +57,8 @@ export type { PluginInstallOutcome } from '@open-design/contracts';
 export type { PluginShareAction } from '@open-design/contracts';
 export { workspaceProjectHeaders } from '../collab/workspace-identity';
 
-export type WorkspaceProjectListView = 'all' | 'recent' | 'drafts' | 'team';
-
-export function invalidateProjectList(
-  context?: WorkspaceCollabContext | null,
-  accountGeneration?: number,
-): void {
+export function invalidateProjectList(): void {
   evictCoalescedGet('local-projects');
-  if (context) markProjectDisplaySnapshotsDirty({ context, accountGeneration });
 }
 
 export type WorkspaceContextForWrite = {
@@ -162,12 +155,9 @@ function omitWorkspaceContext<T extends { workspaceContext?: WorkspaceCollabCont
 
 export async function listProjects(options?: {
   throwOnError?: boolean;
-  workspaceContext?: WorkspaceCollabContext | null;
-  workspaceView?: WorkspaceProjectListView;
 }): Promise<Project[]> {
-  // Project discovery is local-only in v1. Keep the legacy options temporarily
-  // so callers can be migrated independently, but neither Workspace identity
-  // nor its old catalog view may change the endpoint or hide local projects.
+  // Project discovery is local-only in v1. Workspace identity and the retired
+  // recent/all/drafts/team projections cannot change this catalog.
   try {
     return await coalescedGet('local-projects', async () => {
       const resp = await fetch('/api/projects');
@@ -736,10 +726,7 @@ export async function patchProject(
     // lists (name, metadata, updatedAt, bindings displayed on cards). A list
     // read started immediately after this write must not reuse the settled
     // pre-write value from coalescedGet's one-second burst window.
-    invalidateProjectList(
-      workspaceContext,
-      currentWorkspaceAccountGeneration(),
-    );
+    invalidateProjectList();
     return json.project;
   } catch {
     return null;

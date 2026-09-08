@@ -408,8 +408,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     };
     const patch = deferred<Project | null>();
     const token: ProjectRenameFenceToken = {
-      accountGeneration: 7,
-      scopeKey: 'workspace:ws-1:wm-1',
       projectId: projectA.id,
       mutationVersion: 11,
     };
@@ -461,14 +459,10 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     const patchA = deferred<Project | null>();
     const patchB = deferred<Project | null>();
     const tokenA: ProjectRenameFenceToken = {
-      accountGeneration: 7,
-      scopeKey: 'workspace:ws-1:wm-1',
       projectId: projectA.id,
       mutationVersion: 11,
     };
     const tokenB: ProjectRenameFenceToken = {
-      accountGeneration: 7,
-      scopeKey: 'workspace:ws-2:wm-2',
       projectId: projectB.id,
       mutationVersion: 12,
     };
