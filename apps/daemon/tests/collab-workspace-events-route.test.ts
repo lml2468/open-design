@@ -117,23 +117,6 @@ describe('GET /api/workspace/events', () => {
     const framed = await readUntil(reader, (text) => text.includes('event: team-projects-changed'));
     expect(framed).toContain('"type":"team-projects-changed"');
 
-    emitWorkspaceEventToScope(
-      sinks,
-      'workspace-a',
-      {
-        type: 'team-resources-changed',
-        resourceKind: 'skill',
-        resourceId: 'skill-1',
-        at: 124,
-      },
-    );
-    const resourceFrame = await readUntil(
-      reader,
-      (text) => text.includes('event: team-resources-changed'),
-    );
-    expect(resourceFrame).toContain('"resourceKind":"skill"');
-    expect(resourceFrame).not.toContain('resourceStatus');
-
     emitWorkspaceEventToAllScopes(sinks, {
       type: 'workspace-directory-changed',
       at: 125,

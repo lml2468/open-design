@@ -16,7 +16,6 @@ type DesignSystemSummary = {
   title?: string;
   updatedAt?: string;
   projectId?: string;
-  teamSynced?: boolean;
   workspaceId?: string;
 } & JsonRecord;
 

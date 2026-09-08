@@ -459,7 +459,6 @@ describe('bootstrap route regressions', () => {
       },
       designSystems: {
         buildUserDesignSystemArchive: async () => null,
-        canMutateUserDesignSystem: async () => true,
         createUserDesignSystem: async () => designSystemSummary as never,
         deleteUserDesignSystem: async () => false,
         ensureUserDesignSystemWorkspaceProject: async () => null,
@@ -477,7 +476,6 @@ describe('bootstrap route regressions', () => {
         renderDesignSystemShowcase: (id: string, body: string) =>
           `<!doctype html><title>${id} showcase</title><main>${body}</main>`,
         syncUserDesignSystemAssetsFromWorkspace: async () => ({ ok: false, reason: 'not-found' }),
-        unshareTeamDesignSystemIfShared: async () => false,
         updateUserDesignSystem: async () => null,
         updateUserDesignSystemRevisionStatus: async () => null,
       },

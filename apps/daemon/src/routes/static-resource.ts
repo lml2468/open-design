@@ -17,7 +17,6 @@ import {
   splitDerivedSkillId,
   updateUserSkill,
 } from '../skills.js';
-import { workspaceTeamSkillBindingResourceId } from '../skills/workspace-team-binding.js';
 import { parseFrontmatter } from '../design-systems/frontmatter.js';
 import {
   deleteWorkspaceResourceByResourceId,
@@ -36,10 +35,6 @@ import {
   readDesignSystem,
   writeUserDesignSystemWorkspaceClaim,
 } from '../design-systems/index.js';
-import {
-  designSystemLogicalResourceId,
-  workspaceTeamDesignSystemBindingResourceId,
-} from '../design-systems/workspace-team-binding.js';
 import {
   LocalDesignSystemImportError,
   importLocalDesignSystemProject,
@@ -126,7 +121,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     listAllSkillLikeEntries,
     listAllDesignSystems,
     resolveWorkspaceScope,
-    canMutateUserDesignSystem,
     mimeFor,
   } = ctx.resources;
   const { isLocalSameOrigin, resolvedPortRef, sendApiError } = ctx.http;
@@ -322,35 +316,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
         : undefined,
     );
   };
-  const hasActiveTeamSkillBinding = (
-    authority: WorkspaceCollabContext | null,
-    skillId: string,
-  ): boolean => {
-    const workspaceId = authority?.workspaceId?.trim();
-    if (!workspaceId) return false;
-    const binding = getWorkspaceResource(
-      db,
-      'skill',
-      workspaceId,
-      workspaceTeamSkillBindingResourceId(workspaceId, skillId),
-    );
-    return binding?.visibility === 'team' && binding.resourceState !== 'deleted';
-  };
-  const denyTeamSkillMutation = (
-    res: Response,
-    authority: WorkspaceCollabContext | null,
-    skillId: string,
-    teamSynced = false,
-  ): boolean => {
-    if (!teamSynced && !hasActiveTeamSkillBinding(authority, skillId)) return false;
-    sendApiError(
-      res,
-      403,
-      'WORKSPACE_RESOURCE_MANAGE_DENIED',
-      'Team Skill mirrors are read-only',
-    );
-    return true;
-  };
   const importedDesignSystemResponse = async <T extends { id: string }>(designSystem: T) => {
     let tokenContractRebuild: DesignSystemTokenContractRebuildJobResponse | undefined;
     try {
@@ -420,7 +385,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     for (const binding of bindings) {
       const resourceId = binding.resourceId?.trim();
       if (!resourceId) continue;
-      ids.add(designSystemLogicalResourceId(resourceId));
+      ids.add(resourceId);
     }
     return ids;
   };
@@ -613,7 +578,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     try {
       const authority = await resolveWorkspaceAuthority(req, res);
       if (authority === undefined) return;
-      if (denyTeamSkillMutation(res, authority, req.params.id)) return;
       const skills = await listAllSkills({
         workspaceId: authority?.workspaceId ?? null,
         workspaceMemberId: authority?.workspaceMemberId ?? null,
@@ -622,7 +586,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       if (!skill) {
         return sendApiError(res, 404, 'NOT_FOUND', 'skill not found');
       }
-      if (denyTeamSkillMutation(res, authority, skill.id, skill.teamSynced === true)) return;
       const existingBinding = getWorkspaceResourceByResourceId(db, 'skill', skill.id);
       if (
         authority
@@ -799,18 +762,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       const visibleSystems = workspaceId && workspaceMemberId
         ? catalog.filter((system) => {
             if (system.source !== 'user') return true;
-            const teamBinding = getWorkspaceResourceByResourceId(
-              db,
-              'design_system',
-              workspaceTeamDesignSystemBindingResourceId(workspaceId, system.id),
-            );
-            if (
-              teamBinding?.workspaceId === workspaceId
-              && teamBinding.visibility === 'team'
-              && teamBinding.resourceState !== 'deleted'
-            ) {
-              return true;
-            }
             const personalBinding = getWorkspaceResourceByResourceId(
               db,
               'design_system',
@@ -822,25 +773,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
               && personalBinding.createdByWorkspaceMemberId === workspaceMemberId;
           })
         : catalog;
-      // recvqb6mfyqXLD: decorate every teamSynced entry with the same
-      // mutate verdict the PATCH/DELETE routes enforce, so any surface that
-      // renders straight off this list (e.g. `ProjectView`'s in-project
-      // Design System tab, which resolves its own `designSystemEditable`
-      // from this exact array rather than the single-item detail fetch) can
-      // gate its Publish toggle / delete affordances on it too — not just
-      // the detail route. Skipped for anything not `teamSynced` (the
-      // overwhelming majority: every built-in preset plus the caller's own
-      // systems) so a hot, frequently-polled list read does not pay a
-      // per-item disk/hub round trip it already knows the answer to.
-      const designSystems = canMutateUserDesignSystem
-        ? await Promise.all(
-            visibleSystems.map(async ({ body, ...rest }) => (
-              rest.teamSynced
-                ? { ...rest, canMutate: await canMutateUserDesignSystem(USER_DESIGN_SYSTEMS_DIR, rest.id, req) }
-                : rest
-            )),
-          )
-        : visibleSystems.map(({ body, ...rest }) => rest);
+      const designSystems = visibleSystems.map(({ body, ...rest }) => rest);
       res.json({ designSystems });
     } catch (err: any) {
       if (sendWorkspaceScopeError(res, err)) return;
@@ -1175,7 +1108,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
 
   // This route used to carry NO permission check at all: any caller (any
   // workspace, any role) could delete any skill, including one installed by
-  // someone else or pulled in from a team share. Now gated the same way
+  // someone else. It is now gated the same way
   // `POST /api/plugins/:id/uninstall` is, via the shared
   // `enforceWorkspaceResourceMutation` — see `enforceSkillWorkspaceMutation`
   // above for the "only when a binding row exists" conditional.
@@ -1184,7 +1117,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     try {
       const authority = await resolveWorkspaceAuthority(req, res);
       if (authority === undefined) return;
-      if (denyTeamSkillMutation(res, authority, req.params.id)) return;
       const skills = await listAllSkills({
         workspaceId: authority?.workspaceId ?? null,
         workspaceMemberId: authority?.workspaceMemberId ?? null,
@@ -1193,7 +1125,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       if (!skill) {
         return sendApiError(res, 404, 'NOT_FOUND', 'skill not found');
       }
-      if (denyTeamSkillMutation(res, authority, skill.id, skill.teamSynced === true)) return;
       if (!await enforceSkillWorkspaceMutation(req, res, req.params.id, 'delete')) return;
       const result = await uninstallById(req.params.id, USER_SKILLS_DIR, SKILLS_DIR, 'skill');
       if (!result.ok) return res.status(result.status || 400).json({ error: result.error });

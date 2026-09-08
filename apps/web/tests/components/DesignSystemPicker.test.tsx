@@ -183,7 +183,7 @@ describe('DesignSystemPicker', () => {
     expect(screen.getByText('Aucun système de design')).toBeTruthy();
   });
 
-  it('treats legacy team-marked user systems as local user systems', async () => {
+  it('treats all user systems as local user systems', async () => {
     const personalSystem: DesignSystemSummary = {
       id: 'user:personal-brand',
       title: 'Personal Brand',
@@ -201,7 +201,6 @@ describe('DesignSystemPicker', () => {
       swatches: [],
       source: 'user',
       isEditable: true,
-      teamShared: true,
     };
     const teammateSystem: DesignSystemSummary = {
       id: 'user:teammate-brand',
@@ -211,7 +210,6 @@ describe('DesignSystemPicker', () => {
       swatches: [],
       source: 'user',
       isEditable: false,
-      teamSynced: true,
     };
     const officialSystem: DesignSystemSummary = {
       id: 'official-brand',

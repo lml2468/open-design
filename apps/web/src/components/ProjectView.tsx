@@ -9247,21 +9247,10 @@ export function ProjectView({
     if (!projectIsDesignSystemProject || !projectDesignSystemId) return null;
     return designSystems.find((d) => d.id === projectDesignSystemId) ?? null;
   }, [designSystems, projectDesignSystemId, projectIsDesignSystemProject]);
-  // Design-system mutation authority remains enforced by the design-system
-  // API; it is independent of the removed project mirror state machine.
   const designSystemEditable =
-    designSystemProject?.canMutate !== false &&
-    (
-      !projectIsProgrammaticBrandExtraction ||
-      brandExtractionAllowsEditing(effectiveBrandExtractionStatus) ||
-      Boolean(brandReady)
-    );
-  // The brand-extraction-only half of the formula above, kept separate from
-  // ownership: FileWorkspace's "Extracting design system…" status pill must
-  // key off whether generation is genuinely still running, not off whether
-  // the caller happens to own the (possibly fully-published) design system —
-  // conflating the two would show a non-owner "still extracting" over a
-  // finished, published teammate's system just because they cannot manage it.
+    !projectIsProgrammaticBrandExtraction ||
+    brandExtractionAllowsEditing(effectiveBrandExtractionStatus) ||
+    Boolean(brandReady);
   const designSystemExtractionInProgress =
     projectIsProgrammaticBrandExtraction &&
     !brandExtractionAllowsEditing(effectiveBrandExtractionStatus) &&

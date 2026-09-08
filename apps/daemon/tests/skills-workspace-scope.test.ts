@@ -93,7 +93,7 @@ function bindSkillToWorkspace(skillId: string, workspaceId: string, createdByWor
 async function fetchSkills(
   workspaceId?: string,
   workspaceMemberId = 'member-owner',
-): Promise<Array<{ id: string; source?: string; teamSynced?: boolean }>> {
+): Promise<Array<{ id: string; source?: string }>> {
   const resp = await fetch(
     `${baseUrl}/api/skills`,
     workspaceId
@@ -106,7 +106,7 @@ async function fetchSkills(
       : undefined,
   );
   const body = (await resp.json()) as {
-    skills: Array<{ id: string; source?: string; teamSynced?: boolean }>;
+    skills: Array<{ id: string; source?: string }>;
   };
   return body.skills;
 }
@@ -156,7 +156,7 @@ describe('GET /api/skills — workspace visibility scope', () => {
     expect(files.status).toBe(404);
   });
 
-  it('shows a shared Team skill to another member in the same workspace', async () => {
+  it('keeps a historical Team skill binding out of the active catalog', async () => {
     const skillId = `wsscope-team-${Date.now()}`;
     await seedSkillFolder(skillId);
     bindSkillToWorkspace(skillId, 'ws-scope-team-shared', 'member-owner');
@@ -165,11 +165,11 @@ describe('GET /api/skills — workspace visibility scope', () => {
       visibility: 'team',
     });
 
-    expect(await fetchSkillIds('ws-scope-team-shared', 'member-other')).toContain(skillId);
+    expect(await fetchSkillIds('ws-scope-team-shared', 'member-other')).not.toContain(skillId);
     const detail = await fetch(`${baseUrl}/api/skills/${skillId}`, {
       headers: workspaceHeaders('member-other', 'member', 'ws-scope-team-shared'),
     });
-    expect(detail.status).toBe(200);
+    expect(detail.status).toBe(404);
   });
 
   it('falls back to the bundled skill when another member owns a same-id user shadow', async () => {
@@ -391,63 +391,5 @@ describe('POST /api/skills/install — same-id ownership preflight', () => {
     } finally {
       await rm(sourceRoot, { recursive: true, force: true });
     }
-  });
-});
-
-// Skill previously had NO field at all distinguishing a skill materialized
-// from a TEAMMATE's team share from one the caller authored themselves — both
-// read `source: 'user'`. Design-system (`metadata.json`'s `teamSynced`) and
-// plugin (`installed_plugins.source`'s `team:plugin:` prefix) already carried
-// this; skill was the one kind missing it entirely, so unsharing a skill
-// team-side made the puller's stale copy silently reappear as "Personal"
-// instead of just dropping out of the Team scope. `teamSynced` on
-// `SkillSummary` closes that gap, sourced from the same `workspace_resources`
-// binding `syncSharedTeamSkill`'s `markTeamSynced` (server.ts) already writes
-// as `visibility: 'team'` — this test only exercises the READ side (the
-// `GET /api/skills` projection), not the write path itself.
-describe('GET /api/skills — teamSynced projection', () => {
-  it('reports teamSynced:true for a skill bound with visibility "team"', async () => {
-    const skillId = `wsteamsynced-team-${Date.now()}`;
-    await seedSkillFolder(skillId);
-    bindSkillToWorkspace(skillId, 'ws-teamsynced-1', 'member-owner');
-    const db = openDatabase(process.cwd(), { dataDir: process.env.OD_DATA_DIR! });
-    updateWorkspaceResource(db, 'skill', 'ws-teamsynced-1', skillId, { visibility: 'team' });
-
-    const resp = await fetch(`${baseUrl}/api/skills`, {
-      headers: workspaceHeaders('member-owner', 'member', 'ws-teamsynced-1'),
-    });
-    const body = (await resp.json()) as { skills: Array<{ id: string; teamSynced?: boolean }> };
-    const skill = body.skills.find((s) => s.id === skillId);
-
-    expect(skill?.teamSynced).toBe(true);
-  });
-
-  it('omits teamSynced for a personal-visibility bound skill (the sharer\'s own copy)', async () => {
-    const skillId = `wsteamsynced-personal-${Date.now()}`;
-    await seedSkillFolder(skillId);
-    bindSkillToWorkspace(skillId, 'ws-teamsynced-2', 'member-owner');
-
-    const resp = await fetch(`${baseUrl}/api/skills`, {
-      headers: workspaceHeaders('member-owner', 'member', 'ws-teamsynced-2'),
-    });
-    const body = (await resp.json()) as { skills: Array<{ id: string; teamSynced?: boolean }> };
-    const skill = body.skills.find((s) => s.id === skillId);
-
-    expect(skill).toBeTruthy();
-    expect(skill?.teamSynced).toBeFalsy();
-  });
-
-  it('keeps an unbound legacy skill out of an explicit workspace', async () => {
-    const skillId = `wsteamsynced-legacy-${Date.now()}`;
-    await seedSkillFolder(skillId);
-
-    const resp = await fetch(`${baseUrl}/api/skills`, {
-      headers: workspaceHeaders('member-owner', 'member', 'ws-teamsynced-legacy'),
-    });
-    const body = (await resp.json()) as { skills: Array<{ id: string; teamSynced?: boolean }> };
-    const skill = body.skills.find((s) => s.id === skillId);
-
-    expect(skill).toBeUndefined();
-    expect((await fetchSkills()).find((row) => row.id === skillId)?.teamSynced).toBeFalsy();
   });
 });

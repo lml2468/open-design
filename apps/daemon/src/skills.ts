@@ -104,19 +104,6 @@ export interface SkillInfo {
   critiquePolicy: SkillCritiquePolicy;
   body: string;
   dir: string;
-  /**
-   * True for a skill materialized locally from a TEAMMATE's team share — the
-   * puller's copy, never the sharer's own (mirrors design-systems'
-   * `metadata.json` `teamSynced` flag; see `isTeamSyncedUserDesignSystem` in
-   * design-systems/index.ts). Sourced from the generic `workspace_resources`
-   * binding's `visibility` column (`'team'` — written by `syncSharedTeamSkill`'s
-   * `markTeamSynced` in server.ts), so it only appears when the caller asked to
-   * be workspace-scoped (`db` + `workspaceId` both passed to `listSkills`).
-   * Without this, a skill pulled from the team was indistinguishable from one
-   * the caller authored, and unsharing it team-side let it silently reappear
-   * in "Personal" instead of just leaving the Team scope.
-   */
-  teamSynced?: boolean;
 }
 
 interface DerivedExample {
@@ -196,10 +183,7 @@ function skillVisibleFromWorkspace(
 
 /**
  * Pure counterpart of {@link skillVisibleFromWorkspace} that takes an
- * already-fetched binding row instead of looking it up again — lets
- * `listSkills`'s final scoping pass reuse the one binding read for both the
- * visibility check and the `teamSynced` annotation below, instead of hitting
- * `workspace_resources` twice per entry.
+ * already-fetched binding row instead of looking it up again.
  */
 function skillVisibleFromBinding(
   binding: ReturnType<typeof getWorkspaceResourceByResourceId>,
@@ -209,15 +193,13 @@ function skillVisibleFromBinding(
 ): boolean {
   const ownerId = typeof binding?.workspaceId === "string" ? binding.workspaceId.trim() : "";
   if (scope === undefined) return true;
-  // A retracted teammate mirror stays bound as `visibility: 'team'` so its
-  // origin remains recoverable, but its tombstone removes it from every
-  // scoped catalog. The on-disk copy is intentionally left untouched.
-  if (binding?.visibility === "team" && binding.resourceState === "deleted") return false;
+  // Team-resource materialization has been removed. Historical Team bindings
+  // are inert and must never make an old local copy visible again.
+  if (binding?.visibility === "team") return false;
   if (source === "built-in") return true;
   const scopeId = scope?.trim();
   if (!scopeId) return !ownerId;
   if (!ownerId || ownerId !== scopeId) return false;
-  if (binding?.visibility === "team") return true;
   const creatorId = binding?.createdByWorkspaceMemberId?.trim();
   const callerId = workspaceMemberId?.trim();
   return Boolean(creatorId && callerId && creatorId === callerId);
@@ -442,13 +424,7 @@ export async function listSkills(
         entry.source,
       ),
     )
-    // A live binding whose visibility is `'team'` is the puller's copy of a
-    // teammate's share (see `syncSharedTeamSkill`'s `markTeamSynced` in
-    // server.ts) — never the sharer's own skill, which is never bound this
-    // way. Tombstoned Team bindings were removed by the visibility filter.
-    .map(({ entry, binding }) =>
-      binding?.visibility === "team" ? { ...entry, teamSynced: true } : entry,
-    );
+    .map(({ entry }) => entry);
 }
 
 // Discover example artifacts that live alongside SKILL.md under

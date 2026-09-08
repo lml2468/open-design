@@ -931,16 +931,14 @@ export async function updateDesignSystemDraft(
   }
 }
 
-// Signal-only trigger for the daemon-side asset sync (spec 04 §9.3,
-// recvqb1t4FrckM): fires when the design-system chat's agent writes real
+// Signal-only trigger for the daemon-side asset sync: fires when the
+// design-system chat's agent writes real
 // files under `assets/` in the workspace project, so the canonical
-// design-system directory — the only thing team-share/download/showcase
-// ever read from — stops shipping a stale placeholder logo. No file bytes
+// design-system directory stops shipping a stale placeholder logo. No file bytes
 // cross the browser: the daemon locates the workspace project itself and
 // copies file contents straight through on its own side of the data-
-// directory boundary. See `workspaceProjectHeaders` — this is a mutating
-// write against a resource `canMutateUserDesignSystem` gates the same way
-// PATCH/DELETE are gated, so the workspace identity headers must ride along.
+// directory boundary. See `workspaceProjectHeaders`; the workspace identity
+// headers must ride along with this mutating request.
 export async function syncDesignSystemAssetsFromWorkspace(
   id: string,
   workspaceContext?: WorkspaceCollabContext | null,

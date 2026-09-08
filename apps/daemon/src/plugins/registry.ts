@@ -254,6 +254,7 @@ function pluginVisibleFromWorkspace(
   scope: string | null | undefined,
   workspaceMemberId: string | null | undefined,
 ): boolean {
+  if (plugin.source.startsWith('team:plugin:')) return false;
   if (scope !== undefined && plugin.sourceKind === 'bundled') return true;
   let binding: ReturnType<typeof getWorkspaceResourceByResourceId>;
   try {
@@ -267,132 +268,14 @@ function pluginVisibleFromWorkspace(
   }
   const ownerId = typeof binding?.workspaceId === 'string' ? binding.workspaceId.trim() : '';
   if (binding?.resourceState === 'deleted') return false;
+  if (binding?.visibility === 'team') return false;
   if (scope === undefined) return true;
   const scopeId = scope?.trim();
   if (!scopeId) return !ownerId;
   if (!ownerId || ownerId !== scopeId) return false;
-  if (binding?.visibility === 'team') return true;
   const creatorId = binding?.createdByWorkspaceMemberId?.trim();
   const callerId = workspaceMemberId?.trim();
   return Boolean(creatorId && callerId && creatorId === callerId);
-}
-
-/**
- * A materialized Team plugin is readable only while its exact Workspace
- * binding is live. An unbound marker is still accepted for one compatibility
- * read so pre-binding installs can be adopted by the daemon without vanishing
- * during an upgrade; callers must persist that binding immediately.
- */
-export function workspaceTeamPluginBindingAllowsRead(
-  db: SqliteDb,
-  workspaceId: string,
-  pluginId: string,
-): boolean {
-  const binding = getWorkspaceResourceByResourceId(
-    db,
-    'plugin',
-    workspaceTeamPluginBindingResourceId(workspaceId, pluginId),
-  );
-  if (!binding) return true;
-  return binding.workspaceId === workspaceId
-    && binding.visibility === 'team'
-    && binding.resourceState !== 'deleted';
-}
-
-/**
- * Snapshot the local binding generation before an asynchronous hub read.
- * `resourceState` is intentionally part of the fence in addition to
- * `updatedAt`: two synchronous SQLite writes can share the same millisecond,
- * but an intervening tombstone must still invalidate an older positive read.
- * `null` is the generation for a binding that does not exist yet.
- */
-export function workspaceTeamPluginBindingActivationFence(
-  db: SqliteDb,
-  workspaceId: string,
-  pluginId: string,
-): string | null {
-  const binding = getWorkspaceResourceByResourceId(
-    db,
-    'plugin',
-    workspaceTeamPluginBindingResourceId(workspaceId, pluginId),
-  );
-  if (!binding) return null;
-  return JSON.stringify([
-    binding.workspaceId,
-    binding.visibility,
-    binding.resourceState ?? null,
-    binding.updatedAt,
-    binding.updatedByWorkspaceMemberId ?? null,
-    binding.resourceHubResourceId ?? null,
-  ]);
-}
-
-const WORKSPACE_TEAM_PLUGIN_BINDING_PREFIX = 'team-mirror:';
-
-/**
- * Team materializations are separate from the Personal installed-plugin row.
- * The generic binding table only allows one row per resource id, so a Team
- * mirror must not claim the bare plugin id: Personal and Team plugins with the
- * same manifest id are valid and coexist in `listWorkspacePlugins`.
- */
-export function workspaceTeamPluginBindingResourceId(
-  workspaceId: string,
-  pluginId: string,
-): string {
-  return `${WORKSPACE_TEAM_PLUGIN_BINDING_PREFIX}${encodeURIComponent(workspaceId)}:${encodeURIComponent(pluginId)}`;
-}
-
-export function pluginIdFromWorkspaceTeamPluginBinding(
-  workspaceId: string,
-  bindingResourceId: string,
-): string | null {
-  const prefix = `${WORKSPACE_TEAM_PLUGIN_BINDING_PREFIX}${encodeURIComponent(workspaceId)}:`;
-  if (!bindingResourceId.startsWith(prefix)) return null;
-  try {
-    return decodeURIComponent(bindingResourceId.slice(prefix.length));
-  } catch {
-    return null;
-  }
-}
-
-export async function resolveWorkspaceTeamPluginWithBindingGate<T>(input: {
-  bindingAllowsRead: () => boolean;
-  resolve: () => Promise<T | null>;
-}): Promise<T | null> {
-  if (!input.bindingAllowsRead()) return null;
-  const resolved = await input.resolve();
-  if (resolved == null || !input.bindingAllowsRead()) return null;
-  return resolved;
-}
-
-export async function resolveAndActivateWorkspaceTeamPlugin<T>(input: {
-  resolve: () => Promise<T | null>;
-  captureActivationFence: () => string | null;
-  stillShared: () => Promise<boolean>;
-  activationFenceIsCurrent: (fence: string | null) => boolean;
-  activate: () => boolean;
-}): Promise<T | null> {
-  const resolved = await input.resolve();
-  if (resolved == null) return null;
-  if (!await activateWorkspaceTeamPluginIfStillShared(input)) return null;
-  return resolved;
-}
-
-export async function activateWorkspaceTeamPluginIfStillShared(input: {
-  captureActivationFence: () => string | null;
-  stillShared: () => Promise<boolean>;
-  activationFenceIsCurrent: (fence: string | null) => boolean;
-  activate: () => boolean;
-}): Promise<boolean> {
-  const activationFence = input.captureActivationFence();
-  if (!await input.stillShared()) return false;
-  // The hub read above is asynchronous. A newer reconciliation may retire the
-  // binding while it is pending, so a positive result is authoritative only
-  // for the binding generation captured before that read. Both this final
-  // check and `activate` are synchronous, leaving no event-loop interleave in
-  // which a tombstone can be overwritten.
-  if (!input.activationFenceIsCurrent(activationFence)) return false;
-  return input.activate();
 }
 
 /**

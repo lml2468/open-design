@@ -293,13 +293,6 @@ import {
   splitDerivedSkillId,
 } from './skills.js';
 import { resolveSkillCatalogScope } from './skill-catalog-scope.js';
-import {
-  activateWorkspaceTeamSkillIfStillShared,
-  resolveAndActivateWorkspaceTeamSkill,
-  skillIdFromWorkspaceTeamBinding,
-  workspaceTeamSkillBindingActivationFence,
-  workspaceTeamSkillBindingResourceId,
-} from './skills/workspace-team-binding.js';
 import { validateLinkedDirs } from './linked-dirs.js';
 import { installFromTarget, uninstallById, sanitizeRepoName } from './library-install.js';
 import {
@@ -326,7 +319,6 @@ import {
   createUserDesignSystem,
   deleteUserDesignSystem,
   digestDesignSystemContext,
-  isTeamSyncedUserDesignSystem,
   LEGACY_DESIGN_SYSTEM_ARTIFACTS,
   linkUserDesignSystemProject,
   listDesignSystems,
@@ -350,12 +342,6 @@ import {
 } from './design-systems/workspace-owned-create.js';
 import { createDesignSystemGenerationJobStore } from './design-systems/generation-jobs.js';
 import { createDesignSystemServerServices } from './design-systems/server-services.js';
-import {
-  designSystemIdFromWorkspaceTeamBinding,
-  designSystemLogicalResourceId,
-  workspaceTeamDesignSystemBindingResourceId,
-} from './design-systems/workspace-team-binding.js';
-import { ownedDesignSystemSourceIsReady } from './design-systems/team-owner-materialization.js';
 import { prepareDesignTokenContractRebuild } from './design-systems/token-contract-rebuild.js';
 import { registerBrandRoutes } from './brand-routes.js';
 import {
@@ -398,16 +384,6 @@ import {
   startSnapshotGc,
   uninstallPlugin,
 } from './plugins/index.js';
-import {
-  activateWorkspaceTeamPluginIfStillShared,
-  pluginIdFromWorkspaceTeamPluginBinding,
-  resolveAndActivateWorkspaceTeamPlugin,
-  resolvePluginFolder,
-  resolveWorkspaceTeamPluginWithBindingGate,
-  workspaceTeamPluginBindingActivationFence,
-  workspaceTeamPluginBindingAllowsRead,
-  workspaceTeamPluginBindingResourceId,
-} from './plugins/registry.js';
 import {
   marketplaceManifestUrlForRegistry,
   marketplaceRegistryIdFromUrl,
@@ -729,7 +705,6 @@ import {
   listProjects,
   listUnboundProjects,
   listTeamWorkspaceProjectShares,
-  listTeamWorkspaceResourceWorkspaceIds,
   listWorkspaceProjects,
   listWorkspaceResources,
   listRoutines,
@@ -2846,16 +2821,14 @@ export async function startServer({
         db,
         'design_system',
         workspaceId,
-        designSystem.teamSynced === true
-          ? workspaceTeamDesignSystemBindingResourceId(workspaceId, designSystem.id)
-          : designSystem.id,
+        designSystem.id,
       );
       const memberId = binding?.createdByWorkspaceMemberId?.trim();
       if (!memberId) return;
       ensureWorkspaceProject(db, {
         projectId,
         workspaceId,
-        visibility: designSystem.teamSynced === true ? 'team' : 'personal',
+        visibility: 'personal',
         resourceState: 'active',
         createdByWorkspaceMemberId: memberId,
         updatedByWorkspaceMemberId: memberId,
@@ -3466,7 +3439,7 @@ export async function startServer({
     ).all() as Array<{ resourceId?: string }>;
     return new Set(rows.flatMap((row) => {
       const resourceId = row.resourceId?.trim();
-      return resourceId ? [designSystemLogicalResourceId(resourceId)] : [];
+      return resourceId ? [resourceId] : [];
     }));
   };
   const createWorkspaceOwnedDesignSystemForContext = (
@@ -6181,12 +6154,6 @@ export async function startServer({
     enforceWorkspaceProjectMutation: enforceAuthoritativeProjectMutation,
   });
 
-  const canMutateUserDesignSystem = async (
-    root: string,
-    id: string,
-    _req: any,
-  ): Promise<boolean> => !(await isTeamSyncedUserDesignSystem(root, id));
-
   // Resource catalog
   registerStaticResourceRoutes(app, {
     db,
@@ -6200,7 +6167,6 @@ export async function startServer({
       listAllSkillLikeEntries,
       listAllDesignSystems,
       resolveWorkspaceScope: resolveDesignSystemWorkspaceScope,
-      canMutateUserDesignSystem,
       mimeFor,
     },
     tokenContractRebuild: {
@@ -6228,10 +6194,8 @@ export async function startServer({
     workspaceResources: { getWorkspaceResource, getWorkspaceResourceByResourceId },
     designSystems: {
       buildUserDesignSystemArchive,
-      canMutateUserDesignSystem,
       createUserDesignSystem: createWorkspaceOwnedDesignSystem,
       deleteUserDesignSystem,
-      unshareTeamDesignSystemIfShared: async () => false,
       ensureUserDesignSystemWorkspaceProject,
       listAllDesignSystems,
       listUserDesignSystemFiles,
@@ -6258,15 +6222,7 @@ export async function startServer({
     authorizeDesignSystemRead: designSystemRouteServices.authorizeDesignSystemRead,
     deleteDesignSystemForRequest: designSystemRouteServices.deleteDesignSystemForRequest,
     isDesignSystemWorkspaceBound: (designSystemId) =>
-      Boolean(getWorkspaceResourceByResourceId(db, 'design_system', designSystemId))
-      || listTeamWorkspaceResourceWorkspaceIds(db).some((workspaceId) =>
-        Boolean(getWorkspaceResource(
-          db,
-          'design_system',
-          workspaceId,
-          workspaceTeamDesignSystemBindingResourceId(workspaceId, designSystemId),
-        )),
-      ),
+      Boolean(getWorkspaceResourceByResourceId(db, 'design_system', designSystemId)),
     authorizeProjectRequest,
     createWorkspaceOwnedDesignSystem: createWorkspaceOwnedDesignSystemForContext,
     deleteWorkspaceOwnedDesignSystem: (root, designSystemId) =>
@@ -6736,7 +6692,6 @@ export async function startServer({
     workspaceResources: {
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
-      workspaceTeamPluginBindingAllowsRead,
       getWorkspaceProjectByProjectId,
     },
     plugins: {
@@ -6901,20 +6856,6 @@ export async function startServer({
       const logicalResourceId =
         typeof summary?.id === 'string' ? summary.id.trim() : '';
       if (!logicalResourceId) return null;
-      if (summary?.teamSynced === true) {
-        const canonicalTeamBinding = getWorkspaceResource(
-          db,
-          'design_system',
-          designSystemWorkspaceId,
-          workspaceTeamDesignSystemBindingResourceId(
-            designSystemWorkspaceId,
-            logicalResourceId,
-          ),
-        );
-        if (canonicalTeamBinding) return canonicalTeamBinding;
-      }
-      // Keep legacy rows readable while old local data converges to the
-      // Workspace-qualified Team envelope id.
       return getWorkspaceResource(
         db,
         'design_system',
@@ -6935,7 +6876,6 @@ export async function startServer({
       ) {
         return false;
       }
-      if (binding.visibility === 'team') return true;
       return binding.visibility === 'personal'
         && Boolean(designSystemMemberId)
         && binding.createdByWorkspaceMemberId?.trim() === designSystemMemberId;
@@ -7271,7 +7211,7 @@ export async function startServer({
           system.id === effectiveDesignSystemId
           && designSystemVisibleToRun(system),
       );
-      if (summary?.source === 'user' && summary.teamSynced !== true) {
+      if (summary?.source === 'user') {
         await ensureUserDesignSystemWorkspaceProject(db, effectiveDesignSystemId);
         systems = await listAllDesignSystems(designSystemListOptions);
         summary = systems.find(
@@ -7285,13 +7225,11 @@ export async function startServer({
         && project.designSystemId === effectiveDesignSystemId;
       designSystemTitle = summary?.title;
       if (summary && (isProjectUsableDesignSystem(summary) || editingOwnDraftDesignSystem)) {
-        // A pulled Team mirror is a canonical, read-only package. Its
-        // metadata may carry the author's local editing-project id, which is
-        // neither authority to mutate a same-slug Personal backing project nor
-        // a safe path to read an unrelated local project's DESIGN.md.
-        const workspaceBody = summary.teamSynced === true
-          ? null
-          : await readDesignSystemWorkspaceTextFile(db, summary, 'DESIGN.md');
+        const workspaceBody = await readDesignSystemWorkspaceTextFile(
+          db,
+          summary,
+          'DESIGN.md',
+        );
         const registryBody = await readAvailableDesignSystem(
           effectiveDesignSystemId,
           designSystemListOptions,

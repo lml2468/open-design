@@ -62,7 +62,9 @@ it('keeps local deletion independent from legacy workspace metadata', async () =
 
   const getResponse = await fetch(designSystemUrl);
   expect(getResponse.status).toBe(200);
-  await expect(getResponse.json()).resolves.toMatchObject({ canMutate: true });
+  const getBody = await getResponse.json() as Record<string, unknown>;
+  expect(getBody).toMatchObject({ id: created.designSystem.id });
+  expect(getBody).not.toHaveProperty('canMutate');
 
   // When the mutable design system is deleted without workspace headers
   const deleteResponse = await fetch(designSystemUrl, { method: 'DELETE' });

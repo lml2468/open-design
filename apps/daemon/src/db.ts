@@ -1470,25 +1470,6 @@ export function listWorkspaceResources(db: SqliteDb, resourceType: string, works
     .all(resourceType, workspaceId) as DbRow[];
 }
 
-/** Workspace ids that still own a live Team resource binding.
- *
- * Background reconciliation uses this persisted witness after restarts. It
- * deliberately returns ids only; callers must resolve each id against the
- * current authoritative Workspace directory before touching the resource hub.
- */
-export function listTeamWorkspaceResourceWorkspaceIds(db: SqliteDb): string[] {
-  const rows = db
-    .prepare(
-      `SELECT DISTINCT workspace_id AS workspaceId
-         FROM workspace_resources
-        WHERE visibility = 'team'
-          AND resource_state != 'deleted'
-        ORDER BY workspace_id`,
-    )
-    .all() as Array<{ workspaceId: string }>;
-  return rows.map((row) => row.workspaceId);
-}
-
 /**
  * Bind a resource to a workspace, or return the binding it already has.
  *

@@ -310,14 +310,7 @@ describe('FileWorkspace design-system project surface', () => {
     expect(container.textContent).not.toContain('Edit DESIGN.md');
   });
 
-  // recvqb6mfyqXLD: `designSystemEditable=false` now also covers "the caller
-  // may not manage this team-synced design system" (ProjectView's
-  // `canMutate` gate), not just "extraction still running". The status pill
-  // must key off the separate `designSystemExtractionInProgress` flag so a
-  // finished, published teammate's design system reads as complete — not as
-  // still extracting — while the Publish toggle and edit affordances stay
-  // locked.
-  it('reads as extraction-complete (not "still extracting") when locked only because the caller cannot manage a team-synced system', async () => {
+  it('reads as extraction-complete when editing is disabled after generation', async () => {
     registryMocks.fetchProjectFileText.mockResolvedValue(null);
 
     const container = renderWorkspace(
@@ -330,7 +323,7 @@ describe('FileWorkspace design-system project surface', () => {
         isDeck={false}
         tabsState={{ tabs: [], active: null }}
         onTabsStateChange={vi.fn()}
-        designSystemProject={designSystem({ teamSynced: true, canMutate: false })}
+        designSystemProject={designSystem()}
         designSystemBrandId="brand-acme"
         designSystemEditable={false}
       />,

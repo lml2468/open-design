@@ -1999,17 +1999,7 @@ export function DesignSystemDetailView({
 
   const sections = useMemo(() => parseDesignSystemSections(body, t), [body, t]);
   const published = system?.status === 'published';
-  // recvqb6mfyqXLD: `isEditable` only distinguishes a user-authored system
-  // from a built-in preset — it stays `true` even on a teammate's team-synced
-  // copy the caller does not own, which used to leave the Publish toggle and
-  // the DESIGN.md Save button live for a plain member here (this view also
-  // renders for the direct `/design-systems/:id` route, e.g. from the
-  // Library's "Open design system" link — not just DesignSystemsTab's own
-  // team tab, which already gates its own copy of these controls). `canMutate`
-  // is the daemon's own PATCH/DELETE verdict (`canMutateUserDesignSystem`)
-  // mirrored onto the GET response, so this stays in lockstep with whatever
-  // the backend actually allows.
-  const editable = system?.isEditable !== false && system?.canMutate !== false;
+  const editable = system?.isEditable !== false;
   const activeJob = revisionJob ?? generationJob;
   const pendingRevision = revisions.find((revision) => revision.status === 'pending') ?? null;
   const recentRevisions = revisions.slice(0, 5);
@@ -2917,7 +2907,7 @@ export function DesignSystemDetailView({
                       : t('dsFlow.publishCardWorking')
                   : t('dsFlow.publishCardReady')}
               </p>
-              <label title={system.canMutate === false ? t('critiqueTheater.readOnly') : undefined}>
+              <label>
                 <input
                   type="checkbox"
                   checked={published}
@@ -3037,10 +3027,7 @@ export function DesignSystemDetailView({
                 );
               })}
             </div>
-            <label
-              className="ds-body-editor"
-              title={system.canMutate === false ? t('critiqueTheater.readOnly') : undefined}
-            >
+            <label className="ds-body-editor">
               DESIGN.md
               <Textarea
                 value={body}
@@ -3053,7 +3040,6 @@ export function DesignSystemDetailView({
               variant="primary"
               disabled={!editable || saving}
               onClick={() => void saveBody()}
-              title={system.canMutate === false ? t('critiqueTheater.readOnly') : undefined}
             >
               {t('ds.saveDesignMd')}
             </Button>

@@ -77,7 +77,6 @@ export interface RegisterDesignSystemRoutesDeps extends RouteDeps<'db' | 'paths'
      * own workspace is locked/deleted (billing lapse, deletion in progress)
      * — a check design system never had, unlike project/plugin.
      */
-    canMutateUserDesignSystem: (root: string, id: string, req: any) => Promise<boolean>;
     createUserDesignSystem: (
       root: string,
       input: UserDesignSystemInput,
@@ -141,19 +140,6 @@ export interface RegisterDesignSystemRoutesDeps extends RouteDeps<'db' | 'paths'
     ) => Promise<{ ok: true; synced: string[] } | { ok: false; reason: 'not-found' | 'no-workspace-project' }>;
     updateUserDesignSystem: (root: string, id: string, input: UserDesignSystemInput) => Promise<DesignSystemSummary | null>;
     updateUserDesignSystemRevisionStatus: (root: string, id: string, revisionId: string, status: 'accepted' | 'rejected') => Promise<DesignSystemRevision | null>;
-    /**
-     * spec 04 §11: unshare `id` from the team hub BEFORE the local delete
-     * proceeds, but only when it is CURRENTLY on the live team share list
-     * (`designSystemsTeamShare.sharedResources()` in server.ts) — never on
-     * `isTeamSyncedUserDesignSystem` alone. That flag is true only on a
-     * teammate's PULLED copy; the sharer deleting their OWN original always
-     * reads `teamSynced: false`, which is exactly why the hub index used to
-     * survive this route untouched and teammates kept seeing the deleted
-     * design system. Returns whether an unshare actually ran (false when the
-     * system was never shared, or team sharing isn't configured) so tests can
-     * assert on the real state transition instead of a call-was-made mock.
-     */
-    unshareTeamDesignSystemIfShared: (id: string, req: any) => Promise<boolean>;
   };
   generationJobs: {
     get: (jobId: string) => DesignSystemGenerationJob | null;
@@ -203,7 +189,6 @@ export function registerDesignSystemRoutes(
   const { CRAFT_DIR, USER_DESIGN_SYSTEMS_DIR } = ctx.paths;
   const {
     buildUserDesignSystemArchive,
-    canMutateUserDesignSystem,
     createUserDesignSystem,
     deleteUserDesignSystem,
     ensureUserDesignSystemWorkspaceProject,
@@ -219,7 +204,6 @@ export function registerDesignSystemRoutes(
     renderDesignSystemPreview,
     renderDesignSystemShowcase,
     syncUserDesignSystemAssetsFromWorkspace,
-    unshareTeamDesignSystemIfShared,
     updateUserDesignSystem,
     updateUserDesignSystemRevisionStatus,
   } = ctx.designSystems;
@@ -573,17 +557,9 @@ export function registerDesignSystemRoutes(
   app.patch('/api/design-systems/:id/revisions/:revisionId', async (req, res) => {
     try {
       if (!(await authorizeDesignSystemMutation(req, res, req.params.id))) return;
-      // recvqb6mfyqXLD: accepting a revision commits its proposed body onto
-      // the canonical design system — the same "edit" this route family
-      // gates everywhere else (PATCH/DELETE/sync-assets above). Without this,
-      // a plain member viewing a teammate's team-synced design system could
-      // accept/reject its pending revision (surfaced to anyone who can read
-      // the system, not just the owner) with no server-side check at all,
-      // even after the UI stopped showing it as editable.
+      // Accepting a revision commits its proposed body onto the canonical
+      // design system, so it uses the same mutation gate as PATCH/DELETE.
       const storage = resolveDesignSystemStorage(req, req.params.id);
-      if (!(await canMutateUserDesignSystem(storage.root, req.params.id, req))) {
-        return res.status(403).json({ error: 'WORKSPACE_RESOURCE_MANAGE_DENIED' });
-      }
       const status = typeof req.body?.status === 'string' ? req.body.status : '';
       if (status !== 'accepted' && status !== 'rejected') {
         return res.status(400).json({ error: 'status must be accepted or rejected' });
@@ -629,21 +605,7 @@ export function registerDesignSystemRoutes(
         workspaceMemberId,
         exactTeam: storage.exactTeam,
       });
-      // recvqb6mfyqXLD: mirror the exact PATCH/DELETE verdict onto the read
-      // path too. `DesignSystemsTab` already re-derives an equivalent verdict
-      // from the separate `/team` share listing for its own list+detail pane,
-      // but a design system reached any other way — e.g. the direct
-      // `/design-systems/:id` route the Library's "Open design system" link
-      // and `LibrarySection` navigate to, which renders `DesignSystemFlow`
-      // directly — had no ownership signal at all and fell back to treating
-      // any non-built-in system as fully editable. Computing it once here,
-      // from the same `canMutateUserDesignSystem` the mutation routes below
-      // already gate on, means every detail surface can hide/disable its
-      // Publish toggle and Save button on the same authority the backend
-      // enforces, instead of each surface re-deriving (or forgetting to
-      // derive) its own verdict.
-      const canMutate = await canMutateUserDesignSystem(storage.root, req.params.id, req);
-      const detail = { ...summary, body, canMutate, ...(packageInfo ? { packageInfo } : {}) };
+      const detail = { ...summary, body, ...(packageInfo ? { packageInfo } : {}) };
       res.json({ ...detail, designSystem: detail });
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -832,9 +794,6 @@ export function registerDesignSystemRoutes(
     try {
       if (!(await authorizeDesignSystemMutation(req, res, req.params.id))) return;
       const storage = resolveDesignSystemStorage(req, req.params.id);
-      if (!(await canMutateUserDesignSystem(storage.root, req.params.id, req))) {
-        return res.status(403).json({ error: 'WORKSPACE_RESOURCE_MANAGE_DENIED' });
-      }
       const updated = await updateUserDesignSystem(
         storage.root,
         req.params.id,
@@ -856,15 +815,12 @@ export function registerDesignSystemRoutes(
   // under that project's `assets/` directory into the canonical design
   // system directory, entirely on the daemon side of the data-directory
   // boundary. Gated the same way as PATCH/DELETE: a locked workspace or a
-  // caller who cannot manage the (possibly team-synced) design system may
+  // caller who cannot manage the design system may
   // not trigger a write to canonical.
   app.post('/api/design-systems/:id/sync-assets', async (req, res) => {
     try {
       if (!(await authorizeDesignSystemMutation(req, res, req.params.id))) return;
       const storage = resolveDesignSystemStorage(req, req.params.id);
-      if (!(await canMutateUserDesignSystem(storage.root, req.params.id, req))) {
-        return res.status(403).json({ error: 'WORKSPACE_RESOURCE_MANAGE_DENIED' });
-      }
       const workspaceId = headerValue(req, 'x-od-workspace-id');
       const workspaceMemberId = headerValue(req, 'x-od-workspace-member-id');
       const outcome = await syncUserDesignSystemAssetsFromWorkspace(
@@ -898,21 +854,7 @@ export function registerDesignSystemRoutes(
     try {
       if (!(await authorizeDesignSystemMutation(req, res, id))) return false;
       const storage = resolveDesignSystemStorage(req, id);
-      if (!(await canMutateUserDesignSystem(storage.root, id, req))) {
-        res.status(403).json({ error: 'WORKSPACE_RESOURCE_MANAGE_DENIED' });
-        return false;
-      }
       if (options.beforeDelete && !(await options.beforeDelete())) return false;
-      // spec 04 §11: drop the hub-side share BEFORE the local delete, so a
-      // sharer deleting their OWN design system does not leave the hub index
-      // pointing at a canonical directory that is about to stop existing —
-      // otherwise `syncSharedTeamDesignSystem` (server.ts) keeps re-stamping
-      // `markTeamSynced()` onto every teammate's already-synced local copy
-      // forever, because the hub still reports the resource as shared. A
-      // thrown error here (e.g. the caller cannot actually manage the share)
-      // aborts before `deleteUserDesignSystem` runs, matching "unshare must
-      // succeed before the local delete proceeds".
-      await unshareTeamDesignSystemIfShared(id, req);
       const ok = await deleteUserDesignSystem(storage.root, id);
       if (!ok) {
         res.status(404).json({ error: 'editable design system not found' });

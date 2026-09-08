@@ -83,27 +83,9 @@ export interface TeamProjectContentReadySsePayload {
   at?: number;
 }
 
-export type WorkspaceTeamResourceKind = 'design_system' | 'plugin' | 'skill';
-
-/** A team resource listing changed; consumers must re-read the exact scope. */
-export interface TeamResourcesChangedSsePayload {
-  type: 'team-resources-changed';
-  resourceKind: WorkspaceTeamResourceKind;
-  /** Optional invalidation target; the signal intentionally carries no state. */
-  resourceId?: string;
-  at?: number;
-}
-
 /** A member joined / left / changed role in the team. */
 export interface WorkspaceMembersChangedSsePayload {
   type: 'members-changed';
-  at?: number;
-}
-
-/** A shared Team resource changed; clients re-read only the affected catalog. */
-export interface WorkspaceTeamResourcesChangedSsePayload {
-  type: 'team-resources-changed';
-  resourceKind: 'design_system' | 'plugin' | 'skill';
   at?: number;
 }
 
@@ -136,7 +118,6 @@ export interface WorkspaceDirectoryChangedSsePayload {
 export type WorkspaceInvalidationSsePayload =
   | TeamProjectsChangedSsePayload
   | TeamProjectContentReadySsePayload
-  | TeamResourcesChangedSsePayload
   | WorkspaceMembersChangedSsePayload
   | WorkspaceContextChangedSsePayload
   | WorkspaceDirectoryChangedSsePayload;
@@ -145,7 +126,6 @@ export type WorkspaceInvalidationSsePayload =
 export const WORKSPACE_INVALIDATION_EVENTS = [
   'team-projects-changed',
   'team-project-content-ready',
-  'team-resources-changed',
   'members-changed',
   'workspace-context-changed',
   'workspace-directory-changed',

@@ -198,7 +198,6 @@ async function createRouteFixture() {
     },
     designSystems: {
       buildUserDesignSystemArchive: async () => null,
-      canMutateUserDesignSystem: async () => true,
       createUserDesignSystem: async () => {
         throw new Error('unused createUserDesignSystem in route fixture');
       },
@@ -218,7 +217,6 @@ async function createRouteFixture() {
       renderDesignSystemPreview: () => '',
       renderDesignSystemShowcase: () => '',
       syncUserDesignSystemAssetsFromWorkspace: async () => ({ ok: false, reason: 'not-found' }),
-      unshareTeamDesignSystemIfShared: async () => false,
       updateUserDesignSystem: async () => null,
       updateUserDesignSystemRevisionStatus: async () => null,
     },

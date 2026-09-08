@@ -262,18 +262,13 @@ interface Props {
   designSystemProject?: DesignSystemSummary | null;
   designSystemBrandId?: string | null;
   /**
-   * False while a brand-extraction design system is still running, OR
-   * (recvqb6mfyqXLD) the caller may not manage a team-synced design system
-   * (`designSystemProject.canMutate === false`) — gates the Publish toggle,
-   * DESIGN.md save, delete, and asset edit affordances below.
+   * False while a brand-extraction design system is still running; gates the
+   * Publish toggle, DESIGN.md save, delete, and asset edit affordances below.
    */
   designSystemEditable?: boolean;
   /**
-   * True only while a brand extraction is genuinely still generating —
-   * distinct from `designSystemEditable` above, which also folds in
-   * ownership. Drives the "Extracting design system…" status pill, which
-   * must not read as "still extracting" over a finished, published design
-   * system just because the viewer cannot manage it.
+   * True only while a brand extraction is genuinely still generating.
+   * Drives the "Extracting design system…" status pill.
    */
   designSystemExtractionInProgress?: boolean;
   defaultDesignSystemId?: string | null;
@@ -5274,10 +5269,6 @@ function DesignSystemProjectPanel({
           } satisfies HeaderMenuAction,
         ]
       : []),
-    // recvqb6mfyqXLD: deleting a design system the caller does not own must
-    // be unavailable here the same way it already is for refresh/download/
-    // default above — `editable` folds in `canMutate` (ProjectView.tsx), the
-    // daemon's own team-share ownership verdict.
     ...(onDeleteDesignSystemProject
       ? [
           {

@@ -24,7 +24,6 @@ import {
 import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-context.js';
 import type { PluginShareAction } from '../../services/plugin-share-tasks.js';
 import type { AuthorizeProjectRequest } from '../../collab/project-request-authority.js';
-import { workspaceTeamPluginBindingResourceId } from '../../plugins/registry.js';
 import {
   classifyPluginInstallError,
   type PluginInstallErrorCode,
@@ -224,11 +223,6 @@ export interface RegisterPluginRoutesDeps {
       resourceType: string,
       resourceId: string,
     ) => WorkspaceResourceBindingRow | null | undefined;
-    workspaceTeamPluginBindingAllowsRead?: (
-      db: SqliteDbLike,
-      workspaceId: string,
-      pluginId: string,
-    ) => boolean;
     getWorkspaceProjectByProjectId?: (
       db: SqliteDbLike,
       projectId: string,
@@ -442,34 +436,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       manifestSourceDigest: computed.manifestSourceDigest,
     });
   };
-  const isTeamPlugin = (plugin: InstalledPluginLike | null | undefined): boolean =>
-    typeof plugin?.source === 'string' && plugin.source.startsWith('team:plugin:');
-  const hasActiveTeamPluginBinding = (
-    id: string,
-    authority: WorkspaceCollabContext | null,
-  ): boolean => {
-    const workspaceId = authority?.workspaceId?.trim();
-    if (!workspaceId || !workspaceResources) return false;
-    const binding = workspaceResources.getWorkspaceResource(
-      db,
-      'plugin',
-      workspaceId,
-      workspaceTeamPluginBindingResourceId(workspaceId, id),
-    );
-    return binding?.visibility === 'team' && binding.resourceState !== 'deleted';
-  };
-  const denyTeamPluginMutation = (
-    res: Response,
-    id: string,
-    authority: WorkspaceCollabContext | null,
-    plugin?: InstalledPluginLike | null,
-  ): boolean => {
-    if (!hasActiveTeamPluginBinding(id, authority) && !isTeamPlugin(plugin)) {
-      return false;
-    }
-    res.status(403).json({ error: 'WORKSPACE_RESOURCE_MANAGE_DENIED' });
-    return true;
-  };
   const snapshotVisibleToAuthority = (
     row: { projectId?: string },
     authority: WorkspaceCollabContext | null,
@@ -569,12 +535,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       if (authority === undefined) return;
       const requestedPlugin = await resolveRequestPlugin(req.params.id, authority);
       if (!requestedPlugin) return res.status(404).json({ error: 'plugin not found' });
-      if (
-        typeof requestedPlugin?.source === 'string' &&
-        requestedPlugin.source.startsWith('team:plugin:')
-      ) {
-        return res.status(403).json({ error: 'WORKSPACE_RESOURCE_MANAGE_DENIED' });
-      }
       const binding = workspaceResources?.getWorkspaceResourceByResourceId(db, 'plugin', req.params.id);
       if (binding && workspaceResources && !await enforceVerifiedWorkspaceResourceMutation(
         'plugin',
@@ -596,14 +556,8 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
   app.post('/api/plugins/:id/upgrade', async (req, res) => {
     const authority = await resolveWorkspaceAuthority(req, res);
     if (authority === undefined) return;
-    // A live exact-Workspace Team binding is the mutation target even while
-    // its local mirror is temporarily missing. Reject before resolving the
-    // plugin so the resolver cannot fall through to a same-id Personal row
-    // (or turn the Team mutation into a misleading 404 when none exists).
-    if (denyTeamPluginMutation(res, req.params.id, authority)) return;
     const requestedPlugin = await resolveRequestPlugin(req.params.id, authority);
     if (!requestedPlugin) return res.status(404).json({ error: 'plugin not found' });
-    if (denyTeamPluginMutation(res, req.params.id, authority, requestedPlugin)) return;
     const binding = workspaceResources?.getWorkspaceResourceByResourceId(db, 'plugin', req.params.id);
     if (binding && workspaceResources && !await enforceVerifiedWorkspaceResourceMutation(
       'plugin',
@@ -664,22 +618,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
         workspaceId: authority?.workspaceId ?? null,
         workspaceMemberId: authority?.workspaceMemberId ?? null,
       });
-      const exactWorkspaceId = authority?.workspaceId?.trim();
-      if (
-        typeof plugin.source === 'string' &&
-        plugin.source.startsWith('team:plugin:') &&
-        (
-          !exactWorkspaceId ||
-          !workspaceResources?.workspaceTeamPluginBindingAllowsRead ||
-          !workspaceResources.workspaceTeamPluginBindingAllowsRead(
-            db,
-            exactWorkspaceId,
-            req.params.id,
-          )
-        )
-      ) {
-        return res.status(404).json({ error: 'plugin not found' });
-      }
       return applyResolvedPlugin(req, res, plugin, registry);
     } catch (err: unknown) {
       if (err instanceof plugins.MissingInputError) {
@@ -805,10 +743,8 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
   app.post('/api/plugins/:id/share-project', async (req, res) => {
     const authority = await resolveWorkspaceAuthority(req, res);
     if (authority === undefined) return;
-    if (denyTeamPluginMutation(res, req.params.id, authority)) return;
     const plugin = await resolveRequestPlugin(req.params.id, authority);
     if (!plugin) return res.status(404).json({ error: 'plugin not found' });
-    if (denyTeamPluginMutation(res, req.params.id, authority, plugin)) return;
     return helpers.handleShareProject(req, res, plugin);
   });
   app.post('/api/plugins/:id/doctor', async (req, res) => { try { const authority = await resolveWorkspaceAuthority(req, res); if (authority === undefined) return; const plugin = await resolveRequestPlugin(req.params.id, authority); if (!plugin) return res.status(404).json({ error: 'plugin not found' }); const registry = await helpers.loadPluginRegistryView({ workspaceId: authority?.workspaceId ?? null, workspaceMemberId: authority?.workspaceMemberId ?? null }); const connectorProbe = helpers.buildConnectorProbe(helpers.connectorService); res.json(plugins.doctorPlugin(plugin, registry, { connectorProbe })); } catch (err) { res.status(500).json({ error: String(err) }); } });
@@ -817,9 +753,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
     if (authority === undefined) return;
     const plugin = await resolveRequestPlugin(req.params.id, authority);
     if (!plugin) return res.status(404).json({ error: 'plugin not found' });
-    if (typeof plugin.source === 'string' && plugin.source.startsWith('team:plugin:')) {
-      return res.status(403).json({ error: 'WORKSPACE_RESOURCE_MANAGE_DENIED' });
-    }
     return helpers.handlePluginTrust(req, res, plugin);
   });
   const authorizeSnapshotRead = async (

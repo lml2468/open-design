@@ -159,7 +159,6 @@ async function startAuthorityServer(options: {
     },
     designSystems: {
       buildUserDesignSystemArchive: calls.archive,
-      canMutateUserDesignSystem: async () => true,
       createUserDesignSystem: async () => summary,
       deleteUserDesignSystem: async () => true,
       ensureUserDesignSystemWorkspaceProject: async () => ({
@@ -186,7 +185,6 @@ async function startAuthorityServer(options: {
         ok: true,
         synced: [],
       }),
-      unshareTeamDesignSystemIfShared: async () => false,
       updateUserDesignSystem: calls.update,
       updateUserDesignSystemRevisionStatus: async () => null,
     },

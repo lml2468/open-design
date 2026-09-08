@@ -24,7 +24,6 @@ import {
 import { parseFrontmatter } from './frontmatter.js';
 import type { FrontmatterObject, FrontmatterValue } from './frontmatter.js';
 import { extractSwiftColors } from './swift-colors.js';
-import { workspaceTeamDesignSystemBindingResourceId } from './workspace-team-binding.js';
 import {
   ensureWorkspaceResource,
   getWorkspaceResourceByResourceId,
@@ -54,7 +53,6 @@ export type DesignSystemSummary = {
   updatedAt?: string;
   provenance?: DesignSystemProvenance;
   projectId?: string;
-  teamSynced?: boolean;
   /**
    * The workspace this user design system belongs to, when one claimed it.
    *
@@ -216,7 +214,8 @@ type UserDesignSystemMetadata = {
   updatedAt?: string;
   provenance?: DesignSystemProvenance;
   projectId?: string;
-  teamSynced?: boolean;
+  /** Historical on-disk Team copy marker. Never expose or reactivate it. */
+  legacyTeamMirror?: boolean;
   /** Workspace that claimed this system; absent on anything written before #145. */
   workspaceId?: string;
 };
@@ -380,7 +379,6 @@ export async function listDesignSystems(
         ...(metadata.updatedAt ? { updatedAt: metadata.updatedAt } : {}),
         ...(metadata.provenance ? { provenance: metadata.provenance } : {}),
         ...(metadata.projectId ? { projectId: metadata.projectId } : {}),
-        ...(metadata.teamSynced ? { teamSynced: true } : {}),
         ...(metadata.workspaceId ? { workspaceId: metadata.workspaceId } : {}),
       });
     } catch {
@@ -1585,26 +1583,7 @@ export async function deleteUserDesignSystem(root: string, id: string): Promise<
 }
 
 /**
- * Whether `id` was materialized locally from a teammate's team share, rather
- * than authored by the current caller. Mirrors the `teamSynced` flag
- * `markTeamSynced` (server.ts `syncSharedTeamDesignSystem`) writes once a
- * shared design system is pulled onto disk — false/absent for anything the
- * caller authored themselves, including a system the caller has *shared* to
- * the team (the sharer's own copy never gets this flag). Routes that mutate
- * a `user:` design system (edit / publish toggle / delete) must treat a
- * `true` result as "not necessarily mine" and check the caller's team-share
- * management permission before proceeding (see `canManageSharedResource` in
- * `collab/team-resource-share.ts`) — recvqb6mfyqXLD.
- */
-export async function isTeamSyncedUserDesignSystem(root: string, id: string): Promise<boolean> {
-  const dirId = stripPrefixAndValidateId(id, 'user:');
-  if (!dirId) return false;
-  const meta = await readUserMetadata(root, dirId);
-  return meta.teamSynced === true;
-}
-
-/**
- * One-time startup backfill (spec 9.2): design systems predate the generic
+ * One-time startup backfill: design systems predate the generic
  * `workspace_resources` envelope table entirely — `createWorkspaceOwnedDesignSystem`
  * and `markTeamSynced` (server.ts) only started double-writing into it today,
  * so every system claimed BEFORE that shipped has a `workspaceId` in its
@@ -1616,15 +1595,14 @@ export async function isTeamSyncedUserDesignSystem(root: string, id: string): Pr
  * exactly one persisted project binding. The current/active workspace is never
  * consulted; an absent or ambiguous binding leaves the resource quarantined.
  *
- * Idempotent by construction: a directory whose exact Personal or
- * Workspace-qualified Team binding already exists is skipped, so re-running
+ * Idempotent by construction: a directory whose exact Personal binding
+ * already exists is skipped, so re-running
  * this on every daemon start costs one readdir plus a lookup per system and
  * never writes a duplicate. Legacy raw Team rows are retained; the qualified
  * binding is added alongside them so no historical data is deleted.
  *
- * `visibility` mirrors the claim `markTeamSynced` writes going forward —
- * `teamSynced: true` backfills as `'team'`, everything else as `'personal'`.
- * For a project-inferred claim, metadata.json is updated with that durable
+ * Historical Team materializations are quarantined and never rebound as
+ * Personal resources. For a project-inferred claim, metadata.json is updated with that durable
  * workspace witness before the envelope row is created. Other metadata is
  * preserved. Unresolvable ownerless resources are never deleted or rewritten.
  */
@@ -1644,6 +1622,7 @@ export async function backfillDesignSystemWorkspaceResources(
     const dirId = entry.name;
     const id = `user:${dirId}`;
     const metadata = await readUserMetadata(root, dirId);
+    if (metadata.legacyTeamMirror) continue;
     let workspaceId = metadata.workspaceId;
     let createdByWorkspaceMemberId: string | undefined;
     let inferredWorkspaceId: string | undefined;
@@ -1666,15 +1645,14 @@ export async function backfillDesignSystemWorkspaceResources(
         }
       }
     }
-    const bindingResourceId = metadata.teamSynced === true && workspaceId
-      ? workspaceTeamDesignSystemBindingResourceId(workspaceId, id)
-      : id;
+    const bindingResourceId = id;
     const existing = getWorkspaceResourceByResourceId(
       db,
       'design_system',
       bindingResourceId,
     );
     if (existing) {
+      if (existing.visibility === 'team') continue;
       const bindingMatchesInference = inferredWorkspaceId === existing.workspaceId;
       if (!metadata.workspaceId && bindingMatchesInference) {
         await writeUserDesignSystemWorkspaceClaim(root, dirId, existing.workspaceId);
@@ -1699,7 +1677,7 @@ export async function backfillDesignSystemWorkspaceResources(
       await writeUserDesignSystemWorkspaceClaim(root, dirId, workspaceId);
     }
     ensureWorkspaceResource(db, 'design_system', workspaceId, bindingResourceId, {
-      visibility: metadata.teamSynced === true ? 'team' : 'personal',
+      visibility: 'personal',
       resourceState: 'active',
       ...(createdByWorkspaceMemberId
         ? {
@@ -2944,7 +2922,9 @@ async function readUserMetadata(root: string, id: string): Promise<UserDesignSys
       ...(typeof parsed.updatedAt === 'string' ? { updatedAt: parsed.updatedAt } : {}),
       ...(provenance ? { provenance } : {}),
       ...(projectId ? { projectId } : {}),
-      ...(parsed.teamSynced === true ? { teamSynced: true } : {}),
+      ...((parsed as UserDesignSystemMetadata & { teamSynced?: unknown }).teamSynced === true
+        ? { legacyTeamMirror: true }
+        : {}),
       ...(cleanWorkspaceIdForMetadata(parsed.workspaceId)
         ? { workspaceId: cleanWorkspaceIdForMetadata(parsed.workspaceId)! }
         : {}),

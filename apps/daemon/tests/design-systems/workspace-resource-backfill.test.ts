@@ -4,12 +4,12 @@
 // generic table has no matching row) must get one backfilled — see
 // `backfillDesignSystemWorkspaceResources`'s own doc comment in
 // design-systems/index.ts, and `server.ts`'s startup call site right after
-// `reconcileImpossibleTeamShares`.
+// startup reconciliation.
 //
 // Two invariants matter here, independent of `workspace-scope.test.ts`
 // (which pins the READ-side filter and must stay untouched by this change):
 //   1. correctness — the backfilled row lands with the right workspaceId and
-//      the right visibility (personal vs team, from `metadata.teamSynced`).
+//      Personal visibility.
 //   2. idempotency — running the backfill twice (every daemon restart) must
 //      not error and must not duplicate or clobber an existing row.
 
@@ -23,7 +23,6 @@ import {
   backfillDesignSystemWorkspaceResources,
   listDesignSystems,
 } from '../../src/design-systems/index.js';
-import { workspaceTeamDesignSystemBindingResourceId } from '../../src/design-systems/workspace-team-binding.js';
 import {
   closeDatabase,
   ensureWorkspaceProject,
@@ -73,25 +72,14 @@ describe('backfillDesignSystemWorkspaceResources', () => {
     expect(row?.visibility).toBe('personal');
   });
 
-  it('backfills a team-synced system as visibility: team', async () => {
+  it('quarantines a historical Team materialization instead of rebinding it as Personal', async () => {
     seedSystem('legacy-team', { title: 'Legacy Team', workspaceId: WORKSPACE_B, teamSynced: true });
-    ensureWorkspaceResource(db, 'design_system', WORKSPACE_B, 'user:legacy-team', {
-      visibility: 'team',
-      resourceState: 'active',
-    });
 
     const backfilled = await backfillDesignSystemWorkspaceResources(db, root);
 
-    expect(backfilled).toBe(1);
-    const row = getWorkspaceResourceByResourceId(
-      db,
-      'design_system',
-      workspaceTeamDesignSystemBindingResourceId(WORKSPACE_B, 'user:legacy-team'),
-    );
-    expect(row?.workspaceId).toBe(WORKSPACE_B);
-    expect(row?.visibility).toBe('team');
+    expect(backfilled).toBe(0);
     expect(getWorkspaceResourceByResourceId(db, 'design_system', 'user:legacy-team'))
-      .toMatchObject({ workspaceId: WORKSPACE_B, visibility: 'team' });
+      .toBeUndefined();
   });
 
   it('skips an unclaimed (no workspaceId) system', async () => {
@@ -254,7 +242,7 @@ describe('backfillDesignSystemWorkspaceResources', () => {
     // for it) is authoritative; the backfill must treat it as done rather
     // than re-deriving anything from metadata.json.
     ensureWorkspaceResource(db, 'design_system', WORKSPACE_B, 'user:already-bound', {
-      visibility: 'team',
+      visibility: 'personal',
     });
 
     const backfilled = await backfillDesignSystemWorkspaceResources(db, root);
@@ -262,7 +250,7 @@ describe('backfillDesignSystemWorkspaceResources', () => {
     expect(backfilled).toBe(0);
     const row = getWorkspaceResourceByResourceId(db, 'design_system', 'user:already-bound');
     expect(row?.workspaceId).toBe(WORKSPACE_B);
-    expect(row?.visibility).toBe('team');
+    expect(row?.visibility).toBe('personal');
   });
 
   it('is idempotent: running it twice does not duplicate rows or error', async () => {
@@ -284,13 +272,9 @@ describe('backfillDesignSystemWorkspaceResources', () => {
 
     const backfilled = await backfillDesignSystemWorkspaceResources(db, root);
 
-    expect(backfilled).toBe(2);
+    expect(backfilled).toBe(1);
     expect(getWorkspaceResourceByResourceId(db, 'design_system', 'user:from-a')?.visibility).toBe('personal');
-    expect(getWorkspaceResourceByResourceId(
-      db,
-      'design_system',
-      workspaceTeamDesignSystemBindingResourceId(WORKSPACE_B, 'user:from-b'),
-    )?.visibility).toBe('team');
+    expect(getWorkspaceResourceByResourceId(db, 'design_system', 'user:from-b')).toBeUndefined();
     expect(getWorkspaceResourceByResourceId(db, 'design_system', 'user:legacy')).toBeUndefined();
   });
 
