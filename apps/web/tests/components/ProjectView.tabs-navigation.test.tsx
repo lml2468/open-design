@@ -304,7 +304,6 @@ describe('ProjectView tab URL hydration', () => {
     expect(mockedCacheTabsLocally.mock.calls.at(-1)).toEqual([
       project.id,
       { tabs: ['brand.html'], active: 'brand.html' },
-      null,
     ]);
   });
 
@@ -424,7 +423,6 @@ describe('ProjectView tab URL hydration', () => {
     expect(mockedCacheTabsLocally).toHaveBeenCalledWith(
       project.id,
       { tabs: ['index.html'], active: 'index.html' },
-      null,
     );
 
     fireEvent.click(screen.getByTestId('close-all-tabs'));
@@ -434,7 +432,6 @@ describe('ProjectView tab URL hydration', () => {
       expect(mockedCacheTabsLocally.mock.calls.at(-1)).toEqual([
         project.id,
         { tabs: [], active: null },
-        null,
       ]);
     });
     // Exactly two writes — the initial primary open and the close-all — proving

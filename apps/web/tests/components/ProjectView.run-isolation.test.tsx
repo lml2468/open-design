@@ -814,13 +814,7 @@ describe('ProjectView conversation run isolation', () => {
     renderProjectView();
 
     await waitFor(() => expect(createConversation).toHaveBeenCalledTimes(1));
-    expect(createConversation).toHaveBeenCalledWith(
-      project.id,
-      undefined,
-      expect.objectContaining({
-        workspaceContext: null,
-      }),
-    );
+    expect(createConversation).toHaveBeenCalledWith(project.id);
   });
 
   it('blocks duplicate new conversations while creation is in flight', async () => {
@@ -1896,7 +1890,6 @@ describe('ProjectView conversation run isolation', () => {
         promptNamedProject.id,
         emptyConversation.id,
         { title: 'Hello From B' },
-        null,
       ),
     );
     await waitFor(() =>
@@ -1906,7 +1899,6 @@ describe('ProjectView conversation run isolation', () => {
           name: 'Hello From B',
           metadata: expect.objectContaining({ nameSource: 'prompt' }),
         }),
-        null,
       ),
     );
   });
@@ -1949,7 +1941,6 @@ describe('ProjectView conversation run isolation', () => {
         promptNamedProject.id,
         emptyConversation.id,
         { title: 'Agent Title' },
-        null,
       ),
     );
     await waitFor(() =>
@@ -1959,7 +1950,6 @@ describe('ProjectView conversation run isolation', () => {
           name: 'Agent Title',
           metadata: expect.objectContaining({ nameSource: 'agent' }),
         }),
-        null,
       ),
     );
   });

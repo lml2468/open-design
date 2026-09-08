@@ -318,7 +318,7 @@ async function resolveDesignSystemWorkspaceProject(
     };
   }
   if (!system.projectId) return null;
-  const fallbackProject = await getProject(system.projectId, workspaceContext);
+  const fallbackProject = await getProject(system.projectId);
   if (!fallbackProject) return null;
   const files = workspaceContext
     ? await fetchProjectFiles(system.projectId, {
@@ -958,7 +958,7 @@ export function DesignSystemCreationFlow({
       // `projects` list yet — hydrate it so onCreated can prepend it before
       // navigating into the live extraction.
       const project =
-        (await getProject(result.projectId, workspaceContext).catch(() => undefined))
+        (await getProject(result.projectId).catch(() => undefined))
         ?? undefined;
       let projectForCreated = project && result.designSystemId
         ? {
@@ -1683,11 +1683,9 @@ export function DesignSystemDetailView({
       return undefined;
     }
     let cancelled = false;
-    const detailWorkspaceContext = workspaceContext;
     void getProjectDetail(
       workspaceProjectId,
       undefined,
-      detailWorkspaceContext,
     ).then((detail) => {
       if (cancelled) return;
       setWorkspaceProjectResolvedDir(detail?.resolvedDir ?? null);
@@ -1820,16 +1818,14 @@ export function DesignSystemDetailView({
     }
     let cancelled = false;
     async function loadWorkspaceConversation() {
-      const existing = await listConversations(projectId, { workspaceContext });
+      const existing = await listConversations(projectId);
       if (cancelled) return;
       if (existing.length > 0) {
         setConversations(existing);
         setActiveConversationId(existing[0]!.id);
         return;
       }
-      const fresh = await createConversation(projectId, 'Design system', {
-        workspaceContext,
-      });
+      const fresh = await createConversation(projectId, 'Design system');
       if (cancelled) return;
       if (fresh) {
         setConversations([fresh]);
@@ -1847,7 +1843,7 @@ export function DesignSystemDetailView({
     const projectId = workspaceProjectId;
     let cancelled = false;
     workspaceTabsLoadedRef.current = false;
-    void loadTabs(projectId, workspaceContext).then((state) => {
+    void loadTabs(projectId).then((state) => {
       if (cancelled) return;
       setWorkspaceTabsState(state);
       workspaceTabsLoadedRef.current = true;
@@ -1855,7 +1851,7 @@ export function DesignSystemDetailView({
     return () => {
       cancelled = true;
     };
-  }, [workspaceContext, workspaceProjectId]);
+  }, [workspaceProjectId]);
 
   useEffect(() => {
     if (!workspaceProjectId || !activeConversationId) {
@@ -1871,7 +1867,6 @@ export function DesignSystemDetailView({
     void listMessages(
       workspaceProjectId,
       activeConversationId,
-      workspaceContext,
     ).then((messages) => {
       if (cancelled) return;
       setProjectChatMessages(messages);
@@ -2324,19 +2319,19 @@ export function DesignSystemDetailView({
   const persistProjectMessage = useCallback(
     (projectId: string, conversationId: string | null, message: ChatMessage) => {
       if (!conversationId) return;
-      void saveMessage(projectId, conversationId, message, { workspaceContext });
+      void saveMessage(projectId, conversationId, message);
     },
-    [workspaceContext],
+    [],
   );
 
   const persistWorkspaceTabsState = useCallback(
     (next: OpenTabsState) => {
       setWorkspaceTabsState(next);
       if (workspaceProjectId && workspaceTabsLoadedRef.current) {
-        void saveTabs(workspaceProjectId, next, workspaceContext);
+        void saveTabs(workspaceProjectId, next);
       }
     },
-    [workspaceContext, workspaceProjectId],
+    [workspaceProjectId],
   );
 
   const requestWorkspaceFileOpen = useCallback((name: string) => {
@@ -2379,9 +2374,7 @@ export function DesignSystemDetailView({
       }
       let conversationId = activeConversationId;
       if (!conversationId) {
-        const fresh = await createConversation(projectId, 'Design system', {
-          workspaceContext,
-        });
+        const fresh = await createConversation(projectId, 'Design system');
         if (!fresh) {
           setChatError(t('dsFlow.conversationCreateFailed'));
           return;
@@ -2479,7 +2472,6 @@ export function DesignSystemDetailView({
           projectId,
           conversationId,
           { title: text.slice(0, 60) || 'Design system' },
-          workspaceContext,
         );
       }
 
@@ -2717,9 +2709,7 @@ export function DesignSystemDetailView({
         setChatError(t('dsFlow.workspaceOpenFailed'));
         return;
       }
-      const fresh = await createConversation(projectId, 'Design system', {
-        workspaceContext,
-      });
+      const fresh = await createConversation(projectId, 'Design system');
       if (!fresh) {
         setChatError(t('dsFlow.conversationCreateFailed'));
         return;
@@ -4537,7 +4527,6 @@ async function prepareCreatedDesignSystemProject({
     const preparedProject = await patchProject(
       project.id,
       { pendingPrompt: prompt, metadata },
-      workspaceContext,
     );
     try {
       window.sessionStorage.setItem(`od:auto-send-first:${project.id}`, '1');

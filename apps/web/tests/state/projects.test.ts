@@ -280,7 +280,7 @@ describe('project detail reads', () => {
     vi.unstubAllGlobals();
   });
 
-  it('sends exact Workspace authority for getProject and getProjectDetail', async () => {
+  it('reads a formerly bound Project without Workspace authority headers', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => Response.json({
       project: {
         id: 'project-bound',
@@ -294,22 +294,17 @@ describe('project detail reads', () => {
       resolvedDir: '/tmp/project-bound',
     }));
     vi.stubGlobal('fetch', fetchMock);
-    const context = teamWorkspaceContext({
-      workspaceId: 'workspace-detail',
-      workspaceMemberId: 'member-detail',
-    });
-
-    await getProject('project-bound', context);
-    await getProjectDetail('project-bound', { ensureDir: true }, context);
+    await getProject('project-bound');
+    await getProjectDetail('project-bound', { ensureDir: true });
 
     for (const call of fetchMock.mock.calls) {
       const headers = new Headers(call[1]?.headers);
-      expect(headers.get('x-od-workspace-id')).toBe('workspace-detail');
-      expect(headers.get('x-od-workspace-member-id')).toBe('member-detail');
+      expect(headers.has('x-od-workspace-id')).toBe(false);
+      expect(headers.has('x-od-workspace-member-id')).toBe(false);
     }
   });
 
-  it('preserves headerless reads for an unbound legacy project', async () => {
+  it('preserves headerless reads for an ordinary local project', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => Response.json({
       project: {
         id: 'legacy-project',
@@ -487,10 +482,8 @@ describe('listProjects', () => {
   });
 
   it('coalesces a burst of identical reads into a single request', async () => {
-    // A rapid tab switch (草稿 ↔ 全部项目) or several separately-mounted grids
-    // each call listProjects at once; without coalescing that is one vela-backed
-    // request — and one spawned CLI subprocess — per caller, which overwhelmed
-    // the daemon and hung the loader. Identical in-flight reads must share one.
+    // Several separately-mounted surfaces can request the local catalog on the
+    // same render pass. Identical in-flight reads must share one request.
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(JSON.stringify({ projects: [{ id: 'p1' }] }), {
         status: 200,
@@ -559,7 +552,7 @@ describe('createProject', () => {
     );
   });
 
-  it('attaches the resolved workspace and member identity to project creation', async () => {
+  it('creates a local Project without Workspace authority or identity payloads', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({
         project: { id: 'scoped-project' },
@@ -569,24 +562,17 @@ describe('createProject', () => {
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    await createProject({
+    const input = {
       name: 'Scoped project',
       skillId: null,
       designSystemId: null,
-      workspaceContext: teamWorkspaceContext(),
-    });
+    };
+    await createProject(input);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-team',
-          'x-od-workspace-member-id': 'wm-1',
-          'x-od-workspace-type': 'team',
-        }),
-      }),
-    );
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init?.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(JSON.parse(String(init?.body))).toMatchObject(input);
+    expect(JSON.parse(String(init?.body))).not.toHaveProperty('workspaceContext');
   });
 
   it('uses a caller-minted project id for an optimistic route handoff', async () => {
@@ -636,11 +622,8 @@ describe('createProject', () => {
   });
 
   it('passes a retained last-good context through a transient outage when it belongs to the current generation', () => {
-    // Task#5: a vela authority outage set `failure: 'unavailable'`, but the
-    // shell still holds a directory-verified context resolved under the CURRENT
-    // identity generation. The old fail-closed behavior threw here, which turned
-    // every create click during the outage into a dead button + retry storm.
-    // The backend re-verifies the claimed identity, so honor the cache.
+    // A transient directory outage can retain a verified context resolved under
+    // the CURRENT identity generation. Resource mutations may honor that cache.
     resetWorkspaceContextCache();
     const context = teamWorkspaceContext();
     expect(resolvedWorkspaceContextForWrite({
@@ -719,49 +702,29 @@ describe('createProject', () => {
     })).toBeNull();
   });
 
-  // P1.C: the daemon returns 503 WORKSPACE_AUTHORITY_UNAVAILABLE (retryable) when
-  // vela's membership authority is momentarily down. Before this change the very
-  // first 503 threw straight through, so a create during a vela blip failed with
-  // zero retries and the user re-clicked into a storm. The write must ride out a
-  // transient authority outage with bounded backoff before surfacing an error.
-  it('retries a retryable 503 authority-unavailable response and then succeeds', async () => {
-    let calls = 0;
-    const fetchMock = vi.fn<typeof fetch>(async () => {
-      calls += 1;
-      if (calls === 1) {
-        return new Response(
-          JSON.stringify({
-            error: {
-              code: 'WORKSPACE_AUTHORITY_UNAVAILABLE',
-              message: 'workspace membership authority is temporarily unavailable',
-              retryable: true,
-            },
-          }),
-          { status: 503, headers: { 'content-type': 'application/json' } },
-        );
-      }
-      return new Response(
-        JSON.stringify({ project: { id: 'p1' }, conversationId: 'c1' }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
-    });
+  it('does not replay a local Project create when the daemon returns a retryable error', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(
+      JSON.stringify({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'local project storage is temporarily unavailable',
+          retryable: true,
+        },
+      }),
+      { status: 503, headers: { 'content-type': 'application/json' } },
+    ));
     vi.stubGlobal('fetch', fetchMock);
 
-    const created = await createProject(
-      { name: 'Retry me', skillId: null, designSystemId: null },
-      { sleep: async () => {} },
-    );
-    expect(created.project.id).toBe('p1');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    // The retry reuses the SAME client-provided project id (idempotent): the
-    // 503 fails the authority check before any row is written.
-    const firstBody = JSON.parse(
-      (fetchMock.mock.calls[0]![1] as RequestInit).body as string,
-    ) as { id: string };
-    const secondBody = JSON.parse(
-      (fetchMock.mock.calls[1]![1] as RequestInit).body as string,
-    ) as { id: string };
-    expect(secondBody.id).toBe(firstBody.id);
+    await expect(createProject({
+      name: 'Retry me',
+      skillId: null,
+      designSystemId: null,
+    })).rejects.toMatchObject({
+      status: 503,
+      retryable: true,
+      message: 'local project storage is temporarily unavailable',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry a 503 that is not marked retryable', async () => {
@@ -771,10 +734,11 @@ describe('createProject', () => {
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(createProject(
-      { name: 'x', skillId: null, designSystemId: null },
-      { sleep: async () => {} },
-    )).rejects.toThrow('nope');
+    await expect(createProject({
+      name: 'x',
+      skillId: null,
+      designSystemId: null,
+    })).rejects.toThrow('nope');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -840,57 +804,14 @@ describe('createProject', () => {
     });
   });
 
-  it('gives up after the retry budget when a retryable 503 persists', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(
-      JSON.stringify({ error: { message: 'still down', retryable: true } }),
-      { status: 503, headers: { 'content-type': 'application/json' } },
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(createProject(
-      { name: 'x', skillId: null, designSystemId: null },
-      { maxRetries: 2, sleep: async () => {} },
-    )).rejects.toThrow('still down');
-    // Initial attempt + 2 retries.
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
 });
 
-// recvq5ecTkar91: a team project that leaked into a personal workspace's 草稿
-// grid was also really deletable from there, not just visible — because this
-// call never told the daemon which workspace it was acting from.
-// `enforceWorkspaceProjectMutation` (apps/daemon/src/routes/project/index.ts)
-// treats a request with NEITHER `x-od-workspace-id` NOR
-// `x-od-workspace-member-id` as a legacy caller outside the workspace system
-// entirely and skips its ownership check — so every delete from a
-// workspace-team build silently bypassed cross-workspace permission checking,
-// wrong-workspace project or not. Attaching the authority headers lets the
-// daemon's existing `getWorkspaceProject(ctx.workspaceId, projectId)` scoping fire.
 describe('deleteProject', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('attaches workspace identity headers so the daemon can enforce ownership', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await deleteProject('leaked-team-project', personalWorkspaceContext());
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/leaked-team-project',
-      expect.objectContaining({
-        method: 'DELETE',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-          'x-od-workspace-type': 'personal',
-        }),
-      }),
-    );
-  });
-
-  it('omits workspace headers when there is no workspace context (legacy local mode)', async () => {
+  it('deletes through the local Project endpoint without Workspace headers', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -903,7 +824,7 @@ describe('deleteProject', () => {
   it('reports failure when the daemon refuses the delete', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(null, { status: 403 })));
 
-    await expect(deleteProject('someone-elses-project', personalWorkspaceContext())).rejects.toMatchObject({
+    await expect(deleteProject('someone-elses-project')).rejects.toMatchObject({
       name: 'ProjectDeleteError',
       status: 403,
     });
@@ -912,17 +833,17 @@ describe('deleteProject', () => {
   it('preserves the daemon error code for analytics drill-down', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       error: {
-        code: 'WORKSPACE_AUTHORITY_UNAVAILABLE',
-        message: 'workspace authority is temporarily unavailable',
+        code: 'INTERNAL_ERROR',
+        message: 'local project storage is temporarily unavailable',
         retryable: true,
       },
     }), { status: 503 })));
 
-    await expect(deleteProject('project-1', personalWorkspaceContext())).rejects.toMatchObject({
+    await expect(deleteProject('project-1')).rejects.toMatchObject({
       name: 'ProjectDeleteError',
       status: 503,
-      code: 'WORKSPACE_AUTHORITY_UNAVAILABLE',
-      message: 'workspace authority is temporarily unavailable',
+      code: 'INTERNAL_ERROR',
+      message: 'local project storage is temporarily unavailable',
     });
   });
 
@@ -934,52 +855,25 @@ describe('deleteProject', () => {
       },
     }), { status: 404 })));
 
-    await expect(deleteProject('already-deleted', personalWorkspaceContext())).resolves.toBe(true);
+    await expect(deleteProject('already-deleted')).resolves.toBe(true);
   });
 
   it('does not hide an unstructured 404 from an incompatible daemon', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(null, { status: 404 })));
 
-    await expect(deleteProject('project-1', personalWorkspaceContext())).rejects.toMatchObject({
+    await expect(deleteProject('project-1')).rejects.toMatchObject({
       name: 'ProjectDeleteError',
       status: 404,
     });
   });
 });
 
-// Same gap as deleteProject, found while auditing every client caller of a
-// daemon route behind enforceWorkspaceProjectMutation: duplicate and
-// design-system-copy sent no workspace headers either, so both bypassed the
-// daemon's cross-workspace ownership check the exact same way.
 describe('duplicateProject', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('attaches workspace identity headers so the daemon can enforce ownership', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      new Response(
-        JSON.stringify({ project: { id: 'dup-1' }, conversationId: 'conv-1', copiedFiles: [] }),
-        { status: 200 },
-      ),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await duplicateProject('leaked-team-project', {}, personalWorkspaceContext());
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/leaked-team-project/duplicate',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
-      }),
-    );
-  });
-
-  it('omits workspace headers when there is no workspace context (legacy local mode)', async () => {
+  it('duplicates through the local Project endpoint with only JSON headers', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(
         JSON.stringify({ project: { id: 'dup-1' }, conversationId: 'conv-1', copiedFiles: [] }),
@@ -995,37 +889,12 @@ describe('duplicateProject', () => {
   });
 });
 
-// Same enforceWorkspaceProjectMutation bypass as deleteProject/duplicateProject:
-// a rename, metadata patch, or pendingPrompt clear sent no workspace headers,
-// so a read-only team member could still push a PATCH through.
 describe('patchProject', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('attaches workspace identity headers so the daemon can enforce ownership', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(
-      JSON.stringify({ id: 'leaked-team-project', name: 'Renamed' }),
-      { status: 200 },
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await patchProject('leaked-team-project', { name: 'Renamed' }, personalWorkspaceContext());
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/leaked-team-project',
-      expect.objectContaining({
-        method: 'PATCH',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
-      }),
-    );
-  });
-
-  it('omits workspace headers when there is no workspace context (legacy local mode)', async () => {
+  it('patches through the local Project endpoint with only JSON headers', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({ id: 'local-only-project', name: 'Renamed' }),
       { status: 200 },
@@ -1042,7 +911,7 @@ describe('patchProject', () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(null, { status: 403 })));
 
     await expect(
-      patchProject('someone-elses-project', { name: 'Renamed' }, personalWorkspaceContext()),
+      patchProject('someone-elses-project', { name: 'Renamed' }),
     ).resolves.toBeNull();
   });
 });
@@ -1052,7 +921,7 @@ describe('createDesignSystemProjectFromProject', () => {
     vi.unstubAllGlobals();
   });
 
-  it('attaches workspace identity headers so the daemon can enforce ownership', async () => {
+  it('creates the derived Project with only JSON headers', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(
         JSON.stringify({
@@ -1066,16 +935,13 @@ describe('createDesignSystemProjectFromProject', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await createDesignSystemProjectFromProject('leaked-team-project', {}, personalWorkspaceContext());
+    await createDesignSystemProjectFromProject('local-project');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/leaked-team-project/design-system-copy',
+      '/api/projects/local-project/design-system-copy',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
+        headers: { 'Content-Type': 'application/json' },
       }),
     );
   });
@@ -1501,7 +1367,7 @@ describe('importClaudeDesignZip', () => {
     );
   });
 
-  it('sends the exact workspace/member authority with the ZIP import', async () => {
+  it('imports a ZIP without Workspace authority headers', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({
         project: { id: 'claude-project', name: 'Claude import' },
@@ -1512,25 +1378,13 @@ describe('importClaudeDesignZip', () => {
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    const context = teamWorkspaceContext({
-      workspaceId: 'workspace-claude',
-      workspaceMemberId: 'member-claude',
-    });
     await importClaudeDesignZip(
       new File(['zip-bytes'], 'claude-design.zip', { type: 'application/zip' }),
-      context,
     );
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/import/claude-design',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'workspace-claude',
-          'x-od-workspace-member-id': 'member-claude',
-        }),
-      }),
-    );
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init?.method).toBe('POST');
+    expect(init?.headers).toBeUndefined();
   });
 });
 
@@ -1744,7 +1598,7 @@ describe('importFolderProject', () => {
     expect(result).toMatchObject({ project: { id: 'p-1' }, entryFile: 'index.html' });
   });
 
-  it('sends the exact workspace/member authority with a browser folder import', async () => {
+  it('imports a browser folder with only JSON headers', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({
         project: { id: 'p-workspace', name: 'Workspace folder' },
@@ -1755,19 +1609,10 @@ describe('importFolderProject', () => {
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    await importFolderProject(
-      { baseDir: '/home/user/project' },
-      teamWorkspaceContext({
-        workspaceId: 'workspace-folder',
-        workspaceMemberId: 'member-folder',
-      }),
-    );
+    await importFolderProject({ baseDir: '/home/user/project' });
 
     const [, init] = fetchMock.mock.calls[0]!;
-    expect(init?.headers).toMatchObject({
-      'x-od-workspace-id': 'workspace-folder',
-      'x-od-workspace-member-id': 'member-folder',
-    });
+    expect(init?.headers).toEqual({ 'Content-Type': 'application/json' });
   });
 
   it('throws with daemon error message for filesystem root', async () => {
@@ -1887,32 +1732,6 @@ describe('project list cache invalidation', () => {
     vi.unstubAllGlobals();
   });
 
-  it('invalidates the local catalog after a project patch with legacy authority', async () => {
-    const context = teamWorkspaceContext({
-      workspaceId: 'ws-patch-cache-invalidation',
-      workspaceMemberId: 'wm-patch-cache-invalidation',
-    });
-    let listReads = 0;
-    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
-      if (init?.method === 'PATCH') {
-        return Response.json({ project: { id: 'p1', name: 'After rename' } });
-      }
-      listReads += 1;
-      return Response.json({
-        projects: [{ id: 'p1', name: listReads === 1 ? 'Before rename' : 'After rename' }],
-      });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(listProjects())
-      .resolves.toMatchObject([{ name: 'Before rename' }]);
-    await expect(patchProject('p1', { name: 'After rename' }, context))
-      .resolves.toMatchObject({ id: 'p1', name: 'After rename' });
-    await expect(listProjects())
-      .resolves.toMatchObject([{ name: 'After rename' }]);
-    expect(listReads).toBe(2);
-  });
-
   it('invalidates the unscoped project list after a successful patch', async () => {
     let listReads = 0;
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, init) => {
@@ -2007,12 +1826,12 @@ describe('deleteProject local caches', () => {
   });
 });
 
-describe('read-only project tabs cache', () => {
+describe('project tabs cache reconciliation', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('does not reconcile a newer member-scoped cache back to the daemon', async () => {
+  it('does not reconcile a newer local cache when reconciliation is disabled', async () => {
     const store = new Map<string, string>();
     vi.stubGlobal('window', {
       localStorage: {
@@ -2025,18 +1844,11 @@ describe('read-only project tabs cache', () => {
         },
       },
     });
-    const context = teamWorkspaceContext({
-      workspaceId: 'workspace-read-only-tabs',
-      workspaceMemberId: 'member-read-only-tabs',
-    });
     cacheTabsLocally(
       'project-read-only-tabs',
       { tabs: ['local.html'], active: 'local.html' },
-      context,
     );
-    expect([...store.keys()][0]).toContain(
-      'workspace-read-only-tabs:team:member-read-only-tabs',
-    );
+    expect([...store.keys()][0]).toBe('open-design:project-tabs:v1:project-read-only-tabs');
     const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
       if (init?.method === 'PUT') return new Response(null, { status: 204 });
       return Response.json({
@@ -2049,7 +1861,6 @@ describe('read-only project tabs cache', () => {
 
     const loaded = await loadTabs(
       'project-read-only-tabs',
-      context,
       { reconcileNewerCacheToDaemon: false },
     );
     await Promise.resolve();

@@ -1505,7 +1505,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       }
       if (changed) {
         const metadata: ProjectMetadata = { ...base, linkedDirs: nextLinkedDirs };
-        const result = await patchProject(projectId, { metadata }, workspaceContext);
+        const result = await patchProject(projectId, { metadata });
         if (!result?.metadata) {
           onShowToast?.(t('homeWorkingDir.applyFailed'));
           return false;
@@ -1835,7 +1835,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       const currentLinkedDirs = base.linkedDirs ?? [...tracked.previousLinkedDirs, tracked.dir];
       const nextLinkedDirs = currentLinkedDirs.filter((dir) => dir !== tracked.dir);
       const metadata: ProjectMetadata = { ...base, linkedDirs: nextLinkedDirs };
-      const result = await patchProject(projectId, { metadata }, workspaceContext);
+      const result = await patchProject(projectId, { metadata });
       if (!result?.metadata) {
         onShowToast?.(t('homeWorkingDir.applyFailed'));
         return false;
@@ -2329,7 +2329,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         ...base,
         linkedDirs: linkedDirsWithWorkspaceContext(dir),
       };
-      const result = await patchProject(projectId, { metadata }, workspaceContext);
+      const result = await patchProject(projectId, { metadata });
       // The daemon rejects stale/inaccessible/system dirs with
       // INVALID_LINKED_DIR (patchProject → null). Only commit the selection
       // and promote it in recents when the project accepted it; otherwise
@@ -2365,7 +2365,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         ...base,
         linkedDirs: linkedDirsWithWorkspaceContext(null),
       };
-      const result = await patchProject(projectId, { metadata }, workspaceContext);
+      const result = await patchProject(projectId, { metadata });
       if (result?.metadata) {
         setPromotedWorkspaceContextDir(null);
         onProjectMetadataChange?.(result);
@@ -2612,7 +2612,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
 
     async function applyProjectSkill(skill: SkillSummary): Promise<boolean> {
       if (!projectId) return false;
-      const result = await patchProject(projectId, { skillId: skill.id }, workspaceContext);
+      const result = await patchProject(projectId, { skillId: skill.id });
       if (!result) return false;
       onProjectSkillChange?.(result.skillId ?? skill.id);
       return true;
@@ -3370,7 +3370,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         {projectReferenceOpen ? (
           <ProjectReferenceModal
             currentProjectId={projectId}
-            workspaceContext={workspaceContext}
             onClose={() => {
               // Only the dismiss paths (X / backdrop / Escape / Cancel) land
               // here — a confirmed pick closes via handleReferenceProjects,

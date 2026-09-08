@@ -2250,7 +2250,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
             ) : null}
             {projectReferenceOpen ? (
               <ProjectReferenceModal
-                workspaceContext={workspaceContext}
                 onClose={() => {
                   // Only the dismiss paths (X / backdrop / Escape / Cancel)
                   // land here — a confirmed pick closes via

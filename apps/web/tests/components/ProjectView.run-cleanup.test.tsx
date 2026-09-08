@@ -4051,8 +4051,7 @@ describe('ProjectView daemon cleanup', () => {
           call[2]?.id === 'msg-spurious-canceled' &&
           call[2]?.runStatus === 'canceled' &&
           call[2]?.resumable === true &&
-          call[2]?.events === preservedEvents &&
-          call[3]?.workspaceContext === null,
+          call[2]?.events === preservedEvents,
       );
       expect(canceledSave).toBeTruthy();
     });

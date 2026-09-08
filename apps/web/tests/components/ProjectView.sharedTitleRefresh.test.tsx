@@ -389,7 +389,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
       expect(mockedPatchProject).toHaveBeenCalledWith(
         ownerProject.id,
         expect.objectContaining({ name: 'After rename' }),
-        null,
       );
     });
     await waitFor(() => expect(onProjectsRefresh).toHaveBeenCalledTimes(1));
@@ -605,7 +604,7 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     dispatchProjectEvent({ type: 'project-metadata-changed', projectId: project.id });
 
     await waitFor(() => {
-      expect(mockedGetProject).toHaveBeenCalledWith(project.id, null);
+      expect(mockedGetProject).toHaveBeenCalledWith(project.id);
       expect(screen.getByTestId('recipient-sidebar-title').textContent).toBe(pulled.name);
       expect(screen.getByTestId('recipient-tab-title').textContent).toBe(pulled.name);
       expect(screen.getByTestId('file-workspace').getAttribute('data-project-name')).toBe(pulled.name);
@@ -634,7 +633,7 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     dispatchProjectEvent({ type: 'project-metadata-changed', projectId: project.id });
 
     await waitFor(() => {
-      expect(mockedGetProject).toHaveBeenCalledWith(project.id, null);
+      expect(mockedGetProject).toHaveBeenCalledWith(project.id);
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(onProjectChangeMock).not.toHaveBeenCalled();

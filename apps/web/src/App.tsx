@@ -1819,18 +1819,9 @@ function AppInner() {
       const fidelity = fidelityToTracking(metadata?.fidelity ?? null);
       const creationSource: 'blank' | 'template' | 'zip' | 'folder' =
         kind === 'template' ? 'template' : 'blank';
-      let createWorkspaceContext: WorkspaceCollabContext | null = null;
       let optimisticProjectId: string | null = null;
       let result;
       try {
-        // PRODUCT INVARIANT: ordinary project creation is local. Reuse a
-        // current in-memory Workspace snapshot for `personal` + `local_only`
-        // attribution when available, but never start identity discovery or
-        // block creation on Workspace availability.
-        const createWorkspaceState = workspaceContextStateRef.current;
-        createWorkspaceContext = createWorkspaceState.failure === 'unsupported'
-          ? null
-          : workspaceResourceReadContext(createWorkspaceState);
         // Home already accepted the run, so move
         // into the project frame immediately. The id is client-owned and the
         // daemon already accepts that exact id for idempotent retries. Keep the
@@ -1851,9 +1842,6 @@ function AppInner() {
             ...(metadata ? { metadata } : {}),
             ...(input.appliedPluginSnapshotId
               ? { appliedPluginSnapshotId: input.appliedPluginSnapshotId }
-              : {}),
-            ...(createWorkspaceContext?.workspaceId
-              ? { workspaceId: createWorkspaceContext.workspaceId }
               : {}),
           };
           rememberLocalProject(optimisticProjectId);
@@ -1895,7 +1883,6 @@ function AppInner() {
           ...(input.exampleReference
             ? { exampleReference: input.exampleReference }
             : {}),
-          workspaceContext: createWorkspaceContext,
         });
       } catch (err) {
         const errorCode =
@@ -1987,7 +1974,6 @@ function AppInner() {
               result.project.id,
               userWorkingDir,
               input.userWorkingDirToken,
-              createWorkspaceContext,
             );
           } catch (err) {
             // The desktop working-dir token is short-lived (~60s TTL); if the
@@ -2018,7 +2004,6 @@ function AppInner() {
             result.project.id,
             pendingFiles,
             undefined,
-            createWorkspaceContext,
           );
           firstMessageAttachments = uploadResult.uploaded;
           const partial = uploadResult.failed.length > 0;
@@ -2302,10 +2287,7 @@ function AppInner() {
     file: File,
   ): Promise<ImportClaudeDesignOutcome> => {
     try {
-      const result = await importClaudeDesignZip(
-        file,
-        resolvedWorkspaceContextForWrite(workspaceContextStateRef.current),
-      );
+      const result = await importClaudeDesignZip(file);
       rememberLocalProject(result.project.id);
       setProjects((curr) => [
         result.project,
@@ -2326,10 +2308,7 @@ function AppInner() {
   }, [rememberLocalProject]);
 
   const handleImportFolder = useCallback(async (baseDir: string) => {
-    const result = await importFolderProject(
-      { baseDir },
-      resolvedWorkspaceContextForWrite(workspaceContextStateRef.current),
-    );
+    const result = await importFolderProject({ baseDir });
     rememberLocalProject(result.project.id);
     setProjects((curr) => [result.project, ...curr.filter((p) => p.id !== result.project.id)]);
     navigate({
@@ -2345,8 +2324,7 @@ function AppInner() {
   // through the normal daemon API.
   const handleImportFolderResponse = useCallback(async (result: OpenDesignHostProjectImportSuccess) => {
     rememberLocalProject(result.projectId);
-    const importedProjectContext = workspaceContextRef.current;
-    const project = await getProject(result.projectId, importedProjectContext);
+    const project = await getProject(result.projectId);
     if (project != null) {
       setProjects((curr) => [project, ...curr.filter((p) => p.id !== project.id)]);
     } else {
@@ -2453,12 +2431,7 @@ function AppInner() {
   }, []);
 
   const handleDeleteProject = useCallback(async (id: string) => {
-    // Carry the active workspace identity so the daemon's cross-workspace
-    // ownership check actually runs — see deleteProject's docblock
-    // (recvq5ecTkar91: a leaked-in project was really deletable, not just
-    // visible, because this call sent no workspace headers at all).
-    const mutationContext = workspaceContextRef.current;
-    await deleteProjectApi(id, mutationContext);
+    await deleteProjectApi(id);
     clearLocalProject(id, { deleted: true });
     removeWorkspaceProjectTabs(id);
     iframeKeepAlivePool.evictProject(id, { includeActive: true });
@@ -2473,7 +2446,6 @@ function AppInner() {
     const trimmed = name.trim();
     if (!trimmed) return;
     const previous = projectsRef.current.find((project) => project.id === id) ?? null;
-    const renameContext = workspaceContextRef.current;
     const renameProjectionKey = id;
     let renameState = projectRenameStatesRef.current.get(renameProjectionKey);
     if (!renameState || renameState.pending === 0) {
@@ -2500,7 +2472,7 @@ function AppInner() {
       curr.map((p) => (p.id === id ? { ...p, name: trimmed } : p)),
     );
     const runRename = async () => {
-      const persisted = await patchProject(id, { name: trimmed }, renameContext);
+      const persisted = await patchProject(id, { name: trimmed });
       if (persisted) renameState.confirmed = persisted;
       const isLatestQueuedRename =
         projectRenameStatesRef.current.get(renameProjectionKey) === renameState
@@ -2575,8 +2547,7 @@ function AppInner() {
         p.id === projectId ? { ...p, pendingPrompt: undefined } : p,
       ),
     );
-    const mutationContext = workspaceContextRef.current;
-    void patchProject(projectId, { pendingPrompt: null }, mutationContext);
+    void patchProject(projectId, { pendingPrompt: null });
   }, [route]);
 
   const handleTouchProject = useCallback(() => {
@@ -2586,8 +2557,7 @@ function AppInner() {
     setProjects((curr) =>
       curr.map((p) => (p.id === projectId ? { ...p, updatedAt } : p)),
     );
-    const mutationContext = workspaceContextRef.current;
-    void patchProject(projectId, { updatedAt }, mutationContext);
+    void patchProject(projectId, { updatedAt });
   }, [route]);
 
   const handleProjectChange = useCallback((updated: Project) => {
@@ -3176,7 +3146,6 @@ function AppInner() {
               const seeded = await patchProject(
                 result.projectId,
                 { pendingPrompt: prompt },
-                writeContext,
               );
               if (!seeded) {
                 // The project itself exists and is bound — only the prompt seed

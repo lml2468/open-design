@@ -4,11 +4,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '../../src/types';
 import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
-import {
   ProjectReferenceModal,
   type ProjectReferenceSelection,
 } from '../../src/components/ProjectReferenceModal';
@@ -44,7 +39,6 @@ function renderModal(options: {
   onSelect?: ProjectSelectHandler;
   projects?: Project[];
   listError?: Error;
-  workspaceContext?: WorkspaceCollabContext | null;
 } = {}) {
   const onSelect = options.onSelect ?? vi.fn<ProjectSelectHandler>();
   if (options.listError) {
@@ -55,33 +49,12 @@ function renderModal(options: {
   render(
     <I18nProvider initial={'en' as Locale}>
       <ProjectReferenceModal
-        workspaceContext={options.workspaceContext}
         onClose={vi.fn()}
         onSelect={onSelect}
       />
     </I18nProvider>,
   );
   return { onSelect };
-}
-
-function teamContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'workspace-ref',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-ref',
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    teamId: 'team-ref',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 2 }),
-    permissions: buildWorkspacePermissions({
-      role: 'member',
-      lifecycleState: 'active',
-    }),
-  };
 }
 
 async function confirmSelection(projectName = 'Reference Project') {
@@ -146,13 +119,12 @@ describe('ProjectReferenceModal', () => {
     });
   });
 
-  it('reads a bound reference project with its matching caller identity', async () => {
+  it('reads a formerly bound reference project from the local Project store', async () => {
     const boundProject: Project = {
       ...project,
       workspaceId: 'workspace-ref',
     };
-    const context = teamContext();
-    renderModal({ projects: [boundProject], workspaceContext: context });
+    renderModal({ projects: [boundProject] });
     vi.mocked(getProjectDetail).mockResolvedValue({
       project: boundProject,
       resolvedDir: '/tmp/open-design/project-ref',
@@ -164,7 +136,6 @@ describe('ProjectReferenceModal', () => {
       expect(getProjectDetail).toHaveBeenCalledWith(
         'project-ref',
         { ensureDir: true },
-        context,
       );
     });
   });

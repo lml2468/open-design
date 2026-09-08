@@ -120,11 +120,7 @@ export function useConversationChat(
     messagesReadyScopeKeyRef.current = null;
     void (async () => {
       try {
-        const list = await listMessages(
-          projectId,
-          conversationId,
-          ctx.workspaceContext,
-        );
+        const list = await listMessages(projectId, conversationId);
         if (cancelled) return;
         setMessages(list);
         setMessagesReadyScopeKey(messageScopeKey);
@@ -143,7 +139,7 @@ export function useConversationChat(
     return () => {
       cancelled = true;
     };
-  }, [projectId, conversationId, ctx.workspaceContext, messageScopeKey]);
+  }, [projectId, conversationId, messageScopeKey]);
 
   // Tear down the live subscription when the tab unmounts. The daemon run
   // keeps going; we only stop the browser-side SSE.
@@ -159,9 +155,7 @@ export function useConversationChat(
 
   const persist = useCallback(
     (message: ChatMessage) => {
-      void saveMessage(projectId, conversationId, message, {
-        workspaceContext: ctxRef.current.workspaceContext,
-      });
+      void saveMessage(projectId, conversationId, message);
     },
     [projectId, conversationId],
   );

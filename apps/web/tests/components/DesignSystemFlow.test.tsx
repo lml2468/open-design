@@ -1447,14 +1447,12 @@ describe('DesignSystemCreationFlow', () => {
         }),
         pendingPrompt: expect.stringContaining('Read the linked local code folders'),
       }),
-      null,
     );
     expect(mocks.patchProject).toHaveBeenCalledWith(
       project.id,
       expect.objectContaining({
         pendingPrompt: expect.stringContaining('tools connectors local-design-context --path'),
       }),
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
@@ -1543,7 +1541,6 @@ describe('DesignSystemCreationFlow', () => {
       expect.objectContaining({
         pendingPrompt: expect.stringContaining('context/local-code/comfyui/src/tokens.css'),
       }),
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
@@ -1912,7 +1909,6 @@ describe('DesignSystemCreationFlow', () => {
       expect.objectContaining({
         pendingPrompt: expect.stringContaining('Each .fig was decoded into a real design snapshot'),
       }),
-      null,
     );
     expect(mocks.uploadProjectFile).not.toHaveBeenCalled();
   });
@@ -1986,7 +1982,6 @@ describe('DesignSystemCreationFlow', () => {
       expect.objectContaining({
         pendingPrompt: expect.stringContaining('Use uploaded brand assets in `assets/`'),
       }),
-      null,
     );
   });
 
@@ -2462,21 +2457,18 @@ describe('DesignSystemCreationFlow', () => {
       expect.objectContaining({
         pendingPrompt: expect.stringContaining('GitHub repository intake is required before drafting the design system'),
       }),
-      null,
     );
     expect(mocks.patchProject).toHaveBeenCalledWith(
       project.id,
       expect.objectContaining({
         pendingPrompt: expect.stringContaining('Do not call GitHub connector tree/content/raw tools directly from the agent.'),
       }),
-      null,
     );
     expect(mocks.patchProject).toHaveBeenCalledWith(
       project.id,
       expect.objectContaining({
         pendingPrompt: expect.stringContaining('The command tries this-device access first'),
       }),
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
@@ -2490,21 +2482,18 @@ describe('DesignSystemCreationFlow', () => {
       expect.objectContaining({
         pendingPrompt: expect.stringContaining('Do not call GitHub connector tree/content/raw tools directly from the agent.'),
       }),
-      null,
     );
     expect(mocks.patchProject).toHaveBeenCalledWith(
       project.id,
       expect.objectContaining({
         pendingPrompt: expect.stringContaining('Treat `Read method: git-clone` as the preferred this-device path.'),
       }),
-      null,
     );
     expect(mocks.patchProject).toHaveBeenCalledWith(
       project.id,
       expect.objectContaining({
         pendingPrompt: expect.stringContaining('selects design-system-relevant source files plus available logos/icons/fonts'),
       }),
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
@@ -3220,7 +3209,7 @@ describe('DesignSystemDetailView', () => {
     await waitFor(() =>
       expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id, workspaceContext),
     );
-    await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith(project.id, workspaceContext));
+    await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith(project.id));
     expect(mocks.fetchProjectFiles).toHaveBeenCalledWith(project.id, {
       workspaceContext,
       requireAuthoritative: true,
@@ -3275,7 +3264,7 @@ describe('DesignSystemDetailView', () => {
     await waitFor(() =>
       expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id, null),
     );
-    await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith(system.projectId, null));
+    await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith(system.projectId));
     expect(mocks.fetchProjectFiles).not.toHaveBeenCalled();
     expect(onOpenProject).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: 'Design Files' }));
@@ -3403,13 +3392,11 @@ describe('DesignSystemDetailView', () => {
 
     await waitFor(() => expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(mocks.streamViaDaemon).toHaveBeenCalledTimes(1));
-    expect(mocks.getProject).toHaveBeenCalledWith(project.id, null);
+    expect(mocks.getProject).toHaveBeenCalledWith(project.id);
     expect(mocks.fetchProjectFiles).toHaveBeenCalledWith(project.id, {
       requireAuthoritative: true,
     });
-    expect(mocks.createConversation).toHaveBeenCalledWith(project.id, 'Design system', {
-      workspaceContext: null,
-    });
+    expect(mocks.createConversation).toHaveBeenCalledWith(project.id, 'Design system');
     expect(mocks.streamViaDaemon).toHaveBeenCalledWith(
       expect.objectContaining({
         projectId: project.id,
@@ -3478,14 +3465,12 @@ describe('DesignSystemDetailView', () => {
       expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id, null),
     );
     await waitFor(() =>
-      expect(mocks.createConversation).toHaveBeenCalledWith(project.id, 'Design system', {
-        workspaceContext: null,
-      }),
+      expect(mocks.createConversation).toHaveBeenCalledWith(project.id, 'Design system'),
     );
     expect(mocks.createConversation).toHaveBeenCalledTimes(1);
     expect(mocks.listConversations).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(mocks.listMessages).toHaveBeenCalledWith(project.id, fresh.id, null),
+      expect(mocks.listMessages).toHaveBeenCalledWith(project.id, fresh.id),
     );
   });
 
@@ -3628,7 +3613,7 @@ describe('DesignSystemDetailView', () => {
       expect(screen.queryByText('Could not create a design system conversation.')).toBeNull();
     });
     await waitFor(() =>
-      expect(mocks.listMessages).toHaveBeenCalledWith(project.id, fresh.id, null),
+      expect(mocks.listMessages).toHaveBeenCalledWith(project.id, fresh.id),
     );
   });
 

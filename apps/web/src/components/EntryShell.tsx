@@ -1125,7 +1125,6 @@ export function EntryShell({
                       const seeded = await patchProject(
                         result.projectId,
                         { pendingPrompt: prompt },
-                        writeContext,
                       );
                       if (!seeded) {
                         // The project itself exists and is bound — only the

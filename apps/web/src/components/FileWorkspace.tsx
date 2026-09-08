@@ -2214,7 +2214,6 @@ export function FileWorkspace({
       const liveId = terminalLiveSessionsRef.current.get(originalId) ?? originalId;
       void killTerminal(projectId, liveId, {
         keepalive: true,
-        workspaceContext,
       });
       terminalLiveSessionsRef.current.delete(originalId);
     }
@@ -3728,7 +3727,7 @@ export function FileWorkspace({
     // Surface a toast when the daemon can't start one (e.g. node-pty not
     // compiled) instead of silently no-opping the launcher action.
     createTerminal: async () => {
-      const term = await createTerminal(projectId, undefined, workspaceContext);
+      const term = await createTerminal(projectId);
       if (!term) {
         setLauncherToast({ message: t('workspace.terminalStartFailed'), tone: 'error' });
         return null;
@@ -4285,7 +4284,6 @@ export function FileWorkspace({
             key={activeTab}
             projectId={projectId}
             terminalId={terminalIdFromTabId(activeTab)}
-            workspaceContext={workspaceContext}
             onClose={() => closeTab(activeTab)}
             onSessionIdChange={handleTerminalSessionChange}
           />

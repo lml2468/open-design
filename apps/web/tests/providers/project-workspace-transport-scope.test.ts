@@ -189,11 +189,11 @@ describe('persisted project Workspace transport scope', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps raw project URLs server-authoritative while scoped streams retain captured A', () => {
+  it('keeps local Project raw and terminal URLs unscoped while remote event streams retain captured A', () => {
     const workspaceA = teamContext('workspace-a', 'member-a');
     const workspaceB = teamContext('workspace-b', 'member-b');
     const capturedRawUrl = projectRawUrl('project-1', 'index.html', workspaceA);
-    const capturedTerminalUrl = terminalStreamUrl('project-1', 'terminal-1', workspaceA);
+    const capturedTerminalUrl = terminalStreamUrl('project-1', 'terminal-1');
     const capturedEventsUrl = projectEventsUrl('project-1', workspaceA);
 
     projectRawUrl('project-1', 'index.html', workspaceB);
@@ -202,14 +202,16 @@ describe('persisted project Workspace transport scope', () => {
     expect(parsedRaw.searchParams.has('workspaceId')).toBe(false);
     expect(parsedRaw.searchParams.has('workspaceMemberId')).toBe(false);
 
-    for (const url of [capturedTerminalUrl, capturedEventsUrl]) {
-      const parsed = new URL(url, 'https://od.local');
-      expect(parsed.searchParams.get('workspaceId')).toBe('workspace-a');
-      expect(parsed.searchParams.get('workspaceMemberId')).toBe('member-a');
-    }
+    const parsedTerminal = new URL(capturedTerminalUrl, 'https://od.local');
+    expect(parsedTerminal.searchParams.has('workspaceId')).toBe(false);
+    expect(parsedTerminal.searchParams.has('workspaceMemberId')).toBe(false);
+
+    const parsedEvents = new URL(capturedEventsUrl, 'https://od.local');
+    expect(parsedEvents.searchParams.get('workspaceId')).toBe('workspace-a');
+    expect(parsedEvents.searchParams.get('workspaceMemberId')).toBe('member-a');
   });
 
-  it('sends exact headers on file, terminal, conversation, tabs, and run reads/writes', async () => {
+  it('scopes remote file and run transports but keeps local Project state unscoped', async () => {
     const workspaceA = teamContext('workspace-a', 'member-a');
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
@@ -245,24 +247,28 @@ describe('persisted project Workspace transport scope', () => {
       workspaceContext: workspaceA,
     });
     await fetchProjectFiles('project-1', { workspaceContext: workspaceA });
-    await createTerminal('project-1', undefined, workspaceA);
-    await sendTerminalStdin('project-1', 'terminal-1', 'pwd\n', workspaceA);
+    await createTerminal('project-1');
+    await sendTerminalStdin('project-1', 'terminal-1', 'pwd\n');
     await listConversations('project-scope-test', {
       throwOnError: true,
-      workspaceContext: workspaceA,
     });
-    await loadTabs('project-tabs-scope-test', workspaceA);
+    await loadTabs('project-tabs-scope-test');
     await saveTabs(
       'project-tabs-scope-test',
       { tabs: ['index.html'], active: 'index.html' },
-      workspaceA,
     );
     await fetchChatRunStatus('run-1', workspaceA);
     await listActiveChatRuns('project-1', 'conversation-1', workspaceA);
 
     expect(fetchMock).toHaveBeenCalledTimes(9);
-    for (const [, init] of fetchMock.mock.calls) {
-      expect(requestScope(init)).toEqual(['workspace-a', 'member-a']);
+    for (const [input, init] of fetchMock.mock.calls) {
+      const url = String(input);
+      const isWorkspaceResource = url.includes('/raw/')
+        || url.endsWith('/files')
+        || url.startsWith('/api/runs');
+      expect(requestScope(init)).toEqual(
+        isWorkspaceResource ? ['workspace-a', 'member-a'] : [null, null],
+      );
     }
   });
 
@@ -308,19 +314,17 @@ describe('persisted project Workspace transport scope', () => {
     );
   });
 
-  it('partitions same project id conversation and tabs reads by full identity', async () => {
-    const workspaceA = teamContext('workspace-a', 'member-a');
-    const workspaceB = teamContext('workspace-b', 'member-b');
+  it('coalesces same-project conversation and tabs reads without Workspace identity partitioning', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
-      const [workspaceId] = requestScope(init);
+      expect(requestScope(init)).toEqual([null, null]);
       if (String(input).endsWith('/conversations')) {
         return Response.json({
-          conversations: [{ id: `conversation-${workspaceId}` }],
+          conversations: [{ id: 'conversation-local' }],
         });
       }
       return Response.json({
-        tabs: [`${workspaceId}.html`],
-        active: `${workspaceId}.html`,
+        tabs: ['local.html'],
+        active: 'local.html',
       });
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -328,21 +332,19 @@ describe('persisted project Workspace transport scope', () => {
     const [conversationsA, conversationsB, tabsA, tabsB] = await Promise.all([
       listConversations('same-project', {
         throwOnError: true,
-        workspaceContext: workspaceA,
       }),
       listConversations('same-project', {
         throwOnError: true,
-        workspaceContext: workspaceB,
       }),
-      loadTabs('same-project', workspaceA),
-      loadTabs('same-project', workspaceB),
+      loadTabs('same-project'),
+      loadTabs('same-project'),
     ]);
 
-    expect(conversationsA[0]?.id).toBe('conversation-workspace-a');
-    expect(conversationsB[0]?.id).toBe('conversation-workspace-b');
-    expect(tabsA.active).toBe('workspace-a.html');
-    expect(tabsB.active).toBe('workspace-b.html');
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(conversationsA[0]?.id).toBe('conversation-local');
+    expect(conversationsB[0]?.id).toBe('conversation-local');
+    expect(tabsA.active).toBe('local.html');
+    expect(tabsB.active).toBe('local.html');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('scopes run feedback and omits caller-owned project metadata', async () => {

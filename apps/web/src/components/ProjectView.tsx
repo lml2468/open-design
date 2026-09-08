@@ -240,7 +240,6 @@ import { useWorkspaceTabsDockRef } from './workspaceTabsDock';
 import { localizePluginTitle } from './plugins-home/localization';
 import { DesignSystemPicker } from './DesignSystemPicker';
 import { ProjectCollaborationPublish } from './collaboration/ProjectCollaborationPublish';
-import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
 import {
   CollabProvider,
   type CollabContextValue,
@@ -2341,7 +2340,6 @@ export function ProjectView({
     let cancelled = false;
     const revalidatingCurrentProject =
       conversationsLoadedProjectIdRef.current === project.id;
-    const requestWorkspaceContext = projectRunWorkspaceContextRef.current;
     setPendingEmptyConversationSeed(null);
     setConversationLoadError(null);
     setError(null);
@@ -2364,7 +2362,6 @@ export function ProjectView({
       try {
         const list = await listConversations(project.id, {
           throwOnError: true,
-          workspaceContext: requestWorkspaceContext,
         });
         if (cancelled) return;
         conversationsLoadedProjectIdRef.current = project.id;
@@ -2426,12 +2423,9 @@ export function ProjectView({
       return;
     }
     let cancelled = false;
-    const requestWorkspaceContext = projectRunWorkspaceContextRef.current;
     (async () => {
       try {
-        const fresh = await createConversation(project.id, undefined, {
-          workspaceContext: requestWorkspaceContext,
-        });
+        const fresh = await createConversation(project.id);
         if (cancelled) return;
         if (!fresh) {
           throw new Error('Could not create a conversation for this project.');
@@ -2588,11 +2582,7 @@ export function ProjectView({
           if (cancelled || previewCommentsGenerationRef.current !== commentsGeneration) return;
           if (!reloadingCurrentConversation) setPreviewComments([]);
         });
-        const list = await listMessages(
-          project.id,
-          activeConversationId,
-          requestWorkspaceContext,
-        );
+        const list = await listMessages(project.id, activeConversationId);
         if (cancelled) return;
         setMessages((current) =>
           preservingLiveConversation
@@ -2785,13 +2775,12 @@ export function ProjectView({
   // local state coherent.
   useEffect(() => {
     let cancelled = false;
-    const requestWorkspaceContext = projectRunWorkspaceContextRef.current;
     tabsLoadedRef.current = false;
     tabsHydratedFromSavedStateRef.current = false;
     hasAppliedInitialPrimaryOpenRef.current = false;
     setOpenTabsState({ tabs: [], active: null });
     (async () => {
-      const state = await loadTabs(project.id, requestWorkspaceContext, {
+      const state = await loadTabs(project.id, {
         reconcileNewerCacheToDaemon: true,
       });
       if (cancelled) return;
@@ -2813,16 +2802,8 @@ export function ProjectView({
         ),
       );
       if (routeActive && routeChangesSavedState) {
-        nextState = cacheTabsLocally(
-          project.id,
-          nextState,
-          requestWorkspaceContext,
-        );
-        void persistTabsToDaemonNow(
-          project.id,
-          nextState,
-          requestWorkspaceContext,
-        );
+        nextState = cacheTabsLocally(project.id, nextState);
+        void persistTabsToDaemonNow(project.id, nextState);
       }
       tabsHydratedFromSavedStateRef.current = state.hasSavedState === true;
       setOpenTabsState(nextState);
@@ -2844,7 +2825,6 @@ export function ProjectView({
   const pendingDaemonTabsRef = useRef<{
     projectId: string;
     state: OpenTabsState;
-    workspaceContext: WorkspaceCollabContext | null;
   } | null>(null);
   const flushTabsDaemonSave = useCallback(() => {
     if (tabsDaemonSaveTimerRef.current != null) {
@@ -2854,11 +2834,7 @@ export function ProjectView({
     const pending = pendingDaemonTabsRef.current;
     pendingDaemonTabsRef.current = null;
     if (pending) {
-      void persistTabsToDaemonNow(
-        pending.projectId,
-        pending.state,
-        pending.workspaceContext,
-      );
+      void persistTabsToDaemonNow(pending.projectId, pending.state);
     }
   }, []);
 
@@ -2867,15 +2843,10 @@ export function ProjectView({
       setOpenTabsState(next);
       if (!tabsLoadedRef.current) return;
       // Immediate, cheap, synchronous — keeps the cache canonical for reload.
-      const stamped = cacheTabsLocally(
-        project.id,
-        next,
-        projectRunWorkspaceContext,
-      );
+      const stamped = cacheTabsLocally(project.id, next);
       pendingDaemonTabsRef.current = {
         projectId: project.id,
         state: stamped,
-        workspaceContext: projectRunWorkspaceContext,
       };
       if (tabsDaemonSaveTimerRef.current != null) {
         clearTimeout(tabsDaemonSaveTimerRef.current);
@@ -2885,18 +2856,11 @@ export function ProjectView({
         const pending = pendingDaemonTabsRef.current;
         pendingDaemonTabsRef.current = null;
         if (pending) {
-          void persistTabsToDaemonNow(
-            pending.projectId,
-            pending.state,
-            pending.workspaceContext,
-          );
+          void persistTabsToDaemonNow(pending.projectId, pending.state);
         }
       }, TAB_PERSIST_DEBOUNCE_MS);
     },
-    [
-      project.id,
-      projectRunWorkspaceContext,
-    ],
+    [project.id],
   );
 
   // Flush any pending tab write when the project changes or the view unmounts,
@@ -3381,8 +3345,7 @@ export function ProjectView({
         // rendered field actually changed.
         const capturedProjectId = project.id;
         const capturedAuthorizationKey = projectAuthorizationKey;
-        const capturedProjectWorkspaceContext = projectRunWorkspaceContext;
-        void getProject(capturedProjectId, capturedProjectWorkspaceContext).then((fresh) => {
+        void getProject(capturedProjectId).then((fresh) => {
           if (!fresh) return;
           if (activeAuthorizationLifetimeRef.current !== capturedAuthorizationKey) return;
           // User switched projects while the fetch was in flight.
@@ -3418,9 +3381,7 @@ export function ProjectView({
       const myToken = ++conversationsRefreshTokenRef.current;
       void (async () => {
         try {
-          const list = await listConversations(capturedProjectId, {
-            workspaceContext: projectRunWorkspaceContext,
-          });
+          const list = await listConversations(capturedProjectId);
           // Bail if the user switched projects while this request was in
           // flight (#1361 review, Codex P1). The captured project id is the
           // one we asked the daemon about; the live ref is the one the
@@ -3596,12 +3557,9 @@ export function ProjectView({
       // a runId — or the run finishes terminally — this guard lets the row
       // through normally.
       if (isPhantomDaemonRunMessage(m)) return;
-      void saveMessage(project.id, activeConversationId, m, {
-        ...options,
-        workspaceContext: projectRunWorkspaceContext,
-      });
+      void saveMessage(project.id, activeConversationId, m, options);
     },
-    [project.id, activeConversationId, projectRunWorkspaceContext],
+    [project.id, activeConversationId],
   );
 
   const persistMessageById = useCallback(
@@ -3610,15 +3568,12 @@ export function ProjectView({
       setMessages((curr) => {
         const found = curr.find((m) => m.id === messageId);
         if (found && !isPhantomDaemonRunMessage(found)) {
-          void saveMessage(project.id, activeConversationId, found, {
-            ...options,
-            workspaceContext: projectRunWorkspaceContext,
-          });
+          void saveMessage(project.id, activeConversationId, found, options);
         }
         return curr;
       });
     },
-    [project.id, activeConversationId, projectRunWorkspaceContext],
+    [project.id, activeConversationId],
   );
 
   const updateMessageById = useCallback(
@@ -3641,15 +3596,12 @@ export function ProjectView({
         // The runId-arriving update from onRunCreated passes through because
         // the updater sets runId before this check runs.
         if (persist && saved && activeConversationId && !isPhantomDaemonRunMessage(saved)) {
-          void saveMessage(project.id, activeConversationId, saved, {
-            ...persistOptions,
-            workspaceContext: projectRunWorkspaceContext,
-          });
+          void saveMessage(project.id, activeConversationId, saved, persistOptions);
         }
         return next;
       });
     },
-    [project.id, activeConversationId, projectRunWorkspaceContext],
+    [project.id, activeConversationId],
   );
 
   const appendConversationMessage = useCallback(
@@ -3666,13 +3618,10 @@ export function ProjectView({
         setMessages((curr) => [...curr, message]);
       }
       if (persist) {
-        void saveMessage(project.id, conversationId, message, {
-          ...options,
-          workspaceContext: projectRunWorkspaceContext,
-        });
+        void saveMessage(project.id, conversationId, message, options);
       }
     },
-    [activeConversationId, project.id, projectRunWorkspaceContext],
+    [activeConversationId, project.id],
   );
 
   const readLocalBrowserPageArchiveSnapshot = useCallback(
@@ -3941,24 +3890,17 @@ export function ProjectView({
         setMessages((curr) => curr.map((item) => (item.id === message.id ? message : item)));
       }
       if (persist) {
-        void saveMessage(project.id, conversationId, message, {
-          ...options,
-          workspaceContext: projectRunWorkspaceContext,
-        });
+        void saveMessage(project.id, conversationId, message, options);
       }
     },
-    [activeConversationId, project.id, projectRunWorkspaceContext],
+    [activeConversationId, project.id],
   );
 
   const refreshConversationMessagesFromServer = useCallback(
     async (conversationId: string) => {
       if (messagesConversationIdRef.current !== conversationId) return;
       try {
-        const serverMessages = await listMessages(
-          project.id,
-          conversationId,
-          projectRunWorkspaceContext,
-        );
+        const serverMessages = await listMessages(project.id, conversationId);
         if (messagesConversationIdRef.current !== conversationId) return;
         setMessages((current) => mergeServerMessagesIntoConversation(current, serverMessages));
         setMessagesInitialized(true);
@@ -3968,7 +3910,7 @@ export function ProjectView({
         console.warn('Failed to refresh conversation messages after run completion', err);
       }
     },
-    [project.id, projectRunWorkspaceContext],
+    [project.id],
   );
 
   const scheduleConversationMessageRefresh = useCallback(
@@ -5767,7 +5709,6 @@ export function ProjectView({
         const serverMessages = await listMessages(
           project.id,
           activeConversationId,
-          projectRunWorkspaceContext,
         ).catch(() => null);
         if (cancelled) return;
         const recoveryMessages = serverMessages && serverMessages.length > 0
@@ -6325,7 +6266,6 @@ export function ProjectView({
           void Promise.resolve(
             saveMessage(project.id, runConversationId, userMsg, {
               createOnly: true,
-              workspaceContext: projectRunWorkspaceContext,
             }),
           ).then((stored) => {
             if (!stored || stored.content === userMsg.content) return;
@@ -6373,7 +6313,6 @@ export function ProjectView({
             project.id,
             runConversationId,
             { title },
-            projectRunWorkspaceContext,
           );
         }
         const projectName = fallbackProjectName;
@@ -6395,7 +6334,7 @@ export function ProjectView({
           void patchProject(project.id, {
             name: projectName,
             ...(metadata ? { metadata } : {}),
-          }, projectRunWorkspaceContext);
+          });
         }
       }
       const canReplaceConversationTitle = (title: string | null | undefined) => {
@@ -6426,7 +6365,6 @@ export function ProjectView({
             project.id,
             runConversationId,
             { title: agentTitle },
-            projectRunWorkspaceContext,
           );
         }
         if (
@@ -6446,7 +6384,7 @@ export function ProjectView({
           void patchProject(project.id, {
             name: agentTitle,
             ...(metadata ? { metadata } : {}),
-          }, projectRunWorkspaceContext);
+          });
         }
       };
 
@@ -7425,9 +7363,7 @@ export function ProjectView({
             currentRunId = runId;
             // The view may already be on a different project/conversation;
             // pin the daemon run to the original row so returning can reattach.
-            void saveMessage(project.id, runConversationId, pinnedAssistant, {
-              workspaceContext: projectRunWorkspaceContext,
-            });
+            void saveMessage(project.id, runConversationId, pinnedAssistant);
             updateMessageById(assistantId, (prev) => ({
               ...prev,
               runId,
@@ -7632,9 +7568,7 @@ export function ProjectView({
               lastRunEventId: undefined,
             };
             latestAssistantMsg = pinnedAssistant;
-            void saveMessage(project.id, runConversationId, pinnedAssistant, {
-              workspaceContext: projectRunWorkspaceContext,
-            });
+            void saveMessage(project.id, runConversationId, pinnedAssistant);
             updateMessageById(assistantId, (prev) => ({
               ...prev,
               runId,
@@ -8423,8 +8357,8 @@ export function ProjectView({
       },
     };
     onProjectChange({ ...project, metadata });
-    void patchProject(project.id, { metadata }, projectRunWorkspaceContext);
-  }, [onProjectChange, project, projectRunWorkspaceContext]);
+    void patchProject(project.id, { metadata });
+  }, [onProjectChange, project]);
 
   const sendDesignSystemFeedback = useCallback((
     sectionTitle: string,
@@ -8529,9 +8463,7 @@ export function ProjectView({
     setCreatingConversation(true);
     setConversationLoadError(null);
     try {
-      const fresh = await createConversation(project.id, undefined, {
-        workspaceContext: projectRunWorkspaceContext,
-      });
+      const fresh = await createConversation(project.id);
       if (!fresh) throw new Error('Could not create a conversation for this project.');
       // Eagerly clear messages and update ref so rapid clicks don't create
       // duplicate empty conversations before the effect resolves.
@@ -8578,7 +8510,6 @@ export function ProjectView({
     messages.length,
     navigate,
     openTabsState.active,
-    projectRunWorkspaceContext,
     projectRunAuthorityKey,
     projectMutationReadOnly,
   ]);
@@ -8621,9 +8552,7 @@ export function ProjectView({
       const capturedProjectId = project.id;
       const myToken = ++conversationsRefreshTokenRef.current;
       try {
-        const list = await listConversations(capturedProjectId, {
-          workspaceContext: projectRunWorkspaceContext,
-        });
+        const list = await listConversations(capturedProjectId);
         if (projectIdRef.current !== capturedProjectId) return false;
         if (conversationsRefreshTokenRef.current !== myToken) return false;
         setConversations(ensureConversationPresent(list, conversationId, capturedProjectId));
@@ -8638,17 +8567,13 @@ export function ProjectView({
         return true;
       }
     },
-    [project.id, projectRunWorkspaceContext],
+    [project.id],
   );
 
   const handleDeleteConversation = useCallback(
     async (id: string) => {
       if (projectMutationReadOnly) return;
-      const ok = await deleteConversationApi(
-        project.id,
-        id,
-        projectRunWorkspaceContext,
-      );
+      const ok = await deleteConversationApi(project.id, id);
       if (!ok) return;
       // The deleted conversation may have owned an unanswered
       // `<question-form>`, which the daemon counts toward the project's
@@ -8662,9 +8587,7 @@ export function ProjectView({
         if (next.length === 0) {
           // Re-seed so the project always has at least one conversation
           // to write into.
-          void createConversation(project.id, undefined, {
-            workspaceContext: projectRunWorkspaceContext,
-          }).then((fresh) => {
+          void createConversation(project.id).then((fresh) => {
             if (fresh) {
               setConversations([fresh]);
               setActiveConversationId(fresh.id);
@@ -8680,7 +8603,6 @@ export function ProjectView({
       project.id,
       activeConversationId,
       onProjectsRefresh,
-      projectRunWorkspaceContext,
       projectMutationReadOnly,
     ],
   );
@@ -8696,10 +8618,9 @@ export function ProjectView({
         project.id,
         id,
         { title: trimmed },
-        projectRunWorkspaceContext,
       );
     },
-    [project.id, projectRunWorkspaceContext, projectMutationReadOnly],
+    [project.id, projectMutationReadOnly],
   );
 
   const handleConversationSessionModeChange = useCallback(
@@ -8714,7 +8635,6 @@ export function ProjectView({
         project.id,
         id,
         { sessionMode },
-        projectRunWorkspaceContext,
       );
       if (updated) {
         setConversations((curr) =>
@@ -8724,7 +8644,7 @@ export function ProjectView({
         );
       }
     },
-    [project.id, projectRunWorkspaceContext, projectMutationReadOnly],
+    [project.id, projectMutationReadOnly],
   );
 
   const handleActiveConversationSessionModeChange = useCallback(
@@ -8778,7 +8698,6 @@ export function ProjectView({
           forkFallbackMessage:
             forkFallbackPredecessorMessageId === undefined ? undefined : assistantMessage,
           forkFallbackPredecessorMessageId,
-          workspaceContext: projectRunWorkspaceContext,
           throwOnError: true,
         });
         if (!fresh) {
@@ -8869,13 +8788,7 @@ export function ProjectView({
       const trimmed = newName.trim();
       if (!trimmed || trimmed === project.name) return;
       const previousName = project.name;
-      const renameContext = projectRunWorkspaceContextRef.current;
-      const renameWorkspaceIdentity = workspaceIdentityCacheKey(renameContext);
-      const renameKey = JSON.stringify([
-        project.id,
-        project.workspaceId ?? null,
-        renameWorkspaceIdentity,
-      ]);
+      const renameKey = project.id;
       let renameState = projectRenameStatesRef.current.get(renameKey);
       if (!renameState || renameState.pending === 0) {
         renameState = {
@@ -8904,7 +8817,7 @@ export function ProjectView({
         const persisted = await patchProject(project.id, {
           name: trimmed,
           ...(metadata ? { metadata } : {}),
-        }, renameContext);
+        });
         if (persisted) renameState.confirmed = persisted;
         const isLatestQueuedRename =
           projectRenameStatesRef.current.get(renameKey) !== renameState
@@ -8915,8 +8828,6 @@ export function ProjectView({
         onProjectRenameSettled?.(renameFenceToken, settledProject);
         if (
           projectRef.current.id !== project.id
-          || workspaceIdentityCacheKey(projectRunWorkspaceContextRef.current)
-            !== renameWorkspaceIdentity
           || (
             projectRef.current.name !== previousName
             && projectRef.current.name !== trimmed
@@ -9097,7 +9008,7 @@ export function ProjectView({
         updatedAt: Date.now(),
       };
       onProjectChange(updated);
-      void patchProject(project.id, { designSystemId: nextId }, projectRunWorkspaceContext);
+      void patchProject(project.id, { designSystemId: nextId });
     },
     [
       project,
@@ -9106,7 +9017,6 @@ export function ProjectView({
       designSystems,
       analytics.track,
       projectMutationReadOnly,
-      projectRunWorkspaceContext,
     ],
   );
 

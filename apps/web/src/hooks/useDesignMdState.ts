@@ -124,9 +124,7 @@ export function useDesignMdState(
 
         // Shared single-flight conversations read (Batch A §4.3); the local
         // abort only detaches this consumer.
-        const conversations = await listConversations(projectId, {
-          workspaceContext,
-        });
+        const conversations = await listConversations(projectId);
         const convsBody: ConversationsResponseShape = { conversations };
         if (signal?.aborted) return;
 

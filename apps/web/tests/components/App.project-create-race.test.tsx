@@ -1130,10 +1130,9 @@ describe('App project creation routing', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Create project' }));
 
       await waitFor(() => {
-        expect(mockedCreateProject).toHaveBeenCalledWith(
-          expect.objectContaining({ workspaceContext: null }),
-        );
+        expect(mockedCreateProject).toHaveBeenCalledTimes(1);
       });
+      expect(mockedCreateProject.mock.calls[0]?.[0]).not.toHaveProperty('workspaceContext');
       expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
     },
   );
@@ -1169,12 +1168,9 @@ describe('App project creation routing', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Create project' }));
 
     await waitFor(() => {
-      expect(mockedCreateProject).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workspaceContext: null,
-        }),
-      );
+      expect(mockedCreateProject).toHaveBeenCalledTimes(1);
     });
+    expect(mockedCreateProject.mock.calls[0]?.[0]).not.toHaveProperty('workspaceContext');
   });
 
   it.each([
@@ -1204,10 +1200,9 @@ describe('App project creation routing', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Create project' }));
 
       await waitFor(() => {
-        expect(mockedCreateProject).toHaveBeenCalledWith(
-          expect.objectContaining({ workspaceContext: null }),
-        );
+        expect(mockedCreateProject).toHaveBeenCalledTimes(1);
       });
+      expect(mockedCreateProject.mock.calls[0]?.[0]).not.toHaveProperty('workspaceContext');
       expect(screen.getByTestId('project-title').textContent).toBe('Fresh project');
     },
   );
@@ -1500,7 +1495,7 @@ describe('App project creation routing', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Fresh project' }));
 
     await waitFor(() => {
-      expect(mockedDeleteProject).toHaveBeenCalledWith('project-new', null);
+      expect(mockedDeleteProject).toHaveBeenCalledWith('project-new');
       expect(screen.queryByTestId('entry-project-project-new')).toBeNull();
       expect(workspaceTabsHarness.projectIds.has('project-new')).toBe(false);
     });
@@ -1632,7 +1627,6 @@ describe('App project creation routing', () => {
     mockedListProjects.mockResolvedValue([]);
     mockedReplaceProjectWorkingDir.mockResolvedValue(undefined as never);
     stubWorkspaceContext('ws-create', 'wm-create');
-    const createContext = workspaceContextPayload('ws-create', 'wm-create').context;
 
     render(<App />);
     await waitFor(() => {
@@ -1655,12 +1649,11 @@ describe('App project creation routing', () => {
       'project-new',
       '/Users/me/external',
       'wd-token',
-      createContext,
     );
     // Both target the same project id, and the working-dir handoff is ordered
     // strictly before the upload so the files land in the final tree.
     expect(mockedUploadProjectFiles.mock.calls[0]?.[0]).toBe('project-new');
-    expect(mockedUploadProjectFiles.mock.calls[0]?.[3]).toEqual(createContext);
+    expect(mockedUploadProjectFiles.mock.calls[0]?.[3]).toBeUndefined();
     const replaceOrder = mockedReplaceProjectWorkingDir.mock.invocationCallOrder[0]!;
     const uploadOrder = mockedUploadProjectFiles.mock.invocationCallOrder[0]!;
     expect(replaceOrder).toBeLessThan(uploadOrder);
