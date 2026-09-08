@@ -32,7 +32,6 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerProjectRoutes } from '../../src/routes/project/index.js';
-import { registerCollabContextRoutes } from '../../src/routes/collab-context.js';
 import { startBrandExtraction } from '../../src/brands/index.js';
 import {
   closeDatabase,
@@ -287,105 +286,6 @@ describe('project move to personal on an unbound (never-locally-shared) project'
     // The actual bug precondition, produced by real code: the backing
     // project has no `workspace_projects` row at all.
     expect(getWorkspaceProjectByProjectId(db, result.projectId)).toBeUndefined();
-  });
-
-  it('closes the causal gap: the real endpoint the web client reads for "is this shared" reports the unbound project as shared', async () => {
-    // Sharpest objection to this whole diagnosis: if the project's local
-    // workspace_projects row genuinely never existed, why would the web
-    // client ever have shown it as team-shared in the first place (the
-    // precondition for a user to see, and click, "move out of team")?
-    //
-    // Verified answer, from the REAL client + REAL daemon code (not
-    // assumption): the web client does NOT read `workspace_projects` to
-    // decide this. Both real UI surfaces that gate the "move to personal"
-    // affordance —
-    //   - `RecentProjectsStrip.tsx`'s "共享" badge / "移出团队" menu item, via
-    //     `createSharedProjectPredicate({ teamProjects })`
-    //     (apps/web/src/collab/all-projects-list.ts)
-    //   - `FileWorkspace.tsx`'s in-project Share toggle, via
-    //     `projectIsSharedWithWorkspace(projectId)`, which falls back to the
-    //     exact same source
-    // both resolve `teamProjects` from `GET /api/workspace/projects/team`
-    // (apps/daemon/src/routes/collab-context.ts), which is backed by the
-    // resource hub's OWN team-project catalog — an external system this
-    // daemon's local sqlite does not control and is not the same store as
-    // `workspace_projects`. `apps/daemon/src/collab/team-projects.ts`
-    // confirms it: `createTeamProjectsLister` calls
-    // `teamProjectCatalog.list()` directly, the identical client instance
-    // (`velaCliTeamProjectCatalog`, wired in server.ts) `/move`'s own
-    // `teamProjectCatalog` reconciliation reads.
-    //
-    // So: whenever the hub genuinely lists a project (for whatever external
-    // reason — this codebase's own brand-extraction pipeline never
-    // registers one, so that registration is not something this repo's code
-    // performs; it is either the hub's own cross-referencing of the
-    // extraction's linked, team-claimed design system, or a share taken from
-    // a different device/session), a user opening this project SEES it as
-    // team-shared and "move to personal" is a live, meaningful action — with
-    // or without a matching LOCAL `workspace_projects` row. This test proves
-    // that half of the chain with the real route, not a guess: inject the
-    // exact same hub record `/move`'s tests use directly into
-    // `registerCollabContextRoutes`'s `listTeamProjects` seam (the
-    // documented test injection point for this exact external dependency)
-    // and confirm the endpoint the client actually calls echoes it back.
-    const result = await startBrandExtraction({
-      designMd: DESIGN_MD_INPUT,
-      brandsRoot,
-      projectsRoot,
-      skillsRoot: SKILLS_ROOT,
-      db,
-      logoFallback: NO_LOGO_FALLBACK,
-      imageryFallback: NO_IMAGERY_FALLBACK,
-      seedFallback: NO_SEED_FALLBACK,
-    });
-    expect(getWorkspaceProjectByProjectId(db, result.projectId)).toBeUndefined();
-
-    const app = express();
-    app.use(express.json());
-    registerCollabContextRoutes(app, {
-      workspaceContext: { current: async () => null },
-      fetchWorkspaceDirectory: async () => ({
-        ok: true,
-        items: [
-          {
-            workspaceId: TEAM_WORKSPACE_ID,
-            workspaceMemberId: OWNER_MEMBER_ID,
-            workspaceType: 'team',
-            workspaceName: 'Heritage Team',
-            role: 'owner',
-            memberStatus: 'active',
-            lifecycleState: 'active',
-            resourceTeamId: TEAM_WORKSPACE_ID,
-            permissions: {
-              canManageBilling: true,
-              canManageMembers: true,
-              canInviteMembers: true,
-              canShareProjects: true,
-              canWriteSyncedFiles: true,
-            },
-          },
-        ],
-      }),
-      listTeamProjects: async () => [
-        {
-          projectId: result.projectId,
-          ownerMemberId: 'some-other-member-id',
-          sharedAt: new Date(10).toISOString(),
-          name: 'Heritage Design System',
-        },
-      ],
-    });
-    const routeServer = await listen(app);
-    try {
-      const resp = await fetch(`${routeServer.url}/api/workspace/projects/team`, {
-        headers: ownerTeamHeaders(),
-      });
-      expect(resp.status).toBe(200);
-      const body = (await resp.json()) as { projects: Array<{ projectId: string }> };
-      expect(body.projects.some((project) => project.projectId === result.projectId)).toBe(true);
-    } finally {
-      await close(routeServer.server);
-    }
   });
 
   it('materializes a catalog-only project owned by the exact caller before moving it to personal', async () => {

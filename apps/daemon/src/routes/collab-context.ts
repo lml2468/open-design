@@ -1,19 +1,16 @@
 import type { Express, Request, Response } from 'express';
 import type {
-  TeamProject,
   WorkspaceDirectoryItem,
   WorkspaceDirectoryResponse,
   WorkspaceCollabContext,
   WorkspaceContextResponse,
   WorkspaceActiveResponse,
-  WorkspaceTeamProjectsResponse,
 } from '@open-design/contracts';
 import { workspaceSeatCapacityState } from '@open-design/contracts';
 import {
   parseWorkspaceCollabContext,
   type WorkspaceContextProvider,
 } from '../collab/workspace-context.js';
-import { createTeamProjectsLister } from '../collab/team-projects.js';
 import {
   listVelaWorkspaceDirectory,
   workspaceContextFromDirectoryItem,
@@ -34,10 +31,6 @@ export interface RegisterCollabContextRoutesDeps {
   verifyWorkspaceReadAuthority?: (
     req: Request,
   ) => Promise<VerifiedWorkspaceRequestContextResult>;
-  /** Injectable for tests; defaults to the resource-hub team-project lister
-   *  built from the same workspace context + env-configured hub client the share
-   *  path uses. */
-  listTeamProjects?: (context: WorkspaceCollabContext) => Promise<TeamProject[]>;
   /**
    * Client-local restart default. Data-plane routes never use it as authority;
    * each tab continues to carry its exact Workspace and member identity.
@@ -133,10 +126,6 @@ function workspaceGroupProperties(
 export function registerCollabContextRoutes(app: Express, deps: RegisterCollabContextRoutesDeps): void {
   const { workspaceContext } = deps;
   const configuredEnv = () => deps.configuredEnv?.() ?? {};
-  const rawTeamProjectsLister = createTeamProjectsLister({});
-  const listTeamProjects =
-    deps.listTeamProjects ??
-    ((context: WorkspaceCollabContext) => rawTeamProjectsLister(context.workspaceId));
   const listWorkspaceDirectory =
     deps.listWorkspaceDirectory ?? (() => listVelaWorkspaceDirectory());
   const fetchWorkspaceDirectory =
@@ -319,51 +308,6 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
     deps.onWorkspaceSwitched?.(workspaceId);
     const body: WorkspaceActiveResponse = { activeWorkspaceId: workspaceId, context: resolved };
     void deps.observeWorkspace?.(req, resolved, workspaceGroupProperties(resolved));
-    res.json(body);
-  });
-
-  // Team-wide shared-project discovery: the web "全部项目" view fetches every
-  // project any member shared to the team here (read from the resource hub), so a
-  // member whose own /api/projects list is empty still sees the owner's shared
-  // projects to pull + open. A successful empty result is authoritative. A
-  // transient upstream failure must stay distinguishable so clients can retain
-  // their exact-scope last-good catalog instead of treating the outage as an
-  // authoritative removal of every project.
-  app.get('/api/workspace/projects/team', async (req, res) => {
-    const verified = deps.verifyWorkspaceReadAuthority
-      ? await deps.verifyWorkspaceReadAuthority(req)
-      : await verifyWorkspaceRequestContext({
-          req,
-          fetchWorkspaceDirectory,
-          configuredEnv: configuredEnv(),
-          requireTeam: true,
-        });
-    if (!verified.ok) {
-      return res.status(verified.status).json({
-        error: verified.code,
-        message: verified.message,
-        ...(verified.retryable ? { retryable: true } : {}),
-      });
-    }
-    if (verified.context.workspaceType !== 'team') {
-      return res.status(403).json({
-        error: 'WORKSPACE_ACCESS_DENIED',
-        message: 'the requested workspace is not available to this member',
-      });
-    }
-    let projects: TeamProject[];
-    try {
-      projects = await listTeamProjects(verified.context);
-    } catch {
-      return sendApiError(
-        res,
-        503,
-        'UPSTREAM_UNAVAILABLE',
-        'team project catalog is temporarily unavailable',
-        { retryable: true },
-      );
-    }
-    const body: WorkspaceTeamProjectsResponse = { projects };
     res.json(body);
   });
 

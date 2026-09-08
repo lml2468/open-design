@@ -2452,14 +2452,10 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
    * ever calling `ensureWorkspaceProject` or registering it with the hub's own
    * team-project catalog, and a project shared to this team from a different
    * device/session never gets a row written into THIS daemon's own sqlite
-   * until something reconciles it. The web client's own "shared" badge and its
-   * "move out of team" affordance (`createSharedProjectPredicate`,
-   * `RecentProjectsStrip.tsx`) already read this exact catalog
-   * (`GET /api/workspace/projects/team` → `createTeamProjectsLister` →
-   * `velaCliTeamProjectCatalog`, the same instance threaded into this route as
-   * `teamProjectCatalog`) — so whenever that affordance is visible at all, the
-   * hub already knows this project is team-visible, whether or not this
-   * exact daemon's local sqlite has caught up.
+   * until something reconciles it. The legacy workspace project listing reads
+   * the same remote catalog through `teamProjectCatalog`, so whenever a remote
+   * Team Project is visible there, the hub already knows the project is
+   * team-visible whether or not this daemon's local sqlite has caught up.
    *
    * Reconciliation is itself authority-sensitive. Only the member recorded
    * as the remote project's creator may bind and unshare it. Workspace

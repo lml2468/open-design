@@ -102,13 +102,6 @@ async function startProjectStubServer(): Promise<StubServer> {
         }));
         return;
       }
-      if (captured.method === 'GET' && captured.url === '/api/workspace/projects/team') {
-        res.statusCode = 200;
-        res.end(JSON.stringify({
-          projects: [{ projectId: 'team-project-1', displayName: 'Team Project' }],
-        }));
-        return;
-      }
       if (captured.method === 'GET' && captured.url === '/api/workspace/skills/team') {
         res.statusCode = 200;
         res.end(JSON.stringify({ ids: ['team-skill'], resources: [{ id: 'team-skill' }] }));
@@ -456,38 +449,6 @@ describe('od project CLI', () => {
     const catalogReq = requests.find((r) => r.method === 'GET' && r.url === '/api/projects');
     expect(dirReq).toBeDefined();
     expect(catalogReq).toBeDefined();
-  });
-
-  it('lists team projects through the workspace discovery API', async () => {
-    stub = await startProjectStubServer();
-
-    const result = await runCli([
-      'workspace',
-      'projects',
-      'team',
-      '--workspace',
-      'ws-1',
-      '--member',
-      'member-1',
-      '--json',
-      '--daemon-url',
-      stub.baseUrl,
-    ]);
-
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
-    expect(JSON.parse(result.stdout)).toEqual({
-      projects: [{ projectId: 'team-project-1', displayName: 'Team Project' }],
-    });
-    expect(stub.requests).toHaveLength(1);
-    expect(stub.requests[0]).toMatchObject({
-      method: 'GET',
-      url: '/api/workspace/projects/team',
-    });
-    expect(stub.requests[0]!.headers).toMatchObject({
-      'x-od-workspace-id': 'ws-1',
-      'x-od-workspace-member-id': 'member-1',
-    });
   });
 
   it('sends repeatable project ids for workspace batch delete', async () => {

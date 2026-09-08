@@ -7354,7 +7354,6 @@ Common options:
 async function runWorkspace(args) {
   if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
     console.log(`Usage:
-  od workspace projects team --workspace <id> --member <id> [--json]
   od workspace projects list --workspace <id> --member <id> [--view recent|drafts|team|all] [--json]
   od workspace projects move <projectId> --workspace <id> --member <id> --visibility personal|team [--json]
   od workspace projects batch-delete --workspace <id> --member <id> --project <id> [--project <id> ...] [--json]
@@ -7378,40 +7377,6 @@ Common options:
   const rest = args.slice(2);
   const flags = parseFlags(rest, { string: WORKSPACE_STRING_FLAGS, boolean: WORKSPACE_BOOLEAN_FLAGS });
   const base = (await projectDaemonUrl(flags)).replace(/\/$/, '');
-
-  async function workspaceContextRequest(path, init) {
-    const needsExplicitWorkspace = path === '/api/workspace/projects/team';
-    const workspaceHeaders = needsExplicitWorkspace
-      ? workspaceHeadersFromExplicitFlags(flags, true)
-      : {};
-    const resp = await fetch(`${base}${path}`, {
-      ...init,
-      headers: {
-        ...workspaceHeaders,
-        ...(init?.headers ?? {}),
-      },
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      console.error(`${init?.method ?? 'GET'} ${path} failed: ${resp.status} ${JSON.stringify(data)}`);
-      process.exit(1);
-    }
-    return data;
-  }
-
-  if (sub === 'team') {
-    const data = await workspaceContextRequest('/api/workspace/projects/team');
-    if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-    const projects = Array.isArray(data?.projects) ? data.projects : [];
-    if (projects.length === 0) {
-      console.log('No shared team projects.');
-      return;
-    }
-    for (const project of projects) {
-      console.log(`${project.projectId ?? project.id}\t${project.displayName ?? project.name ?? '-'}`);
-    }
-    return;
-  }
 
   const workspaceId = typeof flags.workspace === 'string' && flags.workspace.trim() ? flags.workspace.trim() : '';
   if (!workspaceId) {

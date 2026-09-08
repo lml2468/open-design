@@ -3602,8 +3602,8 @@ export async function startServer({
     }
     return snapshot;
   };
-  // Short-TTL, single-flight cache for the read-only DISPLAY path
-  // (GET /api/workspace/projects/team). Each entry is keyed by the explicit,
+  // Short-TTL, single-flight cache for legacy Team Project status reads.
+  // Each entry is keyed by the explicit,
   // immutable workspace + member scope captured for that request, so a later
   // active-workspace switch cannot retarget an in-flight read or its cache
   // write. Deliberately NOT used by resolveSharedProject below: project access
@@ -4082,41 +4082,14 @@ export async function startServer({
     configuredEnv: configuredAmrEnv,
     verifyWorkspaceReadAuthority: verifyWorkspaceContextReadAuthority,
     activeWorkspace,
-    // A tab-local selection leaves this exact Workspace's scoped caches cold.
-    // Warm only the directory-verified id announced by that request; the
-    // daemon-global legacy pin is neither read nor updated.
+    // A tab-local selection leaves this exact Workspace's legacy Team Project
+    // cache cold. Warm only the directory-verified id announced by that
+    // request; the daemon-global legacy pin is neither read nor updated.
     onWorkspaceSwitched: (workspaceId) => warmWorkspaceProjectCatalog(workspaceId),
     // Same directory read the route would have made on its own, wrapped so every
     // workspace type it carries is memoized for the team-share invariant.
     listWorkspaceDirectory,
     fetchWorkspaceDirectory: fetchWorkspaceDirectoryForAccountSurface,
-    // Reuse the shared team-projects lister (which holds the shared vela-cli
-    // catalog adapter). Without this the endpoint built a fresh adapter per
-    // request and re-ran the one-off `vela team-projects --help` capability
-    // probe — an extra CLI spawn (and, on the current CLI, a blocking analytics
-    // POST) on every workspace projects load.
-    //
-    // Use the DISPLAY cache, not the uncached exact lookup. This is the read
-    // behind the Home team-project grid and the deep-link "is this shared to my
-    // team?" check, and `teamProjectsDisplayCache` was built for exactly this
-    // route — see its doc comment, which names it. Wired to the uncached lister
-    // instead, every call spawned `vela team-projects list`: measured at ~1.1s
-    // per request against a live workspace, cold and warm alike, on a path the
-    // UI hits on every launch and every deep link.
-    //
-    // These routes are display reads: the Home team-project grid and the
-    // deep-link "is this shared to my team?" check. Nothing here gates data
-    // access — project access checks reach `teamProjectsLister` on their own
-    // and still observe an unshare immediately.
-    //
-    // Display freshness does not rest on the 3s TTL alone: share, unshare and
-    // workspace-change invalidate this cache explicitly, via
-    // `invalidateTeamProjectCatalog` (collab-sync and the project routes) and
-    // the per-scope invalidations beside the cache itself.
-    //
-    // This was the last caller of the uncached `teamProjectsForRequest`
-    // wrapper, so that helper is removed with it rather than left orphaned.
-    listTeamProjects: teamProjectsForDisplay,
     observeWorkspace: async (req, context, properties) => {
       const service = workspaceAnalyticsService;
       const analyticsContext = readAnalyticsContext(req);

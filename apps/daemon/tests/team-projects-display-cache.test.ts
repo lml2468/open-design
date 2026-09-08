@@ -2,26 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { createSwrCache } from '../src/collab/swr-cache.js';
 
-// `GET /api/workspace/projects/team` is the DISPLAY read: the Home team-project
-// grid and the deep-link "is this project shared to my team?" check both go
-// through it. Measured against a live vela Team workspace it costs ~1.1s every
-// single call — cold and warm alike — because each one spawns
-// `vela team-projects list` and waits for a round trip to the API.
-//
-// server.ts already builds `teamProjectsDisplayCache` for exactly this, and its
-// own doc comment names the route:
-//
-//   "Short-TTL, single-flight cache for the read-only DISPLAY path
-//    (GET /api/workspace/projects/team) ... Deliberately NOT used by
-//    resolveSharedProject below: project access checks must
-//    observe an unshare immediately, so those use the uncached exact lookup."
-//
-// The uncached lookup is meant for the relay/pull gate. The display route was
-// wired to it anyway, so the cache built for it went unused by it.
+// Legacy Team Project status reads are expensive because each uncached read
+// spawns `vela team-projects list` and waits for a round trip to the API.
 //
 // Freshness does not depend on the TTL alone: the cache is explicitly
 // invalidated on share, unshare, and workspace change, so an unshare is still
-// visible immediately on the surfaces that matter.
+// visible immediately to the remaining status and synchronization callers.
 //
 // This spec pins the two properties the display path needs from that cache.
 describe('team-projects display cache behaviour', () => {
