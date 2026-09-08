@@ -4813,7 +4813,6 @@ export async function startServer({
 
   registerPluginRoutes(app, {
     db,
-    authorizeProjectRequest,
     paths: { PROJECTS_DIR, PLUGIN_REGISTRY_ROOTS, PLUGIN_LOCKFILE_PATH },
     ids: idDeps,
     projectStore: projectStoreDeps,
@@ -4824,7 +4823,6 @@ export async function startServer({
     workspaceResources: {
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
-      getWorkspaceProjectByProjectId,
     },
     plugins: {
       listInstalledPlugins: listWorkspacePlugins,
@@ -4879,7 +4877,6 @@ export async function startServer({
 
   registerProjectPluginRoutes(app, {
     db,
-    authorizeProjectRequest,
     paths: { PROJECTS_DIR, PLUGIN_REGISTRY_ROOTS, PLUGIN_LOCKFILE_PATH },
     ids: idDeps,
     projectStore: projectStoreDeps,

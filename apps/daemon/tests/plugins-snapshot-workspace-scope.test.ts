@@ -87,32 +87,19 @@ function snapshotId(projectId: string): string {
   return row.id;
 }
 
-describe('applied plugin snapshot workspace isolation', () => {
-  it('hides Personal show and canon payloads from another member, including owner/admin', async () => {
+describe('applied plugin snapshot local project access', () => {
+  it('reads snapshot and canon payloads regardless of legacy Workspace headers', async () => {
     const id = snapshotId('snapshot-personal-project');
     const other = headers('snapshot-admin', 'admin');
     const show = await fetch(`${baseUrl}/api/applied-plugins/${id}`, { headers: other });
     const canon = await fetch(`${baseUrl}/api/applied-plugins/${id}/canon`, { headers: other });
-    expect(show.status).toBe(403);
-    expect(canon.status).toBe(403);
-    expect(await show.text()).not.toContain('personal-private-input');
-    expect(await canon.text()).not.toContain('personal-private-input');
+    expect(show.status).toBe(200);
+    expect(canon.status).toBe(200);
+    expect(await show.text()).toContain('personal-private-input');
+    expect(await canon.text()).toContain('personal-private-input');
   });
 
-  it('allows the Personal creator and every active Team member on a Team snapshot', async () => {
-    const personal = await fetch(
-      `${baseUrl}/api/applied-plugins/${snapshotId('snapshot-personal-project')}`,
-      { headers: headers('snapshot-owner') },
-    );
-    const team = await fetch(
-      `${baseUrl}/api/applied-plugins/${snapshotId('snapshot-team-project')}`,
-      { headers: headers('snapshot-member') },
-    );
-    expect(personal.status).toBe(200);
-    expect(team.status).toBe(200);
-  });
-
-  it('derives project authority when a bound snapshot read has no Workspace headers', async () => {
+  it('reads legacy-bound snapshots without deriving Workspace authority', async () => {
     const personal = await fetch(
       `${baseUrl}/api/applied-plugins/${snapshotId('snapshot-personal-project')}`,
     );
@@ -126,52 +113,40 @@ describe('applied plugin snapshot workspace isolation', () => {
     expect(await team.text()).toContain('team-private-input');
   });
 
-  it('filters the global list by exact Workspace/member while retaining Team snapshots', async () => {
-    const owner = await fetch(`${baseUrl}/api/applied-plugins`, {
+  it('lists every local snapshot regardless of legacy Workspace headers', async () => {
+    const withHeaders = await fetch(`${baseUrl}/api/applied-plugins`, {
       headers: headers('snapshot-owner'),
     });
-    const member = await fetch(`${baseUrl}/api/applied-plugins`, {
-      headers: headers('snapshot-member'),
-    });
-    const ownerBody = await owner.json() as { snapshots: Array<{ inputs: Record<string, string> }> };
-    const memberBody = await member.json() as { snapshots: Array<{ inputs: Record<string, string> }> };
-    expect(ownerBody.snapshots).toHaveLength(2);
-    expect(memberBody.snapshots).toHaveLength(1);
-    expect(memberBody.snapshots[0]?.inputs.secretPrompt).toBe('team-private-input');
-  });
-
-  it('keeps the headerless compatibility list limited to provably unbound projects', async () => {
-    const response = await fetch(`${baseUrl}/api/applied-plugins`);
-    expect(response.status).toBe(200);
-    const body = await response.json() as {
+    const withoutHeaders = await fetch(`${baseUrl}/api/applied-plugins`);
+    expect(withHeaders.status).toBe(200);
+    expect(withoutHeaders.status).toBe(200);
+    const withHeadersBody = await withHeaders.json() as {
       snapshots: Array<{ projectId: string; inputs: Record<string, string> }>;
     };
-    expect(body.snapshots).toHaveLength(1);
-    expect(body.snapshots[0]?.inputs.secretPrompt).toBe('unbound-private-input');
-    expect(JSON.stringify(body)).not.toContain('personal-private-input');
-    expect(JSON.stringify(body)).not.toContain('team-private-input');
+    const withoutHeadersBody = await withoutHeaders.json() as typeof withHeadersBody;
+    expect(withHeadersBody.snapshots).toHaveLength(3);
+    expect(withoutHeadersBody.snapshots).toHaveLength(3);
+    expect(withHeadersBody.snapshots.map((snapshot) => snapshot.inputs.secretPrompt).sort())
+      .toEqual([
+        'personal-private-input',
+        'team-private-input',
+        'unbound-private-input',
+      ]);
+    expect(withoutHeadersBody).toEqual(withHeadersBody);
   });
 
-  it('computes inventory statistics from the caller-visible snapshots only', async () => {
-    const owner = await fetch(`${baseUrl}/api/plugins/stats`, {
+  it('computes inventory statistics from every local snapshot', async () => {
+    const withHeaders = await fetch(`${baseUrl}/api/plugins/stats`, {
       headers: headers('snapshot-owner'),
     });
-    const member = await fetch(`${baseUrl}/api/plugins/stats`, {
-      headers: headers('snapshot-member'),
-    });
-    expect(owner.status).toBe(200);
-    expect(member.status).toBe(200);
-    await expect(owner.json()).resolves.toMatchObject({ snapshots: { total: 2 } });
-    await expect(member.json()).resolves.toMatchObject({ snapshots: { total: 1 } });
+    const withoutHeaders = await fetch(`${baseUrl}/api/plugins/stats`);
+    expect(withHeaders.status).toBe(200);
+    expect(withoutHeaders.status).toBe(200);
+    await expect(withHeaders.json()).resolves.toMatchObject({ snapshots: { total: 3 } });
+    await expect(withoutHeaders.json()).resolves.toMatchObject({ snapshots: { total: 3 } });
   });
 
-  it('does not count Workspace-bound snapshots in headerless statistics', async () => {
-    const response = await fetch(`${baseUrl}/api/plugins/stats`);
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ snapshots: { total: 1 } });
-  });
-
-  it('authorizes snapshot export before reading or materializing private bytes', async () => {
+  it('exports a local snapshot regardless of legacy Workspace headers', async () => {
     const response = await fetch(`${baseUrl}/api/applied-plugins/export`, {
       method: 'POST',
       headers: {
@@ -184,8 +159,8 @@ describe('applied plugin snapshot workspace isolation', () => {
         outDir: exportRoot,
       }),
     });
-    expect(response.status).toBe(403);
-    expect(await response.text()).not.toContain('personal-private-input');
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true });
   });
 
   it('rejects an export without an authorized project or snapshot target', async () => {

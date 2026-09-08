@@ -23,7 +23,6 @@ import {
 } from '../../collab/created-project-workspace.js';
 import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-context.js';
 import type { PluginShareAction } from '../../services/plugin-share-tasks.js';
-import type { AuthorizeProjectRequest } from '../../collab/project-request-authority.js';
 import {
   classifyPluginInstallError,
   type PluginInstallErrorCode,
@@ -85,13 +84,6 @@ interface AppliedPluginSnapshotLike {
   snapshotId: string;
   pluginId: string;
   [key: string]: unknown;
-}
-
-interface WorkspaceProjectBindingRow {
-  workspaceId?: string | null;
-  visibility?: string | null;
-  resourceState?: string | null;
-  createdByWorkspaceMemberId?: string | null;
 }
 
 // The narrow slice of a `workspace_resources` row the mutation gate needs —
@@ -184,7 +176,6 @@ interface PluginRouteHelpers {
 
 export interface RegisterPluginRoutesDeps {
   db: SqliteDbLike;
-  authorizeProjectRequest: AuthorizeProjectRequest;
   paths: { PROJECTS_DIR: string; PLUGIN_REGISTRY_ROOTS: string[]; PLUGIN_LOCKFILE_PATH: string };
   ids: { randomId(): string };
   projectStore: {
@@ -223,10 +214,6 @@ export interface RegisterPluginRoutesDeps {
       resourceType: string,
       resourceId: string,
     ) => WorkspaceResourceBindingRow | null | undefined;
-    getWorkspaceProjectByProjectId?: (
-      db: SqliteDbLike,
-      projectId: string,
-    ) => WorkspaceProjectBindingRow | null | undefined;
   };
   plugins: {
     listInstalledPlugins: (
@@ -436,44 +423,16 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       manifestSourceDigest: computed.manifestSourceDigest,
     });
   };
-  const snapshotVisibleToAuthority = (
-    row: { projectId?: string },
-    authority: WorkspaceCollabContext | null,
-  ): boolean => {
-    if (!row.projectId || !workspaceResources?.getWorkspaceProjectByProjectId) {
-      return false;
-    }
-    const binding = workspaceResources.getWorkspaceProjectByProjectId(db, row.projectId);
-    // Headerless local compatibility is deliberately limited to a snapshot
-    // whose project is provably unbound. A Workspace-bound snapshot may hold
-    // prompts and connector inputs and must not leak through this global lane.
-    if (!authority) return !binding;
-    if (
-      !binding
-      || binding.workspaceId !== authority.workspaceId
-      || binding.resourceState === 'deleted'
-    ) return false;
-    return binding.visibility === 'team'
-      || binding.createdByWorkspaceMemberId === authority.workspaceMemberId;
-  };
   app.get('/api/plugins', async (req, res) => { try { const authority = await resolveWorkspaceAuthority(req, res, deps.verifyWorkspaceReadAuthority ?? deps.verifyWorkspaceRequestAuthority); if (authority === undefined) return; const visible = await plugins.listInstalledPlugins(db, authority?.workspaceId ?? null, authority?.workspaceMemberId ?? null); res.json({ plugins: helpers.applyBakedPreviews(visible, helpers.PLUGIN_PREVIEWS_DIR) }); } catch (err) { res.status(500).json({ error: String(err) }); } });
   // Keep this static route before /api/plugins/:id; Express matches in
   // registration order and would otherwise interpret "stats" as a plugin id.
-  app.get('/api/plugins/stats', async (req, res) => {
-    const authority = await resolveWorkspaceAuthority(req, res);
-    if (authority === undefined) return;
-    const installed = await plugins.listInstalledPlugins(
-      db,
-      authority?.workspaceId ?? null,
-      authority?.workspaceMemberId ?? null,
-    );
+  app.get('/api/plugins/stats', async (_req, res) => {
+    const installed = await plugins.listInstalledPlugins(db);
     const snapshotRows = db.prepare(
       `SELECT status, project_id, project_id AS projectId, run_id, applied_at
          FROM applied_plugin_snapshots`,
-    ).all() as Array<{ projectId?: string }>;
-    const visibleSnapshots = snapshotRows.filter((row) =>
-      snapshotVisibleToAuthority(row, authority));
-    return helpers.handlePluginStats(res, installed, visibleSnapshots);
+    ).all();
+    return helpers.handlePluginStats(res, installed, snapshotRows);
   });
   app.get('/api/plugins/:id', async (req, res) => { try { const authority = await resolveWorkspaceAuthority(req, res); if (authority === undefined) return; const plugin = await resolveRequestPlugin(req.params.id, authority); if (!plugin) return res.status(404).json({ error: 'plugin not found' }); res.json(plugin); } catch (err) { res.status(500).json({ error: String(err) }); } });
   app.post('/api/plugins/upload-zip', (req, res) => {
@@ -756,7 +715,7 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
     return helpers.handlePluginTrust(req, res, plugin);
   });
   const authorizeSnapshotRead = async (
-    req: Request,
+    _req: Request,
     res: Response,
     snapshotId: string,
   ): Promise<AppliedPluginSnapshotLike | null> => {
@@ -765,16 +724,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       res.status(404).json({ error: 'snapshot not found' });
       return null;
     }
-    const row = db.prepare(
-      `SELECT project_id AS projectId FROM applied_plugin_snapshots WHERE id = ?`,
-    ).get(snapshotId) as { projectId?: unknown } | undefined;
-    const projectId = typeof row?.projectId === 'string' ? row.projectId : '';
-    if (!projectId || !await deps.authorizeProjectRequest(
-      req,
-      res,
-      projectId,
-      { mode: 'read' },
-    )) return null;
     return snap;
   };
   app.get('/api/applied-plugins/:snapshotId', async (req, res) => {
@@ -797,20 +746,16 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       res.json({ snapshotId: snap.snapshotId, pluginId: snap.pluginId, block });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
-  app.get('/api/applied-plugins', async (req, res) => {
+  app.get('/api/applied-plugins', async (_req, res) => {
     try {
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
       const rows = db.prepare(
         `SELECT id, project_id AS projectId
            FROM applied_plugin_snapshots
           ORDER BY applied_at DESC
           LIMIT 500`,
       ).all() as Array<SqliteRowId & { projectId?: string }>;
-      const visibleRows = rows.filter((row) =>
-        snapshotVisibleToAuthority(row, authority));
       res.json({
-        snapshots: visibleRows
+        snapshots: rows
           .map((row) => plugins.getSnapshot(db, row.id))
           .filter((snapshot): snapshot is AppliedPluginSnapshotLike => snapshot !== null),
       });
@@ -818,12 +763,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
   });
   app.get('/api/projects/:projectId/applied-plugins', async (req, res) => {
     try {
-      if (!await deps.authorizeProjectRequest(
-        req,
-        res,
-        req.params.projectId,
-        { mode: 'read' },
-      )) return;
       const rows = db.prepare(
         `SELECT id FROM applied_plugin_snapshots WHERE project_id = ? ORDER BY applied_at DESC`,
       ).all(req.params.projectId) as SqliteRowId[];
@@ -843,16 +782,15 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       const body = req.body && typeof req.body === 'object'
         ? req.body as Record<string, unknown>
         : {};
-      if (typeof body.snapshotId === 'string' && body.snapshotId.length > 0) {
-        if (!await authorizeSnapshotRead(req, res, body.snapshotId)) return;
-      } else if (typeof body.projectId === 'string' && body.projectId.length > 0) {
-        if (!await deps.authorizeProjectRequest(
-          req,
-          res,
-          body.projectId,
-          { mode: 'read' },
-        )) return;
-      } else {
+      const snapshotId = typeof body.snapshotId === 'string' && body.snapshotId.length > 0
+        ? body.snapshotId
+        : null;
+      const projectId = typeof body.projectId === 'string' && body.projectId.length > 0
+        ? body.projectId
+        : null;
+      if (snapshotId) {
+        if (!await authorizeSnapshotRead(req, res, snapshotId)) return;
+      } else if (!projectId) {
         return helpers.sendApiError(
           res,
           400,
@@ -868,19 +806,10 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
 
 export function registerProjectPluginRoutes(app: Express, deps: RegisterPluginRoutesDeps): void {
   const { db, paths, plugins, helpers } = deps;
-  const authorizeWrite = (req: Request, res: Response, projectId: string) =>
-    deps.authorizeProjectRequest(
-      req,
-      res,
-      projectId,
-      { mode: 'write', capability: 'writeFiles' },
-    );
   app.post('/api/projects/:id/plugins/install-folder', async (req, res) => {
-    if (!await authorizeWrite(req, res, req.params.id)) return;
     return helpers.handleProjectInstallFolder(req, res);
   });
   app.post('/api/projects/:id/plugins/publish-github', async (req, res) => {
-    if (!await authorizeWrite(req, res, req.params.id)) return;
     return helpers.handleProjectPluginCli(req, res, 'publish-github');
   });
   app.get('/api/projects/:id/plugin-candidates', async (req, res) => {
@@ -889,7 +818,6 @@ export function registerProjectPluginRoutes(app: Express, deps: RegisterPluginRo
       if (!project) {
         return helpers.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await deps.authorizeProjectRequest(req, res, req.params.id, { mode: 'read' })) return;
       const includeDismissed = req.query.includeDismissed === 'true';
       res.json({
         candidates: plugins.listSkillPluginCandidates(db, req.params.id, includeDismissed),
@@ -902,7 +830,6 @@ export function registerProjectPluginRoutes(app: Express, deps: RegisterPluginRo
     if (!helpers.isLocalSameOrigin(req, helpers.resolvedPortRef.current)) {
       return res.status(403).json({ error: 'cross-origin request rejected' });
     }
-    if (!await authorizeWrite(req, res, req.params.id)) return;
     const candidate = plugins.dismissSkillPluginCandidate(
       db,
       req.params.id,
@@ -917,26 +844,21 @@ export function registerProjectPluginRoutes(app: Express, deps: RegisterPluginRo
     res.json({ ok: true, candidate });
   });
   app.post('/api/projects/:id/plugin-candidates/:candidateId/draft', async (req, res) => {
-    if (!await authorizeWrite(req, res, req.params.id)) return;
     return helpers.handleCandidateDraft(req, res);
   });
   app.post('/api/projects/:id/plugin-candidates/:candidateId/share-tasks', async (req, res) => {
-    if (!await authorizeWrite(req, res, req.params.id)) return;
     return helpers.handleCandidateShareTask(req, res);
   });
   app.post('/api/projects/:id/plugins/contribute-open-design', async (req, res) => {
-    if (!await authorizeWrite(req, res, req.params.id)) return;
     return helpers.handleProjectPluginCli(req, res, 'contribute-open-design');
   });
   app.post('/api/projects/:id/plugins/share-tasks', async (req, res) => {
-    if (!await authorizeWrite(req, res, req.params.id)) return;
     return helpers.handleProjectShareTask(req, res);
   });
   app.post('/api/plugins/share-tasks/:id/wait', async (req, res) => {
     if (!helpers.isLocalSameOrigin(req, helpers.resolvedPortRef.current)) return res.status(403).json({ error: 'cross-origin request rejected' });
     const task = helpers.pluginShareTaskStore.get(req.params.id);
     if (!task) return res.status(404).json({ error: 'task not found' });
-    if (!await deps.authorizeProjectRequest(req, res, task.projectId, { mode: 'read' })) return;
     const since = Number.isFinite(req.body?.since) ? Number(req.body.since) : 0;
     const requestedTimeout = Number.isFinite(req.body?.timeoutMs) ? Number(req.body.timeoutMs) : 25_000;
     const timeoutMs = Math.min(Math.max(requestedTimeout, 0), 25_000);
