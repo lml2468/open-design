@@ -95,8 +95,6 @@ import {
   RUNS_CHANGED_EVENT,
   listProjectRuns,
 } from './providers/daemon';
-import { useWorkspaceInvalidation } from './collab/workspace-events';
-import { useWorkspaceSnapshotActivation } from './collab/workspace-snapshot-activation';
 import {
   beginWorkspaceScopedRead,
   currentWorkspaceAccountGeneration,
@@ -151,7 +149,6 @@ import {
   getProject,
   importClaudeDesignZip,
   importFolderProject,
-  invalidatePluginCatalogCache,
   listProjects,
   listTemplates,
   deleteTemplate,
@@ -727,50 +724,6 @@ function AppInner() {
   useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
-  const teamResourceRefreshRefs = useRef<{
-    skill: (resourceId?: string) => void;
-    designSystem: (resourceId?: string) => void;
-    plugin: (
-      context: WorkspaceCollabContext | null,
-      accountGeneration: number,
-    ) => void;
-    catchUp: () => void;
-  }>({
-    skill: () => {},
-    designSystem: () => {},
-    plugin: () => {},
-    catchUp: () => {},
-  });
-  const invalidationWorkspaceContext = workspaceContext;
-  const invalidationAccountGeneration = workspaceAccountGeneration;
-  const resourceStreamIdentity = JSON.stringify([
-    invalidationAccountGeneration,
-    workspaceIdentityCacheKey(invalidationWorkspaceContext),
-  ]);
-  const handleTeamResourceStreamActive = useWorkspaceSnapshotActivation({
-    enabled: invalidationWorkspaceContext?.workspaceType === 'team',
-    identity: resourceStreamIdentity,
-    refresh: () => teamResourceRefreshRefs.current.catchUp(),
-  });
-  useWorkspaceInvalidation({
-    'team-resources-changed': (payload) => {
-      if (payload.resourceKind === 'skill') {
-        teamResourceRefreshRefs.current.skill(payload.resourceId);
-        return;
-      }
-      if (payload.resourceKind === 'design_system') {
-        teamResourceRefreshRefs.current.designSystem(payload.resourceId);
-        return;
-      }
-      teamResourceRefreshRefs.current.plugin(
-        invalidationWorkspaceContext,
-        invalidationAccountGeneration,
-      );
-    },
-  }, {
-    workspaceContext,
-    onActive: handleTeamResourceStreamActive,
-  });
   const [petTaskCenter, setPetTaskCenter] = useState<PetTaskCenter>({
     running: [],
     queued: [],
@@ -1347,40 +1300,35 @@ function AppInner() {
       });
 
       const designSystemsContext = workspaceContextRef.current;
-      // A cached Team identity already has an SSE lifecycle owner below. Do
-      // not race an eager bootstrap snapshot against its first onActive; the
-      // 250ms fallback covers shells where the stream never opens.
-      if (designSystemsContext?.workspaceType !== 'team') {
-        const designSystemsWorkspaceIdentity = workspaceIdentityCacheKey(designSystemsContext);
-        const designSystemsAccountGeneration = currentWorkspaceAccountGeneration();
-        const designSystemsCatalogIdentity = JSON.stringify([
-          'workspace-account',
-          designSystemsAccountGeneration,
-          designSystemsWorkspaceIdentity,
-        ]);
-        const designSystemsRequestGeneration =
-          (designSystemsRequestGenerationRef.current.get(designSystemsCatalogIdentity) ?? 0) + 1;
-        designSystemsRequestGenerationRef.current.set(
-          designSystemsCatalogIdentity,
-          designSystemsRequestGeneration,
-        );
-        void fetchDesignSystems(designSystemsContext).then((list) => {
-          if (
-            cancelled ||
-            workspaceContextStateRef.current.identityChangePending ||
-            designSystemsRequestGenerationRef.current.get(designSystemsCatalogIdentity)
-              !== designSystemsRequestGeneration ||
-            currentWorkspaceAccountGeneration() !== designSystemsAccountGeneration ||
-            workspaceIdentityCacheKey(workspaceContextRef.current)
-              !== designSystemsWorkspaceIdentity
-          ) return;
-          setWorkspaceDesignSystems({
-            identity: designSystemsCatalogIdentity,
-            items: list,
-          });
-          setDsLoading(false);
+      const designSystemsWorkspaceIdentity = workspaceIdentityCacheKey(designSystemsContext);
+      const designSystemsAccountGeneration = currentWorkspaceAccountGeneration();
+      const designSystemsCatalogIdentity = JSON.stringify([
+        'workspace-account',
+        designSystemsAccountGeneration,
+        designSystemsWorkspaceIdentity,
+      ]);
+      const designSystemsRequestGeneration =
+        (designSystemsRequestGenerationRef.current.get(designSystemsCatalogIdentity) ?? 0) + 1;
+      designSystemsRequestGenerationRef.current.set(
+        designSystemsCatalogIdentity,
+        designSystemsRequestGeneration,
+      );
+      void fetchDesignSystems(designSystemsContext).then((list) => {
+        if (
+          cancelled ||
+          workspaceContextStateRef.current.identityChangePending ||
+          designSystemsRequestGenerationRef.current.get(designSystemsCatalogIdentity)
+            !== designSystemsRequestGeneration ||
+          currentWorkspaceAccountGeneration() !== designSystemsAccountGeneration ||
+          workspaceIdentityCacheKey(workspaceContextRef.current)
+            !== designSystemsWorkspaceIdentity
+        ) return;
+        setWorkspaceDesignSystems({
+          identity: designSystemsCatalogIdentity,
+          items: list,
         });
-      }
+        setDsLoading(false);
+      });
 
       const request = beginProjectListRequest(workspaceProjectViewRef.current);
       void listCurrentWorkspaceProjects({
@@ -1688,10 +1636,7 @@ function AppInner() {
     reconcileFetchedProjects,
   ]);
 
-  const refreshDesignSystems = useCallback(async (options?: {
-    forceTeamMaterialization?: boolean;
-    materializedTeamIds?: readonly string[];
-  }) => {
+  const refreshDesignSystems = useCallback(async () => {
     // Carry the captured Workspace/member identity on the request. The daemon
     // verifies that exact membership instead of consulting mutable ambient
     // Workspace state, and the same identity key prevents an A response from
@@ -1708,7 +1653,7 @@ function AppInner() {
     const requestGeneration =
       (designSystemsRequestGenerationRef.current.get(issuedCatalogIdentity) ?? 0) + 1;
     designSystemsRequestGenerationRef.current.set(issuedCatalogIdentity, requestGeneration);
-    const list = await fetchDesignSystems(issuedContext, options);
+    const list = await fetchDesignSystems(issuedContext);
     if (
       workspaceContextStateRef.current.identityChangePending
       || designSystemsRequestGenerationRef.current.get(issuedCatalogIdentity)
@@ -1729,12 +1674,10 @@ function AppInner() {
   // reuse the Workspace id while changing the authoritative membership.
   useEffect(() => {
     if (workspaceContextState.identityChangePending) return;
-    if (workspaceContext?.workspaceType === 'team') return;
     void refreshDesignSystems();
   }, [
     currentWorkspaceCatalogIdentity,
     refreshDesignSystems,
-    workspaceContext?.workspaceType,
     workspaceContextState.identityChangePending,
   ]);
 
@@ -1802,14 +1745,12 @@ function AppInner() {
     if (workspaceContextLoading || workspaceContextState.identityChangePending) return;
     if (skillsReadIdentityRef.current === skillsReadIdentity) return;
     skillsReadIdentityRef.current = skillsReadIdentity;
-    if (workspaceContext?.workspaceType === 'team') return;
     void refreshSkills();
   }, [
     workspaceContextLoading,
     workspaceContextState.identityChangePending,
     skillsReadIdentity,
     refreshSkills,
-    workspaceContext?.workspaceType,
   ]);
 
   const refreshTemplates = useCallback(async () => {
@@ -3227,7 +3168,7 @@ function AppInner() {
 
   const handleDesignSystemsChanged = useCallback(
     (affectedDesignSystemId?: string) => {
-      void refreshDesignSystems({ forceTeamMaterialization: true });
+      void refreshDesignSystems();
       iframeKeepAlivePool.evictMatching(
         (entry) => {
           const proj = projectsRef.current.find((p) => p.id === entry.projectId);
@@ -3260,23 +3201,6 @@ function AppInner() {
     goBack({ kind: 'home', view: 'design-systems' });
   }, []);
 
-  const handlePluginsChanged = useCallback((
-    context: WorkspaceCollabContext | null,
-    accountGeneration: number,
-  ) => {
-    invalidatePluginCatalogCache({ workspaceContext: context, accountGeneration });
-    window.dispatchEvent(new CustomEvent('open-design:plugins-changed'));
-  }, []);
-
-  teamResourceRefreshRefs.current.skill = handleSkillsChanged;
-  teamResourceRefreshRefs.current.designSystem = handleDesignSystemsChanged;
-  teamResourceRefreshRefs.current.plugin = handlePluginsChanged;
-  teamResourceRefreshRefs.current.catchUp = () => {
-    // Focus/reconnect is snapshot catch-up, not a mutation. Keep project
-    // previews intact and never fan out the plugin mutation CustomEvent.
-    void refreshSkills();
-    void refreshDesignSystems({ forceTeamMaterialization: true });
-  };
   const handleDesignSystemImportRebuildJob = useCallback(
     (designSystemId: string, job: DesignSystemGenerationJob) => {
       setPendingDesignSystemRevisionJobs((current) => ({
@@ -3652,8 +3576,8 @@ function AppInner() {
   useEffect(() => {
     if (route.kind !== 'home') return;
     void refreshTemplates();
-    if (workspaceContext?.workspaceType !== 'team') void refreshDesignSystems();
-  }, [route.kind, refreshTemplates, refreshDesignSystems, workspaceContext?.workspaceType]);
+    void refreshDesignSystems();
+  }, [route.kind, refreshTemplates, refreshDesignSystems]);
 
   // Existing card grids (DesignsTab, ProjectView), pickers (NewProjectPanel,
   // ChatComposer mention) all look skills up by id without caring whether

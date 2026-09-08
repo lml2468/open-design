@@ -11,8 +11,6 @@ import type {
   UserDesignSystemInput,
 } from '../design-systems/index.js';
 import type { DesignTokenContractRebuildPreparation } from '../design-systems/token-contract-rebuild.js';
-import { workspaceTeamDesignSystemBindingResourceId } from '../design-systems/workspace-team-binding.js';
-import { teamResourceWorkspaceRoot } from '../collab/team-resource-materialization.js';
 import type {
   DesignSystemGenerationJob,
   DesignSystemRevisionInput,
@@ -251,32 +249,11 @@ export function registerDesignSystemRoutes(
   );
 
   function resolveDesignSystemStorage(
-    req: any,
+    _req: any,
     id: string,
-    allowNavigationQuery = false,
+    _allowNavigationQuery = false,
   ): { root: string; bindingResourceId: string; exactTeam: boolean } {
-    const workspaceId = (
-      headerValue(req, 'x-od-workspace-id')
-      ?? (allowNavigationQuery
-        ? designSystemNavigationWorkspaceQuery(req)?.workspaceId
-        : null)
-      ?? ''
-    ).trim();
-    if (!workspaceId) {
-      return { root: USER_DESIGN_SYSTEMS_DIR, bindingResourceId: id, exactTeam: false };
-    }
-    const teamBindingResourceId = workspaceTeamDesignSystemBindingResourceId(
-      workspaceId,
-      id,
-    );
-    const teamBinding = getBoundDesignSystem(db, workspaceId, teamBindingResourceId);
-    return teamBinding?.visibility === 'team'
-      ? {
-          root: teamResourceWorkspaceRoot(USER_DESIGN_SYSTEMS_DIR, workspaceId),
-          bindingResourceId: teamBindingResourceId,
-          exactTeam: true,
-        }
-      : { root: USER_DESIGN_SYSTEMS_DIR, bindingResourceId: id, exactTeam: false };
+    return { root: USER_DESIGN_SYSTEMS_DIR, bindingResourceId: id, exactTeam: false };
   }
 
   async function authorizeDesignSystemRead(
@@ -304,29 +281,14 @@ export function registerDesignSystemRoutes(
       });
       return false;
     }
-    let bindingResourceId = id;
+    const bindingResourceId = id;
     let binding = getDesignSystemBinding(db, id);
     if (resolution.context) {
-      const teamBindingResourceId = workspaceTeamDesignSystemBindingResourceId(
-        resolution.context.workspaceId,
-        id,
-      );
-      const teamBinding = getBoundDesignSystem(
-        db,
-        resolution.context.workspaceId,
-        teamBindingResourceId,
-      );
-      const personalBinding = getBoundDesignSystem(
+      binding = getBoundDesignSystem(
         db,
         resolution.context.workspaceId,
         id,
       );
-      if (teamBinding?.visibility === 'team') {
-        bindingResourceId = teamBindingResourceId;
-        binding = teamBinding;
-      } else {
-        binding = personalBinding;
-      }
     }
     const isPublicBuiltIn = resolution.context && !binding
       ? (await listAllDesignSystems({
@@ -341,7 +303,6 @@ export function registerDesignSystemRoutes(
       (!binding && !isPublicBuiltIn)
       || (
         binding
-        && binding.visibility !== 'team'
         && binding.createdByWorkspaceMemberId !== resolution.context.workspaceMemberId
       )
     )) {
@@ -389,35 +350,19 @@ export function registerDesignSystemRoutes(
       });
       return false;
     }
-    let bindingResourceId = id;
+    const bindingResourceId = id;
     let binding = getDesignSystemBinding(db, id);
     if (resolution.context) {
-      const teamBindingResourceId = workspaceTeamDesignSystemBindingResourceId(
-        resolution.context.workspaceId,
-        id,
-      );
-      const teamBinding = getBoundDesignSystem(
-        db,
-        resolution.context.workspaceId,
-        teamBindingResourceId,
-      );
-      const personalBinding = getBoundDesignSystem(
+      binding = getBoundDesignSystem(
         db,
         resolution.context.workspaceId,
         id,
       );
-      if (teamBinding?.visibility === 'team') {
-        bindingResourceId = teamBindingResourceId;
-        binding = teamBinding;
-      } else {
-        binding = personalBinding;
-      }
     }
     if (resolution.context && (
       !binding
       || (
-        binding.visibility !== 'team'
-        && binding.createdByWorkspaceMemberId !== resolution.context.workspaceMemberId
+        binding.createdByWorkspaceMemberId !== resolution.context.workspaceMemberId
       )
     )) {
       res.status(403).json({

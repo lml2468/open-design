@@ -151,7 +151,6 @@ import {
   localProjectWorkspaceAttribution,
   type CreatedProjectWorkspaceResolver,
 } from '../../collab/created-project-workspace.js';
-import { localPluginRegistryScope } from '../../plugins/local-source.js';
 import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-context.js';
 import { cancelRunsOwnedBy } from './cancel-owned-runs.js';
 
@@ -4113,11 +4112,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           });
         }
         const registry = resolveBody
-          ? await loadPluginRegistryView(
-              selectedLocalPlugin
-                ? localPluginRegistryScope(selectedLocalPlugin)
-                : creationWorkspaceScope,
-            )
+          ? await loadPluginRegistryView(creationWorkspaceScope)
           : null;
         let pluginForSnapshot = selectedLocalPlugin;
         if (requestedPluginId && requestedPluginSource) {

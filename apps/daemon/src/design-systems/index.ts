@@ -30,7 +30,6 @@ import {
   getWorkspaceResourceByResourceId,
   updateWorkspaceResource,
 } from '../db.js';
-import { teamResourceWorkspaceRoot } from '../collab/team-resource-materialization.js';
 
 type SqliteDb = Database.Database;
 
@@ -1418,22 +1417,11 @@ export function workspaceRenameDesignSystemId(project: {
 // recreates the silent revert this write-through exists to prevent.
 export type WorkspaceRenamePropagation = 'not-applicable' | 'propagated' | 'failed';
 
-/**
- * A Team design-system workspace project edits the workspace-scoped
- * materialization, never a same-id Personal canonical entry. The persisted
- * project binding is the scope authority; shell/current Workspace state is
- * deliberately irrelevant.
- */
 export function resolveWorkspaceProjectDesignSystemRoot(
   canonicalRoot: string,
-  binding: { workspaceId?: unknown; visibility?: unknown } | null | undefined,
+  _binding: { workspaceId?: unknown; visibility?: unknown } | null | undefined,
 ): string {
-  const workspaceId = typeof binding?.workspaceId === 'string'
-    ? binding.workspaceId.trim()
-    : '';
-  return binding?.visibility === 'team' && workspaceId
-    ? teamResourceWorkspaceRoot(canonicalRoot, workspaceId)
-    : canonicalRoot;
+  return canonicalRoot;
 }
 
 export async function propagateWorkspaceProjectRename(

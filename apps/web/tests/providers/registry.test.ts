@@ -192,253 +192,6 @@ describe('design-system Workspace scope', () => {
     });
   });
 
-  it('materializes the exact team Workspace catalog before listing design systems', async () => {
-    const context = teamWorkspaceContext();
-    const calls: string[] = [];
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      calls.push(url);
-      if (url === '/api/workspace/design-systems/team') {
-        return new Response(JSON.stringify({ ids: ['user:team-brand'] }), { status: 200 });
-      }
-      return new Response(JSON.stringify({
-        designSystems: [{
-          id: 'user:team-brand',
-          title: 'Team Brand',
-          category: 'Custom',
-          summary: 'Shared by the team.',
-          swatches: [],
-          surface: 'web',
-          source: 'user',
-          status: 'published',
-          isEditable: true,
-        }],
-      }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(fetchDesignSystemsResult(context)).resolves.toMatchObject({
-      ok: true,
-      designSystems: [expect.objectContaining({ id: 'user:team-brand', teamShared: true })],
-    });
-
-    expect(calls).toEqual([
-      '/api/workspace/design-systems/team',
-      '/api/design-systems',
-    ]);
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/workspace/design-systems/team', {
-      cache: 'no-store',
-      headers: expect.objectContaining({
-        'x-od-workspace-id': context.workspaceId,
-        'x-od-workspace-member-id': context.workspaceMemberId,
-      }),
-    });
-  });
-
-  it('reuses an exact Team-index witness instead of materializing the same scope twice', async () => {
-    const context = {
-      ...teamWorkspaceContext(),
-      workspaceId: 'ws-team-index-already-materialized',
-      teamId: 'ws-team-index-already-materialized',
-    };
-    const calls: string[] = [];
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      calls.push(url);
-      return new Response(JSON.stringify({
-        designSystems: [{
-          id: 'user:already-materialized',
-          title: 'Already Materialized',
-          category: 'Custom',
-          summary: 'The Team index was read by the caller.',
-          source: 'user',
-          status: 'published',
-        }],
-      }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(fetchDesignSystemsResult(context, {
-      materializedTeamIds: ['user:already-materialized'],
-    })).resolves.toMatchObject({
-      ok: true,
-      designSystems: [expect.objectContaining({
-        id: 'user:already-materialized',
-        teamShared: true,
-      })],
-    });
-
-    expect(calls).toEqual(['/api/design-systems']);
-  });
-
-  it('forces a fresh Team materialization after a remote resource invalidation', async () => {
-    const context = {
-      ...teamWorkspaceContext(),
-      workspaceId: 'ws-team-force-refresh',
-    };
-    let teamReadCount = 0;
-    let sharedIds = ['user:old-team-brand'];
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === '/api/workspace/design-systems/team') {
-        teamReadCount += 1;
-        return new Response(JSON.stringify({ ids: sharedIds }), { status: 200 });
-      }
-      return new Response(JSON.stringify({
-        designSystems: [
-          {
-            id: 'user:old-team-brand',
-            title: 'Old Team Brand',
-            category: 'Custom',
-            summary: 'Removed remotely.',
-            source: 'user',
-            status: 'published',
-          },
-          {
-            id: 'user:new-team-brand',
-            title: 'New Team Brand',
-            category: 'Custom',
-            summary: 'Shared remotely.',
-            source: 'user',
-            status: 'published',
-          },
-        ],
-      }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(fetchDesignSystemsResult(context)).resolves.toMatchObject({
-      ok: true,
-      designSystems: [
-        expect.objectContaining({ id: 'user:old-team-brand', teamShared: true }),
-        expect.objectContaining({ id: 'user:new-team-brand' }),
-      ],
-    });
-
-    sharedIds = ['user:new-team-brand'];
-    await expect(fetchDesignSystemsResult(context, {
-      forceTeamMaterialization: true,
-    })).resolves.toMatchObject({
-      ok: true,
-      designSystems: [
-        expect.not.objectContaining({ teamShared: true }),
-        expect.objectContaining({ id: 'user:new-team-brand', teamShared: true }),
-      ],
-    });
-    expect(teamReadCount).toBe(2);
-  });
-
-  it('does not merge two forced Team materializations inside the burst window', async () => {
-    const context = {
-      ...teamWorkspaceContext(),
-      workspaceId: 'ws-team-two-rapid-mutations',
-    };
-    const teamA = deferred<Response>();
-    const teamB = deferred<Response>();
-    let teamReadCount = 0;
-    const catalog = {
-      designSystems: [
-        { id: 'user:brand-a', title: 'A', source: 'user', status: 'published' },
-        { id: 'user:brand-b', title: 'B', source: 'user', status: 'published' },
-      ],
-    };
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-      if (String(input) === '/api/workspace/design-systems/team') {
-        teamReadCount += 1;
-        return teamReadCount === 1 ? teamA.promise : teamB.promise;
-      }
-      return Promise.resolve(new Response(JSON.stringify(catalog), { status: 200 }));
-    }));
-
-    const resultA = fetchDesignSystemsResult(context, { forceTeamMaterialization: true });
-    expect(teamReadCount).toBe(1);
-    const resultB = fetchDesignSystemsResult(context, { forceTeamMaterialization: true });
-    expect(teamReadCount).toBe(2);
-
-    teamB.resolve(new Response(JSON.stringify({ ids: ['user:brand-b'] }), { status: 200 }));
-    await expect(resultB).resolves.toMatchObject({
-      ok: true,
-      designSystems: [
-        expect.not.objectContaining({ teamShared: true }),
-        expect.objectContaining({ id: 'user:brand-b', teamShared: true }),
-      ],
-    });
-
-    teamA.resolve(new Response(JSON.stringify({ ids: ['user:brand-a'] }), { status: 200 }));
-    await expect(resultA).resolves.toMatchObject({
-      ok: true,
-      designSystems: [
-        expect.objectContaining({ id: 'user:brand-a', teamShared: true }),
-        expect.not.objectContaining({ teamShared: true }),
-      ],
-    });
-  });
-
-  it('keeps personal and official systems available when team materialization fails', async () => {
-    const context = {
-      ...teamWorkspaceContext(),
-      workspaceId: 'ws-team-offline',
-    };
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/workspace/design-systems/team') {
-        return new Response('unavailable', { status: 503 });
-      }
-      return new Response(JSON.stringify({
-        designSystems: [{
-          id: 'user:local-brand',
-          title: 'Local Brand',
-          category: 'Custom',
-          summary: 'Still available.',
-          swatches: [],
-          surface: 'web',
-          source: 'user',
-          status: 'published',
-          isEditable: true,
-        }],
-      }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(fetchDesignSystemsResult(context)).resolves.toMatchObject({
-      ok: true,
-      designSystems: [expect.objectContaining({
-        id: 'user:local-brand',
-      })],
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('partitions team materialization when the Workspace changes', async () => {
-    const contexts = [
-      teamWorkspaceContext(),
-      {
-        ...teamWorkspaceContext(),
-        workspaceId: 'ws-team-b',
-        workspaceMemberId: 'wm-team-b',
-      },
-    ];
-    const teamRequestHeaders: Array<{ workspaceId: string | null; memberId: string | null }> = [];
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === '/api/workspace/design-systems/team') {
-        const headers = new Headers(init?.headers);
-        teamRequestHeaders.push({
-          workspaceId: headers.get('x-od-workspace-id'),
-          memberId: headers.get('x-od-workspace-member-id'),
-        });
-        return new Response(JSON.stringify({ ids: [] }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ designSystems: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    await Promise.all(contexts.map((context) => fetchDesignSystemsResult(context)));
-
-    expect(teamRequestHeaders).toEqual([
-      { workspaceId: 'ws-team-a', memberId: 'wm-team-a' },
-      { workspaceId: 'ws-team-b', memberId: 'wm-team-b' },
-    ]);
-  });
-
   it('attaches the same identity to design-system creation', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({
@@ -478,10 +231,7 @@ describe('design-system Workspace scope', () => {
     const context = personalWorkspaceContext();
     const gate = deferred<Response>();
     let catalogReads = 0;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-      if (String(input) === '/api/workspace/design-systems/team') {
-        return Promise.resolve(new Response(JSON.stringify({ ids: [] }), { status: 200 }));
-      }
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL) => {
       catalogReads += 1;
       return gate.promise;
     }));
@@ -513,10 +263,7 @@ describe('design-system Workspace scope', () => {
     // a second would hand those reads the state they were fired to replace.
     const context = personalWorkspaceContext();
     let catalogReads = 0;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-      if (String(input) === '/api/workspace/design-systems/team') {
-        return Promise.resolve(new Response(JSON.stringify({ ids: [] }), { status: 200 }));
-      }
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL) => {
       catalogReads += 1;
       return Promise.resolve(new Response(JSON.stringify({ designSystems: [] }), { status: 200 }));
     }));
@@ -529,20 +276,15 @@ describe('design-system Workspace scope', () => {
   it('starts a fresh catalog read when a local mutation lands mid-flight', async () => {
     // Review catch. `DesignSystemsTab` awaits `deleteDesignSystemDraft` (and
     // `updateDesignSystemDraft` for publish/unpublish) and then calls its plain
-    // `onSystemsRefresh()` — no `forceTeamMaterialization`, because nothing
-    // remote changed. That refresh is precisely the caller that must not join a
-    // GET issued before the mutation: `ttl = 0` stops settled-result reuse, not
-    // in-flight joining, so the tab would commit the pre-mutation rows and leave
-    // the deleted system on screen.
+    // `onSystemsRefresh()`. That refresh is precisely the caller that must not
+    // join a GET issued before the mutation: `ttl = 0` stops settled-result
+    // reuse, not in-flight joining, so the tab would commit the pre-mutation
+    // rows and leave the deleted system on screen.
     const context = personalWorkspaceContext();
     const pending = deferred<Response>();
     let rows = [{ id: 'user:doomed', title: 'Doomed', source: 'user', status: 'published' }];
     let catalogGets = 0;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === '/api/workspace/design-systems/team') {
-        return Promise.resolve(new Response(JSON.stringify({ ids: [] }), { status: 200 }));
-      }
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       if ((init?.method ?? 'GET') === 'DELETE') {
         rows = [];
         return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
@@ -580,11 +322,7 @@ describe('design-system Workspace scope', () => {
     const pending = deferred<Response>();
     let rows = [{ id: 'user:installed', title: 'Installed', source: 'user', status: 'published' }];
     let catalogGets = 0;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === '/api/workspace/design-systems/team') {
-        return Promise.resolve(new Response(JSON.stringify({ ids: [] }), { status: 200 }));
-      }
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       if ((init?.method ?? 'GET') === 'DELETE') {
         rows = [];
         return Promise.resolve(new Response(null, { status: 204 }));
@@ -608,55 +346,6 @@ describe('design-system Workspace scope', () => {
     await inFlightBeforeMutation;
   });
 
-  it('starts a fresh catalog read when the caller brings a newer Team witness', async () => {
-    // Review catch, and a regression this PR introduced: before coalescing, this
-    // path always made its own catalog request.
-    //
-    // `DesignSystemsTab.refreshTeamShared` passes `materializedTeamIds` — never
-    // `forceTeamMaterialization` — and it only does so when the fresh `/team`
-    // read disagrees with the catalog it holds, or right after a share/unshare
-    // (`refreshSystems: true`). So supplying that witness always means "what I
-    // hold is out of date", and joining a catalog GET issued before the
-    // share/unshare would omit the newly shared system or keep a retired mirror.
-    const context = teamWorkspaceContext();
-    const pending = deferred<Response>();
-    let catalogGets = 0;
-    const rowsAfterShare = [
-      { id: 'user:brand', title: 'Brand', source: 'user', status: 'published' },
-      { id: 'user:newly-shared', title: 'Newly shared', source: 'user', status: 'published' },
-    ];
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === '/api/workspace/design-systems/team') {
-        // Must not be reached: the caller already has the witness.
-        return Promise.resolve(new Response(JSON.stringify({ ids: [] }), { status: 200 }));
-      }
-      catalogGets += 1;
-      if (catalogGets === 1) return pending.promise;
-      return Promise.resolve(new Response(JSON.stringify({ designSystems: rowsAfterShare }), { status: 200 }));
-    }));
-
-    const issuedBeforeShare = fetchDesignSystemsResult(context);
-    await vi.waitFor(() => expect(catalogGets).toBe(1));
-
-    const afterShare = fetchDesignSystemsResult(context, {
-      materializedTeamIds: ['user:newly-shared'],
-    });
-    pending.resolve(new Response(
-      JSON.stringify({ designSystems: [{ id: 'user:brand', title: 'Brand', source: 'user', status: 'published' }] }),
-      { status: 200 },
-    ));
-
-    await expect(afterShare).resolves.toMatchObject({
-      ok: true,
-      designSystems: [
-        expect.objectContaining({ id: 'user:brand' }),
-        expect.objectContaining({ id: 'user:newly-shared', teamShared: true }),
-      ],
-    });
-    await issuedBeforeShare;
-  });
-
   it('never lets a pre-account-boundary catalog read answer a post-boundary one', async () => {
     // A sign-out/sign-in cycle can leave every context field identical while the
     // authority behind them has changed — that is exactly why the app keys the
@@ -667,10 +356,7 @@ describe('design-system Workspace scope', () => {
     const context = personalWorkspaceContext();
     const gates: Array<ReturnType<typeof deferred<Response>>> = [];
     let catalogReads = 0;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-      if (String(input) === '/api/workspace/design-systems/team') {
-        return Promise.resolve(new Response(JSON.stringify({ ids: [] }), { status: 200 }));
-      }
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL) => {
       catalogReads += 1;
       const gate = deferred<Response>();
       gates.push(gate);
@@ -691,49 +377,6 @@ describe('design-system Workspace scope', () => {
     await Promise.all([beforeBoundary, afterBoundary]);
   });
 
-  it('never lets a pre-boundary Team witness decorate a post-boundary catalog', async () => {
-    // The catalog key carries the account generation, but the Team-index read it
-    // awaits first did not. A `/team` request still in flight across a
-    // sign-out/sign-in would be joined by the post-boundary caller, so the fresh
-    // catalog got decorated with the previous account's Team-share flags — the
-    // account-boundary guarantee held for the rows and not for the flags.
-    const context = teamWorkspaceContext();
-    const firstTeamRead = deferred<Response>();
-    let teamReads = 0;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-      if (String(input) === '/api/workspace/design-systems/team') {
-        teamReads += 1;
-        if (teamReads === 1) return firstTeamRead.promise;
-        return Promise.resolve(new Response(JSON.stringify({ ids: ['user:b'] }), { status: 200 }));
-      }
-      return Promise.resolve(new Response(JSON.stringify({
-        designSystems: [
-          { id: 'user:a', title: 'A', source: 'user', status: 'published' },
-          { id: 'user:b', title: 'B', source: 'user', status: 'published' },
-        ],
-      }), { status: 200 }));
-    }));
-
-    const beforeBoundary = fetchDesignSystemsResult(context);
-    await vi.waitFor(() => expect(teamReads).toBe(1));
-
-    advanceWorkspaceAccountGeneration('team-witness-boundary');
-
-    const afterBoundary = fetchDesignSystemsResult(context);
-    await vi.waitFor(() => expect(teamReads).toBe(2));
-
-    firstTeamRead.resolve(new Response(JSON.stringify({ ids: ['user:a'] }), { status: 200 }));
-
-    await expect(afterBoundary).resolves.toMatchObject({
-      ok: true,
-      designSystems: [
-        expect.not.objectContaining({ teamShared: true }),
-        expect.objectContaining({ id: 'user:b', teamShared: true }),
-      ],
-    });
-    await beforeBoundary;
-  });
-
   it('never lets a headerless catalog read answer a Workspace-scoped one', async () => {
     // A read issued before `/api/workspace/context` settles carries no identity
     // headers, and `/api/design-systems` is fail-closed on a missing scope — it
@@ -744,10 +387,7 @@ describe('design-system Workspace scope', () => {
     // Each read gets its own Response: a shared body can only be read once, so
     // reusing one would hide a join behind a parse error instead of a count.
     const gates: Array<ReturnType<typeof deferred<Response>>> = [];
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === '/api/workspace/design-systems/team') {
-        return Promise.resolve(new Response(JSON.stringify({ ids: [] }), { status: 200 }));
-      }
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       const headers = (init?.headers ?? {}) as Record<string, string>;
       const workspaceId = headers['x-od-workspace-id'];
       if (workspaceId) scopedIds.push(workspaceId);

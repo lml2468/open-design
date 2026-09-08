@@ -31,17 +31,6 @@ import {
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
 import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 
-const workspaceInvalidationHarness = vi.hoisted(() => ({
-  handlers: [] as Array<Record<string, (payload: any) => void>>,
-}));
-
-vi.mock('../../src/collab/workspace-events', () => ({
-  useWorkspaceInvalidation: vi.fn((handlers: Record<string, (payload: any) => void>) => {
-    workspaceInvalidationHarness.handlers.push(handlers);
-    return { connected: false };
-  }),
-}));
-
 vi.mock('../../src/router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/router')>()),
   navigate: vi.fn(),
@@ -201,7 +190,6 @@ function deferred<T>() {
 beforeEach(() => {
   resetWorkspaceContextCache();
   resetCoalescedGet();
-  workspaceInvalidationHarness.handlers.length = 0;
   vi.mocked(daemonIsLive).mockResolvedValue(true);
   vi.mocked(fetchAgentsStream).mockResolvedValue([]);
   vi.mocked(fetchAppVersionInfo).mockResolvedValue(null);
@@ -230,7 +218,6 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   resetWorkspaceContextCache();
-  workspaceInvalidationHarness.handlers.length = 0;
   resetCoalescedGet();
 });
 
@@ -515,69 +502,4 @@ describe('App design-system catalog loading race', () => {
     expect(screen.queryByText('system-from-account-a')).toBeNull();
   });
 
-  it('keeps the newest same-identity design-system refresh when an older request finishes last', async () => {
-    const context = workspaceContext('ws-same-identity');
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const pathname = new URL(String(input), 'http://d.local').pathname;
-        return {
-          ok: true,
-          json: async () =>
-            pathname.endsWith('/workspace/directory')
-              ? workspaceDirectoryFixture([context])
-              : pathname.endsWith('/workspace/context')
-                ? { context }
-                : {},
-        } as Response;
-      }),
-    );
-    vi.mocked(fetchDesignSystems).mockResolvedValue([]);
-    render(<App />);
-    await waitFor(() => {
-      expect(vi.mocked(fetchDesignSystems)).toHaveBeenCalled();
-      expect(screen.getByTestId('design-systems-state').dataset.loading).toBe('false');
-    });
-
-    const older = deferred<DesignSystemSummary[]>();
-    const newer = deferred<DesignSystemSummary[]>();
-    vi.mocked(fetchDesignSystems)
-      .mockImplementationOnce(() => older.promise)
-      .mockImplementationOnce(() => newer.promise);
-    const resourceHandler = [...workspaceInvalidationHarness.handlers]
-      .reverse()
-      .find((handlers) => handlers['team-resources-changed'])?.['team-resources-changed'];
-    expect(resourceHandler).toBeTypeOf('function');
-
-    act(() => resourceHandler?.({
-      type: 'team-resources-changed',
-      resourceKind: 'design_system',
-    }));
-    act(() => resourceHandler?.({
-      type: 'team-resources-changed',
-      resourceKind: 'design_system',
-    }));
-    await waitFor(() => expect(vi.mocked(fetchDesignSystems).mock.calls.length).toBeGreaterThanOrEqual(4));
-    expect(vi.mocked(fetchDesignSystems).mock.calls.slice(-2)).toEqual([
-      [expect.objectContaining({ workspaceId: context.workspaceId }), {
-        forceTeamMaterialization: true,
-      }],
-      [expect.objectContaining({ workspaceId: context.workspaceId }), {
-        forceTeamMaterialization: true,
-      }],
-    ]);
-
-    await act(async () => {
-      newer.resolve([designSystem('newer-system')]);
-      await newer.promise;
-    });
-    await waitFor(() => expect(screen.getByText('newer-system')).toBeTruthy());
-
-    await act(async () => {
-      older.resolve([designSystem('older-system')]);
-      await older.promise;
-    });
-    expect(screen.getByText('newer-system')).toBeTruthy();
-    expect(screen.queryByText('older-system')).toBeNull();
-  });
 });

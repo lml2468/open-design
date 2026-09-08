@@ -163,10 +163,7 @@ describe('Team plugin apply retraction gate', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ query: 'team:plugin:workspace-a:shared-id' });
-    expect(loadPluginRegistryView).toHaveBeenCalledWith({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: null,
-    });
+    expect(loadPluginRegistryView).toHaveBeenCalledWith();
     expect(applyPlugin).toHaveBeenCalledTimes(1);
   });
 

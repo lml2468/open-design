@@ -22,8 +22,6 @@ import {
   useWorkspaceContext,
   workspaceIdentityCacheKey,
 } from '../collab/useWorkspaceContext';
-import { useWorkspaceInvalidation } from '../collab/workspace-events';
-import { useWorkspaceSnapshotActivation } from '../collab/workspace-snapshot-activation';
 import { useI18n } from '../i18n';
 import { localizePluginDescription, localizePluginTitle } from './plugins-home/localization';
 
@@ -113,37 +111,13 @@ export function InlinePluginsRail(props: Props) {
   ]);
 
   useEffect(() => {
-    if (workspaceContext?.workspaceType === 'team') return;
     void refresh();
     return () => {
       // Prevent an in-flight read from committing after unmount or after a
       // successor identity/filter effect has taken ownership.
       pluginCatalogRequestGenerationRef.current += 1;
     };
-  }, [refresh, workspaceContext?.workspaceType]);
-
-  const handlePluginStreamActive = useWorkspaceSnapshotActivation({
-    enabled: !workspaceContextUnavailable && workspaceContext?.workspaceType === 'team',
-    identity: workspaceIdentity,
-    refresh: () => { void refresh(); },
-  });
-
-  useWorkspaceInvalidation(
-    {
-      'team-resources-changed': (payload) => {
-        if (payload.resourceKind === 'plugin') void refresh();
-      },
-    },
-    {
-      workspaceContext:
-        !workspaceContextUnavailable && workspaceContext?.workspaceType === 'team'
-          ? workspaceContext
-          : null,
-      enabled:
-        !workspaceContextUnavailable && workspaceContext?.workspaceType === 'team',
-      onActive: handlePluginStreamActive,
-    },
-  );
+  }, [refresh]);
 
   const onClick = async (record: InstalledPluginRecord) => {
     const issuedIdentity = workspaceIdentity;

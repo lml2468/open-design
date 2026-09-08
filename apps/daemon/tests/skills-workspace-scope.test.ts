@@ -34,8 +34,6 @@ import {
   openDatabase,
   updateWorkspaceResource,
 } from '../src/db.js';
-import { materializeWorkspaceScopedTeamResource } from '../src/collab/team-resource-materialization.js';
-import { workspaceTeamSkillBindingResourceId } from '../src/skills/workspace-team-binding.js';
 
 let server: http.Server;
 let baseUrl: string;
@@ -355,77 +353,6 @@ describe('DELETE /api/skills/:id — workspace ownership gate', () => {
   });
 });
 
-describe('Team Skill mutation targets', () => {
-  it.each(['PUT', 'DELETE'] as const)(
-    'rejects %s without modifying a same-id Personal skill',
-    async (method) => {
-      const skillId = `team-same-id-mutation-${method.toLowerCase()}-${Date.now()}`;
-      const workspaceId = `team-same-id-workspace-${method.toLowerCase()}`;
-      const personalFolder = await seedSkillFolder(skillId);
-      bindSkillToWorkspace(skillId, workspaceId, 'member-owner');
-      const personalBefore = await readFile(path.join(personalFolder, 'SKILL.md'), 'utf8');
-
-      const materialized = await materializeWorkspaceScopedTeamResource({
-        kindRoot: userSkillsDir,
-        storageName: skillId,
-        identity: {
-          kind: 'skill',
-          workspaceId,
-          resourceId: skillId,
-          hubResourceId: `skill-${workspaceId}-${skillId}`,
-        },
-        pullInto: async (directory) => {
-          await writeFile(
-            path.join(directory, 'SKILL.md'),
-            `---\nname: "${skillId}"\ndescription: Team copy.\n---\n\nTEAM SKILL BODY\n`,
-          );
-        },
-        verifyWorkspaceScope: async () => true,
-        verifyStillShared: async () => true,
-      });
-      expect(materialized.status).toBe('committed');
-      const teamFolder = materialized.status === 'committed' ? materialized.targetDir : '';
-      const teamBefore = await readFile(path.join(teamFolder, 'SKILL.md'), 'utf8');
-      const db = openDatabase(process.cwd(), { dataDir: process.env.OD_DATA_DIR! });
-      ensureWorkspaceResource(
-        db,
-        'skill',
-        workspaceId,
-        workspaceTeamSkillBindingResourceId(workspaceId, skillId),
-        { visibility: 'team', resourceState: 'active' },
-      );
-
-      const response = await fetch(`${baseUrl}/api/skills/${skillId}`, {
-        method,
-        headers: {
-          ...workspaceHeaders('member-owner', 'owner', workspaceId),
-          ...(method === 'PUT' ? { 'content-type': 'application/json' } : {}),
-        },
-        ...(method === 'PUT'
-          ? {
-              body: JSON.stringify({
-                name: skillId,
-                description: 'Attempted overwrite',
-                body: 'MUTATED PERSONAL BODY',
-              }),
-            }
-          : {}),
-      });
-
-      expect(response.status).toBe(403);
-      await expect(response.json()).resolves.toMatchObject({
-        error: { code: 'WORKSPACE_RESOURCE_MANAGE_DENIED' },
-      });
-      expect(await readFile(path.join(personalFolder, 'SKILL.md'), 'utf8'))
-        .toBe(personalBefore);
-      expect(await readFile(path.join(teamFolder, 'SKILL.md'), 'utf8'))
-        .toBe(teamBefore);
-      expect(existsSync(personalFolder)).toBe(true);
-      expect(existsSync(teamFolder)).toBe(true);
-    },
-  );
-});
-
 describe('POST /api/skills/install — same-id ownership preflight', () => {
   it('does not let another member install over an existing Personal skill identity', async () => {
     const skillId = `wsgate-install-${Date.now()}`;
@@ -493,48 +420,6 @@ describe('GET /api/skills — teamSynced projection', () => {
     const skill = body.skills.find((s) => s.id === skillId);
 
     expect(skill?.teamSynced).toBe(true);
-  });
-
-  it('hides a tombstoned Team mirror while retaining its recovery copy and attribution', async () => {
-    const workspaceId = 'ws-teamsynced-tombstone';
-    const skillId = `wsteamsynced-tombstone-${Date.now()}`;
-    const materialized = await materializeWorkspaceScopedTeamResource({
-      kindRoot: userSkillsDir,
-      storageName: skillId,
-      identity: {
-        kind: 'skill',
-        workspaceId,
-        resourceId: skillId,
-        hubResourceId: `skill-${workspaceId}-${skillId}`,
-      },
-      pullInto: (directory) => writeFile(
-        path.join(directory, 'SKILL.md'),
-        `---\nname: "${skillId}"\ndescription: "Test Team skill ${skillId}."\n---\n\nBody for ${skillId}.\n`,
-      ),
-      verifyWorkspaceScope: async () => true,
-      verifyStillShared: async () => true,
-    });
-    expect(materialized.status).toBe('committed');
-    const folder = materialized.status === 'committed' ? materialized.targetDir : '';
-    const db = openDatabase(process.cwd(), { dataDir: process.env.OD_DATA_DIR! });
-    const bindingId = workspaceTeamSkillBindingResourceId(workspaceId, skillId);
-    ensureWorkspaceResource(db, 'skill', workspaceId, bindingId, {
-      visibility: 'team',
-      resourceState: 'active',
-      createdByWorkspaceMemberId: 'member-owner',
-    });
-
-    expect(await fetchSkillIds(workspaceId)).toContain(skillId);
-
-    updateWorkspaceResource(db, 'skill', workspaceId, bindingId, { resourceState: 'deleted' });
-
-    expect(await fetchSkillIds(workspaceId)).not.toContain(skillId);
-    expect(existsSync(folder)).toBe(true);
-    expect(getWorkspaceResourceByResourceId(db, 'skill', bindingId)).toMatchObject({
-      workspaceId,
-      visibility: 'team',
-      resourceState: 'deleted',
-    });
   });
 
   it('omits teamSynced for a personal-visibility bound skill (the sharer\'s own copy)', async () => {

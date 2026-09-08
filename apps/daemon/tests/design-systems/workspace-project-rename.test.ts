@@ -9,7 +9,6 @@ import {
   resolveWorkspaceProjectDesignSystemRoot,
   workspaceRenameDesignSystemId,
 } from '../../src/design-systems/index.js';
-import { teamResourceWorkspaceRoot } from '../../src/collab/team-resource-materialization.js';
 
 // Renaming a design-system workspace project used to revert silently:
 // ensureUserDesignSystemWorkspaceProject re-stamps the project name from
@@ -54,12 +53,12 @@ describe('workspaceRenameDesignSystemId', () => {
 });
 
 describe('resolveWorkspaceProjectDesignSystemRoot', () => {
-  it('selects the exact Team root for a Team backing project instead of same-id Personal canonical', () => {
+  it('always selects the canonical local design-system root', () => {
     const canonicalRoot = '/runtime/design-systems';
     expect(resolveWorkspaceProjectDesignSystemRoot(canonicalRoot, {
       workspaceId: 'team-a',
       visibility: 'team',
-    })).toBe(teamResourceWorkspaceRoot(canonicalRoot, 'team-a'));
+    })).toBe(canonicalRoot);
     expect(resolveWorkspaceProjectDesignSystemRoot(canonicalRoot, {
       workspaceId: 'personal-a',
       visibility: 'personal',

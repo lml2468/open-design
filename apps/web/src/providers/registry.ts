@@ -1,4 +1,3 @@
-import { workspaceContextHasTeamIdentity } from '@open-design/contracts';
 import { boundedRequestErrorCode } from '../analytics/workspace';
 import type {
   ConnectorAuthConfigPrepareResponse,
@@ -552,9 +551,8 @@ export async function fetchSkill(
 
 export async function fetchDesignSystems(
   workspaceContext?: WorkspaceCollabContext | null,
-  options?: FetchDesignSystemsOptions,
 ): Promise<DesignSystemSummary[]> {
-  const result = await fetchDesignSystemsResult(workspaceContext, options);
+  const result = await fetchDesignSystemsResult(workspaceContext);
   return result.ok ? result.designSystems : [];
 }
 
@@ -567,80 +565,6 @@ export type DesignSystemsResult =
   | { ok: true; designSystems: DesignSystemSummary[] }
   | { ok: false };
 
-export interface FetchDesignSystemsOptions {
-  /**
-   * A realtime mutation invalidated the Team index. Every forced call starts
-   * its own authoritative read; distinct mutations must never join an older
-   * in-flight snapshot merely because they arrived inside one burst window.
-   */
-  forceTeamMaterialization?: boolean;
-  /**
-   * Exact Team ids returned by a workspace-scoped Team-index read that just
-   * completed in the caller. Reuse that witness while reading the unified
-   * catalog instead of issuing a duplicate `/team` materialization request.
-   *
-   * Supplying it also declares the catalog read itself authoritative: the only
-   * caller passes it when its fresh `/team` witness disagrees with the rows it
-   * holds, or straight after a share/unshare. So the catalog read starts fresh
-   * rather than joining one issued before that change.
-   */
-  materializedTeamIds?: readonly string[];
-}
-
-async function materializeTeamDesignSystems(
-  workspaceContext: WorkspaceCollabContext | null | undefined,
-  accountGeneration: number,
-  options?: FetchDesignSystemsOptions,
-): Promise<ReadonlySet<string>> {
-  if (!workspaceContext || !workspaceContextHasTeamIdentity(workspaceContext)) {
-    return new Set();
-  }
-  if (options?.materializedTeamIds) {
-    return new Set(options.materializedTeamIds);
-  }
-
-  // Team systems live in a workspace-scoped materialization directory. Prime
-  // that directory before reading the unified catalog so Home and every other
-  // picker see team shares even when the user has never opened the Design
-  // Systems management tab.
-  //
-  // Never replace these explicit identity headers with a daemon/Vela "active
-  // workspace" lookup. One account can have multiple clients open in different
-  // Workspaces; a backend-global active Workspace would let either client
-  // retarget the other's catalog request.
-  try {
-    // Account-scoped for the same reason the catalog key is, and with the SAME
-    // captured generation: this witness decorates the catalog rows, so a `/team`
-    // request still in flight across a sign-out/sign-in must not be joined by a
-    // post-boundary reader — that would stamp the new account's rows with the
-    // previous account's Team-share flags.
-    const cacheKey = `design-system-team-materialization:`
-      + `${workspaceAccountScopedCacheKey(workspaceContext, accountGeneration)}`;
-    const readTeamIndex = async () => {
-      const response = await fetch('/api/workspace/design-systems/team', {
-        cache: 'no-store',
-        headers: workspaceProjectHeaders(workspaceContext),
-      });
-      if (!response.ok) {
-        throw new Error(`design-systems-team ${response.status}`);
-      }
-      const body = (await response.json()) as { ids?: unknown };
-      return new Set(
-        Array.isArray(body.ids)
-          ? body.ids.filter((id): id is string => typeof id === 'string')
-          : [],
-      );
-    };
-    if (options?.forceTeamMaterialization) evictCoalescedGet(cacheKey);
-    return await coalescedGet(cacheKey, readTeamIndex);
-  } catch {
-    // Keep personal/built-in systems usable while the remote team index is
-    // temporarily unavailable. The scoped catalog request below remains the
-    // authority and still fails closed for an invalid Workspace identity.
-    return new Set();
-  }
-}
-
 /**
  * Read the unified catalog once per burst of identical concurrent readers.
  *
@@ -652,12 +576,9 @@ async function materializeTeamDesignSystems(
  * one request, and the browser's ~6-connections-per-host cap makes the extra
  * copies queue behind everything else the launch is already fetching.
  *
- * SINGLE-FLIGHT ONLY (ttl 0, no shared settled result). Some of those call
- * sites exist precisely to observe a change that just happened out of band:
- * returning home re-reads so an in-project brand extraction appears, and a
- * `forceTeamMaterialization` caller is announcing a realtime mutation. Sharing
- * a settled answer — for even a second — would hand exactly those reads the
- * state they were fired to replace.
+ * SINGLE-FLIGHT ONLY (ttl 0, no shared settled result). Some call sites exist
+ * precisely to observe a change that just happened out of band, such as
+ * returning home after an in-project brand extraction.
  */
 const CATALOG_SINGLE_FLIGHT_ONLY_MS = 0;
 
@@ -668,10 +589,9 @@ const CATALOG_SINGLE_FLIGHT_ONLY_MS = 0;
  * caller from JOINING a request that is still in flight. The callers that follow
  * a mutation are exactly the ones that must not join: `DesignSystemsTab` awaits
  * `deleteDesignSystemDraft` / `updateDesignSystemDraft` and then calls its plain
- * `onSystemsRefresh()` — no `forceTeamMaterialization`, because nothing remote
- * changed — and the daemon answers `/api/design-systems` from a snapshot taken
- * when the request arrived. Joining a pre-mutation GET would leave the deleted
- * system on screen, or show the old published/draft status.
+ * `onSystemsRefresh()`, while the daemon answers `/api/design-systems` from a
+ * snapshot taken when the request arrived. Joining a pre-mutation GET would
+ * leave the deleted system on screen, or show the old published/draft status.
  *
  * The rule, stated so it stays checkable: every export that SYNCHRONOUSLY changes
  * catalog membership or a summary field bumps this on success — create, update,
@@ -686,8 +606,6 @@ const CATALOG_SINGLE_FLIGHT_ONLY_MS = 0;
  *   - `ensureDesignSystemWorkspace` — it materializes an editing workspace and
  *     leaves the catalog rows alone.
  *
- * `forceTeamMaterialization` also stays as it is: that is the REMOTE
- * (team-invalidation) signal, this is the local one.
  */
 let designSystemCatalogMutationGeneration = 0;
 
@@ -698,7 +616,6 @@ function noteDesignSystemCatalogMutation(): void {
 async function readDesignSystemCatalog(
   workspaceContext: WorkspaceCollabContext | null | undefined,
   accountGeneration: number,
-  options?: FetchDesignSystemsOptions,
 ): Promise<DesignSystemSummary[]> {
   // Keyed by the exact identity the request will carry, PLUS the account
   // boundary it was captured under — the same two-part identity the app uses
@@ -712,20 +629,6 @@ async function readDesignSystemCatalog(
   // before the boundary.
   const cacheKey = `design-system-catalog:${designSystemCatalogMutationGeneration}`
     + `:${workspaceAccountScopedCacheKey(workspaceContext, accountGeneration)}`;
-  // Same rule as the Team index above: a forced call is an authoritative read
-  // for one mutation and must never join a snapshot issued before it.
-  //
-  // `materializedTeamIds` counts too, and it is not obvious from the name.
-  // `DesignSystemsTab.refreshTeamShared` is the only caller that supplies it,
-  // and it does so exactly when the fresh `/team` witness disagrees with the
-  // catalog it holds — or immediately after a share/unshare. Carrying that
-  // witness therefore means "what I hold is out of date"; joining a catalog GET
-  // issued before the share would omit the newly shared system or keep a
-  // retired mirror on screen. Routine mounts do not pass it, so ordinary
-  // readers still collapse onto the shared key.
-  if (options?.forceTeamMaterialization || options?.materializedTeamIds) {
-    evictCoalescedGet(cacheKey);
-  }
   return coalescedGet(cacheKey, async () => {
     const resp = await fetch('/api/design-systems', {
       ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
@@ -740,46 +643,14 @@ async function readDesignSystemCatalog(
 
 export async function fetchDesignSystemsResult(
   workspaceContext?: WorkspaceCollabContext | null,
-  options?: FetchDesignSystemsOptions,
 ): Promise<DesignSystemsResult> {
-  // Capture the account boundary ONCE. The Team witness and the catalog are two
-  // awaited reads; letting each resolve the generation at its own call time lets
-  // them straddle a sign-out/sign-in, which would decorate post-boundary rows
-  // with pre-boundary Team-share flags. Keyed as of one boundary, the pair is at
-  // least internally consistent.
-  //
-  // What this does NOT do, stated because the opposite is easy to assume: it
-  // does not stop a late result from being COMMITTED after a boundary. Only
-  // `App`'s `refreshDesignSystems` re-checks the generation after awaiting;
-  // `DesignSystemSwitchPicker`, `DesignSystemsSection` and `LibrarySection` key
-  // their effects on workspace identity alone, and the Workspace hook
-  // deliberately retains the old context while an identity change is pending, so
-  // those fields can be unchanged across the boundary. That exposure predates
-  // coalescing — each of those readers had it when every call made its own
-  // request — and closing it means giving those three readers a generation
-  // guard, which is its own change.
   const accountGeneration = currentWorkspaceAccountGeneration();
   try {
-    const teamSharedIds = await materializeTeamDesignSystems(
-      workspaceContext,
-      accountGeneration,
-      options,
-    );
     const designSystems = await readDesignSystemCatalog(
       workspaceContext,
       accountGeneration,
-      options,
     );
-    return {
-      ok: true,
-      // Mapped per caller: readers sharing one catalog read still resolve the
-      // Team-shared flag against their own Team-index witness.
-      designSystems: designSystems.map((system) => (
-        teamSharedIds.has(system.id)
-          ? { ...system, teamShared: true }
-          : system
-      )),
-    };
+    return { ok: true, designSystems };
   } catch {
     return { ok: false };
   }

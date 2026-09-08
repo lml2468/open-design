@@ -24,8 +24,6 @@ import {
   useWorkspaceContext,
   workspaceIdentityCacheKey,
 } from '../collab/useWorkspaceContext';
-import { useWorkspaceInvalidation } from '../collab/workspace-events';
-import { useWorkspaceSnapshotActivation } from '../collab/workspace-snapshot-activation';
 
 // Functional skills only — design templates render in EntryView's
 // Templates tab and are managed under their own daemon registry. See
@@ -216,28 +214,8 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
   }, [workspaceCatalogIdentity, workspaceContext, workspaceReadMode]);
 
   useEffect(() => {
-    if (workspaceContext?.workspaceType === 'team') return;
     void refresh();
-  }, [refresh, workspaceContext?.workspaceType]);
-
-  const handleSkillStreamActive = useWorkspaceSnapshotActivation({
-    enabled: workspaceReadMode === 'scoped' && workspaceContext?.workspaceType === 'team',
-    identity: workspaceCatalogIdentity,
-    refresh: () => { void refresh(); },
-  });
-
-  useWorkspaceInvalidation(
-    {
-      'team-resources-changed': (payload) => {
-        if (payload.resourceKind === 'skill') void refresh();
-      },
-    },
-    {
-      workspaceContext: workspaceReadMode === 'scoped' ? workspaceContext : null,
-      enabled: workspaceReadMode === 'scoped',
-      onActive: handleSkillStreamActive,
-    },
-  );
+  }, [refresh]);
 
   const disabledSkills = useMemo(
     () => new Set(cfg.disabledSkills ?? []),
@@ -857,8 +835,7 @@ function SkillRow({
   const { locale } = useI18n();
   const summaryName = localizeSkillName(locale, skill) || skill.id;
   const summaryDescription = localizeSkillDescription(locale, skill);
-  const isTeamMirror = skill.teamSynced === true;
-  const canDelete = getSkillSource(skill) === 'user' && !isTeamMirror;
+  const canDelete = getSkillSource(skill) === 'user';
   // Editing a built-in skill does not modify it in place — it writes a
   // user-owned shadow copy. Frame the affordance as creating a user override
   // so the built-in → user transition is not a surprise.
@@ -931,20 +908,18 @@ function SkillRow({
             </span>
           ) : (
             <>
-              {!isTeamMirror ? (
-                <Button
-                  size="icon"
-                  onClick={onStartEdit}
-                  title={
-                    isBuiltIn
-                      ? t('settings.skillsOverrideCreate')
-                      : t('settings.skillsEdit')
-                  }
-                  data-testid="skills-edit"
-                >
-                  <Icon name="edit" size={14} />
-                </Button>
-              ) : null}
+              <Button
+                size="icon"
+                onClick={onStartEdit}
+                title={
+                  isBuiltIn
+                    ? t('settings.skillsOverrideCreate')
+                    : t('settings.skillsEdit')
+                }
+                data-testid="skills-edit"
+              >
+                <Icon name="edit" size={14} />
+              </Button>
               {canDelete ? (
                 <Button
                   size="icon"

@@ -110,8 +110,6 @@ import {
   useWorkspaceContext,
   workspaceResourceReadContext,
 } from '../collab/useWorkspaceContext';
-import { useWorkspaceInvalidation } from '../collab/workspace-events';
-import { useWorkspaceSnapshotActivation } from '../collab/workspace-snapshot-activation';
 import {
   buildHomeMediaComposer,
   homeMediaSurfaceForChipId,
@@ -929,7 +927,7 @@ export function HomeView({
       return promise;
     };
     pluginCatalogReloadRef.current = load;
-    if (homeActiveRef.current && pluginCatalogWorkspaceContext?.workspaceType !== 'team') load();
+    if (homeActiveRef.current) load();
     else pluginCatalogStaleRef.current = true;
     const onChanged = () => {
       // A mutation event is newer than any pending snapshot and must supersede
@@ -955,34 +953,13 @@ export function HomeView({
       }
       window.removeEventListener('open-design:plugins-changed', onChanged);
     };
-  }, [desiredPluginCatalogKey, pluginCatalogWorkspaceContext?.workspaceType]);
+  }, [desiredPluginCatalogKey]);
 
   useEffect(() => {
     if (!isActive || !desiredPluginCatalogKey || !pluginCatalogStaleRef.current) return;
-    if (pluginCatalogWorkspaceContext?.workspaceType === 'team') return;
     pluginCatalogStaleRef.current = false;
     pluginCatalogReloadRef.current(true);
-  }, [desiredPluginCatalogKey, isActive, pluginCatalogWorkspaceContext?.workspaceType]);
-
-  const handlePluginStreamActive = useWorkspaceSnapshotActivation({
-    enabled: isActive && pluginCatalogWorkspaceContext?.workspaceType === 'team',
-    identity: desiredPluginCatalogKey ?? 'no-plugin-catalog',
-    refresh: () => { void pluginCatalogReloadRef.current(true, true); },
-  });
-
-  useWorkspaceInvalidation({}, {
-    workspaceContext:
-      isActive && pluginCatalogWorkspaceContext?.workspaceType === 'team'
-        ? pluginCatalogWorkspaceContext
-        : null,
-    enabled: isActive && pluginCatalogWorkspaceContext?.workspaceType === 'team',
-    // App owns the global Skill/Design System catch-up. Home only refreshes
-    // its plugin projection.
-    onActive: () => {
-      pluginCatalogStaleRef.current = false;
-      handlePluginStreamActive();
-    },
-  });
+  }, [desiredPluginCatalogKey, isActive]);
 
   useEffect(() => {
     let cancelled = false;

@@ -25,7 +25,6 @@ import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-
 import type { PluginShareAction } from '../../services/plugin-share-tasks.js';
 import type { AuthorizeProjectRequest } from '../../collab/project-request-authority.js';
 import { workspaceTeamPluginBindingResourceId } from '../../plugins/registry.js';
-import { localPluginRegistryScope } from '../../plugins/local-source.js';
 import {
   classifyPluginInstallError,
   type PluginInstallErrorCode,
@@ -637,9 +636,7 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       }
       const plugin = await plugins.getLocalPluginBySource(db, req.params.id, source);
       if (!plugin) return res.status(404).json({ error: 'plugin not found' });
-      const registry = await helpers.loadPluginRegistryView(
-        localPluginRegistryScope(plugin),
-      );
+      const registry = await helpers.loadPluginRegistryView();
       // Registry loading walks local Skill/Design System files asynchronously.
       // Re-resolve immediately before apply so a local reconciliation tombstone
       // that landed during that walk cannot activate stale plugin bytes.

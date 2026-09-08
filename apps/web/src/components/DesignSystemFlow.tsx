@@ -2917,7 +2917,7 @@ export function DesignSystemDetailView({
                       : t('dsFlow.publishCardWorking')
                   : t('dsFlow.publishCardReady')}
               </p>
-              <label title={system.canMutate === false ? t('dsManager.teamSyncedReadOnly') : undefined}>
+              <label title={system.canMutate === false ? t('critiqueTheater.readOnly') : undefined}>
                 <input
                   type="checkbox"
                   checked={published}
@@ -3039,7 +3039,7 @@ export function DesignSystemDetailView({
             </div>
             <label
               className="ds-body-editor"
-              title={system.canMutate === false ? t('dsManager.teamSyncedReadOnly') : undefined}
+              title={system.canMutate === false ? t('critiqueTheater.readOnly') : undefined}
             >
               DESIGN.md
               <Textarea
@@ -3053,7 +3053,7 @@ export function DesignSystemDetailView({
               variant="primary"
               disabled={!editable || saving}
               onClick={() => void saveBody()}
-              title={system.canMutate === false ? t('dsManager.teamSyncedReadOnly') : undefined}
+              title={system.canMutate === false ? t('critiqueTheater.readOnly') : undefined}
             >
               {t('ds.saveDesignMd')}
             </Button>
@@ -3734,7 +3734,7 @@ function RevisionDiffCard({
 }) {
   const { t } = useI18n();
   const diff = revisionAddedText(revision);
-  const readOnlyTitle = editable ? undefined : t('dsManager.teamSyncedReadOnly');
+  const readOnlyTitle = editable ? undefined : t('critiqueTheater.readOnly');
   return (
     <section className="ds-revision-card">
       <div className="ds-revision-card__head">

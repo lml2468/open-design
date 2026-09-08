@@ -40,7 +40,7 @@ afterEach(async () => {
   vi.resetModules();
 }, 30_000);
 
-it('allows headerless deletion but rejects malformed workspace metadata in workspace-less local mode', async () => {
+it('keeps local deletion independent from legacy workspace metadata', async () => {
   // Given a workspace-less local daemon with a user-created design system
   dataDir = await mkdtemp(join(tmpdir(), 'od-design-system-workspaceless-delete-'));
   process.env.OD_DATA_DIR = dataDir;
@@ -94,8 +94,5 @@ it('allows headerless deletion but rejects malformed workspace metadata in works
     },
   );
 
-  expect(malformedDeleteResponse.status).toBe(400);
-  await expect(malformedDeleteResponse.json()).resolves.toMatchObject({
-    error: 'WORKSPACE_CONTEXT_REQUIRED',
-  });
+  expect(malformedDeleteResponse.status).toBe(204);
 }, 60_000);

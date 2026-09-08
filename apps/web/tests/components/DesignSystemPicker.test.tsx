@@ -183,7 +183,7 @@ describe('DesignSystemPicker', () => {
     expect(screen.getByText('Aucun système de design')).toBeTruthy();
   });
 
-  it('places team systems between personal systems and official presets', async () => {
+  it('treats legacy team-marked user systems as local user systems', async () => {
     const personalSystem: DesignSystemSummary = {
       id: 'user:personal-brand',
       title: 'Personal Brand',
@@ -235,16 +235,15 @@ describe('DesignSystemPicker', () => {
     expect(listText).toEqual([
       '不指定设计系统',
       '你的体系',
-      'Personal Brand',
-      '团队',
       'Team Brand',
       'Teammate Brand',
+      'Personal Brand',
       '官方预设',
       'Official Brand',
     ]);
   });
 
-  it('omits empty personal and team group headings', async () => {
+  it('omits the empty personal group heading', async () => {
     renderPicker({
       designSystems: [{
         id: 'official-only',
@@ -261,7 +260,6 @@ describe('DesignSystemPicker', () => {
     fireEvent.click(screen.getByTestId('project-ds-picker-trigger'));
 
     expect(screen.queryByTestId('project-ds-picker-group-mine')).toBeNull();
-    expect(screen.queryByTestId('project-ds-picker-group-team')).toBeNull();
     expect(screen.getByTestId('project-ds-picker-group-official')).toBeTruthy();
   });
 });
