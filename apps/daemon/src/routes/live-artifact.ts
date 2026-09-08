@@ -1,12 +1,8 @@
 import type { Express } from 'express';
 import type { RouteDeps } from '../server-context.js';
-import type {
-  AuthorizeProjectRequest,
-  AuthorizeProjectToolRequest,
-} from '../collab/project-request-authority.js';
+import type { AuthorizeProjectToolRequest } from '../collab/project-request-authority.js';
 
 export interface RegisterLiveArtifactRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'auth' | 'liveArtifacts' | 'projectStore'> {
-  authorizeProjectRequest: AuthorizeProjectRequest;
   authorizeProjectToolRequest: AuthorizeProjectToolRequest;
 }
 
@@ -17,25 +13,12 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
   const { authorizeToolRequest, requestProjectOverride, requestRunOverride } = ctx.auth;
   const { createLiveArtifact, listLiveArtifacts, updateLiveArtifact, refreshLiveArtifact, emitLiveArtifactEvent, emitLiveArtifactRefreshEvent, readLiveArtifactCode, setLiveArtifactCodeHeaders, ensureLiveArtifactPreview, setLiveArtifactPreviewHeaders, getLiveArtifact, listLiveArtifactRefreshLogEntries, deleteLiveArtifact } = ctx.liveArtifacts;
   const { getProject, updateProject } = ctx.projectStore;
-  const authorizeProject = async (
-    req: any,
-    res: any,
-    projectId: string,
-    options: { mode: 'read'; allowNavigationQuery?: boolean } | {
-      mode: 'write';
-      capability: 'writeFiles';
-    },
-  ) => {
-    return ctx.authorizeProjectRequest(req, res, projectId, options);
-  };
   app.get('/api/live-artifacts', async (req, res) => {
     try {
       const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
       if (!projectId) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'projectId query parameter is required');
       }
-      if (!await authorizeProject(req, res, projectId, { mode: 'read' })) return;
-
       const artifacts = await listLiveArtifacts({
         projectsRoot: PROJECTS_DIR,
         projectId,
@@ -56,13 +39,6 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
       if (!projectId) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'projectId query parameter is required');
       }
-      if (!await authorizeProject(
-        req,
-        res,
-        projectId,
-        { mode: 'read', allowNavigationQuery: true },
-      )) return;
-
       const variant = typeof req.query.variant === 'string' ? req.query.variant : 'rendered';
       if (variant === 'template' || variant === 'rendered-source') {
         const html = await readLiveArtifactCode({
@@ -96,8 +72,6 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
       if (!projectId) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'projectId query parameter is required');
       }
-      if (!await authorizeProject(req, res, projectId, { mode: 'read' })) return;
-
       const record = await getLiveArtifact({
         projectsRoot: PROJECTS_DIR,
         projectId,
@@ -115,8 +89,6 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
       if (!projectId) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'projectId query parameter is required');
       }
-      if (!await authorizeProject(req, res, projectId, { mode: 'read' })) return;
-
       const refreshes = await listLiveArtifactRefreshLogEntries({
         projectsRoot: PROJECTS_DIR,
         projectId,
@@ -280,13 +252,6 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
       if (!projectId) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'projectId query parameter is required');
       }
-      if (!await authorizeProject(
-        req,
-        res,
-        projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
-
       const record = await updateLiveArtifact({
         projectsRoot: PROJECTS_DIR,
         projectId,
@@ -306,13 +271,6 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
       if (!projectId) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'projectId query parameter is required');
       }
-      if (!await authorizeProject(
-        req,
-        res,
-        projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
-
       const existing = await getLiveArtifact({
         projectsRoot: PROJECTS_DIR,
         projectId,
@@ -341,13 +299,6 @@ export function registerLiveArtifactRoutes(app: Express, ctx: RegisterLiveArtifa
       if (!projectId) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'projectId query parameter is required');
       }
-      if (!await authorizeProject(
-        req,
-        res,
-        projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
-
       let result;
       try {
         result = await refreshLiveArtifact({

@@ -4411,7 +4411,6 @@ export async function startServer({
     auth: authDeps,
     liveArtifacts: liveArtifactDeps,
     projectStore: projectStoreDeps,
-    authorizeProjectRequest,
     authorizeProjectToolRequest,
   });
   registerDesignSystemToolRoutes(app, {
