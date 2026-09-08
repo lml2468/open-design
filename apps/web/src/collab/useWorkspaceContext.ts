@@ -239,9 +239,8 @@ function billingStateFromLifecycle(
  * Build the exact request identity carried by a Workspace directory item.
  *
  * Directory items deliberately omit billing detail, but they contain every
- * authority field used by project resource headers. The permission projection
- * is the shared contract projection used by the daemon, so its identity key is
- * identical to the context that `/workspace-scope` later returns.
+ * authority field used by Workspace-owned resource requests. The permission
+ * projection is shared with the daemon so derived identities stay stable.
  */
 export function workspaceContextFromDirectoryItem(
   item: WorkspaceDirectoryItem,
@@ -888,10 +887,6 @@ function seededContextForCurrentGeneration(): WorkspaceCollabContext | null {
  * it is not an account boundary and must not invalidate an already-open
  * project's independently verified Workspace authority.
  */
-export function workspaceContextRefreshHasVerifiedSelection(): boolean {
-  return seededContextForCurrentGeneration() !== null;
-}
-
 /**
  * Announce a deliberate identity change (a workspace switch or a sign-in).
  *
@@ -900,8 +895,8 @@ export function workspaceContextRefreshHasVerifiedSelection(): boolean {
  * issuing a fresh `GET /api/workspace/context`. Omit it for callers that only
  * know something changed (sign-in), which keeps the re-read.
  *
- * The broadcast fires either way: `useProjectWorkspaceScope` listens to it to
- * revalidate the project scope, and other tabs need the storage stamp.
+ * The broadcast fires either way so Workspace-owned consumers can invalidate
+ * their cached reads and other tabs can observe the storage stamp.
  */
 export function notifyWorkspaceContextRefresh(
   seed?: { context: WorkspaceCollabContext } | null,

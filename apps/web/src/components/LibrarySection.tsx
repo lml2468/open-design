@@ -54,7 +54,6 @@ import styles from './LibrarySection.module.css';
 import { useT } from '../i18n';
 import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
-import { resolveProjectWorkspaceContext } from '../collab/useProjectWorkspaceScope';
 
 type Translate = ReturnType<typeof useT>;
 
@@ -837,11 +836,6 @@ export function LibrarySection({ active, onOpenProject }: Props) {
           setDsMenuOpen(false);
           return;
         }
-        const projectWorkspaceContext = await resolveProjectWorkspaceContext(
-          projectId,
-          mutationWorkspaceContext,
-          mutationWorkspaceContext?.workspaceId ?? null,
-        );
         const attachments: ChatAttachment[] = [];
         for (const a of chosen) {
           const res = await applyLibraryAsset(
@@ -849,7 +843,7 @@ export function LibrarySection({ active, onOpenProject }: Props) {
             projectId,
             undefined,
             { includeElement: true },
-            projectWorkspaceContext,
+            null,
           );
           if (res?.relPath) {
             attachments.push({

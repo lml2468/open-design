@@ -162,11 +162,6 @@ import {
   useCritiqueTheaterEnabled,
 } from './Theater';
 import {
-  projectWorkspaceContext,
-  projectWorkspaceScopeReady,
-  useProjectWorkspaceScope,
-} from '../collab/useProjectWorkspaceScope';
-import {
   applyAppearanceToDocument,
   resolveAccentColor,
 } from '../state/appearance';
@@ -412,8 +407,6 @@ interface Props {
   appVersionInfo: AppVersionInfo | null;
   welcome?: boolean;
   initialSection?: SettingsSection;
-  /** Workspace id persisted on the currently-open project, when any. */
-  persistedProjectWorkspaceId?: string | null;
   providerModelsCache?: ProviderModelsCache;
   /**
    * Persist the current draft. Invoked by the dialog's autosave loop on
@@ -1370,7 +1363,6 @@ export function SettingsDialog({
   appVersionInfo,
   welcome,
   initialSection = 'general',
-  persistedProjectWorkspaceId = null,
   onPersist,
   onSilentUpdatePreferenceChange,
   onPersistComposioKey,
@@ -5151,10 +5143,7 @@ export function SettingsDialog({
               </div>
 
               <div className="settings-general-block">
-                <CritiqueTheaterSection
-                  callerWorkspaceContext={workspaceContext}
-                  persistedProjectWorkspaceId={persistedProjectWorkspaceId}
-                />
+                <CritiqueTheaterSection />
               </div>
             </section>
           ) : null}
@@ -8013,63 +8002,20 @@ function IntegrationsSection() {
  * the user that per-project persistence requires opening a project
  * first. That matches the actual scope of the wire-up.
  */
-function CritiqueTheaterSection({
-  callerWorkspaceContext,
-  persistedProjectWorkspaceId,
-}: {
-  callerWorkspaceContext: WorkspaceCollabContext | null;
-  persistedProjectWorkspaceId: string | null;
-}) {
+function CritiqueTheaterSection() {
   const route = useRoute();
   const activeProjectId = route.kind === 'project' ? route.projectId : null;
-  return activeProjectId
-    ? (
-      <ProjectScopedCritiqueTheaterSection
-        projectId={activeProjectId}
-        callerWorkspaceContext={callerWorkspaceContext}
-        persistedProjectWorkspaceId={persistedProjectWorkspaceId}
-      />
-    )
-    : (
-      <CritiqueTheaterSectionContent
-        activeProjectId={null}
-        projectScopeReady
-        workspaceContext={null}
-      />
-    );
-}
-
-function ProjectScopedCritiqueTheaterSection({
-  projectId,
-  callerWorkspaceContext,
-  persistedProjectWorkspaceId,
-}: {
-  projectId: string;
-  callerWorkspaceContext: WorkspaceCollabContext | null;
-  persistedProjectWorkspaceId: string | null;
-}) {
-  const projectScope = useProjectWorkspaceScope(
-    projectId,
-    callerWorkspaceContext,
-    persistedProjectWorkspaceId,
-  );
   return (
     <CritiqueTheaterSectionContent
-      activeProjectId={projectId}
-      projectScopeReady={projectWorkspaceScopeReady(projectScope.scope)}
-      workspaceContext={projectWorkspaceContext(projectScope.scope)}
+      activeProjectId={activeProjectId}
     />
   );
 }
 
 function CritiqueTheaterSectionContent({
   activeProjectId,
-  projectScopeReady,
-  workspaceContext,
 }: {
   activeProjectId: string | null;
-  projectScopeReady: boolean;
-  workspaceContext: WorkspaceCollabContext | null;
 }) {
   const { t } = useI18n();
   const analytics = useAnalytics();
@@ -8085,10 +8031,9 @@ function CritiqueTheaterSectionContent({
       status_after: next ? 'on' : 'off',
       has_active_project: activeProjectId !== null,
     });
-    if (activeProjectId !== null && projectScopeReady) {
+    if (activeProjectId !== null) {
       void setCritiqueTheaterEnabled(next, {
         projectId: activeProjectId,
-        workspaceContext,
       });
     } else {
       void setCritiqueTheaterEnabled(next);

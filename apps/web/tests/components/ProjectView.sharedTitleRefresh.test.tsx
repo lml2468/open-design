@@ -2,7 +2,6 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState, type ReactNode } from 'react';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -82,36 +81,6 @@ vi.mock('../../src/providers/daemon', () => ({
 
 vi.mock('../../src/providers/project-events', () => ({
   useProjectFileEvents: vi.fn(),
-}));
-
-vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
-  useProjectWorkspaceScope: (
-    projectId: string,
-    workspaceContext: WorkspaceCollabContext | null,
-    persistedWorkspaceId: string | null | undefined,
-  ) => (
-    workspaceContext && persistedWorkspaceId === workspaceContext.workspaceId
-      ? {
-          loading: false,
-          scope: {
-            kind: workspaceContext.workspaceType,
-            projectId,
-            workspaceId: workspaceContext.workspaceId,
-            visibility: workspaceContext.workspaceType,
-            context: workspaceContext,
-          },
-        }
-      : {
-          loading: false,
-          scope: {
-            kind: 'unbound',
-            projectId,
-            workspaceId: null,
-            context: null,
-          },
-        }
-  ),
 }));
 
 vi.mock('../../src/providers/registry', async () => {
@@ -259,7 +228,6 @@ const conversation: Conversation = {
 function projectViewElement(
   projectOverride: Project = project,
   options: {
-    workspaceContextOverride?: WorkspaceCollabContext | null;
     projectAuthorizationKey?: string;
     onProjectChange?: (next: Project) => void;
     onProjectRenameStarted?: (next: Project) => ProjectRenameFenceToken | null;
@@ -273,7 +241,6 @@ function projectViewElement(
   return (
     <ProjectView
       project={projectOverride}
-      workspaceContextOverride={options.workspaceContextOverride}
       projectAuthorizationKey={options.projectAuthorizationKey ?? 'ws-1:wm-1:project-1'}
       routeFileName={null}
       config={config}
@@ -301,7 +268,6 @@ function projectViewElement(
 function renderProjectView(
   projectOverride: Project = project,
   options: {
-    workspaceContextOverride?: WorkspaceCollabContext | null;
     projectAuthorizationKey?: string;
   } = {},
 ) {
@@ -314,39 +280,6 @@ function dispatchProjectEvent(evt: ProjectEvent) {
     | undefined;
   expect(handleProjectEvent).toBeTypeOf('function');
   handleProjectEvent!(evt);
-}
-
-function teamWorkspaceContext(
-  workspaceId = 'ws-1',
-  workspaceMemberId = 'wm-1',
-): WorkspaceCollabContext {
-  return {
-    workspaceId,
-    workspaceType: 'team',
-    workspaceMemberId,
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: {
-      seatLimit: 3,
-      usedSeats: 2,
-      availableSeats: 1,
-      isSeatFull: false,
-    },
-    permissions: {
-      canManageMembers: false,
-      canManageBilling: false,
-      canInviteMembers: false,
-      canManageAutoRecharge: false,
-      canShareProjects: true,
-      canWriteSyncedFiles: false,
-      canViewWorkspaceSettings: true,
-      canManageSharedResources: false,
-    },
-  };
 }
 
 describe('ProjectView shared-project title refresh on project-metadata-changed', () => {
@@ -376,10 +309,8 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     vi.useRealTimers();
   });
 
-  it('invalidates the exact Workspace file-list authority before publishing an SSE refresh', async () => {
-    const workspace = teamWorkspaceContext();
-    const sharedProject = { ...project, workspaceId: workspace.workspaceId };
-    renderProjectView(sharedProject, { workspaceContextOverride: workspace });
+  it('invalidates the local file-list authority before publishing an SSE refresh', async () => {
+    renderProjectView(project);
 
     mockedInvalidateProjectFilesCache.mockClear();
     fileWorkspaceRenderSpy.mockClear();
@@ -387,8 +318,8 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
 
     await waitFor(() => {
       expect(mockedInvalidateProjectFilesCache).toHaveBeenCalledWith(
-        sharedProject.id,
-        workspace,
+        project.id,
+        null,
       );
       expect(screen.getByTestId('file-workspace')).toHaveAttribute(
         'data-files-refresh-key',
@@ -433,11 +364,9 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
   });
 
   it('commits an owner rename before refreshing every list projection', async () => {
-    const workspace = teamWorkspaceContext();
     const ownerProject = {
       ...project,
       name: 'Before rename',
-      workspaceId: workspace.workspaceId,
     };
     const persisted = {
       ...ownerProject,
@@ -449,7 +378,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     const onProjectsRefresh = vi.fn(async () => undefined);
 
     render(projectViewElement(ownerProject, {
-      workspaceContextOverride: workspace,
       onProjectChange,
       onProjectsRefresh,
     }));
@@ -461,30 +389,22 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
       expect(mockedPatchProject).toHaveBeenCalledWith(
         ownerProject.id,
         expect.objectContaining({ name: 'After rename' }),
-        workspace,
+        null,
       );
     });
     await waitFor(() => expect(onProjectsRefresh).toHaveBeenCalledTimes(1));
     expect(onProjectChange).toHaveBeenLastCalledWith(persisted);
   });
 
-  it('settles the exact rename fence after the view switches to another Workspace project', async () => {
-    const workspaceA = teamWorkspaceContext();
-    const workspaceB = {
-      ...teamWorkspaceContext(),
-      workspaceId: 'ws-2',
-      workspaceMemberId: 'wm-2',
-    };
+  it('settles the exact rename fence after the view switches to another project', async () => {
     const projectA = {
       ...project,
-      name: 'Workspace A project',
-      workspaceId: workspaceA.workspaceId,
+      name: 'Project A',
     };
     const projectB = {
       ...project,
       id: 'project-2',
-      name: 'Workspace B project',
-      workspaceId: workspaceB.workspaceId,
+      name: 'Project B',
     };
     const patch = deferred<Project | null>();
     const token: ProjectRenameFenceToken = {
@@ -499,7 +419,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     mockedPatchProject.mockImplementationOnce(() => patch.promise);
 
     const view = render(projectViewElement(projectA, {
-      workspaceContextOverride: workspaceA,
       onProjectRenameStarted,
       onProjectRenameSettled,
       onProjectsRefresh,
@@ -510,7 +429,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     await waitFor(() => expect(mockedPatchProject).toHaveBeenCalledTimes(1));
 
     view.rerender(projectViewElement(projectB, {
-      workspaceContextOverride: workspaceB,
       onProjectRenameStarted,
       onProjectRenameSettled,
       onProjectsRefresh,
@@ -527,26 +445,18 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
 
     expect(onProjectRenameSettled).toHaveBeenCalledWith(token, persisted);
     expect(onProjectsRefresh).not.toHaveBeenCalled();
-    expect(screen.getByTestId('project-title').textContent).toBe('Workspace B project');
+    expect(screen.getByTestId('project-title').textContent).toBe('Project B');
   });
 
-  it('settles independent Project and Workspace rename fences when A and B finish out of order', async () => {
-    const workspaceA = teamWorkspaceContext();
-    const workspaceB = {
-      ...teamWorkspaceContext(),
-      workspaceId: 'ws-2',
-      workspaceMemberId: 'wm-2',
-    };
+  it('settles independent project rename fences when A and B finish out of order', async () => {
     const projectA = {
       ...project,
-      name: 'Workspace A project',
-      workspaceId: workspaceA.workspaceId,
+      name: 'Project A',
     };
     const projectB = {
       ...project,
       id: 'project-2',
-      name: 'Workspace B project',
-      workspaceId: workspaceB.workspaceId,
+      name: 'Project B',
     };
     const patchA = deferred<Project | null>();
     const patchB = deferred<Project | null>();
@@ -570,7 +480,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
       .mockImplementationOnce(() => patchB.promise);
 
     const view = render(projectViewElement(projectA, {
-      workspaceContextOverride: workspaceA,
       onProjectRenameStarted,
       onProjectRenameSettled,
     }));
@@ -580,7 +489,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     await waitFor(() => expect(mockedPatchProject).toHaveBeenCalledTimes(1));
 
     view.rerender(projectViewElement(projectB, {
-      workspaceContextOverride: workspaceB,
       onProjectRenameStarted,
       onProjectRenameSettled,
     }));
@@ -626,11 +534,9 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
   ])(
     'serializes repeated renames (first=%s, second=%s) and ends at %s',
     async (firstSucceeds, secondSucceeds, expectedName) => {
-    const workspace = teamWorkspaceContext();
     const ownerProject = {
       ...project,
       name: 'Confirmed name',
-      workspaceId: workspace.workspaceId,
     };
     const firstPatch = deferred<Project | null>();
     const secondPatch = deferred<Project | null>();
@@ -641,7 +547,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     function RenameShell() {
       const [activeProject, setActiveProject] = useState<Project>(ownerProject);
       return projectViewElement(activeProject, {
-        workspaceContextOverride: workspace,
         onProjectChange: setActiveProject,
       });
     }
@@ -680,36 +585,14 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     });
   });
 
-  it('pins title hydration to the opened Workspace after ambient Workspace changes', async () => {
-    const workspaceA = {
-      workspaceId: 'ws-1',
-      workspaceType: 'team',
-      workspaceMemberId: 'wm-1',
-      role: 'owner',
-      memberStatus: 'active',
-      lifecycleState: 'active',
-      billingState: 'active',
-      planId: null,
-      providerMode: 'platform_credits',
-      seatSummary: {
-        seatLimit: 3,
-        usedSeats: 2,
-        availableSeats: 1,
-        isSeatFull: false,
-      },
-      permissions: {},
-    } as WorkspaceCollabContext;
-    const placeholder = { ...project, workspaceId: workspaceA.workspaceId };
+  it('hydrates the title through the local Project endpoint', async () => {
+    const placeholder = { ...project };
     const pulled = {
       ...placeholder,
       name: 'Recipient sees the real title',
       updatedAt: 456,
     };
-    mockedGetProject.mockImplementation(async (_projectId, workspaceContext) => (
-      workspaceContext?.workspaceId === workspaceA.workspaceId
-        ? pulled
-        : placeholder
-    ));
+    mockedGetProject.mockResolvedValue(pulled);
 
     function RecipientShell() {
       const [activeProject, setActiveProject] = useState<Project>(placeholder);
@@ -718,7 +601,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
           <span data-testid="recipient-sidebar-title">{activeProject.name}</span>
           <span data-testid="recipient-tab-title">{activeProject.name}</span>
           {projectViewElement(activeProject, {
-            workspaceContextOverride: workspaceA,
             onProjectChange: setActiveProject,
           })}
         </>
@@ -729,7 +611,7 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     dispatchProjectEvent({ type: 'project-metadata-changed', projectId: project.id });
 
     await waitFor(() => {
-      expect(mockedGetProject).toHaveBeenCalledWith(project.id, workspaceA);
+      expect(mockedGetProject).toHaveBeenCalledWith(project.id, null);
       expect(screen.getByTestId('recipient-sidebar-title').textContent).toBe(pulled.name);
       expect(screen.getByTestId('recipient-tab-title').textContent).toBe(pulled.name);
       expect(screen.getByTestId('file-workspace').getAttribute('data-project-name')).toBe(pulled.name);

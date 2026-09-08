@@ -112,16 +112,12 @@ import {
   type WorkspaceTypeRegistry,
 } from '../../collab/team-share-scope.js';
 import {
-  headerValue,
   workspaceResourceContextFromRequest as workspaceProjectContextFromRequest,
   type VerifyWorkspaceRequestAuthority,
   type WorkspaceResourceAccessInput,
   type WorkspaceResourceContext,
   type WorkspaceResourceMutationCapability,
 } from '../../collab/workspace-resource-mutation.js';
-import {
-  resolveLocalProjectWorkspaceScope,
-} from '../../collab/project-workspace-scope.js';
 import {
   createAuthorizeProjectRequest,
   type AuthorizeProjectRequest,
@@ -3472,51 +3468,14 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       }
     }
     const resolvedDir = projectDetailResolvedDir(PROJECTS_DIR, project, resolveProjectDir);
-    const binding = getWorkspaceProjectByProjectId(db, project.id);
     /** @type {import('@open-design/contracts').ProjectResponse} */
     const body = {
       project: {
         ...project,
-        workspaceId:
-          typeof binding?.workspaceId === 'string' && binding.workspaceId.trim()
-            ? binding.workspaceId.trim()
-            : null,
+        workspaceId: null,
       },
       resolvedDir,
     };
-    res.json(body);
-  });
-
-  app.get('/api/projects/:id/workspace-scope', async (req, res) => {
-    const project = getProject(db, req.params.id);
-    const locations = await configuredProjectLocations();
-    if (!project || !projectVisibleForLocations(project, locations)) {
-      return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
-    }
-    const binding = getWorkspaceProjectByProjectId(db, project.id);
-    if (!await authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
-    const claimed = workspaceProjectContextFromRequest(req);
-    const assertedType = headerValue(req, 'x-od-workspace-type');
-    const requestWorkspaceType = assertedType === 'team' || assertedType === 'personal'
-      ? assertedType
-      : null;
-    if (binding?.workspaceId && requestWorkspaceType) {
-      workspaceTypes?.learn({
-        workspaceId: binding.workspaceId,
-        workspaceType: requestWorkspaceType,
-      });
-    }
-    const scope = resolveLocalProjectWorkspaceScope({
-      projectId: project.id,
-      binding,
-      requestWorkspaceMemberId:
-        claimed && claimed !== 'missing' ? claimed.workspaceMemberId : null,
-      requestWorkspaceType,
-      knownWorkspaceType: workspaceTypes?.typeOf(binding?.workspaceId) ?? null,
-      ...(ctx.configuredEnv ? { configuredEnv: ctx.configuredEnv() } : {}),
-    });
-    /** @type {import('@open-design/contracts').ProjectWorkspaceScopeResponse} */
-    const body = { scope };
     res.json(body);
   });
 

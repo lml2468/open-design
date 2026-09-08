@@ -902,11 +902,9 @@ export async function enforceVerifiedWorkspaceResourceRead(
  * claim, of which there is none — is the same fallback the create path already
  * applies ("nothing asserted -> ambient"), so the gate and the creation paths
  * now agree about what a headerless caller is. It does NOT weaken the two
- * contracts that look adjacent: `authorizeCreatedProjectWorkspace` still refuses
- * to let ambient stand in for a pair someone explicitly CLAIMED, and
- * `resolveProjectWorkspaceScope` still resolves a PERSISTED binding without
- * consulting ambient. Both govern cases where something was asserted; this is
- * the third case.
+ * adjacent contract: `authorizeCreatedProjectWorkspace` still refuses to let
+ * ambient stand in for a pair someone explicitly CLAIMED. That governs a case
+ * where something was asserted; this is the third case.
  *
  * What stays refused, because the original branch protected something real
  * (recvqbeDjAsejl / recvqbklNGDqYY, spec 04 §10):

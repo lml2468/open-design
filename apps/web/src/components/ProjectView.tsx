@@ -64,7 +64,6 @@ import {
   type ByokMediaDefaults,
   type ByokChatProtocol,
   type ChatTaskExecutionAnalytics,
-  type ProjectWorkspaceScope,
   type ResearchOptions,
 } from '@open-design/contracts';
 import {
@@ -190,7 +189,6 @@ import {
   cacheTabsLocally,
   persistTabsToDaemonNow,
   listPlugins,
-  resolvedWorkspaceContextForWrite,
   type SaveMessageOptions,
   waitGeneratedPluginShareTask,
 } from '../state/projects';
@@ -243,12 +241,6 @@ import { localizePluginTitle } from './plugins-home/localization';
 import { DesignSystemPicker } from './DesignSystemPicker';
 import { ProjectCollaborationPublish } from './collaboration/ProjectCollaborationPublish';
 import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
-import { useWorkspaceContext } from '../collab/useWorkspaceContext';
-import {
-  projectWorkspaceScopeReady,
-  runWorkspaceIdentity,
-  useProjectWorkspaceScope,
-} from '../collab/useProjectWorkspaceScope';
 import {
   CollabProvider,
   type CollabContextValue,
@@ -541,17 +533,8 @@ function ensureConversationPresent(
 
 interface Props {
   project: Project;
-  /**
-   * Exact project-bound Workspace authority resolved by the route gate.
-   * Production deep links pass this instead of borrowing the shell's mutable
-   * current/default Workspace. Tests and legacy embedded callers may omit it
-   * and retain the existing provider behavior.
-   */
-  workspaceContextOverride?: WorkspaceCollabContext | null;
-  /** Fresh route-bootstrap witnesses, reused to avoid repeating scope/detail reads. */
-  initialWorkspaceScope?: ProjectWorkspaceScope | null;
   initialProjectDetail?: ProjectDetailSeed | null;
-  /** Workspace/member authorization lifetime for async title reads. */
+  /** Project lifetime for async title reads. */
   projectAuthorizationKey?: string;
   routeFileName: string | null;
   /**
@@ -1644,8 +1627,6 @@ export function reconcileProjectDetail(
 
 export function ProjectView({
   project,
-  workspaceContextOverride,
-  initialWorkspaceScope,
   initialProjectDetail,
   projectAuthorizationKey = project.id,
   routeFileName,
@@ -1694,66 +1675,9 @@ export function ProjectView({
     };
   }, [projectAuthorizationKey]);
   const analytics = useAnalytics();
-  const ambientWorkspaceContextState = useWorkspaceContext();
-  const workspaceContextState = workspaceContextOverride !== undefined
-    ? {
-        context: workspaceContextOverride,
-        loading: false,
-        identityChangePending: false,
-      }
-    : ambientWorkspaceContextState;
-  const { context: workspaceContext } = workspaceContextState;
-  const projectWorkspaceScopeState = useProjectWorkspaceScope(
-    project.id,
-    workspaceContext,
-    project.workspaceId,
-    initialWorkspaceScope,
-  );
-  // The project's resolved scope when there is one. While that first read is
-  // pending, the persisted project binding may witness the matching caller;
-  // answered unavailable states deliberately do not borrow it.
-  const resolvedProjectRunWorkspaceContext = runWorkspaceIdentity(
-    projectWorkspaceScopeState,
-    workspaceContext,
-    project.workspaceId,
-  );
-  // Scope revalidation returns a freshly decoded context object even when the
-  // data-plane authority did not change. Project hydration is keyed to the
-  // authority carried by resource requests, not that object's allocation:
-  // replacing an equivalent object must not blank conversations, messages,
-  // tabs, or files while the same project remains open.
-  const projectRunAuthorityKey = workspaceIdentityCacheKey(
-    resolvedProjectRunWorkspaceContext,
-  );
-  const canonicalProjectRunWorkspaceContextRef = useRef<{
-    authorityKey: string;
-    context: WorkspaceCollabContext | null;
-  }>({
-    authorityKey: projectRunAuthorityKey,
-    context: resolvedProjectRunWorkspaceContext,
-  });
-  if (
-    canonicalProjectRunWorkspaceContextRef.current.authorityKey
-    !== projectRunAuthorityKey
-  ) {
-    canonicalProjectRunWorkspaceContextRef.current = {
-      authorityKey: projectRunAuthorityKey,
-      context: resolvedProjectRunWorkspaceContext,
-    };
-  }
-  const projectRunWorkspaceContext =
-    canonicalProjectRunWorkspaceContextRef.current.context;
-  const projectResourceAuthority: ProjectResourceAuthority =
-    projectWorkspaceScopeState.failure === 'forbidden'
-    || projectWorkspaceScopeState.failure === 'unsupported'
-      ? 'denied'
-      : projectWorkspaceScopeState.scope?.kind === 'unbound'
-        ? 'local'
-        : projectRunWorkspaceContext
-          ? 'workspace'
-          : 'pending';
-  const projectResourceAuthorityRef = useRef(projectResourceAuthority);
-  projectResourceAuthorityRef.current = projectResourceAuthority;
+  const projectRunWorkspaceContext: WorkspaceCollabContext | null = null;
+  const projectRunAuthorityKey = 'local';
+  const projectResourceAuthority: ProjectResourceAuthority = 'local';
   const projectRunWorkspaceContextRef = useRef(projectRunWorkspaceContext);
   projectRunWorkspaceContextRef.current = projectRunWorkspaceContext;
   // Onboarding first-generation funnel (spec §11.1). Consume the pending entry
@@ -1803,8 +1727,6 @@ export function ProjectView({
   const projectMutationReadOnly = false;
   const projectDetail = useProjectDetail(
     project.id,
-    projectRunWorkspaceContext,
-    project.workspaceId,
     initialProjectDetail,
   );
   const detailedProject = projectDetail.project?.id === project.id ? projectDetail.project : null;
@@ -1931,7 +1853,7 @@ export function ProjectView({
   const collabValue = useMemo<CollabContextValue>(
     () => ({
       workspaceContext: projectRunWorkspaceContext,
-      workspaceContextLoading: projectWorkspaceScopeState.loading,
+      workspaceContextLoading: false,
       projectResourceAuthority,
       onLostAnchors: handleLostAnchors,
       enabled: false,
@@ -1940,7 +1862,6 @@ export function ProjectView({
     }),
     [
       projectRunWorkspaceContext,
-      projectWorkspaceScopeState.loading,
       projectResourceAuthority,
       handleLostAnchors,
     ],
@@ -2601,7 +2522,6 @@ export function ProjectView({
       && streamingConversationIdRef.current === activeConversationId
       && abortRef.current !== null
       && cancelRef.current !== null
-      && projectResourceAuthorityRef.current !== 'denied'
     ) {
       const currentMessages = messagesRef.current;
       let assistantIndex = -1;
@@ -3550,9 +3470,7 @@ export function ProjectView({
   // Anonymous/local unbound projects intentionally keep their legacy stream
   // after the daemon settles them as unbound. A missing local workspaceId is
   // not sufficient: that project row can lag a hidden daemon-side Team mirror.
-  const projectEventsEnabled =
-    daemonLive
-    && projectWorkspaceScopeReady(projectWorkspaceScopeState.scope);
+  const projectEventsEnabled = daemonLive;
   useProjectFileEvents(project.id, projectEventsEnabled, handleProjectEvent, {
     // Files or comments can change after their initial snapshots but before
     // SSE is listening. Reconcile both once the exact-scoped stream is ready:
@@ -6594,7 +6512,6 @@ export function ProjectView({
             abortRef.current !== controller
             || projectIdRef.current !== project.id
             || activeConversationIdRef.current !== runConversationId
-            || projectResourceAuthorityRef.current === 'denied'
           ) {
             return curr;
           }
@@ -7807,7 +7724,6 @@ export function ProjectView({
       byokSpeechModelOptionsPV,
       projectRunWorkspaceContext,
       projectMutationReadOnly,
-      projectWorkspaceScopeState.scope,
     ],
   );
 
@@ -10229,7 +10145,7 @@ export function ProjectView({
     try {
       const result = await duplicatePluginAsProject(record.id, {
         name: localizePluginTitle(locale, record),
-      }, resolvedWorkspaceContextForWrite(workspaceContextState));
+      });
       setContextPluginDetails(null);
       navigate({
         kind: 'project',
@@ -10245,7 +10161,7 @@ export function ProjectView({
         ttlMs: 3000,
       });
     }
-  }, [locale, t, workspaceContextState]);
+  }, [locale, t]);
   const handleOpenContextDesignSystemDetails = useCallback((system: DesignSystemSummary) => {
     setContextDesignSystemDetails(system);
   }, []);
@@ -10466,7 +10382,6 @@ export function ProjectView({
       <CritiqueTheaterMount
         projectId={project.id}
         enabled={critiqueTheaterEnabled}
-        workspaceContext={projectRunWorkspaceContext}
       />
       {/* ProjectActionsToolbar removed per 00efdcba — hide finalize-design
           toolbar from project header. Restore from cf1cd9bb if product

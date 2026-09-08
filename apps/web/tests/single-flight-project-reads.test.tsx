@@ -4,20 +4,18 @@
 //
 // Evidence baseline (electron-project-waterfall-20260727): opening one shared
 // project issued duplicated GETs before the first stable frame — /files ×2,
-// /conversations ×2, /tabs ×2, /workspace-scope ×3 (one aborted),
-// /analytics/config ×2 and /recent-dirs ×2.
+// /conversations ×2, /tabs ×2, /analytics/config ×2 and /recent-dirs ×2.
 //
 // The contract under test: every one of these display reads has a single
 // request owner per (resource, project/workspace) — concurrent consumers of
 // the same resource share one network request instead of each issuing their
 // own.
 
-import { cleanup, renderHook, waitFor } from '@testing-library/react';
+import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchProjectFiles, fetchRecentLinkedDirs } from '../src/providers/registry';
 import { listConversations, loadTabs } from '../src/state/projects';
-import { useProjectWorkspaceScope } from '../src/collab/useProjectWorkspaceScope';
 import {
   bootstrapExceptionTracking,
   getAnalyticsClient,
@@ -40,12 +38,6 @@ function bodyForUrl(url: string): unknown {
   if (url.includes('/tabs')) return { tabs: [], active: null };
   if (url.includes('/recent-dirs')) return { dirs: [] };
   if (url.includes('/analytics/config')) return { enabled: false, key: null, host: null };
-  if (url.includes('/workspace-scope')) {
-    const projectId = decodeURIComponent(url.split('/projects/')[1]!.split('/')[0]!);
-    return {
-      scope: { kind: 'unbound', projectId, workspaceId: null, context: null },
-    };
-  }
   if (url.endsWith('/files')) return { files: [] };
   return {};
 }
@@ -164,19 +156,5 @@ describe('project-open single-flight reads (Batch A §4.3)', () => {
       getAnalyticsClient(context),
     ]);
     expect(callsMatching('/analytics/config')).toHaveLength(1);
-  });
-
-  it('shares one /workspace-scope request between two mounted scope consumers', async () => {
-    const first = renderHook(() => useProjectWorkspaceScope('sf-scope'));
-    const second = renderHook(() => useProjectWorkspaceScope('sf-scope'));
-    await waitFor(() => {
-      expect(first.result.current.loading).toBe(false);
-      expect(second.result.current.loading).toBe(false);
-    });
-    expect(first.result.current.scope?.kind).toBe('unbound');
-    expect(second.result.current.scope?.kind).toBe('unbound');
-    expect(callsMatching('/projects/sf-scope/workspace-scope')).toHaveLength(1);
-    first.unmount();
-    second.unmount();
   });
 });

@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/App';
 import type { Route } from '../../src/router';
 import type { AppConfig, Project } from '../../src/types';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import {
   fetchComposioConfigFromDaemon,
   fetchDaemonConfig,
@@ -37,7 +36,6 @@ const PROJECT_ROUTE: Route = {
   fileName: null,
 };
 const useRouteMock = vi.fn<() => Route>(() => PROJECT_ROUTE);
-const useProjectRouteWorkspaceContextMock = vi.hoisted(() => vi.fn());
 const projectViewMountedMock = vi.hoisted(() => vi.fn());
 const projectViewUnmountedMock = vi.hoisted(() => vi.fn());
 
@@ -45,16 +43,6 @@ vi.mock('../../src/router', () => ({
   navigate: vi.fn(),
   useRoute: () => useRouteMock(),
 }));
-
-vi.mock('../../src/collab/useProjectRouteWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('../../src/collab/useProjectRouteWorkspaceContext')
-  >();
-  return {
-    ...actual,
-    useProjectRouteWorkspaceContext: useProjectRouteWorkspaceContextMock,
-  };
-});
 
 vi.mock('../../src/components/EntryView', () => ({
   EntryView: () => <div>Entry view</div>,
@@ -171,37 +159,6 @@ const project: Project = {
   workspaceId: 'ws-project',
 };
 
-const PROJECT_WORKSPACE_CONTEXT: WorkspaceCollabContext = {
-  workspaceId: 'ws-project',
-  workspaceMemberId: 'wm-project',
-  workspaceName: 'Project Workspace',
-  workspaceType: 'personal',
-  role: 'owner',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  displayName: 'Project Nova',
-  billingState: 'active',
-  planId: 'pro',
-  providerMode: 'platform_credits',
-  seatSummary: {
-    seatLimit: 0,
-    usedSeats: 0,
-    availableSeats: 0,
-    isSeatFull: false,
-  },
-  permissions: {
-    canManageMembers: false,
-    canManageBilling: true,
-    canInviteMembers: false,
-    canManageAutoRecharge: true,
-    canShareProjects: false,
-    canWriteSyncedFiles: false,
-    canViewWorkspaceSettings: false,
-    canManageSharedResources: false,
-  },
-  workspaceSettingsUrl: 'https://cloud.example/settings?workspaceId=ws-project',
-};
-
 function stubFetchByUrl() {
   vi.stubGlobal(
     'fetch',
@@ -238,11 +195,6 @@ describe('project route — local top-right controls', () => {
     vi.mocked(fetchMediaProvidersFromDaemon).mockResolvedValue({ status: 'ok', providers: {} });
     vi.mocked(mergeDaemonConfig).mockImplementation((local) => local);
     vi.mocked(loadConfig).mockReturnValue({ ...baseConfig });
-    useProjectRouteWorkspaceContextMock.mockReturnValue({
-      context: PROJECT_WORKSPACE_CONTEXT,
-      loading: false,
-      retry: vi.fn(),
-    });
     stubFetchByUrl();
     window.history.replaceState(null, '', '/projects/project-1');
   });
@@ -262,60 +214,19 @@ describe('project route — local top-right controls', () => {
     expect(screen.queryByTestId('entry-nav-account')).toBeNull();
   });
 
-  it.each([
-    ['signed out', false],
-    ['workspace identity is still loading', true],
-  ])('keeps local controls independent when %s', async (_state, loading) => {
-    useProjectRouteWorkspaceContextMock.mockReturnValue({
-      context: null,
-      loading,
-      retry: vi.fn(),
-    });
+  it('keeps local controls independent while workspace identity is unavailable', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(JSON.stringify({}), { status: 200 })),
     );
     render(<App />);
 
-    await screen.findByText(loading ? 'Loading workspace…' : 'Project view');
+    await screen.findByText('Project view');
     await waitFor(() => {
       expect(document.querySelector('.entry-top-right-cluster')).not.toBeNull();
       expect(screen.queryByTestId('entry-top-right-github')).not.toBeNull();
       expect(screen.queryByTestId('entry-nav-account')).toBeNull();
       expect(screen.queryByTestId('entry-nav-updater-host')).toBeNull();
     });
-  });
-
-  it('keeps the same project instance mounted through a transient authority outage and recovery', async () => {
-    const view = render(<App />);
-
-    expect(await screen.findByText('Project view')).toBeTruthy();
-    expect(projectViewMountedMock).toHaveBeenCalledTimes(1);
-    expect(projectViewUnmountedMock).not.toHaveBeenCalled();
-
-    useProjectRouteWorkspaceContextMock.mockReturnValue({
-      context: PROJECT_WORKSPACE_CONTEXT,
-      loading: false,
-      failure: 'unavailable',
-      retry: vi.fn(),
-    });
-    view.rerender(<App />);
-
-    expect(await screen.findByText('Project view')).toBeTruthy();
-    expect(screen.getByTestId('project-workspace-recovery-tip')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
-    expect(projectViewMountedMock).toHaveBeenCalledTimes(1);
-    expect(projectViewUnmountedMock).not.toHaveBeenCalled();
-
-    useProjectRouteWorkspaceContextMock.mockReturnValue({
-      context: PROJECT_WORKSPACE_CONTEXT,
-      loading: false,
-      retry: vi.fn(),
-    });
-    view.rerender(<App />);
-
-    expect(screen.queryByTestId('project-workspace-recovery-tip')).toBeNull();
-    expect(projectViewMountedMock).toHaveBeenCalledTimes(1);
-    expect(projectViewUnmountedMock).not.toHaveBeenCalled();
   });
 });

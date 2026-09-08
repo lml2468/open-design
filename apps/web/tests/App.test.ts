@@ -5,14 +5,12 @@ import {
   isAutosaveDraftOnlyChange,
   mergeAgentModelChoice,
   persistComposioConfigChange,
-  projectViewAuthorizationLifetimeKey,
   projectRouteSurfaceState,
   resolveSettingsCloseConfig,
   shouldRouteToFirstRunOnboarding,
   shouldSyncMediaProvidersOnSave,
 } from '../src/App';
 import type { AppConfig } from '../src/types';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 describe('projectRouteSurfaceState', () => {
   it('only shows an unbounded loader while the initial project list is loading', () => {
@@ -74,48 +72,6 @@ describe('shouldRouteToFirstRunOnboarding', () => {
 
     expect(shouldRouteToFirstRunOnboarding(unfinished, '/projects/project-a')).toBe(false);
     expect(shouldRouteToFirstRunOnboarding(unfinished, '/')).toBe(true);
-  });
-});
-
-describe('projectViewAuthorizationLifetimeKey', () => {
-  const projectId = 'same-project';
-  const baseContext = {
-    workspaceId: 'workspace-a',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-a',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    teamId: 'team-a',
-  } as WorkspaceCollabContext;
-
-  it('changes when any Workspace authorization field changes', () => {
-    const initial = projectViewAuthorizationLifetimeKey(projectId, baseContext);
-
-    expect(projectViewAuthorizationLifetimeKey(projectId, {
-      ...baseContext,
-      workspaceId: 'workspace-b',
-    })).not.toBe(initial);
-    expect(projectViewAuthorizationLifetimeKey(projectId, {
-      ...baseContext,
-      workspaceMemberId: 'member-b',
-    })).not.toBe(initial);
-    expect(projectViewAuthorizationLifetimeKey(projectId, {
-      ...baseContext,
-      role: 'admin',
-    })).not.toBe(initial);
-    expect(projectViewAuthorizationLifetimeKey(projectId, {
-      ...baseContext,
-      lifecycleState: 'locked',
-    })).not.toBe(initial);
-    expect(projectViewAuthorizationLifetimeKey(projectId, {
-      ...baseContext,
-      permissions: {
-        ...baseContext.permissions,
-        canShareProjects: true,
-        canWriteSyncedFiles: false,
-      },
-    })).not.toBe(initial);
-    expect(projectViewAuthorizationLifetimeKey(projectId, null)).not.toBe(initial);
   });
 });
 

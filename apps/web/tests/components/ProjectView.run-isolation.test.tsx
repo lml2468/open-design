@@ -9,8 +9,6 @@ import {
   mergeSavedPreviewComment,
 } from '../../src/components/ProjectView';
 import type { SettingsSection } from '../../src/components/SettingsDialog';
-import type { ProjectWorkspaceScopeState } from '../../src/collab/useProjectWorkspaceScope';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import type {
   AgentInfo,
   AppConfig,
@@ -48,53 +46,6 @@ const analyticsTrackMock = vi.fn();
 /** What the inline question form was told about each answer it handed over. */
 const questionFormSubmitOutcomes: Array<boolean | void> = [];
 const useProjectFileEvents = vi.fn();
-const workspaceScopeMocks = vi.hoisted(() => {
-  const personalContext = (): WorkspaceCollabContext & {
-    workspaceType: 'personal';
-  } => ({
-    workspaceId: 'workspace-personal',
-    workspaceMemberId: 'member-personal',
-    workspaceType: 'personal',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: {
-      seatLimit: 1,
-      usedSeats: 1,
-      availableSeats: 0,
-      isSeatFull: true,
-    },
-    permissions: {
-      canManageMembers: true,
-      canManageBilling: true,
-      canInviteMembers: true,
-      canManageAutoRecharge: true,
-      canShareProjects: true,
-      canWriteSyncedFiles: true,
-      canViewWorkspaceSettings: true,
-      canManageSharedResources: true,
-    },
-  });
-  return {
-    personalContext,
-    ambientContext: null as WorkspaceCollabContext | null,
-    ambientLoading: false,
-    ambientFailure: null as 'unsupported' | 'unavailable' | null,
-    projectScope: {
-      loading: false,
-      scope: {
-        kind: 'personal' as const,
-        projectId: 'project-1',
-        workspaceId: 'workspace-personal',
-        visibility: 'personal' as const,
-        context: personalContext(),
-      },
-    } as ProjectWorkspaceScopeState,
-  };
-});
 
 vi.mock('../../src/analytics/provider', () => ({
   useAnalytics: () => ({
@@ -113,31 +64,6 @@ vi.mock('../../src/i18n', () => ({
 
 vi.mock('../../src/providers/anthropic', () => ({
   streamMessage: (...args: unknown[]) => streamMessage(...args),
-}));
-
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({
-    context: workspaceScopeMocks.ambientContext,
-    loading: workspaceScopeMocks.ambientLoading,
-    ...(workspaceScopeMocks.ambientFailure
-      ? { failure: workspaceScopeMocks.ambientFailure }
-      : {}),
-  }),
-  lastResolvedWorkspaceContext: () => workspaceScopeMocks.ambientContext,
-}));
-
-// Only the HOOK is stubbed; every pure helper comes from the real module.
-//
-// This factory used to hand-list each export, and that cost three separate
-// debugging rounds: adding ONE export to `useProjectWorkspaceScope` made all 64
-// tests in this file fail with "not a function" at render, and the hand-written
-// copies were free to drift from the semantics under test. `importOriginal`
-// removes the whole failure mode — a new export is picked up automatically and
-// is always the real implementation.
-vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
-  useProjectWorkspaceScope: () => workspaceScopeMocks.projectScope,
 }));
 
 vi.mock('../../src/providers/daemon', () => ({
@@ -598,46 +524,6 @@ const createdConversation: Conversation = {
   updatedAt: 2,
 };
 
-type TeamProjectWorkspaceContext = Extract<
-  NonNullable<ProjectWorkspaceScopeState['scope']>,
-  { kind: 'team' }
->['context'];
-
-function teamWorkspaceContext(
-  workspaceId: string,
-  workspaceMemberId: string,
-): TeamProjectWorkspaceContext {
-  return {
-    workspaceId,
-    workspaceType: 'team',
-    workspaceMemberId,
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_pro',
-    providerMode: 'platform_credits',
-    seatSummary: {
-      seatLimit: 5,
-      usedSeats: 2,
-      availableSeats: 3,
-      isSeatFull: false,
-    },
-    permissions: {
-      canManageMembers: false,
-      canManageBilling: false,
-      canInviteMembers: false,
-      canManageAutoRecharge: false,
-      canShareProjects: true,
-      canWriteSyncedFiles: true,
-      canViewWorkspaceSettings: true,
-      canManageSharedResources: false,
-    },
-    teamId: workspaceId,
-    teamName: workspaceId,
-  };
-}
-
 const runningAssistant: ChatMessage = {
   id: 'assistant-a',
   role: 'assistant',
@@ -706,19 +592,6 @@ describe('ProjectView conversation run isolation', () => {
 
   beforeEach(() => {
     window.localStorage.clear();
-    workspaceScopeMocks.ambientContext = null;
-    workspaceScopeMocks.ambientLoading = false;
-    workspaceScopeMocks.ambientFailure = null;
-    workspaceScopeMocks.projectScope = {
-      loading: false,
-      scope: {
-        kind: 'personal',
-        projectId: project.id,
-        workspaceId: 'workspace-personal',
-        visibility: 'personal',
-        context: workspaceScopeMocks.personalContext(),
-      },
-    };
     resolveConversationBMessages = null;
     conversationAMessages = [runningAssistant];
     questionFormSubmitOutcomes.length = 0;
@@ -822,37 +695,6 @@ describe('ProjectView conversation run isolation', () => {
     await waitFor(() => expect(playSound).toHaveBeenCalledWith('success-sound'));
     expect(showCompletionNotification).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'succeeded', body: 'done' }),
-    );
-  });
-
-  it('uses the project-bound workspace instead of the ambient workspace for run authorization', async () => {
-    conversationAMessages = [];
-    const workspaceA = teamWorkspaceContext('workspace-a', 'member-a');
-    const workspaceB = teamWorkspaceContext('workspace-b', 'member-b');
-    workspaceScopeMocks.ambientContext = workspaceB;
-    workspaceScopeMocks.projectScope = {
-      loading: false,
-      scope: {
-        kind: 'team',
-        projectId: project.id,
-        workspaceId: workspaceA.workspaceId,
-        visibility: 'personal',
-        context: workspaceA,
-      },
-    };
-
-    renderProjectView(config, { ...project, workspaceId: workspaceA.workspaceId });
-
-    await waitFor(() => expect(screen.getByTestId('active-conversation').textContent).toBe('conv-a'));
-    await waitFor(() => expect(screen.getByTestId('send-message')).toHaveProperty('disabled', false));
-    fireEvent.click(screen.getByTestId('send-message'));
-
-    await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
-    expect(streamViaDaemon).toHaveBeenCalledWith(
-      expect.objectContaining({
-        projectId: project.id,
-        workspaceContext: workspaceA,
-      }),
     );
   });
 
@@ -966,7 +808,7 @@ describe('ProjectView conversation run isolation', () => {
     expect(createConversation).toHaveBeenCalledTimes(1);
   });
 
-  it('seeds an empty explicitly Personal project', async () => {
+  it('seeds an empty local project', async () => {
     listConversations.mockResolvedValue([]);
 
     renderProjectView();
@@ -976,33 +818,8 @@ describe('ProjectView conversation run isolation', () => {
       project.id,
       undefined,
       expect.objectContaining({
-        workspaceContext: workspaceScopeMocks.personalContext(),
+        workspaceContext: null,
       }),
-    );
-  });
-
-  it('seeds an empty bound project from its exact workspace context', async () => {
-    const teamContext = teamWorkspaceContext('workspace-team', 'owner-member');
-    workspaceScopeMocks.ambientContext = teamContext;
-    workspaceScopeMocks.projectScope = {
-      loading: false,
-      scope: {
-        kind: 'team',
-        projectId: project.id,
-        workspaceId: teamContext.workspaceId,
-        visibility: 'team',
-        context: teamContext,
-      },
-    };
-    listConversations.mockResolvedValue([]);
-
-    renderProjectView(config, { ...project, workspaceId: teamContext.workspaceId });
-
-    await waitFor(() => expect(createConversation).toHaveBeenCalledTimes(1));
-    expect(createConversation).toHaveBeenCalledWith(
-      project.id,
-      undefined,
-      expect.objectContaining({ workspaceContext: teamContext }),
     );
   });
 
@@ -1341,7 +1158,7 @@ describe('ProjectView conversation run isolation', () => {
       expect(fetchPreviewComments).toHaveBeenCalledWith(
         project.id,
         'conv-b',
-        expect.anything(),
+        null,
       );
     });
     // The daemon GET is project-scoped for a Team share, so a comment whose
@@ -1370,7 +1187,7 @@ describe('ProjectView conversation run isolation', () => {
     await waitFor(() => expect(fetchPreviewComments).toHaveBeenCalledWith(
       project.id,
       'conv-b',
-      expect.anything(),
+      null,
     ));
 
     fireEvent.click(screen.getByTestId('attach-first-comment'));
@@ -1598,7 +1415,7 @@ describe('ProjectView conversation run isolation', () => {
         'conv-a',
         previewComment.id,
         'applying',
-        workspaceScopeMocks.personalContext(),
+        null,
       ),
     );
     patchPreviewCommentStatus.mockClear();
@@ -1850,7 +1667,7 @@ describe('ProjectView conversation run isolation', () => {
         expect.anything(),
         previewComment.id,
         'applying',
-        workspaceScopeMocks.personalContext(),
+        null,
       ),
     );
     await waitFor(() => expect(screen.getByTestId('send-queued-0')).toBeTruthy());
@@ -2079,10 +1896,7 @@ describe('ProjectView conversation run isolation', () => {
         promptNamedProject.id,
         emptyConversation.id,
         { title: 'Hello From B' },
-        expect.objectContaining({
-          workspaceId: 'workspace-personal',
-          workspaceMemberId: 'member-personal',
-        }),
+        null,
       ),
     );
     await waitFor(() =>
@@ -2092,10 +1906,7 @@ describe('ProjectView conversation run isolation', () => {
           name: 'Hello From B',
           metadata: expect.objectContaining({ nameSource: 'prompt' }),
         }),
-        expect.objectContaining({
-          workspaceId: 'workspace-personal',
-          workspaceMemberId: 'member-personal',
-        }),
+        null,
       ),
     );
   });
@@ -2138,10 +1949,7 @@ describe('ProjectView conversation run isolation', () => {
         promptNamedProject.id,
         emptyConversation.id,
         { title: 'Agent Title' },
-        expect.objectContaining({
-          workspaceId: 'workspace-personal',
-          workspaceMemberId: 'member-personal',
-        }),
+        null,
       ),
     );
     await waitFor(() =>
@@ -2151,10 +1959,7 @@ describe('ProjectView conversation run isolation', () => {
           name: 'Agent Title',
           metadata: expect.objectContaining({ nameSource: 'agent' }),
         }),
-        expect.objectContaining({
-          workspaceId: 'workspace-personal',
-          workspaceMemberId: 'member-personal',
-        }),
+        null,
       ),
     );
   });

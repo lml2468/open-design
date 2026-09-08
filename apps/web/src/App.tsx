@@ -28,7 +28,6 @@ import type {
   CreateProjectExampleReference,
   RunContextSelection,
   WorkspaceCollabContext,
-  ProjectWorkspaceScope,
   ProjectScenarioTaskProfile,
 } from '@open-design/contracts';
 import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@open-design/contracts';
@@ -61,7 +60,6 @@ import {
   WorkspaceTabsBar,
 } from './components/WorkspaceTabsBar';
 import { ProjectTopRightControls } from './components/EntryNavRail';
-import { ProjectWorkspaceRecoveryTip } from './components/ProjectWorkspaceRecoveryTip';
 import {
   DesignSystemCreationFlow,
   DesignSystemDetailView,
@@ -97,16 +95,10 @@ import {
 import {
   beginWorkspaceScopedRead,
   currentWorkspaceAccountGeneration,
-  resolveBoundProjectWorkspaceContext,
-  resolveCurrentWorkspaceContextReadWitness,
   useWorkspaceContext,
   workspaceIdentityCacheKey,
   workspaceResourceReadContext,
 } from './collab/useWorkspaceContext';
-import {
-  projectResourceReadsCanStart,
-  useProjectRouteWorkspaceContext,
-} from './collab/useProjectRouteWorkspaceContext';
 import { deriveTabIdentityScope, UNSET_ACCOUNT_BUCKET } from './collab/tab-scope';
 import { CommunityView } from './components/CommunityView';
 import { seedHomeComposerPrompt } from './components/HomeView';
@@ -338,13 +330,6 @@ function projectListScopeKey(context: WorkspaceCollabContext | null): string {
     : UNRESOLVED_PROJECT_LIST_SCOPE;
 }
 
-export function projectViewAuthorizationLifetimeKey(
-  projectId: string,
-  context: WorkspaceCollabContext | null,
-): string {
-  return `${projectListScopeKey(context)}:${projectId}`;
-}
-
 export async function persistComposioConfigChange(
   current: AppConfig,
   composio: AppConfig['composio'],
@@ -542,13 +527,6 @@ function AppInner() {
   );
   const workspaceContextRef = useRef<WorkspaceCollabContext | null>(null);
   const workspaceContextStateRef = useRef(workspaceContextState);
-  const projectRouteWorkspaceContextRef = useRef<WorkspaceCollabContext | null>(null);
-  const projectOpenWorkspaceWitnessRef = useRef<{
-    projectId: string;
-    projectWorkspaceId: string;
-    context: WorkspaceCollabContext;
-    accountGeneration: number;
-  } | null>(null);
   workspaceContextRef.current = workspaceContext;
   workspaceContextStateRef.current = workspaceContextState;
   const listCurrentWorkspaceProjects = useCallback(
@@ -2458,40 +2436,14 @@ function AppInner() {
     [handleCreateProject, t],
   );
 
-  const resolveSourceProjectWorkspaceContext = useCallback(async (
-    sourceProjectId: string,
-  ): Promise<WorkspaceCollabContext | null> => {
-    const routeProject = routeProjectSnapshotRef.current?.project;
-    const sourceProject =
-      routeProject?.id === sourceProjectId
-        ? routeProject
-        : projects.find((project) => project.id === sourceProjectId);
-    const persistedWorkspaceId = sourceProject?.workspaceId?.trim() ?? '';
-    if (!persistedWorkspaceId) return null;
-
-    const routeContext = projectRouteWorkspaceContextRef.current;
-    if (routeContext?.workspaceId === persistedWorkspaceId) return routeContext;
-    const ambientContext = workspaceContextRef.current;
-    if (ambientContext?.workspaceId === persistedWorkspaceId) return ambientContext;
-
-    const resolved = await resolveBoundProjectWorkspaceContext(persistedWorkspaceId);
-    if (!resolved) {
-      throw new Error('source project Workspace authority is unavailable');
-    }
-    return resolved;
-  }, [projects]);
-
   const handleCreateDesignSystemFromProject = useCallback(
     async (
       sourceProjectId: string,
       input: { name?: string; pendingPrompt?: string },
     ) => {
-      const sourceWorkspaceContext =
-        await resolveSourceProjectWorkspaceContext(sourceProjectId);
       const result = await createDesignSystemProjectFromProject(
         sourceProjectId,
         input,
-        sourceWorkspaceContext,
       );
       try {
         window.sessionStorage.setItem(`od:auto-send-first:${result.project.id}`, '1');
@@ -2519,14 +2471,12 @@ function AppInner() {
         fileName: null,
       });
     },
-    [refreshDesignSystems, rememberLocalProject, resolveSourceProjectWorkspaceContext],
+    [refreshDesignSystems, rememberLocalProject],
   );
 
   const handleDuplicateProject = useCallback(
     async (sourceProjectId: string, input: { name?: string } = {}) => {
-      const sourceWorkspaceContext =
-        await resolveSourceProjectWorkspaceContext(sourceProjectId);
-      const result = await duplicateProject(sourceProjectId, input, sourceWorkspaceContext);
+      const result = await duplicateProject(sourceProjectId, input);
       rememberLocalProject(result.project.id);
       setProjects((curr) => [
         result.project,
@@ -2539,7 +2489,7 @@ function AppInner() {
         fileName: null,
       });
     },
-    [rememberLocalProject, resolveSourceProjectWorkspaceContext],
+    [rememberLocalProject],
   );
 
   const handleCreatePluginShareProject = useCallback(
@@ -2683,117 +2633,36 @@ function AppInner() {
     fileName?: string,
   ): Promise<boolean> => {
     const routeFileName = fileName ?? null;
-    const openingAccountGeneration = currentWorkspaceAccountGeneration();
-    let openingContext = workspaceContextRef.current;
-    const knownUnboundLocalProject = projectsRef.current.some((project) =>
-      project.id === id && !project.workspaceId?.trim()
-    );
-    let pendingContextWitness: Awaited<
-      ReturnType<typeof resolveCurrentWorkspaceContextReadWitness>
-    > | null = null;
-    if (
-      !knownUnboundLocalProject
-      && (
-        !openingContext
-        || workspaceContextStateRef.current.identityChangePending === true
-      )
-    ) {
-      try {
-        pendingContextWitness = await resolveCurrentWorkspaceContextReadWitness();
-      } catch {
-        pendingContextWitness = null;
-      }
-      if (currentWorkspaceAccountGeneration() !== openingAccountGeneration) return false;
-      if (pendingContextWitness) {
-        if (!pendingContextWitness.isStillCurrent()) return false;
-        openingContext = pendingContextWitness.context;
-      } else {
-        // The richer hook may have settled while the directory read failed or
-        // was invalidated. Reuse it only when no identity change remains in
-        // flight; otherwise a cached pre-switch context is not authority.
-        const liveState = workspaceContextStateRef.current;
-        openingContext = liveState.identityChangePending ? null : liveState.context;
-      }
-    }
-    const openingAuthorizationGeneration = projectAuthorizationGenerationRef.current;
-    const openingScopeKey = projectListScopeKey(openingContext);
-    const expectedWorkspaceId = openingContext?.workspaceId ?? null;
-    const openingScopeIsCurrent = () => {
-      if (currentWorkspaceAccountGeneration() !== openingAccountGeneration) return false;
-      if (!pendingContextWitness) {
-        return projectAuthorizationGenerationRef.current === openingAuthorizationGeneration
-          && projectListScopeKey(workspaceContextRef.current) === openingScopeKey;
-      }
-      if (!pendingContextWitness.isStillCurrent()) return false;
-      const liveState = workspaceContextStateRef.current;
-      const liveContext = liveState.context ?? liveState.resourceReadIdentity?.context ?? null;
-      if (!openingContext) {
-        return liveContext === null && liveState.identityChangePending !== true;
-      }
-      return liveContext
-        ? workspaceIdentityCacheKey(liveContext) === workspaceIdentityCacheKey(openingContext)
-        : liveState.loading === true || liveState.identityChangePending === true;
-    };
-    const canUseLocalProject = (project: Project) => {
-      if (project.workspaceId) return project.workspaceId === expectedWorkspaceId;
-      return true;
-    };
-    const navigateToOpenedProject = (project: Project) => {
-      const projectWorkspaceId = project.workspaceId?.trim() ?? '';
-      projectOpenWorkspaceWitnessRef.current =
-        projectWorkspaceId
-        && openingContext?.workspaceId === projectWorkspaceId
-        && openingContext.workspaceMemberId.trim().length > 0
-        && openingContext.memberStatus === 'active'
-        && openingContext.lifecycleState !== 'deleted'
-          ? {
-              projectId: project.id,
-              projectWorkspaceId,
-              context: openingContext,
-              accountGeneration: openingAccountGeneration,
-            }
-          : null;
+    const navigateToOpenedProject = () => {
       navigate({ kind: 'project', projectId: id, fileName: routeFileName });
       return true;
     };
-    if (projectsRef.current.some(
-      (project) => project.id === id && canUseLocalProject(project),
-    )) {
-      const localProject = projectsRef.current.find(
-        (project) => project.id === id && canUseLocalProject(project),
-      );
-      return localProject ? navigateToOpenedProject(localProject) : false;
+    if (projectsRef.current.some((project) => project.id === id)) {
+      return navigateToOpenedProject();
     }
     try {
-      const project = await getProject(id, openingContext);
-      if (!openingScopeIsCurrent()) return false;
-      if (project && canUseLocalProject(project)) {
-        setProjects((curr) => openingScopeIsCurrent()
-          ? [
-              project,
-              ...curr.filter((candidate) => candidate.id !== project.id),
-            ]
-          : curr);
-        return navigateToOpenedProject(project);
+      const project = await getProject(id);
+      if (project) {
+        setProjects((curr) => [
+          project,
+          ...curr.filter((candidate) => candidate.id !== project.id),
+        ]);
+        return navigateToOpenedProject();
       }
       const request = beginProjectListRequest('all');
       const list = await listCurrentWorkspaceProjects({ workspaceView: 'all' });
-      if (!openingScopeIsCurrent()) return false;
       reconcileFetchedProjects(list, request);
       const fetchedProject = locallyDeletedProjectIdsRef.current.has(id)
         ? undefined
-        : list.find(
-            (candidate) => candidate.id === id && canUseLocalProject(candidate),
-          );
+        : list.find((candidate) => candidate.id === id);
       if (fetchedProject) {
-        return navigateToOpenedProject(fetchedProject);
+        return navigateToOpenedProject();
       }
     } catch {
       // Fall through to the same visible missing-project state. The daemon can
       // return 404 or transiently fail while reconciling a deleted backing
       // project; either way the user needs feedback instead of a silent bounce.
     }
-    if (!openingScopeIsCurrent()) return false;
     setProjectOpenError(t('project.missing'));
     return false;
   }, [
@@ -3031,35 +2900,15 @@ function AppInner() {
   }, [route]);
 
   const handleProjectChange = useCallback((updated: Project) => {
-    // ProjectView is pinned to the opened project's persisted Workspace, which
-    // can differ from the shell's ambient selection while a switch settles.
-    // Patch every list projection for that exact principal so an inline rename
-    // cannot restore an old title when the user next opens Personal or Team.
-    const projectContext = projectRouteWorkspaceContextRef.current;
+    const projectContext = workspaceContextRef.current;
     const accountGeneration = currentWorkspaceAccountGeneration();
     // A cold deep link can mount from this route-owned snapshot before the
-    // ambient project list resolves. Keep that independent row current too,
-    // but only under the exact account + Workspace principal that opened it.
+    // local project list resolves. Keep that independent row current too.
     const routeSnapshot = routeProjectSnapshotRef.current;
-    const routeSnapshotContext =
-      routeSnapshot?.workspaceContext
-      ?? routeSnapshot?.workspaceScope?.context
-      ?? null;
     const routeSnapshotMatches =
       routeRef.current.kind === 'project'
       && routeRef.current.projectId === updated.id
-      && routeSnapshot?.project.id === updated.id
-      && routeSnapshot.accountGeneration === accountGeneration
-      && (routeSnapshot.project.workspaceId ?? null) === (updated.workspaceId ?? null)
-      && (
-        routeSnapshotContext === null && projectContext === null
-        || (
-          routeSnapshotContext !== null
-          && projectContext !== null
-          && workspaceIdentityCacheKey(routeSnapshotContext)
-            === workspaceIdentityCacheKey(projectContext)
-        )
-      );
+      && routeSnapshot?.project.id === updated.id;
     if (routeSnapshotMatches) {
       routeProjectSnapshotRef.current = {
         ...routeSnapshot,
@@ -3094,7 +2943,7 @@ function AppInner() {
   const handleProjectRenameStarted = useCallback((
     optimistic: Project,
   ): ProjectRenameFenceToken => {
-    const context = projectRouteWorkspaceContextRef.current;
+    const context = workspaceContextRef.current;
     const accountGeneration = currentWorkspaceAccountGeneration();
     const scopeKey = projectListScopeKey(context);
     projectListMutationVersionRef.current += 1;
@@ -3209,65 +3058,36 @@ function AppInner() {
     });
   }, []);
 
-  // The project list belongs to the shell's ambient Workspace and is cleared
-  // immediately when the navigation rail switches A -> B. An already-open
-  // project is not ambient: retain its persisted row independently so that
-  // clearing/replacing the Home catalog cannot tear down ProjectView, lose the
-  // exact A authority, or reinterpret the same route under B.
+  // Retain the opened local Project independently from list refreshes so a
+  // deep link or transient catalogue refresh cannot tear down ProjectView.
   const routeProjectSnapshotRef = useRef<{
     project: Project;
-    accountGeneration: number;
     capturedAfterListGeneration: number;
-    workspaceScope?: ProjectWorkspaceScope;
     resolvedDir?: string | null;
-    workspaceContext?: WorkspaceCollabContext;
   } | null>(null);
   const [, setRouteProjectSnapshotRevision] = useState(0);
-  const activeAccountGeneration = currentWorkspaceAccountGeneration();
   let loadedActiveProject: Project | null = null;
   if (route.kind === 'project') {
     const listedProject = projects.find((project) => project.id === route.projectId);
     if (listedProject) {
       const previous = routeProjectSnapshotRef.current;
-      const openingWitness = projectOpenWorkspaceWitnessRef.current;
-      const exactOpeningContext =
-        openingWitness?.projectId === listedProject.id
-        && openingWitness.projectWorkspaceId === listedProject.workspaceId
-        && openingWitness.accountGeneration === activeAccountGeneration
-          ? openingWitness.context
-          : null;
       const preservesBootstrapWitness =
-        previous?.project.id === listedProject.id
-        && previous.accountGeneration === activeAccountGeneration
-        && previous.project.workspaceId === listedProject.workspaceId;
+        previous?.project.id === listedProject.id;
       routeProjectSnapshotRef.current = {
         project: listedProject,
-        accountGeneration: activeAccountGeneration,
         capturedAfterListGeneration: latestAppliedProjectListGenerationRef.current,
-        ...(preservesBootstrapWitness && previous.workspaceScope
-          ? { workspaceScope: previous.workspaceScope }
-          : {}),
         ...(preservesBootstrapWitness && previous.resolvedDir !== undefined
           ? { resolvedDir: previous.resolvedDir }
           : {}),
-        ...(preservesBootstrapWitness && previous.workspaceContext
-          ? { workspaceContext: previous.workspaceContext }
-          : exactOpeningContext
-            ? { workspaceContext: exactOpeningContext }
-            : {}),
       };
-      if (exactOpeningContext) projectOpenWorkspaceWitnessRef.current = null;
     } else if (
       routeProjectSnapshotRef.current?.project.id !== route.projectId
-      || routeProjectSnapshotRef.current.accountGeneration !== activeAccountGeneration
       || (
         appliedProjectListWitness?.scopeKey === currentProjectListScope
         && appliedProjectListWitness.workspaceView === 'all'
         && appliedProjectListWitness.generation
           > routeProjectSnapshotRef.current.capturedAfterListGeneration
         && !appliedProjectListWitness.projectIds.has(route.projectId)
-        && workspaceContext?.workspaceId
-          === routeProjectSnapshotRef.current.project.workspaceId
       )
     ) {
       routeProjectSnapshotRef.current = null;
@@ -3279,54 +3099,13 @@ function AppInner() {
   } else {
     routeProjectSnapshotRef.current = null;
   }
-  // A fresh project deep link starts before the shell's ambient Workspace
-  // context has resolved. Derive the exact caller from the persisted project
-  // binding + signed-in account directory instead; this is independent of
-  // whichever Workspace another tab or the navigation rail currently selects.
-  const projectRouteWorkspaceContext = useProjectRouteWorkspaceContext(
-    loadedActiveProject?.workspaceId,
-    workspaceContextState,
-    routeProjectSnapshotRef.current?.project.id === loadedActiveProject?.id
-      ? routeProjectSnapshotRef.current?.workspaceContext
-        ?? routeProjectSnapshotRef.current?.workspaceScope?.context
-      : null,
-  );
-  // Never mount ProjectView around the synthetic "Untitled" placeholder. Its
-  // effects immediately fan out project-owned reads, but before the project
-  // list lands there is no persisted Workspace id with which to scope them.
-  // Waiting for the real row is the authorization gate that turns the cold
-  // start from two headerless 400 waves plus a scoped retry into one scoped
-  // wave. Unbound local projects still mount as soon as their real row lands.
+  // Never mount ProjectView around a synthetic placeholder. Project-owned
+  // reads start only after the real local row or route bootstrap has landed.
   const activeProject = loadedActiveProject;
-  const activeProjectWorkspaceContext = activeProject
-    ? projectRouteWorkspaceContext.context
-    : null;
-  projectRouteWorkspaceContextRef.current = activeProjectWorkspaceContext;
-  // Project tabs belong to the project's persisted Workspace authority, not
-  // the shell's ambient selection. On a cold deep link the ambient context can
-  // settle (or switch A -> B) after the exact project scope has already loaded;
-  // handing that B key to WorkspaceTabsBar makes its legitimate scope-change
-  // cleanup navigate to B's saved Home tab and unmount the healthy A project.
-  // Keep tab reconciliation
-  // deferred until the project row + exact membership witness exist, then pin
-  // it to that Workspace. Truly unbound local projects retain the ambient
-  // account/workspace tab behavior.
-  const workspaceTabsIdentityScopeKey =
-    route.kind === 'project'
-      ? activeProject === null
-        ? null
-        : activeProject.workspaceId
-          ? activeProjectWorkspaceContext && identityScopeKey !== null
-            ? `${nextTabScopeAccountId}::${activeProjectWorkspaceContext.workspaceId}`
-            : null
-          : identityScopeKey
-      : identityScopeKey;
+  const workspaceTabsIdentityScopeKey = identityScopeKey;
   const activeProjectAuthorizationKey =
     route.kind === 'project'
-      ? projectViewAuthorizationLifetimeKey(
-          route.projectId,
-          activeProjectWorkspaceContext,
-        )
+      ? route.projectId
       : null;
 
   // Resolve a project route that is absent from the current local list. The
@@ -3341,20 +3120,12 @@ function AppInner() {
     setDeepLinkResolutionFailure((current) =>
       current?.projectId === projectId ? null : current
     );
-    const deepLinkContext = workspaceContextRef.current;
-    const deepLinkIdentity = workspaceIdentityCacheKey(deepLinkContext);
-    const identityChanged = () =>
-      workspaceIdentityCacheKey(workspaceContextRef.current) !== deepLinkIdentity;
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    const accountChanged = () =>
-      currentWorkspaceAccountGeneration() !== accountGeneration;
     void (async () => {
       const bootstrap = await bootstrapProjectRoute(projectId);
-      if (cancelled || accountChanged()) return;
+      if (cancelled) return;
       if (bootstrap.kind === 'found') {
         routeProjectSnapshotRef.current = {
           project: bootstrap.project,
-          accountGeneration,
           capturedAfterListGeneration: latestAppliedProjectListGenerationRef.current,
           resolvedDir: bootstrap.resolvedDir,
         };
@@ -3391,7 +3162,7 @@ function AppInner() {
         });
         return;
       }
-      if (cancelled || identityChanged()) return;
+      if (cancelled) return;
       const applied = reconcileFetchedProjects(list, request);
       if (!applied) return;
       const fetchedProject = locallyDeletedProjectIdsRef.current.has(projectId)
@@ -3404,7 +3175,7 @@ function AppInner() {
         setDeepLinkResolutionFailure({ projectId, failure: 'missing' });
       }
     })().catch(() => {
-      if (cancelled || identityChanged()) return;
+      if (cancelled) return;
       setDeepLinkResolutionFailure({
         projectId,
         failure: 'materialization-failed',
@@ -3665,11 +3436,6 @@ function AppInner() {
       appVersionInfo={appVersionInfo}
       welcome={presentation === 'modal' ? settingsWelcome : false}
       initialSection={settingsInitialSection}
-      persistedProjectWorkspaceId={
-        route.kind === 'project'
-          ? projects.find((project) => project.id === route.projectId)?.workspaceId ?? null
-          : null
-      }
       composioConfigLoading={composioConfigLoading}
       onPersist={handleConfigPersist}
       onSilentUpdatePreferenceChange={handleSilentUpdatePreferenceChange}
@@ -3865,14 +3631,6 @@ function AppInner() {
     } else if (
       routeSurfaceState === 'loading-projects'
       || routeSurfaceState === 'resolving-deep-link'
-      || (
-        activeProject
-        && !projectResourceReadsCanStart(
-          activeProject.workspaceId,
-          projectRouteWorkspaceContext,
-        )
-        && projectRouteWorkspaceContext.loading
-      )
     ) {
       appMain = (
         <div className="entry-shell entry-shell--no-header">
@@ -3903,47 +3661,12 @@ function AppInner() {
           </div>
         </div>
       );
-    } else if (
-      activeProject
-      && projectRouteWorkspaceContext.failure
-      && (
-        projectRouteWorkspaceContext.failure === 'forbidden'
-        || activeProjectWorkspaceContext === null
-      )
-    ) {
-      appMain = (
-        <div className="entry-shell entry-shell--no-header">
-          <div className="centered-loader">
-            <span role="alert">
-              {projectRouteWorkspaceContext.failure === 'forbidden'
-                ? t('project.missing')
-                : t('connectors.unavailable')}
-            </span>
-            <Button onClick={projectRouteWorkspaceContext.retry}>
-              {t('promptTemplates.retry')}
-            </Button>
-          </div>
-        </div>
-      );
     } else if (activeProject) {
       appMain = (
         <div className="app">
         <ProjectView
-          key={projectViewAuthorizationLifetimeKey(
-            activeProject.id,
-            activeProjectWorkspaceContext,
-          )}
+          key={activeProject.id}
           project={activeProject}
-          workspaceContextOverride={
-            activeProject.workspaceId
-              ? activeProjectWorkspaceContext
-              : undefined
-          }
-          initialWorkspaceScope={
-            routeProjectSnapshotRef.current?.project.id === activeProject.id
-              ? routeProjectSnapshotRef.current.workspaceScope
-              : undefined
-          }
           initialProjectDetail={
             routeProjectSnapshotRef.current?.project.id === activeProject.id
             && routeProjectSnapshotRef.current.resolvedDir !== undefined
@@ -4094,11 +3817,6 @@ function AppInner() {
               />
             }
           />
-        ) : null}
-        {route.kind === 'project'
-          && activeProjectWorkspaceContext
-          && projectRouteWorkspaceContext.failure === 'unavailable' ? (
-          <ProjectWorkspaceRecoveryTip />
         ) : null}
         <div className="workspace-shell__body">
           {appMain}

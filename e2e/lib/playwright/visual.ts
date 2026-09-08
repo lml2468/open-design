@@ -339,36 +339,6 @@ export async function configureVisualPage(page: Page, options: VisualPageOptions
     await fulfillGet(route, { projects });
   });
 
-  // A project deep link no longer borrows the shell's ambient Workspace. If
-  // the project list has not settled first, App bootstraps the route through
-  // an authoritative scope witness followed by the matching project detail.
-  // Keep those reads inside the visual fixture instead of letting the generic
-  // API catch-all turn normal list/bootstrap scheduling into a 404 race.
-  await page.route('**/api/projects/*/workspace-scope', async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.fallback();
-      return;
-    }
-    const projectId = decodeURIComponent(
-      new URL(route.request().url()).pathname.split('/').at(-2) ?? '',
-    );
-    const project = projects.find((candidate) => candidate.id === projectId);
-    if (!project) {
-      await route.fulfill({ status: 404, json: { error: `unknown project ${projectId}` } });
-      return;
-    }
-    await route.fulfill({
-      json: {
-        scope: {
-          kind: 'unbound',
-          projectId,
-          workspaceId: null,
-          context: null,
-        },
-      },
-    });
-  });
-
   await page.route('**/api/projects/*', async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback();

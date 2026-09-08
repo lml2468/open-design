@@ -123,14 +123,10 @@ export function createCreatedProjectWorkspaceResolver(deps: {
 /**
  * Write the `workspace_projects` row for a project this daemon just created.
  *
- * INVARIANT: a project created while this daemon knows a signed-in workspace
- * always gets a binding row. A project with no row is not a harmless default —
- * `GET /api/projects/:id/workspace-scope` answers `unbound` for it, which strips
- * the workspace off the run request (`ProjectView`'s `projectRunWorkspaceContext`
- * → an OpenDesign Cloud run nothing can bill) and blanks the balance/plan area
- * while that project is open (`AvatarMenu`). Headerless local AMR runs may use
- * the signed-in account wallet, but any later request that asserts a Workspace
- * still needs an exact persisted binding before workspace mutation gates allow it.
+ * A project created while this daemon knows a signed-in workspace retains a
+ * binding row as migration and billing attribution metadata. Local Project
+ * reads and writes never depend on this row; remote Workspace-owned operations
+ * may still use the attribution at their own boundary.
  *
  * `context` is the caller's complete local Workspace attribution when the
  * request named one. A headerless legacy request supplies null and remains
