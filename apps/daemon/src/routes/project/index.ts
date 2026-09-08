@@ -105,7 +105,6 @@ import {
 import { auditDesignSystemPackage } from '../../tools-connectors-cli.js';
 import { parseOrchestratorWorkspace } from '../../workspace-contract.js';
 import { registerProjectConversationRoutes } from './conversations.js';
-import { workspaceProjectGroupCountProperties } from './analytics.js';
 import type { ProjectCommentWorkspaceContextResolution } from './comments.js';
 import {
   refuseTeamShareScope,
@@ -114,11 +113,7 @@ import {
 } from '../../collab/team-share-scope.js';
 import {
   headerValue,
-  isWorkspaceResourceLocked as isWorkspaceLocked,
-  workspaceResourceAccess,
-  workspaceResourceContext as workspaceProjectContext,
   workspaceResourceContextFromRequest as workspaceProjectContextFromRequest,
-  workspaceResourceContextFromVerified,
   type VerifyWorkspaceRequestAuthority,
   type WorkspaceResourceAccessInput,
   type WorkspaceResourceContext,
@@ -246,8 +241,6 @@ export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | '
       source: string,
     ) => Promise<Parameters<typeof resolvePluginSnapshot>[0]['plugin'] | null>;
   };
-  /** Bounded authoritative verifier for idempotent Workspace project reads. */
-  verifyWorkspaceReadAuthority?: VerifyWorkspaceRequestAuthority;
   /** Authoritative verifier for every Workspace-bound project mutation. */
   verifyWorkspaceRequestAuthority?: VerifyWorkspaceRequestAuthority;
   /**
@@ -338,56 +331,6 @@ function teamShareRefusalFor(
     assertedType: ctx.workspaceTypeAsserted,
     ...(workspaceTypes ? { registry: workspaceTypes } : {}),
   });
-}
-
-function projectAccess(
-  wp: WorkspaceProjectAccessInput,
-  ctx: WorkspaceProjectContext,
-  workspaceTypes?: Pick<WorkspaceTypeRegistry, 'isKnownPersonal'> | null,
-) {
-  // frozen/selfCreated/privileged/canMutate/canShareLocal/disabledReason are
-  // the resource-agnostic part, computed once in
-  // collab/workspace-resource-mutation.ts so a fix there lands for plugin and
-  // skill too. Only the fields below (canMoveToTeam/canMoveToPersonal/
-  // canOpen/canExport/canSendTo) are project-specific UX affordances.
-  const {
-    frozen,
-    selfCreated,
-    canMutate: privilegedOrCreatorCanMutate,
-    canShareLocal,
-    disabledReason: baseDisabledReason,
-  } = workspaceResourceAccess(wp, ctx);
-  // Team-shared projects are single-writer resources: Workspace governance
-  // may manage the Team, but only the member recorded as this project's
-  // creator may mutate or unshare it. Keep the read model aligned with the
-  // authoritative route gate; otherwise owner/admin callers are advertised
-  // actions that direct project routes reject, while the workspace move route
-  // (which consumes these flags) can still unshare someone else's project.
-  // Personal/unshared projects retain the existing privileged-or-creator rule.
-  const canMutate =
-    privilegedOrCreatorCanMutate
-    && (wp.visibility !== 'team' || selfCreated);
-  const disabledReason =
-    baseDisabledReason
-    ?? (!canMutate ? 'permission_denied' : undefined);
-  return {
-    canOpen: !frozen && ctx.memberStatus === 'active',
-    canRename: canMutate,
-    canDelete: canMutate,
-    canDuplicate: canMutate,
-    // Never offer a share the workspace cannot host: the affordance is the
-    // entry point that produced the impossible rows in the first place.
-    canMoveToTeam:
-      canShareLocal &&
-      ctx.canShareProjects &&
-      wp.visibility === 'personal' &&
-      teamShareRefusalFor(ctx, workspaceTypes) === null,
-    canMoveToPersonal: canMutate && ctx.canShareProjects && wp.visibility === 'team',
-    canExport: !frozen && ctx.memberStatus === 'active',
-    canSendTo: !frozen && ctx.memberStatus === 'active',
-    canRestoreVersion: canMutate,
-    ...(disabledReason ? { disabledReason } : {}),
-  };
 }
 
 /**
@@ -1976,7 +1919,6 @@ function buildDesignSystemCopyPendingPrompt(input: {
 
 export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDeps) {
   const { db, design } = ctx;
-  const projectTelemetry = ctx.telemetry;
   const { sendApiError, createSseResponse } = ctx.http;
   const { DESIGN_SYSTEMS_DIR, PROJECTS_DIR, SKILLS_DIR, BRANDS_DIR, USER_DESIGN_SYSTEMS_DIR } = ctx.paths;
   const { readAppConfig, writeAppConfig } = ctx.appConfig;
@@ -1991,11 +1933,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     ensureWorkspaceProject,
     getWorkspaceProject,
     getWorkspaceProjectByProjectId,
-    listWorkspaceProjects,
-    updateWorkspaceProject,
-    rebindWorkspaceProject,
-    deleteWorkspaceProject,
-    countWorkspaceProjectRefs,
   } = ctx.projectStore;
   const { writeProjectFile, readProjectFile, ensureProject, listFiles, listTabs, setTabs, resolveProjectDir } = ctx.projectFiles;
   const { insertConversation } = ctx.conversations;
@@ -2012,8 +1949,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       workspaceType: context.workspaceTypeAsserted,
     });
   };
-  const verifyWorkspaceProjectReadAuthority =
-    ctx.verifyWorkspaceReadAuthority ?? ctx.verifyWorkspaceRequestAuthority;
   const authorizeProjectRequest =
     ctx.authorizeProjectRequest ??
     createAuthorizeProjectRequest({
@@ -2044,142 +1979,14 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     learnAssertedWorkspaceType(home);
     return home;
   };
-  function sendMissingWorkspaceContext(res: Response) {
-    return sendApiError(res, 401, 'WORKSPACE_CONTEXT_REQUIRED', 'workspace context is required');
-  }
-  async function authoritativeWorkspaceProjectContext(
-    req: any,
-    res: Response,
-    expectedWorkspaceId: string,
-    verifyAuthority = ctx.verifyWorkspaceRequestAuthority,
-  ): Promise<WorkspaceProjectContext | null> {
-    if (!verifyAuthority) {
-      const legacy = workspaceProjectContext(req, expectedWorkspaceId);
-      if (!legacy) sendMissingWorkspaceContext(res);
-      return legacy;
-    }
-    const verified = await verifyAuthority(req);
-    if (!verified.ok) {
-      sendApiError(res, verified.status, verified.code, verified.message);
-      return null;
-    }
-    if (verified.context.workspaceId !== expectedWorkspaceId) {
-      sendApiError(
-        res,
-        403,
-        'WORKSPACE_ACCESS_DENIED',
-        'the requested workspace does not match the route workspace',
-      );
-      return null;
-    }
-    return workspaceResourceContextFromVerified(verified.context);
-  }
-  function pendingSyncIntent(projectId: string, workspaceId: string, visibility: 'personal' | 'team') {
-    return {
-      event: visibility === 'team' ? 'project_team_share_requested' : 'project_team_unshare_requested',
-      projectId,
-      workspaceId,
-    };
-  }
-  function normalizeWorkspaceProjectRow(row: any, ctx: WorkspaceProjectContext) {
-    let metadata: unknown;
-    try {
-      metadata = row.metadataJson ? JSON.parse(row.metadataJson) : undefined;
-    } catch {
-      metadata = undefined;
-    }
-    // A move/rename/share-visibility change touches only the workspace_projects
-    // row, not the project's own content (projects.updated_at) — but it is real,
-    // recent activity on this project from the user's point of view. Report the
-    // later of the two so the "最近更新" label matches the sort order above
-    // (ORDER BY MAX(p.updated_at, wp.updated_at)), instead of a card that jumps
-    // to the top of the list while still showing a stale "18 hours ago".
-    const lastActivityAt = Math.max(row.updatedAt, row.workspaceUpdatedAt ?? 0);
-    const project = {
-      id: row.id,
-      name: row.name,
-      skillId: row.skillId,
-      designSystemId: row.designSystemId,
-      pendingPrompt: row.pendingPrompt ?? undefined,
-      metadata,
-      appliedPluginSnapshotId: row.appliedPluginSnapshotId ?? undefined,
-      customInstructions: row.customInstructions ?? undefined,
-      createdAt: row.createdAt,
-      updatedAt: lastActivityAt,
-      // Carried on the nested project too, so a client that unwraps the summary
-      // into a plain Project keeps the binding instead of dropping it.
-      workspaceId: row.workspaceId ?? null,
-    };
-    const resourceState = isWorkspaceLocked(ctx) && row.workspaceVisibility === 'team'
-      ? 'frozen'
-      : row.resourceState;
-    const wp = {
-      visibility: row.workspaceVisibility,
-      resourceState,
-      createdByWorkspaceMemberId: row.createdByWorkspaceMemberId ?? null,
-    };
-    return {
-      id: project.id,
-      name: project.name,
-      workspaceId: row.workspaceId,
-      visibility: row.workspaceVisibility,
-      resourceState,
-      createdByWorkspaceMemberId: row.createdByWorkspaceMemberId ?? null,
-      updatedByWorkspaceMemberId: row.updatedByWorkspaceMemberId ?? null,
-      resourceHubResourceId: row.resourceHubResourceId ?? null,
-      cloudTombstonedAt: row.cloudTombstonedAt ?? null,
-      currentUserAccess: projectAccess(wp, ctx, workspaceTypes),
-      syncState: row.syncState ?? 'local_only',
-      ...(row.syncState === 'pending_upload'
-        ? { pendingSyncIntent: pendingSyncIntent(project.id, row.workspaceId, row.workspaceVisibility) }
-        : {}),
-      createdAt: row.createdAt,
-      updatedAt: lastActivityAt,
-      metadata,
-      project,
-    };
-  }
-  /**
-   * Bind a project to this workspace, or hand back the binding it already has.
-   *
-   * The lookup is by PROJECT, not by `(workspace, project)`. A project belongs
-   * to exactly one workspace (collab/workspace-project-home.ts), so "no row in
-   * the workspace I am currently looking at" does not mean "unbound" — reading
-   * it that way is what made an older build write one ownerless row per
-   * workspace visited and put the same 草稿 list in front of every workspace.
-   */
-  function ensureWorkspaceProjection(project: any, ctx: WorkspaceProjectContext, visibility = 'personal') {
-    const existing = getWorkspaceProjectByProjectId(db, project.id);
-    return existing ?? ensureWorkspaceProject(db, {
-      projectId: project.id,
-      workspaceId: ctx.workspaceId,
-      visibility,
-      resourceState: 'active',
-      createdByWorkspaceMemberId: null,
-      updatedByWorkspaceMemberId: null,
-      syncState: 'local_only',
-      resourceHubResourceId: null,
-      cloudTombstonedAt: null,
-      createdAt: project.createdAt,
-      updatedAt: project.updatedAt,
-    });
-  }
-
   /**
    * Bind a freshly duplicated / design-system-copied project into the SAME
    * workspace the request that made it is acting in.
    *
-   * `POST /api/projects` binds the project it creates immediately (see
-   * `workspaceIdForCreate` below), but duplicate and design-system-copy used
-   * to skip that step entirely — the new project row landed with NO
-   * `workspace_projects` row at all. It stayed an unbound orphan until
-   * whichever workspace's project list happened to be read next, and only a
-   * PERSONAL workspace read ever adopts an orphan
-   * (`bindUnboundProjectsToPersonalWorkspace` only runs for
-   * `ctx.workspaceType === 'personal'`). So a duplicate made from inside a
-   * team workspace silently re-homed into the caller's personal workspace
-   * the next time it was read, instead of staying in the team it was
-   * actually duplicated from (recvqbjbudBS9r).
+   * `POST /api/projects` and duplicate/design-system-copy historically record
+   * the same local attribution row. Keeping that behavior during migration
+   * prevents old project-specific Workspace checks from disagreeing about the
+   * newly created copy before those checks are removed.
    *
    * Called only after `enforceWorkspaceProjectMutation` already allowed the
    * duplicate/copy, which is proof `ctx` names an active, write-capable
@@ -2238,11 +2045,8 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
    * is; this only ever claims a true orphan, matching `ensureWorkspaceProject`'s
    * own idempotency contract.
    *
-   * Attributes an owner, deliberately NOT the `null` an ordinary lazy-read
-   * projection uses (`ensureWorkspaceProjection`). A passive list read must not
-   * silently hand out ownership just because it happened to run first; an
-   * explicit mutation request naming this exact project is the "yes, this is
-   * mine" signal a read never had.
+   * Attributes an owner because an explicit mutation request naming this exact
+   * project is stronger evidence than the historical ownerless binding rows.
    *
    * A complete explicit pair may claim a true local orphan. Partial/headerless
    * requests write nothing, and a project already bound anywhere is never
@@ -2279,90 +2083,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       createdAt: now,
       updatedAt: now,
     });
-  }
-  function workspaceProjectRowVisibleForLocations(
-    row: any,
-    locations: Array<{ id: string; path: string; builtIn?: boolean }>,
-  ): boolean {
-    let metadata: unknown;
-    try {
-      metadata = row.metadataJson ? JSON.parse(row.metadataJson) : undefined;
-    } catch {
-      metadata = undefined;
-    }
-    return projectVisibleForLocations({ metadata }, locations);
-  }
-
-  function workspaceProjectRowBelongsToCurrentWorkspace(row: any, ctx: WorkspaceProjectContext): boolean {
-    // A revoked pulled mirror stays bound to its exact Team identity as a
-    // non-destructive tombstone. It must not appear in any project list while
-    // its stale local bytes are quarantined.
-    if (row.resourceState === 'deleted') return false;
-    if (ctx.workspaceType !== 'team') return true;
-    // Legacy rows created before workspace isolation may have been projected into
-    // a team workspace as personal projects with no owner. They actually belong
-    // to the user's personal workspace, so suppress them in team views without
-    // deleting any local data. Real team-workspace drafts carry an owner member.
-    return !(row.workspaceVisibility === 'personal' && row.createdByWorkspaceMemberId == null);
-  }
-
-  function workspaceProjectRowsForIds(
-    projectIds: string[],
-    ctx: WorkspaceProjectContext,
-    locations: Array<{ id: string; path: string; builtIn?: boolean }>,
-  ) {
-    for (const id of projectIds) {
-      const project = getProject(db, id);
-      if (ctx.workspaceType === 'personal' && project && projectVisibleForLocations(project, locations)) {
-        ensureWorkspaceProjection(project, ctx, 'personal');
-      }
-    }
-    return listWorkspaceProjects(db, ctx.workspaceId)
-      .filter((row: any) => workspaceProjectRowBelongsToCurrentWorkspace(row, ctx))
-      .filter((row: any) => workspaceProjectRowVisibleForLocations(row, locations));
-  }
-
-  function workspaceProjectCreatedByCurrentMember(project: any, ctx: WorkspaceProjectContext): boolean {
-    if (project.createdByWorkspaceMemberId === ctx.workspaceMemberId) return true;
-    return (
-      ctx.workspaceType === 'personal' &&
-      project.visibility === 'personal' &&
-      project.createdByWorkspaceMemberId == null
-    );
-  }
-
-  /**
-   * Bind projects that belong to NO workspace to this personal workspace.
-   *
-   * The rule is adoption of orphans, not a back-fill of everything. A project
-   * that already has a binding is left exactly where it is; only a project with
-   * no row anywhere is claimed. Those are the pre-workspace ("legacy") projects
-   * — created before workspaces existed, or left unbound by the repair in
-   * collab/workspace-project-home.ts — and losing them across the upgrade would
-   * be data loss, which the red-line test in tests/routes/workspace-projects.ts
-   * guards.
-   *
-   * The target is the user's PERSONAL workspace, per product: it always exists,
-   * so there is always somewhere to put an orphan, and it is the honest home for
-   * a project that predates any team. Team workspaces are excluded on purpose —
-   * adopting a user's private pre-workspace drafts into a team would expose them
-   * to people who never had them.
-   *
-   * Which personal workspace, when the user has several? The one they opened
-   * first after upgrading. There is no better evidence available: the projects
-   * carry no workspace of their own, and a workspace is only knowable as
-   * personal from the request that names it. Doing this on a read rather than in
-   * the migration is what buys that knowledge.
-   */
-  function bindUnboundProjectsToPersonalWorkspace(
-    ctx: WorkspaceProjectContext,
-    locations: Array<{ id: string; path: string; builtIn?: boolean }>,
-  ) {
-    if (ctx.workspaceType !== 'personal') return;
-    for (const project of listProjects(db).filter((item: any) => projectVisibleForLocations(item, locations))) {
-      if (getWorkspaceProjectByProjectId(db, project.id)) continue;
-      ensureWorkspaceProjection(project, ctx, 'personal');
-    }
   }
   async function loadPluginRegistryView(options: {
     workspaceId?: string | null;
@@ -2688,133 +2408,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       res.json(body);
     } catch (err: any) {
       sendApiError(res, 500, 'INTERNAL_ERROR', String(err));
-    }
-  });
-
-  app.get('/api/workspaces/:workspaceId/projects', async (req, res) => {
-    try {
-      const authoritativeCtx = await authoritativeWorkspaceProjectContext(
-        req,
-        res,
-        req.params.workspaceId,
-        verifyWorkspaceProjectReadAuthority,
-      );
-      if (!authoritativeCtx) return;
-      const assertedCtx = workspaceProjectContextFromRequest(req);
-      const ctx = assertedCtx && assertedCtx !== 'missing'
-        ? {
-            ...authoritativeCtx,
-            // Request capability flags are UI ceilings only: they may hide an
-            // action, but never elevate directory-backed authority.
-            canShareProjects:
-              authoritativeCtx.canShareProjects && assertedCtx.canShareProjects,
-            canWriteSyncedFiles:
-              authoritativeCtx.canWriteSyncedFiles && assertedCtx.canWriteSyncedFiles,
-          }
-        : authoritativeCtx;
-      if (ctx.memberStatus === 'removed') {
-        /** @type {import('@open-design/contracts').WorkspaceProjectsResponse} */
-        const body = { projects: [] };
-        return res.json(body);
-      }
-      const locations = await configuredProjectLocations();
-      bindUnboundProjectsToPersonalWorkspace(ctx, locations);
-      const view = typeof req.query.view === 'string' ? req.query.view : 'all';
-      if (view !== 'all' && view !== 'recent' && view !== 'drafts' && view !== 'team') {
-        return sendApiError(res, 400, 'BAD_REQUEST', 'view must be all, recent, drafts, or team');
-      }
-      const owner = typeof req.query.owner === 'string' ? req.query.owner : 'all';
-      const visibility = typeof req.query.visibility === 'string' ? req.query.visibility : 'all';
-      const rows = listWorkspaceProjects(db, ctx.workspaceId)
-        .filter((row: any) => workspaceProjectRowBelongsToCurrentWorkspace(row, ctx))
-        .filter((row: any) => workspaceProjectRowVisibleForLocations(row, locations));
-      const projects = rows
-        .map((row: any) => normalizeWorkspaceProjectRow(row, ctx))
-        .filter((project: any) => {
-          const createdByCurrentMember = workspaceProjectCreatedByCurrentMember(project, ctx);
-          // Personal projects are private to their recorded creator, even when
-          // two accounts have used the same local data root or are members of
-          // the same Team Workspace. Apply this before every view/owner filter
-          // so `recent`, `all`, and `owner=others` cannot become privacy
-          // bypasses. Team projects remain visible to active Workspace members.
-          if (project.visibility === 'personal' && !createdByCurrentMember) return false;
-          if (view === 'drafts') {
-            if (project.visibility !== 'personal' || !createdByCurrentMember) return false;
-          }
-          if (view === 'team' && project.visibility !== 'team') return false;
-          if ((visibility === 'personal' || visibility === 'team') && project.visibility !== visibility) return false;
-          if (owner === 'mine' && !createdByCurrentMember) return false;
-          if (owner === 'others' && createdByCurrentMember) return false;
-          return true;
-        });
-      const groupCountProperties = workspaceProjectGroupCountProperties({
-        view,
-        owner,
-        visibility,
-        projectCount: projects.length,
-      });
-      if (groupCountProperties) {
-        void projectTelemetry.identifyWorkspaceGroup?.(
-          req,
-          ctx.workspaceId,
-          groupCountProperties,
-        );
-      }
-      /** @type {import('@open-design/contracts').WorkspaceProjectsResponse} */
-      const body = { projects };
-      res.json(body);
-    } catch (err: any) {
-      sendApiError(res, 500, 'INTERNAL_ERROR', String(err));
-    }
-  });
-
-  function parseProjectIds(value: unknown): string[] | null {
-    if (!Array.isArray(value) || value.length === 0) return null;
-    const ids = [];
-    for (const id of value) {
-      if (typeof id !== 'string' || !id.trim() || !isSafeId(id)) return null;
-      ids.push(id);
-    }
-    return ids;
-  }
-
-  app.post('/api/workspaces/:workspaceId/projects/batch-delete', async (req, res) => {
-    try {
-      const ctx = await authoritativeWorkspaceProjectContext(req, res, req.params.workspaceId);
-      if (!ctx) return;
-      const projectIds = parseProjectIds(req.body?.projectIds);
-      if (!projectIds) return sendApiError(res, 400, 'BAD_REQUEST', 'projectIds are required');
-      const locations = await configuredProjectLocations();
-      const rows = workspaceProjectRowsForIds(projectIds, ctx, locations);
-      const summaries = projectIds.map((id: string) => {
-        const row = rows.find((item: any) => item.id === id);
-        return row ? normalizeWorkspaceProjectRow(row, ctx) : null;
-      });
-      if (summaries.some((item: any) => !item)) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
-      const forbidden = summaries.filter((item: any) => !item.currentUserAccess.canDelete);
-      if (forbidden.length > 0) {
-        return sendApiError(res, 403, 'PROJECT_BATCH_CONTAINS_FORBIDDEN_ITEMS', 'batch contains forbidden projects');
-      }
-      const finalProjectIds = projectIds.filter((id: string) => countWorkspaceProjectRefs(db, id) <= 1);
-      const deleteMany = db.transaction((ids: string[], finalIds: string[]) => {
-        for (const id of ids) deleteWorkspaceProject(db, ctx.workspaceId, id);
-        for (const id of finalIds) {
-          if (countWorkspaceProjectRefs(db, id) === 0) dbDeleteProject(db, id);
-        }
-      });
-      const stagedDelete = finalProjectIds.length > 0
-        ? await stageProjectDirsForDelete(PROJECTS_DIR, finalProjectIds, randomId())
-        : null;
-      try {
-        deleteMany(projectIds, finalProjectIds);
-      } catch (error) {
-        await stagedDelete?.rollback();
-        throw error;
-      }
-      await stagedDelete?.commit();
-      res.json({ ok: true, deletedProjectIds: projectIds });
-    } catch (err: any) {
-      sendApiError(res, 400, 'BAD_REQUEST', String(err));
     }
   });
 

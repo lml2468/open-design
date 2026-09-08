@@ -122,7 +122,7 @@ describe('POST /api/import/folder', () => {
     expect(typeof tabs.updatedAt).toBe('number');
   });
 
-  it('atomically binds a folder import to the exact request workspace and not workspace B', async () => {
+  it('keeps a workspace-attributed folder import visible in the local catalog', async () => {
     const folder = makeFolder();
     await writeFile(path.join(folder, 'index.html'), '<!doctype html>');
     const headersA = workspaceHeaders('workspace-folder-a', 'member-folder-a');
@@ -143,39 +143,18 @@ describe('POST /api/import/folder', () => {
       },
     });
 
-    const workspaceA = await fetch(
-      `${baseUrl}/api/workspaces/workspace-folder-a/projects?view=drafts`,
-      { headers: headersA },
-    );
-    expect(workspaceA.status).toBe(200);
-    const projectsA = (await workspaceA.json()) as {
-      projects: Array<{ project: { id: string } }>;
-    };
-    expect(projectsA.projects.map((item) => item.project.id)).toContain(body.project.id);
-
-    const headersB = workspaceHeaders('workspace-folder-b', 'member-folder-b');
-    const workspaceB = await fetch(
-      `${baseUrl}/api/workspaces/workspace-folder-b/projects?view=drafts`,
-      { headers: headersB },
-    );
-    expect(workspaceB.status).toBe(200);
-    const projectsB = (await workspaceB.json()) as {
-      projects: Array<{ project: { id: string } }>;
-    };
-    expect(projectsB.projects.map((item) => item.project.id)).not.toContain(body.project.id);
+    const catalog = await fetch(`${baseUrl}/api/projects`);
+    expect(catalog.status).toBe(200);
+    const projects = (await catalog.json()) as { projects: Array<{ id: string }> };
+    expect(projects.projects.map((item) => item.id)).toContain(body.project.id);
   });
 
   it('validates an imported project skill inside the exact request workspace before inserting rows', async () => {
     const folder = makeFolder();
     await writeFile(path.join(folder, 'index.html'), '<!doctype html>');
     const headers = workspaceHeaders('workspace-folder-skill', 'member-folder-skill');
-    const beforeResponse = await fetch(
-      `${baseUrl}/api/workspaces/workspace-folder-skill/projects?view=drafts`,
-      { headers },
-    );
-    const before = (await beforeResponse.json()) as {
-      projects: Array<{ project: { id: string } }>;
-    };
+    const beforeResponse = await fetch(`${baseUrl}/api/projects`);
+    const before = (await beforeResponse.json()) as { projects: Array<{ id: string }> };
 
     const response = await importFolder(
       { baseDir: folder, skillId: 'skill-that-does-not-exist' },
@@ -186,13 +165,8 @@ describe('POST /api/import/folder', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { code: 'SKILL_NOT_FOUND' },
     });
-    const afterResponse = await fetch(
-      `${baseUrl}/api/workspaces/workspace-folder-skill/projects?view=drafts`,
-      { headers },
-    );
-    const after = (await afterResponse.json()) as {
-      projects: Array<{ project: { id: string } }>;
-    };
+    const afterResponse = await fetch(`${baseUrl}/api/projects`);
+    const after = (await afterResponse.json()) as { projects: Array<{ id: string }> };
     expect(after.projects).toEqual(before.projects);
   });
 

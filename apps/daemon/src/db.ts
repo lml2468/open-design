@@ -1023,39 +1023,6 @@ export function getWorkspaceProject(db: SqliteDb, workspaceId: string, projectId
     .get(workspaceId, projectId) as DbRow | undefined;
 }
 
-export function listWorkspaceProjects(db: SqliteDb, workspaceId: string) {
-  return db
-    .prepare(
-      `SELECT p.id,
-              p.name,
-              p.skill_id AS skillId,
-              p.design_system_id AS designSystemId,
-              p.pending_prompt AS pendingPrompt,
-              p.metadata_json AS metadataJson,
-              p.applied_plugin_snapshot_id AS appliedPluginSnapshotId,
-              p.custom_instructions AS customInstructions,
-              p.created_at AS createdAt,
-              p.updated_at AS updatedAt,
-              wp.project_id AS workspaceProjectId,
-              wp.workspace_id AS workspaceId,
-              wp.visibility AS workspaceVisibility,
-              wp.resource_state AS resourceState,
-              wp.created_by_workspace_member_id AS createdByWorkspaceMemberId,
-              wp.updated_by_workspace_member_id AS updatedByWorkspaceMemberId,
-              wp.resource_hub_resource_id AS resourceHubResourceId,
-              wp.cloud_tombstoned_at AS cloudTombstonedAt,
-              wp.sync_state AS syncState,
-              wp.version AS workspaceVersion,
-              wp.created_at AS workspaceCreatedAt,
-              wp.updated_at AS workspaceUpdatedAt
-         FROM workspace_projects wp
-         JOIN projects p ON p.id = wp.project_id
-        WHERE wp.workspace_id = ?
-        ORDER BY MAX(p.updated_at, wp.updated_at) DESC`,
-    )
-    .all(workspaceId) as DbRow[];
-}
-
 /**
  * Every project's workspace, as one map. The bulk form of
  * {@link getWorkspaceProjectByProjectId}, for list endpoints that would
@@ -1327,13 +1294,6 @@ export function rebindWorkspaceProject(db: SqliteDb, projectId: string, patch: D
   return getWorkspaceProjectByProjectId(db, projectId);
 }
 
-export function deleteWorkspaceProject(db: SqliteDb, workspaceId: string, projectId: string): void {
-  db.prepare(
-    `DELETE FROM workspace_projects
-      WHERE workspace_id = ? AND project_id = ?`,
-  ).run(workspaceId, projectId);
-}
-
 /**
  * The workspace a project's TEAM projection lives in — the project's pinned
  * scope for hub-facing calls such as comments. A project shared to (or
@@ -1349,15 +1309,6 @@ export function findTeamWorkspaceIdForProject(db: SqliteDb, projectId: string): 
   ).get(projectId) as { workspaceId?: string } | undefined;
   const workspaceId = typeof row?.workspaceId === 'string' ? row.workspaceId.trim() : '';
   return workspaceId || null;
-}
-
-export function countWorkspaceProjectRefs(db: SqliteDb, projectId: string): number {
-  const row = db.prepare(
-    `SELECT COUNT(*) AS count
-       FROM workspace_projects
-      WHERE project_id = ?`,
-  ).get(projectId) as { count?: number } | undefined;
-  return Number(row?.count ?? 0);
 }
 
 const WORKSPACE_RESOURCE_SELECT_COLUMNS = `

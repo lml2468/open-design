@@ -88,7 +88,6 @@ function buildDeps(input: {
       }),
       getWorkspaceProject: () => null,
       getWorkspaceProjectByProjectId: () => null,
-      listWorkspaceProjects: () => [],
       listProjects: () => [],
     }),
     projectFiles: functionProxy({

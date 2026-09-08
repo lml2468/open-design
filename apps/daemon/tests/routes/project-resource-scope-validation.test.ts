@@ -83,7 +83,6 @@ function buildDeps(input: {
       getWorkspaceProject: () => binding,
       getWorkspaceProjectByProjectId: () => binding,
       updateProject: vi.fn(),
-      listWorkspaceProjects: () => [],
       listProjects: () => [],
     }),
     projectFiles: functionProxy({

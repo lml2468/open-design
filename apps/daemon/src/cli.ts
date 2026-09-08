@@ -251,13 +251,6 @@ const PROJECT_RESOURCE_STRING_FLAGS = new Set([
   'workspace-member',
 ]);
 const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow', 'confirm']);
-const WORKSPACE_STRING_FLAGS = new Set([
-  'daemon-url', 'workspace', 'view', 'visibility', 'owner', 'project',
-  'member', 'role', 'email', 'app-user', 'lifecycle-state',
-  'member-status', 'can-share-projects', 'can-write-synced-files',
-  'workspace-type',
-]);
-const WORKSPACE_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 // `od templates …` mirrors NewProjectPanel / ExamplesTab. Same surface,
 // same /api/templates store. The CLI form is the embeddability contract:
 // external agents (hermes-agent, openclaw, ...) can snapshot, list, or
@@ -394,7 +387,6 @@ const SUBCOMMAND_MAP = {
   brands: runBrand,
   project: runProject,
   strategy: runStrategy,
-  workspace: runWorkspace,
   automation: runAutomation,
   automations: runAutomation,
   memory: runMemory,
@@ -7315,123 +7307,6 @@ Common options:
     }
     default:
       console.error(`unknown subcommand: od project ${sub}`);
-      process.exit(2);
-  }
-}
-
-async function runWorkspace(args) {
-  if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
-    console.log(`Usage:
-  od workspace projects list --workspace <id> --member <id> [--view recent|drafts|team|all] [--json]
-  od workspace projects batch-delete --workspace <id> --member <id> --project <id> [--project <id> ...] [--json]
-
-Common options:
-  --daemon-url <url>   OpenDesign daemon HTTP base.
-  --member <id>        Workspace member id for route-level authorization.
-  --role <role>        Workspace role: owner, admin, or member.
-  --workspace-type <t> personal or team. A team share is refused in a personal
-                       workspace, which has no team plane to share into.
-  --json               Emit raw JSON.`);
-    process.exit(args.length === 0 ? 2 : 0);
-  }
-  const area = args[0];
-  if (area !== 'projects') {
-    console.error(`unknown subcommand: od workspace ${area}`);
-    process.exit(2);
-  }
-  const sub = args[1] ?? 'list';
-  const rest = args.slice(2);
-  const flags = parseFlags(rest, { string: WORKSPACE_STRING_FLAGS, boolean: WORKSPACE_BOOLEAN_FLAGS });
-  const base = (await projectDaemonUrl(flags)).replace(/\/$/, '');
-
-  const workspaceId = typeof flags.workspace === 'string' && flags.workspace.trim() ? flags.workspace.trim() : '';
-  if (!workspaceId) {
-    console.error('--workspace <id> is required');
-    process.exit(2);
-  }
-  const projectIds = repeatableFlagValues(rest, 'project');
-  const workspaceMemberId = typeof flags.member === 'string' && flags.member.trim() ? flags.member.trim() : '';
-  if (!workspaceMemberId) {
-    console.error('--member <id> is required');
-    process.exit(2);
-  }
-  const workspaceHeaders = {
-    'x-od-workspace-id': workspaceId,
-    // Only sent when the caller actually says which kind of workspace this is.
-    // The daemon reads an explicit `personal` as the caller ASSERTING there is
-    // no team plane here and refuses a team share on the strength of it (see
-    // collab/team-share-scope.ts), so defaulting the header to 'personal' would
-    // have made `--visibility team` impossible from the CLI. Absent still reads
-    // as personal everywhere it only affects view filtering.
-    ...(typeof flags['workspace-type'] === 'string' && flags['workspace-type'].trim()
-      ? { 'x-od-workspace-type': flags['workspace-type'].trim() }
-      : {}),
-    'x-od-workspace-member-id': workspaceMemberId,
-    ...(typeof flags.role === 'string' && flags.role.trim() ? { 'x-od-workspace-role': flags.role.trim() } : {}),
-    ...(typeof flags['app-user'] === 'string' && flags['app-user'].trim() ? { 'x-od-app-user-id': flags['app-user'].trim() } : {}),
-    ...(typeof flags['lifecycle-state'] === 'string' && flags['lifecycle-state'].trim()
-      ? { 'x-od-workspace-lifecycle-state': flags['lifecycle-state'].trim() }
-      : {}),
-    ...(typeof flags['member-status'] === 'string' && flags['member-status'].trim()
-      ? { 'x-od-workspace-member-status': flags['member-status'].trim() }
-      : {}),
-    ...(typeof flags['can-share-projects'] === 'string' && flags['can-share-projects'].trim()
-      ? { 'x-od-workspace-can-share-projects': flags['can-share-projects'].trim() }
-      : {}),
-    ...(typeof flags['can-write-synced-files'] === 'string' && flags['can-write-synced-files'].trim()
-      ? { 'x-od-workspace-can-write-synced-files': flags['can-write-synced-files'].trim() }
-      : {}),
-  };
-  async function request(path, init) {
-    const resp = await fetch(`${base}${path}`, {
-      ...init,
-      headers: {
-        ...workspaceHeaders,
-        ...(init?.headers ?? {}),
-      },
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      console.error(`${init?.method ?? 'GET'} ${path} failed: ${resp.status} ${JSON.stringify(data)}`);
-      process.exit(1);
-    }
-    return data;
-  }
-  switch (sub) {
-    case 'list': {
-      const params = new URLSearchParams();
-      if (flags.view) params.set('view', String(flags.view));
-      if (flags.visibility) params.set('visibility', String(flags.visibility));
-      if (flags.owner) params.set('owner', String(flags.owner));
-      const suffix = params.toString() ? `?${params}` : '';
-      const data = await request(`/api/workspaces/${encodeURIComponent(workspaceId)}/projects${suffix}`);
-      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-      const projects = data?.projects ?? [];
-      if (projects.length === 0) {
-        console.log('No workspace projects.');
-        return;
-      }
-      for (const p of projects) {
-        console.log(`${p.id}\t${p.visibility}\t${p.resourceState}\t${p.name}`);
-      }
-      return;
-    }
-    case 'batch-delete': {
-      if (projectIds.length === 0) {
-        console.error('Usage: od workspace projects batch-delete --workspace <id> --project <id> [--project <id> ...] [--json]');
-        process.exit(2);
-      }
-      const data = await request(`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/batch-delete`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ projectIds }),
-      });
-      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-      console.log(`[workspace] deleted ${projectIds.length} project(s)`);
-      return;
-    }
-    default:
-      console.error(`unknown subcommand: od workspace projects ${sub}`);
       process.exit(2);
   }
 }
