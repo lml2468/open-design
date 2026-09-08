@@ -32,7 +32,6 @@ import {
 } from '@open-design/contracts';
 import { isTodoWriteToolName, stopReasonIsTruncation, todoItemsFromTodoWriteInput } from '@open-design/contracts';
 import type {
-  CollabCloudMemberDirectoryEntry,
   TeamProject,
   WorkspaceCollabContext,
 } from '@open-design/contracts';
@@ -842,7 +841,6 @@ import {
 import { createSyncDigestReader } from './collab/sync-digest.js';
 import {
   createCollabSyncSnapshotStore,
-  parseMemberDirectorySnapshot,
   parseTeamProjectSnapshot,
 } from './collab/sync-snapshot-store.js';
 import { createPersistentSyncCache } from './collab/persistent-sync-cache.js';
@@ -859,8 +857,6 @@ import {
   contextToResourceHubPrincipal,
   type ResourceHubPrincipal,
 } from './collab/resource-principal.js';
-import { createCollabCloudClientFromEnv } from './integrations/collab-cloud.js';
-import { createVelaCliCollabClientFromEnv } from './collab/vela-cli-collab-client.js';
 import {
   createScopedVelaTeamProjectCatalogClientCache,
   createVelaCliTeamProjectCatalogClientFromEnv,
@@ -3293,12 +3289,11 @@ export async function startServer({
     return createWorkspaceOwnedDesignSystemForContext(root, input, context);
   };
   // Persistent half of the sync design: a cheap digest GET decides whether the
-  // catalog / member payload this daemon already has on disk is still current,
+  // catalog payload this daemon already has on disk is still current,
   // so a cold start (or a workspace not touched in a while) can skip the real
   // round-trip entirely. Snapshots live in the daemon database, which was
   // opened from the resolved runtime data root. See collab/persistent-sync-cache.ts.
   const collabSyncSnapshots = createCollabSyncSnapshotStore(db);
-  const velaCliCollabClient = createVelaCliCollabClientFromEnv(process.env);
   const velaCliTeamProjectCatalog = createVelaCliTeamProjectCatalogFromEnv();
   const velaCliWorkspaceTeamProjectCatalog =
     createVelaCliTeamProjectCatalogClientFromEnv();
@@ -3543,8 +3538,6 @@ export async function startServer({
   void backfillDesignSystemWorkspaceResources(db, USER_DESIGN_SYSTEMS_DIR).catch((error) => {
     console.warn('[od] design-system workspace-resource backfill failed:', error);
   });
-  const collabCloudClient = velaCliCollabClient ?? createCollabCloudClientFromEnv();
-
   // Uncached remote catalog authority for the remaining project-sharing routes.
   const teamProjectsLister = createTeamProjectsLister({
     ...(velaCliTeamProjectCatalog ? { teamProjectCatalog: velaCliTeamProjectCatalog } : {}),
@@ -4065,92 +4058,8 @@ export async function startServer({
         }
       : {}),
   });
-  // Stale-while-revalidate the member directory by explicit Workspace scope.
-  // The web shell re-reads members on every navigation (and several mounted
-  // consumers fetch it at once); the underlying collab-cloud read is ~1.5s, so
-  // without this a home/drafts load serialized 5-7 slow member reads behind the
-  // 6-connection cap. SWR serves the roster instantly after the first load and
-  // refreshes in the background, so a member who joins still resolves within a
-  // poll tick.
-  // Same two-layer split as the catalog above: the persistent snapshot answers
-  // the cold read (digest token unchanged -> serve the roster off disk), the SWR
-  // above it answers the burst of consumers one navigation mounts at once.
-  const teamMembersCache = collabCloudClient
-    ? (() => {
-        const snapshots = new Map<
-          string,
-          ReturnType<typeof createPersistentSyncCache<CollabCloudMemberDirectoryEntry[]>>
-        >();
-        const lists = new Map<
-          string,
-          ReturnType<typeof createSwrCache<CollabCloudMemberDirectoryEntry[]>>
-        >();
-        const read = (
-          context: WorkspaceCollabContext,
-        ): Promise<CollabCloudMemberDirectoryEntry[]> => {
-          const scope = teamProjectsDisplayScopeFromContext(context);
-          if (!scope) return Promise.resolve([]);
-          const key = teamProjectsDisplayScopeKey(scope);
-          let snapshot = snapshots.get(key);
-          if (!snapshot) {
-            const capturedTeamId = context.teamId?.trim() || context.workspaceId;
-            snapshot = createPersistentSyncCache({
-              face: 'members',
-              fetch: () => collabCloudClient.listMembers(capturedTeamId),
-              readDigest: createSyncDigestReader({
-                env: process.env,
-                getWorkspaceId: () => scope.workspaceId,
-                onError: (error) =>
-                  console.warn('[od] team members digest error:', error),
-              }),
-              store: collabSyncSnapshots,
-              parseSnapshot: parseMemberDirectorySnapshot,
-              onError: (error) =>
-                console.warn('[od] team members snapshot cache error:', error),
-            });
-            snapshots.set(key, snapshot);
-          }
-          let list = lists.get(key);
-          if (!list) {
-            const capturedSnapshot = snapshot;
-            list = createSwrCache(
-              () => capturedSnapshot(),
-              () => key,
-              3000,
-            );
-            lists.set(key, list);
-          }
-          return list();
-        };
-        return Object.assign(read, {
-          invalidate(context?: WorkspaceCollabContext) {
-            const scope = context
-              ? teamProjectsDisplayScopeFromContext(context)
-              : null;
-            if (scope) {
-              const key = teamProjectsDisplayScopeKey(scope);
-              lists.get(key)?.invalidate();
-              lists.delete(key);
-              snapshots.get(key)?.invalidate();
-              snapshots.delete(key);
-              return;
-            }
-            for (const list of lists.values()) list.invalidate();
-            for (const snapshot of snapshots.values()) snapshot.invalidate();
-            lists.clear();
-            snapshots.clear();
-          },
-        });
-      })()
-    : null;
-  const teamMembersForDisplay = async (
-    context: WorkspaceCollabContext | null,
-  ): Promise<CollabCloudMemberDirectoryEntry[]> => {
-    if (!teamMembersCache) return [];
-    return context ? teamMembersCache(context) : [];
-  };
-  /** Warm both digest faces for one exact directory-verified identity. */
-  const refreshWorkspaceDigestFaces = async (
+  /** Warm the Team Project catalog for one exact directory-verified identity. */
+  const refreshWorkspaceProjectCatalog = async (
     workspaceId: string,
     options: { freshAuthority?: boolean } = {},
   ): Promise<void> => {
@@ -4159,14 +4068,11 @@ export async function startServer({
       await resolveAuthoritativeTeamWorkspaceContext(workspaceId, {
         fresh: options.freshAuthority,
       });
-    await Promise.all([
-      teamProjectsForDisplay(context),
-      teamMembersForDisplay(context),
-    ]);
+    await teamProjectsForDisplay(context);
   };
-  const warmWorkspaceDigestFaces = (workspaceId: string) => {
+  const warmWorkspaceProjectCatalog = (workspaceId: string) => {
     if (!workspaceId) return;
-    void refreshWorkspaceDigestFaces(workspaceId, {
+    void refreshWorkspaceProjectCatalog(workspaceId, {
       freshAuthority: true,
     }).catch(() => undefined);
   };
@@ -4179,7 +4085,7 @@ export async function startServer({
     // A tab-local selection leaves this exact Workspace's scoped caches cold.
     // Warm only the directory-verified id announced by that request; the
     // daemon-global legacy pin is neither read nor updated.
-    onWorkspaceSwitched: (workspaceId) => warmWorkspaceDigestFaces(workspaceId),
+    onWorkspaceSwitched: (workspaceId) => warmWorkspaceProjectCatalog(workspaceId),
     // Same directory read the route would have made on its own, wrapped so every
     // workspace type it carries is memoized for the team-share invariant.
     listWorkspaceDirectory,
@@ -4211,9 +4117,6 @@ export async function startServer({
     // This was the last caller of the uncached `teamProjectsForRequest`
     // wrapper, so that helper is removed with it rather than left orphaned.
     listTeamProjects: teamProjectsForDisplay,
-    // Expose the collab-cloud member directory so the web client can resolve
-    // comment authors + owner names to a name + role.
-    ...(teamMembersCache ? { listMembers: teamMembersForDisplay } : {}),
     observeWorkspace: async (req, context, properties) => {
       const service = workspaceAnalyticsService;
       const analyticsContext = readAnalyticsContext(req);

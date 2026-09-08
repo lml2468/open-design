@@ -16,7 +16,6 @@ import {
 import {
   buildSocialSharePayload,
   OPEN_DESIGN_GITHUB_REPO_URL,
-  type CollabCloudMemberDirectoryEntry,
   type CollabMemberRole,
   type AgentInfo,
   type ProjectFileVersion,
@@ -248,7 +247,6 @@ import {
   useProjectCollabContext,
   type ProjectResourceAuthority,
 } from '../collab/collab-context';
-import { currentUserDirectoryEntry, useTeamMembers } from '../collab/useTeamMembers';
 import { applyPodMemberRemoval } from '../lib/pod-members';
 import { AnnotationHoverPopover, BoardComposerPopover } from './BoardComposerPopover';
 import {
@@ -4441,7 +4439,6 @@ export function CommentSidePanel({
   onSendSelected,
   onCreateComment,
   canSendComment,
-  currentUser,
   sending,
   queueOnSend = false,
   sendDisabled = false,
@@ -4464,11 +4461,6 @@ export function CommentSidePanel({
   onToggleSelect: (commentId: string) => void;
   onSelectAll: () => void;
   canSendComment?: (comment: PreviewComment) => boolean;
-  /** The viewer's own directory entry, so their comments show their avatar +
-   *  name even when the member roster is empty (personal workspace / cold
-   *  roster window). Supplied from the workspace context the caller already
-   *  holds — this panel must not fetch one. */
-  currentUser?: CollabCloudMemberDirectoryEntry | null;
   onClearSelection: () => void;
   onReorder?: (orderedIds: string[], draggedId: string) => void;
   onReply: (comment: PreviewComment) => void;
@@ -4486,11 +4478,20 @@ export function CommentSidePanel({
   const { workspaceContext } = useProjectCollabContext();
   const [newCommentDraft, setNewCommentDraft] = useState('');
   const [dragState, setDragState] = useState<CommentSideDragState | null>(null);
-  // Collab-cloud member directory: turns a comment's authorMemberId into a
-  // display name + role for the author line + avatar. The viewer's own identity
-  // resolves through `currentUser` even when the directory is empty; an unknown
-  // OTHER member still renders without an author line, exactly as before.
-  const { resolve: resolveCommentAuthor } = useTeamMembers(currentUser);
+  // The project context already carries the current viewer's identity. Legacy
+  // comments from any other opaque member id keep their id-only rendering; the
+  // retired Team Workspace roster is no longer queried just for display data.
+  const currentUser = useMemo(() => {
+    const memberId = workspaceContext?.workspaceMemberId.trim();
+    if (!workspaceContext || !memberId) return null;
+    return {
+      memberId,
+      displayName: workspaceContext.displayName?.trim() || memberId,
+      role: workspaceContext.role,
+    };
+  }, [workspaceContext]);
+  const resolveCommentAuthor = (memberId: string | null | undefined) =>
+    currentUser && memberId === currentUser.memberId ? currentUser : null;
   const sorted = comments;
   // recvq5BVsolIxi: the inline "N." prefix must match the canvas pin number
   // (comment.pinSeq) so the two surfaces always agree, even when this panel
@@ -4947,7 +4948,6 @@ function CommentSideDock({
   onSendSelected,
   onCreateComment,
   canSendComment,
-  currentUser,
   sending,
   queueOnSend = false,
   sendDisabled = false,
@@ -4974,8 +4974,6 @@ function CommentSideDock({
   /** Team-collab gate: which comments the viewer may send to the agent (author
    * OR project owner). Defaults to all-sendable when absent (single-user). */
   canSendComment?: (comment: PreviewComment) => boolean;
-  /** The viewer's own directory entry — see `CommentSidePanel`. */
-  currentUser?: CollabCloudMemberDirectoryEntry | null;
   sending: boolean;
   queueOnSend?: boolean;
   sendDisabled?: boolean;
@@ -5006,7 +5004,6 @@ function CommentSideDock({
         onSendSelected={onSendSelected}
         onCreateComment={onCreateComment}
         canSendComment={canSendComment}
-        currentUser={currentUser}
         sending={sending}
         queueOnSend={queueOnSend}
         sendDisabled={sendDisabled}
@@ -15095,17 +15092,6 @@ function HtmlViewer({
   const canEditActiveComment = commentAuthoredByMe(activeComposerComment);
   const canDeleteActiveComment = canEditActiveComment || iAmProjectOwner;
   const canSendActiveComment = canEditActiveComment || iAmProjectOwner;
-  // The viewer's own author identity for the comment cards. Derived from the
-  // workspace context this component ALREADY reads (see `workspaceContext`
-  // above) — no extra request. Deliberately NOT `collab.member`, which is null
-  // on a personal workspace and on an unshared project, i.e. exactly the cases
-  // where a comment lost its avatar and name.
-  const commentAuthorSelf = useMemo(
-    () => currentUserDirectoryEntry(
-      projectResourceReadBlocked ? null : workspaceContext,
-    ),
-    [workspaceContext, projectResourceReadBlocked],
-  );
   const commentComposerPortalMetrics = (() => {
     if (!commentComposerHost || !commentPreviewCanvasNode) return null;
     const hostRect = commentComposerHost.getBoundingClientRect();
@@ -15345,7 +15331,6 @@ function HtmlViewer({
       }}
       onCreateComment={savePanelComment}
       canSendComment={canSendCommentToAgent}
-      currentUser={commentAuthorSelf}
       sending={sendingBoardBatch}
       queueOnSend={commentQueueOnSend}
       sendDisabled={commentSendDisabled || viewerOnly}

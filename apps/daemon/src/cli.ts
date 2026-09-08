@@ -7359,7 +7359,6 @@ async function runWorkspace(args) {
   od workspace projects move <projectId> --workspace <id> --member <id> --visibility personal|team [--json]
   od workspace projects batch-delete --workspace <id> --member <id> --project <id> [--project <id> ...] [--json]
   od workspace projects batch-move --workspace <id> --member <id> --visibility personal|team --project <id> [--project <id> ...] [--json]
-  od workspace members list --workspace <id> --member <id> [--json]
 
 Common options:
   --daemon-url <url>   OpenDesign daemon HTTP base.
@@ -7371,7 +7370,7 @@ Common options:
     process.exit(args.length === 0 ? 2 : 0);
   }
   const area = args[0];
-  if (!['projects', 'members'].includes(area)) {
+  if (area !== 'projects') {
     console.error(`unknown subcommand: od workspace ${area}`);
     process.exit(2);
   }
@@ -7381,9 +7380,7 @@ Common options:
   const base = (await projectDaemonUrl(flags)).replace(/\/$/, '');
 
   async function workspaceContextRequest(path, init) {
-    const needsExplicitWorkspace =
-      path === '/api/workspace/members'
-      || path === '/api/workspace/projects/team';
+    const needsExplicitWorkspace = path === '/api/workspace/projects/team';
     const workspaceHeaders = needsExplicitWorkspace
       ? workspaceHeadersFromExplicitFlags(flags, true)
       : {};
@@ -7400,24 +7397,6 @@ Common options:
       process.exit(1);
     }
     return data;
-  }
-
-  if (area === 'members') {
-    if (sub !== 'list') {
-      console.error(`unknown subcommand: od workspace members ${sub}`);
-      process.exit(2);
-    }
-    const data = await workspaceContextRequest('/api/workspace/members');
-    if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-    const members = Array.isArray(data?.members) ? data.members : [];
-    if (members.length === 0) {
-      console.log('No workspace members.');
-      return;
-    }
-    for (const member of members) {
-      console.log(`${member.memberId}\t${member.displayName ?? '-'}\t${member.role ?? '-'}`);
-    }
-    return;
   }
 
   if (sub === 'team') {

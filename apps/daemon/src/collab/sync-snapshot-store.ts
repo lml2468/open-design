@@ -11,7 +11,7 @@
 // its own (see the Daemon data directory contract in AGENTS.md).
 
 import type Database from 'better-sqlite3';
-import type { CollabCloudMemberDirectoryEntry, TeamProject } from '@open-design/contracts';
+import type { TeamProject } from '@open-design/contracts';
 import type { SyncDigestFace } from './sync-digest.js';
 
 type SqliteDb = Database.Database;
@@ -108,13 +108,7 @@ export function createCollabSyncSnapshotStore(db: SqliteDb): CollabSyncSnapshotS
   };
 }
 
-/**
- * Shape guards for the two cached faces.
- *
- * A snapshot that survives a schema change (or lands corrupted) must degrade to
- * a real fetch rather than being handed to the UI, so parsing is a validation
- * step and not a cast.
- */
+/** A stale or corrupt snapshot must degrade to a real fetch. */
 export function parseTeamProjectSnapshot(value: unknown): TeamProject[] | null {
   if (!Array.isArray(value)) return null;
   for (const entry of value) {
@@ -129,22 +123,4 @@ export function parseTeamProjectSnapshot(value: unknown): TeamProject[] | null {
     }
   }
   return value as TeamProject[];
-}
-
-export function parseMemberDirectorySnapshot(
-  value: unknown,
-): CollabCloudMemberDirectoryEntry[] | null {
-  if (!Array.isArray(value)) return null;
-  for (const entry of value) {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
-    const member = entry as Record<string, unknown>;
-    if (
-      typeof member.memberId !== 'string' ||
-      typeof member.displayName !== 'string' ||
-      typeof member.role !== 'string'
-    ) {
-      return null;
-    }
-  }
-  return value as CollabCloudMemberDirectoryEntry[];
 }

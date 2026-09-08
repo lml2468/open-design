@@ -1,7 +1,5 @@
 import type { Express, Request, Response } from 'express';
 import type {
-  CollabCloudMemberDirectoryEntry,
-  CollabCloudMembersResponse,
   TeamProject,
   WorkspaceDirectoryItem,
   WorkspaceDirectoryResponse,
@@ -40,15 +38,6 @@ export interface RegisterCollabContextRoutesDeps {
    *  built from the same workspace context + env-configured hub client the share
    *  path uses. */
   listTeamProjects?: (context: WorkspaceCollabContext) => Promise<TeamProject[]>;
-  /**
-   * The team's collab-cloud member directory (memberId → {displayName, role}),
-   * so the web client can resolve comment authors + the shared-project owner to
-   * a name + role. Empty off-team / when the collab cloud is unconfigured. STUB:
-   * B's roster is the real source; the collab-cloud directory stands in for it.
-   */
-  listMembers?: (
-    context: WorkspaceCollabContext,
-  ) => Promise<CollabCloudMemberDirectoryEntry[]>;
   /**
    * Client-local restart default. Data-plane routes never use it as authority;
    * each tab continues to carry its exact Workspace and member identity.
@@ -148,7 +137,6 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
   const listTeamProjects =
     deps.listTeamProjects ??
     ((context: WorkspaceCollabContext) => rawTeamProjectsLister(context.workspaceId));
-  const listMembers = deps.listMembers ?? (async () => []);
   const listWorkspaceDirectory =
     deps.listWorkspaceDirectory ?? (() => listVelaWorkspaceDirectory());
   const fetchWorkspaceDirectory =
@@ -377,44 +365,6 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
     }
     const body: WorkspaceTeamProjectsResponse = { projects };
     res.json(body);
-  });
-
-  // Member directory: the web client resolves comment authors (authorMemberId →
-  // "琼羽 · Owner") and the shared-project owner name from this. Read from the
-  // collab-cloud directory. A directory outage is retryable and must not be
-  // represented as an authoritative empty roster: clients retain last-good
-  // display metadata until a successful response says members really left.
-  app.get('/api/workspace/members', async (req, res) => {
-    const verified = deps.verifyWorkspaceReadAuthority
-      ? await deps.verifyWorkspaceReadAuthority(req)
-      : await verifyWorkspaceRequestContext({
-          req,
-          fetchWorkspaceDirectory,
-          configuredEnv: configuredEnv(),
-          requireTeam: true,
-        });
-    if (!verified.ok) return sendWorkspaceVerificationFailure(res, verified);
-    if (verified.context.workspaceType !== 'team') {
-      return sendWorkspaceVerificationFailure(res, {
-        ok: false,
-        status: 403,
-        code: 'WORKSPACE_ACCESS_DENIED',
-        message: 'the requested workspace is not available to this member',
-      });
-    }
-    try {
-      const members = await listMembers(verified.context);
-      const body: CollabCloudMembersResponse = { members };
-      return res.json(body);
-    } catch {
-      return sendApiError(
-        res,
-        503,
-        'UPSTREAM_UNAVAILABLE',
-        'team member directory is temporarily unavailable',
-        { retryable: true },
-      );
-    }
   });
 
   // Dev/demo seam: override the in-memory context. A real B-backed provider does

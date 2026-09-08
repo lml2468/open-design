@@ -1,4 +1,3 @@
-import type { OkResponse } from '../common.js';
 import type { ProjectMetadata } from './projects.js';
 
 // Legacy Team-edition collaboration DTOs retained while the sync path is
@@ -336,46 +335,4 @@ export function buildWorkspaceSeatSummary(input: {
     availableSeats,
     isSeatFull: availableSeats === 0,
   };
-}
-
-
-// ————————————————————————————————————————————————————————————————————————————
-// Legacy collaboration member directory
-// ————————————————————————————————————————————————————————————————————————————
-//
-// The remaining legacy workspace UI needs to turn an opaque owner/author member
-// id into a display name and role. New self-hosted collaboration contracts live
-// under `api/collaboration`.
-//
-// STUB SCOPE: the spec's identity source is B's token → {memberId, teamId,
-// role} plus B's member roster. B does not yet expose names, so the directory
-// entry carrying `displayName` (and `role`, redundantly with the token) is a
-// C-lane stub supplement to B's missing roster — not a permanent contract.
-
-/**
- * One member's public directory entry: the id → {name, role} mapping the client
- * needs to render "琼羽 · Owner" on a comment card and "这是 麻薯 创建的共享项目"
- * on the shared-project banner. Avatars are derived client-side from the name;
- * the directory carries no avatar.
- */
-export interface CollabCloudMemberDirectoryEntry {
-  memberId: string;
-  displayName: string;
-  role: CollabMemberRole;
-}
-
-/** PUT /teams/:teamId/members/:memberId request body. Idempotent upsert. */
-export interface CollabCloudMemberRegisterRequest {
-  displayName: string;
-  role: CollabMemberRole;
-}
-
-/** PUT /teams/:teamId/members/:memberId response. */
-export interface CollabCloudMemberRegisterResponse extends OkResponse {
-  member: CollabCloudMemberDirectoryEntry;
-}
-
-/** GET /teams/:teamId/members and GET /api/workspace/members response. */
-export interface CollabCloudMembersResponse {
-  members: CollabCloudMemberDirectoryEntry[];
 }
