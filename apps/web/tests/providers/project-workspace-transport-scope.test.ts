@@ -189,12 +189,12 @@ describe('persisted project Workspace transport scope', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps local Project raw and terminal URLs unscoped while remote event streams retain captured A', () => {
+  it('keeps local Project raw, terminal, and event URLs unscoped', () => {
     const workspaceA = teamContext('workspace-a', 'member-a');
     const workspaceB = teamContext('workspace-b', 'member-b');
     const capturedRawUrl = projectRawUrl('project-1', 'index.html', workspaceA);
     const capturedTerminalUrl = terminalStreamUrl('project-1', 'terminal-1');
-    const capturedEventsUrl = projectEventsUrl('project-1', workspaceA);
+    const capturedEventsUrl = projectEventsUrl('project-1');
 
     projectRawUrl('project-1', 'index.html', workspaceB);
 
@@ -207,8 +207,8 @@ describe('persisted project Workspace transport scope', () => {
     expect(parsedTerminal.searchParams.has('workspaceMemberId')).toBe(false);
 
     const parsedEvents = new URL(capturedEventsUrl, 'https://od.local');
-    expect(parsedEvents.searchParams.get('workspaceId')).toBe('workspace-a');
-    expect(parsedEvents.searchParams.get('workspaceMemberId')).toBe('member-a');
+    expect(parsedEvents.searchParams.has('workspaceId')).toBe(false);
+    expect(parsedEvents.searchParams.has('workspaceMemberId')).toBe(false);
   });
 
   it('scopes remote file and run transports but keeps local Project state unscoped', async () => {

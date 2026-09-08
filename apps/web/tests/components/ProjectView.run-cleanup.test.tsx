@@ -569,7 +569,6 @@ describe('ProjectView daemon cleanup', () => {
       'project-comment-route',
       'conv-route',
       expect.objectContaining({ note: 'Member QA comment' }),
-      null,
     );
   });
 
@@ -3883,7 +3882,6 @@ describe('ProjectView daemon cleanup', () => {
         'conv-1',
         'comment-1',
         'needs_review',
-        null,
       );
     });
   });

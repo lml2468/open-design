@@ -3803,12 +3803,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     if (!getProject(db, req.params.id)) {
       return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
     }
-    if (!await authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      { mode: 'read', allowNavigationQuery: true },
-    )) return;
     let sub: any;
     try {
       const sse = createSseResponse(res);

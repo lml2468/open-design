@@ -3,7 +3,7 @@ import type http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { registerTerminalRoutes } from '../src/routes/terminal.js';
 
-describe('terminal project authority', () => {
+describe('local Project terminal routes', () => {
   let server: http.Server;
   let baseUrl = '';
   const session = { id: 'terminal-a', projectId: 'project-a' };
@@ -12,22 +12,12 @@ describe('terminal project authority', () => {
     statusBody: vi.fn((value) => value),
     create: vi.fn(async () => session),
     get: vi.fn(() => session),
-    stream: vi.fn(),
+    stream: vi.fn((_session, _req, res) => res.end()),
     write: vi.fn(() => true),
     resize: vi.fn(() => true),
     kill: vi.fn(),
   };
   const resolveProjectDir = vi.fn(() => '/tmp/project-a');
-  const authorizeProjectRequest = vi.fn(async (_req, res) => {
-    res.status(503).json({
-      error: {
-        code: 'WORKSPACE_AUTHORITY_UNAVAILABLE',
-        message: 'unavailable',
-        retryable: true,
-      },
-    });
-    return false;
-  });
 
   beforeAll(async () => {
     const app = express();
@@ -45,7 +35,6 @@ describe('terminal project authority', () => {
       },
       projectFiles: { resolveProjectDir },
       terminals,
-      authorizeProjectRequest,
     } as any);
     await new Promise<void>((resolve) => {
       server = app.listen(0, '127.0.0.1', () => {
@@ -59,7 +48,7 @@ describe('terminal project authority', () => {
 
   afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
-  it('denies list/create/stream/input/resize/kill before any terminal side effect', async () => {
+  it('serves terminal operations without legacy Workspace authority', async () => {
     const requests = [
       fetch(`${baseUrl}/api/projects/project-a/terminals`),
       fetch(`${baseUrl}/api/projects/project-a/terminals`, {
@@ -88,15 +77,18 @@ describe('terminal project authority', () => {
     const responses = await Promise.all(requests);
 
     expect(responses.map((response) => response.status)).toEqual(
-      Array.from({ length: requests.length }, () => 503),
+      Array.from({ length: requests.length }, () => 200),
     );
-    expect(terminals.list).not.toHaveBeenCalled();
-    expect(terminals.create).not.toHaveBeenCalled();
-    expect(terminals.get).not.toHaveBeenCalled();
-    expect(terminals.stream).not.toHaveBeenCalled();
-    expect(terminals.write).not.toHaveBeenCalled();
-    expect(terminals.resize).not.toHaveBeenCalled();
-    expect(terminals.kill).not.toHaveBeenCalled();
-    expect(resolveProjectDir).not.toHaveBeenCalled();
+    expect(terminals.list).toHaveBeenCalledTimes(1);
+    expect(terminals.create).toHaveBeenCalledTimes(1);
+    expect(terminals.stream).toHaveBeenCalledTimes(1);
+    expect(terminals.write).toHaveBeenCalledWith(session, 'whoami\n');
+    expect(terminals.resize).toHaveBeenCalledWith(session, 100, 40);
+    expect(terminals.kill).toHaveBeenCalledTimes(2);
+    expect(resolveProjectDir).toHaveBeenCalledWith(
+      '/tmp/projects',
+      'project-a',
+      null,
+    );
   });
 });

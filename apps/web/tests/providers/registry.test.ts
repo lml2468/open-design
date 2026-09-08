@@ -819,9 +819,7 @@ describe('writeProjectTextFileDetailed', () => {
   });
 });
 
-// A minimal PreviewCommentTarget — only the fields the contract requires,
-// the values themselves are irrelevant to the header-attachment behavior
-// under test here.
+// A minimal PreviewCommentTarget — only the fields the contract requires.
 const PREVIEW_COMMENT_TARGET = {
   filePath: 'index.html',
   elementId: 'el-1',
@@ -857,13 +855,7 @@ describe('upsertPreviewComment', () => {
     vi.unstubAllGlobals();
   });
 
-  // recvq5BVsolIxi follow-up: this call used to omit `x-od-workspace-*`
-  // entirely, so a team-bound project's daemon-side
-  // `enforceCommentWorkspaceMutation` gate 401'd with
-  // `WORKSPACE_CONTEXT_REQUIRED` on every real click — silently, since the
-  // caller collapsed any non-ok response to `null`. Reproduced against the
-  // real dogfood daemon via curl before this fix landed.
-  it('attaches workspace identity headers when a workspace context is passed', async () => {
+  it('posts comments through the local Project API without Workspace identity', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => previewCommentResponse());
     vi.stubGlobal('fetch', fetchMock);
 
@@ -871,40 +863,25 @@ describe('upsertPreviewComment', () => {
       'project-1',
       'conv-1',
       { target: PREVIEW_COMMENT_TARGET, note: 'hi' },
-      personalWorkspaceContext(),
     );
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/projects/project-1/conversations/conv-1/comments',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
+        headers: { 'Content-Type': 'application/json' },
       }),
     );
   });
-
-  it('omits workspace headers when there is no workspace context (legacy local mode)', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => previewCommentResponse());
-    vi.stubGlobal('fetch', fetchMock);
-
-    await upsertPreviewComment('project-1', 'conv-1', { target: PREVIEW_COMMENT_TARGET, note: 'hi' });
-
-    const [, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
-    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
-  });
 });
 
-describe('preview comment scoped mutations', () => {
+describe('preview comment mutations', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it('attaches workspace identity headers to status updates', async () => {
+  it('patches status through the local Project API without Workspace identity', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => previewCommentResponse());
     vi.stubGlobal('fetch', fetchMock);
 
@@ -913,23 +890,18 @@ describe('preview comment scoped mutations', () => {
       'conv-1',
       'cmt_1',
       'applying',
-      personalWorkspaceContext(),
     );
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/projects/project-1/conversations/conv-1/comments/cmt_1',
       expect.objectContaining({
         method: 'PATCH',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
+        headers: { 'Content-Type': 'application/json' },
       }),
     );
   });
 
-  it('attaches workspace identity headers to deletes', async () => {
+  it('deletes through the local Project API without Workspace identity', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({ ok: true }),
       { status: 200, headers: { 'content-type': 'application/json' } },
@@ -940,18 +912,11 @@ describe('preview comment scoped mutations', () => {
       'project-1',
       'conv-1',
       'cmt_1',
-      personalWorkspaceContext(),
     );
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/projects/project-1/conversations/conv-1/comments/cmt_1',
-      expect.objectContaining({
-        method: 'DELETE',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
-      }),
+      { method: 'DELETE' },
     );
   });
 });
@@ -962,33 +927,19 @@ describe('patchPreviewCommentSortKey', () => {
     vi.unstubAllGlobals();
   });
 
-  it('attaches workspace identity headers when a workspace context is passed', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => previewCommentResponse({ sortKey: 42 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await patchPreviewCommentSortKey('project-1', 'conv-1', 'cmt_1', 42, personalWorkspaceContext());
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/project-1/conversations/conv-1/comments/cmt_1/reorder',
-      expect.objectContaining({
-        method: 'PATCH',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
-      }),
-    );
-  });
-
-  it('omits workspace headers when there is no workspace context (legacy local mode)', async () => {
+  it('patches sort order through the local Project API without Workspace identity', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => previewCommentResponse({ sortKey: 42 }));
     vi.stubGlobal('fetch', fetchMock);
 
     await patchPreviewCommentSortKey('project-1', 'conv-1', 'cmt_1', 42);
 
-    const [, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
-    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/projects/project-1/conversations/conv-1/comments/cmt_1/reorder',
+      expect.objectContaining({
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
   });
 });
 

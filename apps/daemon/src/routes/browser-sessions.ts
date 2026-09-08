@@ -1,15 +1,13 @@
 import type { Express } from 'express';
 import type { BrowserSessionService } from '../browser-sessions.js';
-import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
 import type { RouteDeps } from '../server-context.js';
 
 export interface RegisterBrowserSessionRoutesDeps extends RouteDeps<'db' | 'http' | 'projectStore'> {
   browserSessions: BrowserSessionService;
-  authorizeProjectRequest: AuthorizeProjectRequest;
 }
 
 export function registerBrowserSessionRoutes(app: Express, ctx: RegisterBrowserSessionRoutesDeps): void {
-  const { db, browserSessions, authorizeProjectRequest } = ctx;
+  const { db, browserSessions } = ctx;
   const { getProject } = ctx.projectStore;
   const { sendApiError } = ctx.http;
 
@@ -17,7 +15,6 @@ export function registerBrowserSessionRoutes(app: Express, ctx: RegisterBrowserS
     if (!getProject(db, req.params.id)) {
       return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
     }
-    if (!await authorizeProjectRequest(req, res, req.params.id, { mode: 'read' })) return;
     try {
       res.json({ browserSession: await browserSessions.create() });
     } catch (error) {
@@ -34,7 +31,6 @@ export function registerBrowserSessionRoutes(app: Express, ctx: RegisterBrowserS
     if (!getProject(db, req.params.id)) {
       return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
     }
-    if (!await authorizeProjectRequest(req, res, req.params.id, { mode: 'read' })) return;
     res.json({ closed: await browserSessions.close(req.params.sessionId) });
   });
 }

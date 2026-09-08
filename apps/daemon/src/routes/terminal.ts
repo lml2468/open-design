@@ -1,12 +1,10 @@
 import type { Express } from 'express';
 import type { RouteDeps } from '../server-context.js';
 import type { createTerminalService } from '../terminals.js';
-import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
 
 export interface RegisterTerminalRoutesDeps
   extends RouteDeps<'db' | 'http' | 'paths' | 'projectStore' | 'projectFiles'> {
   terminals: ReturnType<typeof createTerminalService>;
-  authorizeProjectRequest: AuthorizeProjectRequest;
 }
 
 /**
@@ -20,7 +18,7 @@ export interface RegisterTerminalRoutesDeps
  * editor would open.
  */
 export function registerTerminalRoutes(app: Express, ctx: RegisterTerminalRoutesDeps) {
-  const { db, terminals, authorizeProjectRequest } = ctx;
+  const { db, terminals } = ctx;
   const { sendApiError, createSseResponse } = ctx.http;
   const { PROJECTS_DIR } = ctx.paths;
   const { getProject } = ctx.projectStore;
@@ -45,7 +43,6 @@ export function registerTerminalRoutes(app: Express, ctx: RegisterTerminalRoutes
     if (!getProject(db, req.params.id)) {
       return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
     }
-    if (!await authorizeProjectRequest(req, res, req.params.id, { mode: 'read' })) return;
     res.json({ terminals: terminals.list({ projectId: req.params.id }).map((s) => terminals.statusBody(s)) });
   });
 
@@ -54,12 +51,6 @@ export function registerTerminalRoutes(app: Express, ctx: RegisterTerminalRoutes
     if (!project) {
       return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
     }
-    if (!await authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
     const body = req.body || {};
     const cwd = resolveProjectDir(PROJECTS_DIR, project.id, project.metadata);
     try {
@@ -80,24 +71,12 @@ export function registerTerminalRoutes(app: Express, ctx: RegisterTerminalRoutes
   });
 
   app.get('/api/projects/:id/terminals/:tid/stream', async (req, res) => {
-    if (!await authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      { mode: 'read', allowNavigationQuery: true },
-    )) return;
     const session = resolveSession(req, res);
     if (!session) return;
     terminals.stream(session, req, res, createSseResponse);
   });
 
   app.post('/api/projects/:id/terminals/:tid/stdin', async (req, res) => {
-    if (!await authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
     const session = resolveSession(req, res);
     if (!session) return;
     const data = req.body?.data;
@@ -109,12 +88,6 @@ export function registerTerminalRoutes(app: Express, ctx: RegisterTerminalRoutes
   });
 
   app.post('/api/projects/:id/terminals/:tid/resize', async (req, res) => {
-    if (!await authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
     const session = resolveSession(req, res);
     if (!session) return;
     const { cols, rows } = req.body || {};
@@ -126,12 +99,6 @@ export function registerTerminalRoutes(app: Express, ctx: RegisterTerminalRoutes
   });
 
   const handleKill = async (req: any, res: any) => {
-    if (!await authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
     const session = resolveSession(req, res);
     if (!session) return;
     terminals.kill(session, 'SIGTERM');

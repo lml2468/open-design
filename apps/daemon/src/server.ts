@@ -4274,14 +4274,12 @@ export async function startServer({
     projectStore: projectStoreDeps,
     projectFiles: projectFileDeps,
     terminals: terminalService,
-    authorizeProjectRequest,
   });
   registerBrowserSessionRoutes(app, {
     db,
     http: httpDeps,
     projectStore: projectStoreDeps,
     browserSessions: browserSessionService,
-    authorizeProjectRequest,
   });
   registerImportRoutes(app, {
     db,

@@ -1152,7 +1152,6 @@ describe('ProjectView conversation run isolation', () => {
       expect(fetchPreviewComments).toHaveBeenCalledWith(
         project.id,
         'conv-b',
-        null,
       );
     });
     // The daemon GET is project-scoped for a Team share, so a comment whose
@@ -1181,7 +1180,6 @@ describe('ProjectView conversation run isolation', () => {
     await waitFor(() => expect(fetchPreviewComments).toHaveBeenCalledWith(
       project.id,
       'conv-b',
-      null,
     ));
 
     fireEvent.click(screen.getByTestId('attach-first-comment'));
@@ -1409,7 +1407,6 @@ describe('ProjectView conversation run isolation', () => {
         'conv-a',
         previewComment.id,
         'applying',
-        null,
       ),
     );
     patchPreviewCommentStatus.mockClear();
@@ -1661,7 +1658,6 @@ describe('ProjectView conversation run isolation', () => {
         expect.anything(),
         previewComment.id,
         'applying',
-        null,
       ),
     );
     await waitFor(() => expect(screen.getByTestId('send-queued-0')).toBeTruthy());

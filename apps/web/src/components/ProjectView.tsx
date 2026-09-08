@@ -2540,7 +2540,6 @@ export function ProjectView({
     // stream or later replace those rows with an empty snapshot.
     setMessagesInitialized(false);
     let cancelled = false;
-    const requestWorkspaceContext = projectRunWorkspaceContextRef.current;
     setFailedMessagesConversationId(null);
     if (!preservingLiveConversation) {
       setMessagesConversationId(null);
@@ -2574,7 +2573,6 @@ export function ProjectView({
         void fetchPreviewComments(
           project.id,
           activeConversationId,
-          requestWorkspaceContext,
         ).then((comments) => {
           if (cancelled || previewCommentsGenerationRef.current !== commentsGeneration) return;
           setPreviewComments(comments);
@@ -3423,23 +3421,17 @@ export function ProjectView({
     projectRunAuthorityKey,
     projectRunWorkspaceContext,
   ]);
-  // A bound project must not open a headerless EventSource while its exact
-  // authority is unresolved or forbidden: that request can only fail and the
-  // EventSource reconnect loop would keep retrying a terminal response.
-  // Anonymous/local unbound projects intentionally keep their legacy stream
-  // after the daemon settles them as unbound. A missing local workspaceId is
-  // not sufficient: that project row can lag a hidden daemon-side Team mirror.
+  // Project events are emitted by the local daemon and authorized by the local
+  // daemon session. Remote Collaboration Server state is reconciled separately.
   const projectEventsEnabled = daemonLive;
   useProjectFileEvents(project.id, projectEventsEnabled, handleProjectEvent, {
     // Files or comments can change after their initial snapshots but before
-    // SSE is listening. Reconcile both once the exact-scoped stream is ready:
-    // for comments this also redeems a daemon-side dirty mark left by a hub
-    // event that arrived in the pre-handshake gap.
+    // SSE is listening. Reconcile both once the local stream is ready.
     onReady: () => {
       void reconcileFilesWhenProjectEventsBecomeReady();
       void refreshPreviewCommentsRef.current?.();
     },
-  }, projectRunWorkspaceContext);
+  });
 
   const activePromptContextSignature = useMemo(() => {
     const skill = project.skillId
@@ -4173,7 +4165,6 @@ export function ProjectView({
     const next = await fetchPreviewComments(
       project.id,
       activeConversationId,
-      projectRunWorkspaceContext,
     );
     if (previewCommentsGenerationRef.current !== commentsGeneration) return;
     setPreviewComments(next);
@@ -4182,7 +4173,7 @@ export function ProjectView({
         .map((attached) => next.find((comment) => comment.id === attached.id))
         .filter((comment): comment is PreviewComment => Boolean(comment)),
     );
-  }, [project.id, activeConversationId, projectRunWorkspaceContext]);
+  }, [project.id, activeConversationId]);
 
   // Expose the latest refresher to the SSE handler (defined earlier) so a
   // pushed `comment-changed` can re-fetch immediately.
@@ -4246,12 +4237,10 @@ export function ProjectView({
           note,
           ...(attachments.length > 0 ? { attachments } : {}),
         },
-        projectRunWorkspaceContext,
       );
       if (!saved) {
-        // Do not fail silently (recvq5BVsolIxi follow-up): a missing/expired
-        // workspace context 401s here with zero prior UI feedback, and the
-        // popover otherwise just closes as if the comment had saved.
+        // Do not fail silently: the popover would otherwise close as if the
+        // comment had saved.
         setProjectActionsToast({
           message: t('project.previewCommentSaveFailed'),
           details: null,
@@ -4293,7 +4282,6 @@ export function ProjectView({
         project.id,
         commentConversationId,
         commentId,
-        projectRunWorkspaceContext,
       );
       if (!ok) {
         setProjectActionsToast({
@@ -4313,7 +4301,6 @@ export function ProjectView({
       activeConversationId,
       routeConversationId,
       commitPreviewComments,
-      projectRunWorkspaceContext,
       t,
     ],
   );
@@ -4350,7 +4337,6 @@ export function ProjectView({
         commentConversationId,
         commentId,
         sortKey,
-        projectRunWorkspaceContext,
       );
       if (saved) {
         commitPreviewComments((current) => mergeSavedPreviewComment(current, saved));
@@ -4368,7 +4354,6 @@ export function ProjectView({
       activeConversationId,
       routeConversationId,
       commitPreviewComments,
-      projectRunWorkspaceContext,
       t,
     ],
   );
@@ -4414,7 +4399,6 @@ export function ProjectView({
             activeConversationId,
             attachment.id,
             status,
-            projectRunWorkspaceContext,
           ),
         ),
       );
@@ -4425,7 +4409,6 @@ export function ProjectView({
       activeConversationId,
       commitPreviewComments,
       refreshPreviewComments,
-      projectRunWorkspaceContext,
     ],
   );
 
@@ -5982,13 +5965,12 @@ export function ProjectView({
               input.conversationId,
               commentId,
               'applying',
-              projectRunWorkspaceContext,
             ),
           ),
         ).catch(() => {});
       }
     }
-  }, [commitPreviewComments, enqueueChatSend, project.id, projectRunWorkspaceContext]);
+  }, [commitPreviewComments, enqueueChatSend, project.id]);
 
   const handleSend = useCallback(
     async (
@@ -7798,7 +7780,6 @@ export function ProjectView({
               comment.conversationId,
               comment.id,
               'open',
-              projectRunWorkspaceContext,
             ),
           ),
         ).catch(() => {});
@@ -7817,7 +7798,7 @@ export function ProjectView({
       );
       if (started) removeQueuedChatSend(id);
     })();
-  }, [armSlideNavForQueuedSend, commitPreviewComments, currentConversationBusy, handleSend, handleStop, prioritizeQueuedChatSend, project.id, removeQueuedChatSend, projectRunWorkspaceContext]);
+  }, [armSlideNavForQueuedSend, commitPreviewComments, currentConversationBusy, handleSend, handleStop, prioritizeQueuedChatSend, project.id, removeQueuedChatSend]);
 
   useEffect(() => {
     if (currentConversationBusy) {
