@@ -426,7 +426,15 @@
   }
 
   .entry-top-right-cluster .updater-popup__footer {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
     gap: 6px;
+  }
+
+  .entry-top-right-cluster .updater-popup__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
   .entry-top-right-cluster .updater-popup__actions,
