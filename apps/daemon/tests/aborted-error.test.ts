@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { isAbortedOperationError } from '../src/integrations/aborted-error.js';
 
-// `runVelaCommand` marks deliberate cancellation with `name: 'AbortError'`
+// Command runners mark deliberate cancellation with `name: 'AbortError'`
 // and `code: 'ABORT_ERR'`, while timeouts and transport failures remain real
 // errors. This predicate must preserve that distinction for every caller.
 describe('isAbortedOperationError', () => {
@@ -24,7 +24,7 @@ describe('isAbortedOperationError', () => {
   });
 
   it('does NOT treat a timeout as a cancellation', () => {
-    // `runVelaCommand`'s other termination reason. This is a real failure and
+    // A command runner's other termination reason. This is a real failure and
     // must keep reaching the failure logging + retry accounting.
     const error = new Error('vela command timed out after 30000ms');
     error.name = 'TimeoutError';

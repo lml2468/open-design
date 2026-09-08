@@ -5,7 +5,7 @@
  * Whether a rejection is an operation WE cancelled, rather than one that
  * failed.
  *
- * `runVelaCommand` marks a deliberate abort with `name: 'AbortError'` and
+ * Command runners mark a deliberate abort with `name: 'AbortError'` and
  * `code: 'ABORT_ERR'`, and keeps a separate `timeout` termination for real
  * deadline breaches. Callers may cancel in-flight commands as ordinary control
  * flow, so those cancellations must not be logged or counted as faults.

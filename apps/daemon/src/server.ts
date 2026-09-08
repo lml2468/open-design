@@ -5329,10 +5329,10 @@ export async function startServer({
     let activeDesignSystemId = null;
     let designSystemDigest = null;
     if (effectiveDesignSystemId) {
-      const designSystemListOptions = designSystemWorkspaceId
+      const designSystemListOptions = projectWorkspaceId
         ? {
-            workspaceId: designSystemWorkspaceId,
-            workspaceMemberId: designSystemMemberId || null,
+            workspaceId: projectWorkspaceId,
+            workspaceMemberId: projectCreatorMemberId || null,
           }
         : {};
       let systems = await listAllDesignSystems(designSystemListOptions);

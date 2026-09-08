@@ -113,7 +113,7 @@ describe('POST /api/plugins/:id/uninstall — workspace ownership gate', () => {
     expect(share.status).toBe(404);
   });
 
-  it('lets another same-Workspace member read a Team plugin detail', async () => {
+  it('does not expose a legacy Team plugin to another Workspace member', async () => {
     const pluginId = `wsgate-team-read-${Date.now()}`;
     await seedPluginFolder(pluginId);
     bindPluginToWorkspace(pluginId, 'ws-gate-team-read', 'member-owner');
@@ -126,7 +126,7 @@ describe('POST /api/plugins/:id/uninstall — workspace ownership gate', () => {
       headers: workspaceHeaders('member-other', 'member', 'ws-gate-team-read'),
     });
 
-    expect(detail.status).toBe(200);
+    expect(detail.status).toBe(404);
   });
 
   it('rejects a non-owner, non-privileged member of the same workspace', async () => {
