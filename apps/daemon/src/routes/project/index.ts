@@ -3845,7 +3845,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
   registerProjectConversationRoutes(app, {
     ...ctx,
     enforceWorkspaceProjectMutation,
-    authorizeProjectRequest,
     sendApiError,
   });
 

@@ -38,7 +38,6 @@ import { isKnownReasoningEffort, resolveModelForServiceTier } from '../runtimes/
 import { googleStreamGenerateContentUrl } from '../integrations/google-models.js';
 import { createRoleMarkerGuard } from '../role-marker-guard.js';
 import { authorizeReasoningEgress, sendReasoningEgressDenial } from '../reasoning-egress.js';
-import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
 
 // Allowlist for the `/feedback` route. Mirrors the
 // ChatMessageFeedbackReasonCode union in packages/contracts/src/api/chat.ts.
@@ -58,9 +57,7 @@ const FEEDBACK_REASON_ALLOWLIST: ReadonlySet<string> = new Set([
   'other',
 ]);
 
-export interface RegisterChatRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'chat' | 'agents' | 'critique' | 'validation' | 'lifecycle' | 'paths' | 'telemetry' | 'appConfig'> {
-  authorizeProjectRequest: AuthorizeProjectRequest;
-}
+export type RegisterChatRoutesDeps = RouteDeps<'db' | 'design' | 'http' | 'chat' | 'agents' | 'critique' | 'validation' | 'lifecycle' | 'paths' | 'telemetry' | 'appConfig'>;
 
 export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
   const { db, design } = ctx;
@@ -138,12 +135,6 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
     if (!run || typeof run.projectId !== 'string' || !run.projectId) {
       return sendApiError(res, 404, 'NOT_FOUND', 'run not found');
     }
-    if (!await ctx.authorizeProjectRequest(
-      req,
-      res,
-      run.projectId,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
     // Drop anything outside the contract-side reason allowlist and
     // deduplicate; otherwise a malformed or replayed client payload could
     // create unknown Langfuse categories or duplicate score ids in the
@@ -430,12 +421,6 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
   app.post(
     '/api/projects/:projectId/critique/:runId/interrupt',
     async (req, res) => {
-      if (!await ctx.authorizeProjectRequest(
-        req,
-        res,
-        req.params.projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
       critiqueInterruptHandler(req, res);
     },
   );
@@ -455,12 +440,6 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
   app.get(
     '/api/projects/:projectId/critique/:runId/artifact',
     async (req, res) => {
-      if (!await ctx.authorizeProjectRequest(
-        req,
-        res,
-        req.params.projectId,
-        { mode: 'read', allowNavigationQuery: true },
-      )) return;
       await critiqueArtifactHandler(req, res);
     },
   );
@@ -1585,22 +1564,6 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
         'projectId is required and must be a safe identifier',
       );
     }
-    // The provider completion may immediately request a media tool that writes
-    // into this project. Authorize the whole loop before URL resolution,
-    // upstream egress, credential seeding, or tool execution so a read-only
-    // Team member cannot spend a BYOK key or mutate the creator's files.
-    //
-    // The shared gate preserves the signed-out/local compatibility contract:
-    // a project with no persisted Workspace binding is accepted without
-    // consulting cloud authority. Only a bound project must prove the exact
-    // creator-capable Workspace identity.
-    if (!await ctx.authorizeProjectRequest(
-      req,
-      res,
-      projectId,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
-
     const effectiveBaseUrl = baseUrl || opts.defaultBaseUrl;
     const validated = await validateExternalApiBaseUrl(effectiveBaseUrl);
     if (validated.error) {

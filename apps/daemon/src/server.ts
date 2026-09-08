@@ -11934,7 +11934,6 @@ export async function startServer({
     db,
     design,
     http: httpDeps,
-    authorizeProjectRequest,
     paths: pathDeps,
     chat: { prepareOdNextInitialPromptBundle, startChatRun },
     agents: agentDeps,
