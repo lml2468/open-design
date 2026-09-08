@@ -128,11 +128,9 @@ export interface RegisterProjectCommentRoutesDeps extends RouteDeps<'db' | 'proj
     context: WorkspaceCollabContext | null,
   ) => boolean | void;
   /**
-   * Fired when the comment list is read. The hub push channel marks closed
-   * projects comment-dirty instead of pulling eagerly; the first read after
-   * opening consumes that mark and awaits an immediate cloud pull before the
-   * list is serialized, so an opened project catches up in its first response
-   * instead of requiring a second read after the next poll tick.
+   * Optional freshness hook fired before the comment list is serialized.
+   * Implementations may await a remote pull so the first response after
+   * opening a project already includes newly available comments.
    */
   onCommentsRead?: (
     projectId: string,

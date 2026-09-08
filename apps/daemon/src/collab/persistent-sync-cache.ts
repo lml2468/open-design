@@ -1,5 +1,5 @@
-// Persistent half of the workspace sync design (SSE push marks dirty + local
-// snapshot + digest token compare).
+// Persistent half of the workspace sync design: local snapshot plus remote
+// digest-token comparison.
 //
 // This layer sits BELOW the in-memory stale-while-revalidate caches in
 // server.ts. They answer "the same page asked twice in one second"; this one
@@ -61,8 +61,8 @@ export interface PersistentSyncCache<T> {
   /**
    * Drop the persisted snapshot for the key last used.
    *
-   * Only for the moments we KNOW the payload changed (a local share/unshare, a
-   * hub event). Correctness does not depend on it — a changed payload moves the
+   * Only for the moments we KNOW the payload changed (for example, a local
+   * share/unshare). Correctness does not depend on it — a changed payload moves the
    * cloud token, which already defeats reuse — but it keeps an invalidated
    * entry from surviving in the database across a restart.
    */

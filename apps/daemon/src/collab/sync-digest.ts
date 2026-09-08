@@ -14,9 +14,9 @@
 // without moving any timestamp, and that makes ordering meaningless. Empty
 // tables produce values like `'0:0'` / `'0'`, so a token is never SQL null.
 //
-// Only the `vela` workspace-context source has a hub to ask, so a dev daemon
-// pointed at anything else resolves to null rather than dialing production —
-// the same gate `startHubEventsSubscriber`'s endpoint resolver uses.
+// Only the `vela` workspace-context source has a remote digest endpoint, so a
+// dev daemon pointed at anything else resolves to null rather than dialing a
+// production control plane.
 
 import { readVelaControlApiContext } from '../integrations/vela.js';
 
@@ -121,7 +121,7 @@ export function createSyncDigestReader(options: SyncDigestReaderOptions): SyncDi
   let cooldownUntil = 0;
 
   async function read(): Promise<SyncDigestReading | null> {
-    // Same gate as the hub events subscriber: no vela source, no hub.
+    // The digest exists only on the Vela control plane.
     if (env.OD_WORKSPACE_CONTEXT_SOURCE?.trim() !== 'vela') return null;
     if (now() < cooldownUntil) return null;
     const session = readSession(env);

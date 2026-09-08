@@ -66,12 +66,10 @@ describe('server workspace context authority wiring', () => {
   it('keeps directory Team authority and fences an unread A -> B -> A Settings transition', async () => {
     scratch = await mkdtemp(join(tmpdir(), 'od-context-authority-wiring-'));
     let directoryReads = 0;
-    let allowHubReady = true;
     const authorityUrl = await startAuthority({
       onDirectory: () => {
         directoryReads += 1;
       },
-      isHubReady: () => allowHubReady,
     });
     const velaBin = await writeVelaStub(scratch);
     setEnv({
@@ -124,7 +122,6 @@ describe('server workspace context authority wiring', () => {
     // without any directory/status read. The final credential identity is
     // byte-for-byte A again, so a cache keyed only by the current identity
     // would otherwise revive the old five-minute authority lease.
-    allowHubReady = false;
     const directoryReadsBeforeCredentialRoundTrip = directoryReads;
     await putAmrApiUrl('https://account-b.example');
     await putAmrApiUrl(authorityUrl);
@@ -185,7 +182,6 @@ async function putAmrApiUrl(apiUrl: string): Promise<void> {
 
 async function startAuthority(callbacks: {
   onDirectory: () => void;
-  isHubReady?: () => boolean;
 }): Promise<string> {
   authority = createServer((req, res) => {
     if (req.url === '/api/v1/workspaces' && req.method === 'GET') {
@@ -202,34 +198,6 @@ async function startAuthority(callbacks: {
           lifecycleState: 'active',
         }],
       }));
-      return;
-    }
-    if (req.url === '/api/v1/collab/events' && req.method === 'GET') {
-      res.writeHead(200, {
-        'cache-control': 'no-cache',
-        connection: 'keep-alive',
-        'content-type': 'text/event-stream',
-      });
-      if (callbacks.isHubReady?.() === false) return;
-      res.write(
-        `event: ready\ndata: ${JSON.stringify({
-          workspaceId: WORKSPACE_ID,
-          capabilities: [
-            'workspace-member-events-v1',
-            'workspace-event-listener-status-v1',
-          ],
-          listenerEpoch: 'authority-test',
-          listenerHealth: 'healthy',
-          sourceGap: false,
-        })}\n\n`,
-      );
-      res.write(
-        'event: heartbeat\ndata: ' + JSON.stringify({
-          listenerEpoch: 'authority-test',
-          listenerHealth: 'healthy',
-          sourceGap: false,
-        }) + '\n\n',
-      );
       return;
     }
     res.writeHead(404, { 'content-type': 'application/json' });

@@ -20,7 +20,7 @@ export interface SwrCache<T> {
   /**
    * Drop the cached value for the key last used, so the next read is a real
    * fetch instead of the stale one. Only needed for the moments a caller KNOWS
-   * the underlying data changed (a local mutation, a hub push) — correctness
+   * the underlying data changed (for example, a local mutation) — correctness
    * does not depend on it, since the fetcher will naturally refresh once
    * `freshMs` elapses, but without it a just-made change can take up to that
    * long (or longer, behind a slower client poll) to become visible.

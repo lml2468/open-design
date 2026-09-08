@@ -47,8 +47,7 @@ export interface ScopedVelaTeamProjectCatalogClientCache
   extends VelaTeamProjectCatalogClient {
   /**
    * Invalidate one verified principal, or every principal when a caller only
-   * knows that the shared catalog changed (for example after an unshare or a
-   * hub event).
+   * knows that the shared catalog changed (for example after an unshare).
    */
   invalidate(principal?: ResourceHubPrincipal): void;
   /** Invalidate every member-scoped entry for one exact Workspace. */

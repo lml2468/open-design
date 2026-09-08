@@ -1,23 +1,7 @@
-// Realtime reconciliation of the local `workspace_projects` SQLite table
-// against Vela's team-project catalog — the remote source of truth for "is
-// project X still shared to my team, and who owns it."
-//
-// Two existing daemon triggers already learn about a team-catalog change:
-//   - `startHubEventsSubscriber`'s `team-projects-changed` push (server.ts).
-//   - `workspaceInvalidationPoller`'s ~15s diff-and-signal cadence
-//     (collab/workspace-invalidation-poller.ts).
-// Both used to do nothing more than invalidate the DISPLAY cache
-// (`teamProjectsDisplayCache`) and nudge the web to refetch — the local
-// `workspace_projects` row itself was never re-examined, so a row this
-// daemon had already bound could silently disagree with reality forever
-// (the concrete, repeatedly-reported case: an owner unshares a project and a
-// member's stale local "team" mirror remains directly readable after its
-// authoritative catalog membership disappears). This
-// module closes that gap: `handleHubTeamProjectsChanged` and
-// `handlePolledWorkspaceInvalidation` below hook BOTH existing triggers to
-// also run `reconcileWorkspaceProjectsWithRemote`, a real read-modify-write
-// pass over this daemon's own team rows. No new polling loop is introduced —
-// both hooks ride the cadence their trigger already has.
+// Reconciliation primitives for comparing the local `workspace_projects`
+// SQLite table with the authoritative remote team-project catalog. Callers
+// provide the exact Workspace identity and a complete catalog read; this
+// module owns the deterministic bind, demote, revoke, and metadata decisions.
 //
 // Scope: PROJECTS only (`workspace_projects`). Plugins / skills / design
 // systems have their own generic `workspace_resources` table and are
@@ -40,7 +24,6 @@
 //     reaches — an ALREADY-bound row the remote catalog no longer confirms —
 //     and runs proactively instead of waiting for the next list request.
 
-import type { WorkspaceInvalidationSignal } from './workspace-invalidation-poller.js';
 import type { ResourceHubPrincipal } from './resource-principal.js';
 
 /** This daemon's one local `workspace_projects` row for a project, as far as
@@ -494,8 +477,8 @@ export async function reconcileWorkspaceProjectsWithRemote(
   };
 }
 
-/** Reconcile only the project named by a metadata hub event. The catalog read
- * remains authoritative, while local mutation is intentionally targeted. */
+/** Reconcile only the requested project's metadata. The catalog read remains
+ * authoritative, while local mutation is intentionally targeted. */
 export async function reconcileWorkspaceProjectMetadataWithRemote(
   deps: WorkspaceProjectsReconcilerDeps,
   projectId: string,
@@ -528,61 +511,4 @@ export async function reconcileWorkspaceProjectMetadataWithRemote(
     deps.onError?.(error);
     return false;
   }
-}
-
-/**
- * Hub → daemon handling for the `team-projects-changed` push (see
- * `startHubEventsSubscriber`'s `onEvent` in server.ts). Sibling of
- * `handleHubWorkspaceContextChanged` just above it in that file: besides
- * refreshing the display cache, this runs a real `workspace_projects`
- * reconciliation pass first, so a member whose owner just unshared a project
- * (or who just gained access to a new one) converges immediately instead of
- * waiting for the ~15s poller.
- *
- * Extracted as its own named, exported step for the same reason
- * `handleHubWorkspaceContextChanged` is: directly unit-testable without
- * standing up a real hub connection.
- */
-export function handleHubTeamProjectsChanged(
-  refreshTeamProjects: () => void,
-  reconcileWorkspaceProjects: () => Promise<unknown>,
-): Promise<void> {
-  // Refresh only after the authoritative catalog diff has been persisted; an
-  // eager refresh can race the revoke write and retain stale Team metadata.
-  return reconcileWorkspaceProjects()
-    .then(() => refreshTeamProjects())
-    .catch(() => undefined);
-}
-
-/** Refresh immediately for catalog-backed reads, then refresh once more only
- * after a targeted local metadata write so SQLite-backed views converge. */
-export function handleHubProjectMetadataChanged(
-  refreshProjectMetadata: () => void,
-  reconcileProjectMetadata: () => Promise<boolean>,
-): Promise<void> {
-  refreshProjectMetadata();
-  return reconcileProjectMetadata()
-    .then((changed) => {
-      if (changed) refreshProjectMetadata();
-    })
-    .catch(() => undefined);
-}
-
-/**
- * `workspaceInvalidationPoller`'s internal change callback (server.ts). The
- * poller stays a pure "diff and signal" utility
- * (`collab/workspace-invalidation-poller.ts`) with no opinion on
- * `workspace_projects`; this is the one seam where a `team-projects-changed`
- * signal kicks the real reconciliation — the poller's own ~15s-cadence
- * twin of `handleHubTeamProjectsChanged` above, for daemons that are signed
- * in but whose hub SSE channel is down (the poller is the sole delivery
- * mechanism in that state, per `startHubEventsSubscriber`'s own doc comment).
- */
-export function handlePolledWorkspaceInvalidation(
-  payload: WorkspaceInvalidationSignal,
-  reconcileWorkspaceProjects: () => Promise<unknown>,
-): void {
-  if (payload.type !== 'team-projects-changed') return;
-  void reconcileWorkspaceProjects()
-    .catch(() => undefined);
 }

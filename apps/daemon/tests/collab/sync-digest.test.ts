@@ -86,8 +86,8 @@ describe('createSyncDigestReader', () => {
   it('stays off the wire unless the workspace source is vela', async () => {
     let called = 0;
     const read = createSyncDigestReader({
-      // A dev daemon on any other source has no hub to ask and must not dial
-      // production — the same gate the hub events subscriber uses.
+      // A dev daemon on any other source has no remote digest to ask and must
+      // not dial a production control plane.
       env: { OD_WORKSPACE_CONTEXT_SOURCE: 'stub' },
       getWorkspaceId: () => 'ws-1',
       readSession: () => session(),

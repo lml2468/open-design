@@ -830,30 +830,16 @@ import {
   createWorkspaceDirectoryAuthorityBroker,
   createWorkspaceContextProviderFromEnv,
   fetchVelaWorkspaceDirectory,
-  resolveVelaWorkspaceHubEventsEndpoint,
   velaWorkspaceDirectoryIdentity,
   workspaceContextFromDirectoryItem,
 } from './collab/vela-workspace-context.js';
 import { verifyWorkspaceRequestContext } from './collab/request-workspace-context.js';
-import {
-  startHubEventsSubscriber,
-  WORKSPACE_DIRECTORY_EVENTS_CAPABILITY,
-} from './collab/hub-events-subscriber.js';
-import {
-  createWorkspaceAuthorityHealthCoordinator,
-  resolveWorkspaceAuthorityCacheMode,
-} from './collab/workspace-authority-health.js';
+import { resolveWorkspaceAuthorityCacheMode } from './collab/workspace-authority-health.js';
 import {
   recordWorkspaceAuthorityDecision,
   recordWorkspaceAuthorityInvalidation,
-  recordWorkspaceAuthorityRealtimeTransition,
-  recordWorkspaceAuthorityRevocationClear,
   recordWorkspaceAuthoritySuppressedRequest,
 } from './metrics/workspace-authority.js';
-import {
-  createWorkspaceHubSubscriptionManager,
-  type WorkspaceHubSubscriptionManager,
-} from './collab/workspace-hub-subscriptions.js';
 import { createProjectContentTransferStateStore } from './collab/project-content-transfer-state.js';
 import {
   emitSharedProjectPullTiming,
@@ -868,7 +854,6 @@ import {
 import { createPersistentSyncCache } from './collab/persistent-sync-cache.js';
 import { createSwrCache } from './collab/swr-cache.js';
 import { readVelaControlApiContext } from './integrations/vela.js';
-import { createEventRefreshCoordinator } from './collab/event-refresh-coordinator.js';
 import { createWorkspaceExactAuthorityCache } from './collab/workspace-exact-authority-cache.js';
 import {
   isUnmaterializedSharedPlaceholder,
@@ -882,18 +867,7 @@ import {
   type ResourceHubPrincipal,
 } from './collab/resource-principal.js';
 import { createCollabCloudClientFromEnv } from './integrations/collab-cloud.js';
-import { createWorkspaceInvalidationPoller } from './collab/workspace-invalidation-poller.js';
 import { createWorkspaceExactContextCache } from './collab/workspace-exact-context-cache.js';
-import {
-  handleHubProjectMetadataChanged,
-  handleHubTeamProjectsChanged,
-  handlePolledWorkspaceInvalidation,
-  reconcileWorkspaceProjectMetadataWithRemote,
-  reconcileWorkspaceProjectsWithRemote,
-  reconcilerRemoteTeamProjects,
-  type LocalTeamProjectBinding,
-  type WorkspaceProjectsReconcilerDeps,
-} from './collab/workspace-projects-reconciler.js';
 import { createVelaCliCollabClientFromEnv } from './collab/vela-cli-collab-client.js';
 import {
   createScopedVelaTeamProjectCatalogClientCache,
@@ -1372,68 +1346,6 @@ function emitProjectEvent(projectId, payload) {
   }
   if (sinks.size === 0) activeProjectEventSinks.delete(projectId);
   return true;
-}
-
-function hubEventRefreshToken(event: {
-  type?: string;
-  revision?: string;
-  workspaceMemberId?: string;
-  memberId?: string;
-  projectId?: string;
-  resourceId?: string;
-  seq?: number;
-  version?: number;
-  at?: string;
-}): string | undefined {
-  const scope = [
-    event.type ?? '',
-    event.workspaceMemberId ?? '',
-    event.memberId ?? '',
-    event.projectId ?? '',
-    event.resourceId ?? '',
-  ].join(':');
-  if (event.revision) return `${scope}:revision:${event.revision}`;
-  if (event.seq != null) return `${scope}:seq:${event.seq}`;
-  if (event.version != null) return `${scope}:version:${event.version}`;
-  if (event.at) return `${scope}:at:${event.at}`;
-  return undefined;
-}
-
-/**
- * Hub → daemon handling for the `workspace-context-changed` event (see
- * `startHubEventsSubscriber`'s `onEvent` below). Vela sends this same event
- * both for directory changes and membership changes (e.g. removal from a
- * team). Besides forwarding the thin signal to the web, this kicks one
- * immediate background reconciliation cycle. Request mutations independently
- * perform fresh exact-scope authority checks and do not depend on this poll.
- *
- * Extracted as its own named, exported step (rather than inlined in the
- * switch) so this invariant is directly unit-testable without standing up a
- * real hub connection.
- */
-export function handleHubWorkspaceContextChanged(
-  _workspaceId: string,
-  pollWorkspaceInvalidation: () => Promise<void>,
-  invalidateWorkspaceDirectory: () => void = () => undefined,
-): Promise<void> {
-  // Retire the settled authority generation before either the web or the
-  // daemon can start a refresh. A directory request that began before this
-  // event is allowed to finish for its original caller, but the broker will
-  // not let it repopulate the post-event generation.
-  invalidateWorkspaceDirectory();
-  return pollWorkspaceInvalidation().catch(() => undefined);
-}
-
-/** Terminal counterpart to workspace-context-changed. Vela has already
- * re-derived the stream principal and is closing the connection, so local
- * directory authority must be retired synchronously before reconciliation. */
-export function handleHubWorkspaceAccessRevoked(
-  _workspaceId: string,
-  pollWorkspaceInvalidation: () => Promise<void>,
-  invalidateWorkspaceDirectory: () => void,
-): void {
-  invalidateWorkspaceDirectory();
-  void pollWorkspaceInvalidation().catch(() => undefined);
 }
 
 // Windows ENAMETOOLONG mitigation constants
@@ -3210,7 +3122,6 @@ export async function startServer({
     workspaceDirectoryAuthority.fresh;
   const fetchFreshBackgroundWorkspaceDirectory =
     workspaceDirectoryAuthority.backgroundFresh;
-  let workspaceHubSubscriptions: WorkspaceHubSubscriptionManager | null = null;
   const verifyExplicitWorkspaceRequestContext = async (input: {
     req: any;
     requireTeam?: boolean;
@@ -3477,7 +3388,7 @@ export async function startServer({
       ...input,
     }),
   });
-  let workspaceHubAccountIdentity = velaWorkspaceDirectoryIdentity(
+  let workspaceAccountIdentity = velaWorkspaceDirectoryIdentity(
     readVelaControlApiContext,
     configuredAmrEnv(),
   );
@@ -3486,18 +3397,17 @@ export async function startServer({
     workspaceExactAuthorityCache.resetIdentity();
     workspaceExactContextCache.resetIdentity();
   };
-  const refreshWorkspaceHubAccountIdentity = (): void => {
+  const refreshWorkspaceAccountIdentity = (): void => {
     const currentIdentity = velaWorkspaceDirectoryIdentity(
       readVelaControlApiContext,
       configuredAmrEnv(),
     );
-    if (currentIdentity === workspaceHubAccountIdentity) return;
-    workspaceHubAccountIdentity = currentIdentity;
+    if (currentIdentity === workspaceAccountIdentity) return;
+    workspaceAccountIdentity = currentIdentity;
     resetWorkspaceIdentityCaches();
-    workspaceHubSubscriptions?.refreshEndpoints();
   };
   const fetchWorkspaceDirectoryForAccountSurface = () => {
-    refreshWorkspaceHubAccountIdentity();
+    refreshWorkspaceAccountIdentity();
     return fetchWorkspaceDirectory();
   };
   const workspaceContextProvider = workspaceExactContextCache.provider;
@@ -3505,7 +3415,7 @@ export async function startServer({
     req: unknown,
     requestedWorkspaceId?: string,
   ): WorkspaceCollabContext | null => {
-    refreshWorkspaceHubAccountIdentity();
+    refreshWorkspaceAccountIdentity();
     const claimed = workspaceResourceContextFromRequest(req);
     if (!claimed || claimed === 'missing') return null;
     if (
@@ -3523,7 +3433,7 @@ export async function startServer({
       : null;
   };
   const verifyWorkspaceContextReadAuthority = async (req: unknown) => {
-    refreshWorkspaceHubAccountIdentity();
+    refreshWorkspaceAccountIdentity();
     const claimed = workspaceResourceContextFromRequest(req);
     if (claimed && claimed !== 'missing') {
       const cached = workspaceExactAuthorityCache.cached(
@@ -3939,172 +3849,6 @@ export async function startServer({
       updatedAt: SYNC_KEEPS_UPDATED_AT,
     });
   };
-  // Collab realtime reconciliation: react to a `team-projects-changed` signal
-  // (hub push OR the 15s poller's own diff, wired below) by actually
-  // re-checking this daemon's `workspace_projects` rows against the remote
-  // catalog, not just refreshing the display cache. See
-  // `collab/workspace-projects-reconciler.ts` for the full design and its
-  // relationship to `reconcileUnboundProjectBeforeMove` /
-  // `reconcileLocalRowWithRemoteTeamAccess` (routes/project/index.ts), which
-  // this does NOT replace.
-  const workspaceProjectsReconcilerDeps = (
-    requestedWorkspaceId: string,
-  ): WorkspaceProjectsReconcilerDeps => {
-    // Capture the trigger's Workspace before the first await. Hub events pass
-    // their subscribed/event Workspace and pollers pass their persisted exact
-    // subscription scope. The directory then verifies that identity once, and
-    // the result is carried through every catalog/list/tombstone step below.
-    const capturedWorkspaceId = requestedWorkspaceId.trim();
-    return {
-      getWorkspaceIdentity: async () => {
-        if (!capturedWorkspaceId) return null;
-        const directory = await fetchWorkspaceDirectory().catch(() => ({
-          ok: false,
-          items: [],
-        }));
-        if (!directory.ok) return null;
-        const scope = teamResourceRequestScopeForWorkspaceId(
-          directory.items,
-          capturedWorkspaceId,
-        );
-        if (!scope) return null;
-        return {
-          workspaceId: capturedWorkspaceId,
-          workspaceMemberId: scope.principal.memberId,
-          principal: scope.principal,
-        };
-      },
-      // Membership, not display: a catalog row whose latest publish failed is
-      // still registered to its owner, so it must keep counting as "remote
-      // lists it" here even though the display list hides it. Judging this
-      // dep by the display read demoted a teammate's sync-failed mirror into
-      // a self-attributed personal draft (recvqzjnshIlOe) — see
-      // `reconcilerRemoteTeamProjects`'s invariant comment. Both sources run
-      // through `withoutLocallyUnsharedProjects` so a row this member just
-      // moved back to personal cannot be re-bound out from under the move
-      // while the hub deletion is still propagating.
-      // The membership read is deliberately UNCACHED (the raw catalog client,
-      // not the SWR-wrapped display caches): reconciliation only runs on
-      // team-projects-changed signals, and a ≤TTL-stale list here is exactly
-      // the shape that misreads a just-shared row as absent.
-      listRemoteTeamProjects: async (identity) => {
-        // An absent row is destructive evidence only when the complete,
-        // unfiltered catalog was read successfully. The display list hides
-        // failed/pending publishes, so falling back to it could mistake a
-        // partial view for a real unshare and revoke a valid mirror. Throwing
-        // here makes the reconciler fail closed and leave every local binding
-        // untouched until the authoritative transport is available again.
-        if (!velaCliWorkspaceTeamProjectCatalog) {
-          throw new Error('complete team project catalog unavailable');
-        }
-        return reconcilerRemoteTeamProjects({
-          listCatalogMembership: async () =>
-            (await withoutLocallyUnsharedProjects(
-              await velaCliWorkspaceTeamProjectCatalog.list(identity.principal),
-              {
-                workspaceId: identity.workspaceId,
-                workspaceMemberId: identity.workspaceMemberId,
-              },
-            )).map((record) => ({
-              projectId: record.projectId,
-              ownerMemberId: record.ownerMemberId,
-              displayName: record.displayName,
-              catalogRevisionAt: Number.isFinite(Date.parse(record.updatedAt))
-                ? Date.parse(record.updatedAt)
-                : null,
-              originProjectUpdatedAt: record.originProjectUpdatedAt,
-            })),
-          listDisplayTeamProjects: async () => {
-            throw new Error('display team project catalog is not authoritative');
-          },
-        });
-      },
-      // Materialization gate for the bind direction — see the dep's doc
-      // comment in workspace-projects-reconciler.ts. `getProject` is the same
-      // `projects`-table read `workspace_projects`' FOREIGN KEY points at.
-      hasLocalProject: (projectId) => getProject(db, projectId) != null,
-      listLocalTeamRows: (workspaceId): LocalTeamProjectBinding[] =>
-        listWorkspaceProjects(db, workspaceId)
-          .filter((row: any) => row.workspaceVisibility === 'team')
-          .map((row: any) => ({
-            projectId: row.id,
-            workspaceId: row.workspaceId,
-            visibility: row.workspaceVisibility,
-            resourceState: row.resourceState ?? null,
-            createdByWorkspaceMemberId: row.createdByWorkspaceMemberId ?? null,
-            resourceHubResourceId: row.resourceHubResourceId ?? null,
-            materializationPending:
-              projectIsUnmaterializedSharedPlaceholder(row.id),
-          })),
-      getLocalBinding: (projectId): LocalTeamProjectBinding | null => {
-        const row = getWorkspaceProjectByProjectId(db, projectId) as any;
-        if (!row) return null;
-        return {
-          projectId,
-          workspaceId: row.workspaceId,
-          visibility: row.visibility,
-          resourceState: row.resourceState ?? null,
-          createdByWorkspaceMemberId: row.createdByWorkspaceMemberId ?? null,
-          resourceHubResourceId: row.resourceHubResourceId ?? null,
-          materializationPending:
-            projectIsUnmaterializedSharedPlaceholder(projectId),
-        };
-      },
-      getLocalProjectMetadata: (projectId) => {
-        const project = getProject(db, projectId);
-        return project
-          ? { name: project.name, updatedAt: project.updatedAt }
-          : null;
-      },
-      applyMetadataRefresh: (projectId, patch) => {
-        // `patch.updatedAt` is the owner's origin project time carried in the
-        // catalog metadata, never the catalog row's retry/observation time.
-        updateProject(db, projectId, patch);
-      },
-      applyBind: (projectId, patch) => {
-        // `rebindWorkspaceProject` only corrects an EXISTING row (it never
-        // inserts — see its own doc comment in db.ts); a project this daemon
-        // has never locally bound at all needs `ensureWorkspaceProject`
-        // instead, seeded with the same patch so the fresh row is correct on
-        // arrival.
-        //
-        // Reconciling a binding against B's catalog changes no project content,
-        // so it must not restamp "last changed" — see SYNC_KEEPS_UPDATED_AT.
-        const synced = { ...patch, updatedAt: SYNC_KEEPS_UPDATED_AT };
-        if (rebindWorkspaceProject(db, projectId, synced)) return;
-        ensureWorkspaceProject(db, { projectId, ...synced });
-      },
-      applyDemote: (workspaceId, projectId, patch) => updateWorkspaceProject(db, workspaceId, projectId, {
-        ...patch,
-        updatedAt: SYNC_KEEPS_UPDATED_AT,
-      }),
-      applyRevoke: (workspaceId, projectId, patch) => {
-        // Write the binding denial before the metadata marker. A crash between
-        // the two operations therefore fails closed, never open. The
-        // transaction keeps the auditable marker and authority state aligned.
-        db.transaction(() => {
-          updateWorkspaceProject(db, workspaceId, projectId, {
-            ...patch,
-            updatedAt: SYNC_KEEPS_UPDATED_AT,
-          });
-          setTeamProjectMirrorRevoked(projectId, true);
-        })();
-      },
-      onError: (error) => console.warn('[od] workspace-projects reconciliation error:', error),
-    };
-  };
-  const reconcileWorkspaceProjectsFromRemote = (
-    requestedWorkspaceId: string,
-  ) => reconcileWorkspaceProjectsWithRemote(
-    workspaceProjectsReconcilerDeps(requestedWorkspaceId),
-  );
-  const reconcileWorkspaceProjectMetadataFromRemote = (
-    requestedWorkspaceId: string,
-    projectId: string,
-  ) => reconcileWorkspaceProjectMetadataWithRemote(
-    workspaceProjectsReconcilerDeps(requestedWorkspaceId),
-    projectId,
-  );
   const resolveSharedProject = async (
     projectId: string,
     scope?: TeamMirrorPullScope | null,
@@ -4525,26 +4269,16 @@ export async function startServer({
     if (!teamMembersCache) return [];
     return context ? teamMembersCache(context) : [];
   };
-  /**
-   * Warm or revalidate both digest faces for one exact directory-verified
-   * Workspace/member identity. A UI switch uses the lightweight warm path;
-   * reconnect/source-gap recovery invalidates only that scope first so a
-   * still-fresh SWR entry cannot hide changes that happened while disconnected.
-   */
+  /** Warm both digest faces for one exact directory-verified identity. */
   const refreshWorkspaceDigestFaces = async (
     workspaceId: string,
-    options: { revalidate?: boolean; freshAuthority?: boolean } = {},
+    options: { freshAuthority?: boolean } = {},
   ): Promise<void> => {
     if (!workspaceId) return;
     const context =
       await resolveAuthoritativeTeamWorkspaceContext(workspaceId, {
         fresh: options.freshAuthority,
       });
-    if (options.revalidate) {
-      const scope = teamProjectsDisplayScopeFromContext(context);
-      if (scope) teamProjectsDisplayCache.invalidate(scope);
-      teamMembersCache?.invalidate(context ?? undefined);
-    }
     await Promise.all([
       teamProjectsForDisplay(context),
       teamMembersForDisplay(context),
@@ -4614,512 +4348,6 @@ export async function startServer({
       });
     },
   });
-  // Reconnect/source-gap recovery belongs to the Workspace whose upstream
-  // subscription observed the gap. Keep one signature state per Workspace so
-  // recovering subscribed A while B is the UI selection neither compares A
-  // against B's digest nor drops A's refresh.
-  const scopedWorkspaceInvalidationPollers = new Map<
-    string,
-    ReturnType<typeof createWorkspaceInvalidationPoller>
-  >();
-  const workspaceInvalidationPollerFor = (workspaceIdInput: string) => {
-    const workspaceId = workspaceIdInput.trim();
-    let poller = scopedWorkspaceInvalidationPollers.get(workspaceId);
-    if (!poller) {
-      poller = createWorkspaceInvalidationPoller({
-        getWorkspaceContext: async () => {
-          const context =
-            await resolveAuthoritativeTeamWorkspaceContext(workspaceId);
-          workspaceTypes.learn(context);
-          return context;
-        },
-        listTeamProjects: (context) => teamProjectsForDisplay(context),
-        listMembers: (context) => teamMembersForDisplay(context),
-        emit: (payload, context) => {
-          handlePolledWorkspaceInvalidation(
-            payload,
-            () => reconcileWorkspaceProjectsFromRemote(
-              context?.workspaceId ?? workspaceId,
-            ),
-          );
-        },
-        onPollSuppressed: () => recordWorkspaceAuthoritySuppressedRequest({
-          mode: workspaceAuthorityCacheMode,
-          source: 'directory',
-          reason: 'safety_floor',
-        }),
-        onError: (error) =>
-          console.warn(
-            `[od] workspace ${workspaceId} invalidation recovery error:`,
-            error,
-          ),
-      });
-      scopedWorkspaceInvalidationPollers.set(workspaceId, poller);
-    }
-    return poller;
-  };
-  const pollWorkspaceInvalidationForWorkspace = (
-    workspaceIdInput: string,
-  ): Promise<void> => {
-    const workspaceId = workspaceIdInput.trim();
-    if (!workspaceId) return Promise.resolve();
-    return workspaceInvalidationPollerFor(workspaceId).pollOnce();
-  };
-  const workspaceAuthorityHealth = createWorkspaceAuthorityHealthCoordinator({
-    mode: workspaceAuthorityCacheMode,
-    catchUp: async (workspaceId) => {
-      // A healthy transport is not enough to suppress legacy polling. First
-      // cross a fresh directory boundary and close the exact Workspace gap.
-      workspaceDirectoryAuthority.invalidate('catch_up');
-      workspaceExactAuthorityCache.invalidate(workspaceId);
-      workspaceExactContextCache.invalidate(workspaceId, 'catch_up');
-      const directory = await fetchFreshBackgroundWorkspaceDirectory();
-      const membership = directory.ok
-        ? directory.items.find((item) =>
-            item.workspaceId === workspaceId
-            && item.memberStatus === 'active'
-            && item.lifecycleState !== 'deleted')
-        : undefined;
-      if (!membership) {
-        throw new Error('exact workspace directory catch-up was unavailable');
-      }
-      const exactContext = await workspaceExactContextCache.refresh(
-        { workspaceId },
-        'catch_up',
-      );
-      if (!exactContext || exactContext.workspaceId !== workspaceId) {
-        throw new Error('exact workspace catch-up was unavailable');
-      }
-      await refreshWorkspaceDigestFaces(workspaceId, {
-        revalidate: true,
-      });
-      await pollWorkspaceInvalidationForWorkspace(workspaceId);
-    },
-    setDirectoryPollingHealthy: (workspaceId, healthy) =>
-      workspaceInvalidationPollerFor(workspaceId).setRealtimeHealthy(healthy),
-    setContextCachingHealthy: (workspaceId, healthy) => {
-      workspaceExactAuthorityCache.setRealtimeHealthy(workspaceId, healthy);
-      workspaceExactContextCache.setRealtimeHealthy(workspaceId, healthy);
-    },
-    onDecision: (input) => recordWorkspaceAuthorityDecision({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onError: (error) => {
-      console.warn(
-        '[od] workspace authority catch-up failed; retaining legacy polling:',
-        String(error),
-      );
-    },
-  });
-  // Collab realtime hop-1: cloud hub → daemon push channel. The hub emits the
-  // same thin invalidation signals the web would otherwise discover by
-  // polling. Every upstream stream comes from an explicit leased Workspace
-  // interest; reconnect/source-gap handlers run one exact-scope poller cycle
-  // to close the disconnect gap.
-  // Thin events are invalidation hints, so repeated events for one resource
-  // may share refresh work. Authorization revocation and project content stay
-  // outside this coordinator: both have immediate, domain-specific handling.
-  const hubEventRefreshes = createEventRefreshCoordinator({
-    onError: (error, key) => {
-      console.warn(`[od] hub event refresh failed key=${key}:`, String(error));
-    },
-  });
-  const workspaceDirectoryRefreshes = createEventRefreshCoordinator({
-    // Directory events are account-wide and can be duplicated over several
-    // Workspace streams. Preserve an immediate leading refresh plus the final
-    // state while bounding a sustained storm to one upstream read per second.
-    minIntervalMs: 1_000,
-    onError: (error) => {
-      console.warn('[od] workspace directory event refresh failed:', String(error));
-    },
-  });
-  const directoryConnectionIdentities = new Map<string, string>();
-  const directoryHealthyConnections = new Set<string>();
-  const directoryConnectionKey = (
-    workspaceId: string,
-    identityKey: string,
-  ) => `${identityKey}\0${workspaceId}`;
-  const currentWorkspaceDirectoryIdentity = () =>
-    velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    );
-  const syncWorkspaceDirectoryRealtimeHealth = (): void => {
-    const currentIdentity = currentWorkspaceDirectoryIdentity();
-    workspaceDirectoryAuthority.setRealtimeHealthy(
-      [...directoryHealthyConnections].some((key) =>
-        key.startsWith(`${currentIdentity}\0`)),
-    );
-  };
-  const requestWorkspaceDirectoryRefresh = (
-    reason: 'event_dirty' | 'auth_reject' | 'catch_up',
-    token?: string,
-    expectedIdentity = currentWorkspaceDirectoryIdentity(),
-  ): void => {
-    workspaceDirectoryRefreshes.request(
-      'workspace-directory',
-      async () => {
-        if (currentWorkspaceDirectoryIdentity() !== expectedIdentity) return;
-        workspaceDirectoryAuthority.invalidate(reason);
-        const directory = await fetchFreshBackgroundWorkspaceDirectory();
-        if (currentWorkspaceDirectoryIdentity() !== expectedIdentity) return;
-        if (!directory.ok) return;
-      },
-      token,
-    );
-  };
-  const refreshTeamProjects = (workspaceId: string): void => {
-    const exactWorkspaceId = workspaceId.trim();
-    if (!exactWorkspaceId) return;
-    teamProjectsDisplayCache.invalidateWorkspace(exactWorkspaceId);
-    workspaceTeamProjectCatalog?.invalidateWorkspace(exactWorkspaceId);
-    void (async () => {
-      const context = await resolveAuthoritativeTeamWorkspaceContext(exactWorkspaceId);
-      await teamProjectsForDisplay(context);
-    })().catch(() => undefined);
-  };
-  const startWorkspaceHubSubscriber = (subscribedWorkspaceId: string) =>
-    startHubEventsSubscriber({
-    resolveEndpoint: async () => {
-      // Same gating as the workspace-context provider: only the vela source
-      // has a hub to subscribe to (dev daemons must not dial production).
-      if (process.env.OD_WORKSPACE_CONTEXT_SOURCE?.trim() !== 'vela') return null;
-      return resolveVelaWorkspaceHubEventsEndpoint(
-        subscribedWorkspaceId,
-        process.env,
-        configuredAmrEnv(),
-      );
-    },
-    onStateChange: (state, connection) => {
-      if (state === 'disconnected') {
-        const identityKey =
-          connection.identityKey
-          ?? directoryConnectionIdentities.get(subscribedWorkspaceId);
-        if (
-          !identityKey
-          || directoryConnectionIdentities.get(subscribedWorkspaceId)
-            === identityKey
-        ) {
-          directoryConnectionIdentities.delete(subscribedWorkspaceId);
-        }
-        if (identityKey) {
-          directoryHealthyConnections.delete(
-            directoryConnectionKey(subscribedWorkspaceId, identityKey),
-          );
-        }
-        syncWorkspaceDirectoryRealtimeHealth();
-      }
-      console.info(`[od] hub events channel ${state}`);
-    },
-    onAuthorityHealthChange: ({
-      workspaceId,
-      identityKey,
-      healthy,
-      capabilities,
-      listenerStatus,
-    }) => {
-      if (
-        identityKey
-        && identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      const exactWorkspaceId = workspaceId ?? subscribedWorkspaceId;
-      const exactIdentityKey =
-        identityKey
-        ?? directoryConnectionIdentities.get(exactWorkspaceId)
-        ?? currentWorkspaceDirectoryIdentity();
-      if (capabilities.includes(WORKSPACE_DIRECTORY_EVENTS_CAPABILITY)) {
-        directoryConnectionIdentities.set(exactWorkspaceId, exactIdentityKey);
-      } else {
-        directoryConnectionIdentities.delete(exactWorkspaceId);
-      }
-      const connectionKey = directoryConnectionKey(
-        exactWorkspaceId,
-        exactIdentityKey,
-      );
-      if (
-        healthy
-        && capabilities.includes(WORKSPACE_DIRECTORY_EVENTS_CAPABILITY)
-      ) {
-        directoryHealthyConnections.add(connectionKey);
-      } else {
-        directoryHealthyConnections.delete(connectionKey);
-      }
-      syncWorkspaceDirectoryRealtimeHealth();
-      recordWorkspaceAuthorityRealtimeTransition({
-        mode: workspaceAuthorityCacheMode,
-        healthy,
-        memberEvents: capabilities.includes('workspace-member-events-v1'),
-        listenerStatus: capabilities.includes(
-          'workspace-event-listener-status-v1',
-        ),
-        sourceGap: listenerStatus?.sourceGap === true,
-      });
-      void workspaceAuthorityHealth.update({
-        workspaceId: exactWorkspaceId,
-        healthy,
-      });
-    },
-    onConnect: ({ reconnect, workspaceId, identityKey, capabilities }) => {
-      if (
-        identityKey
-        && identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      const verifiedWorkspaceId = workspaceId ?? subscribedWorkspaceId;
-      const verifiedIdentityKey =
-        identityKey ?? currentWorkspaceDirectoryIdentity();
-      if (capabilities.includes(WORKSPACE_DIRECTORY_EVENTS_CAPABILITY)) {
-        const hadDirectoryCarrier = [
-          ...directoryConnectionIdentities.values(),
-        ].includes(verifiedIdentityKey);
-        directoryConnectionIdentities.set(
-          verifiedWorkspaceId,
-          verifiedIdentityKey,
-        );
-        // One account signal is fanned to every capable stream. Only the first
-        // live carrier needs a snapshot boundary; additional Workspace streams
-        // would produce the same GET and are intentionally free.
-        if (!hadDirectoryCarrier) {
-          requestWorkspaceDirectoryRefresh(
-            'catch_up',
-            undefined,
-            verifiedIdentityKey,
-          );
-        }
-      }
-      console.info(
-        `[od] hub events workspace verified workspaceId=${workspaceId ?? 'unknown'} reconnect=${reconnect}`,
-      );
-    },
-    onDrop: ({ reason, eventName, expectedWorkspaceId, actualWorkspaceId }) => {
-      console.warn(
-        `[od] hub event dropped reason=${reason} event=${eventName} ` +
-          `expectedWorkspaceId=${expectedWorkspaceId ?? 'unknown'} ` +
-          `actualWorkspaceId=${actualWorkspaceId ?? 'unknown'}`,
-      );
-    },
-    onAccessRevoked: ({ workspaceId, identityKey, reason }) => {
-      if (
-        identityKey
-        && identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      const revocationReceivedAt = performance.now();
-      const exactWorkspaceId = workspaceId ?? subscribedWorkspaceId;
-      console.info(
-        `[od] hub workspace access revoked workspaceId=${exactWorkspaceId} reason=${reason ?? 'unknown'}`,
-      );
-      handleHubWorkspaceAccessRevoked(
-        exactWorkspaceId,
-        () => pollWorkspaceInvalidationForWorkspace(exactWorkspaceId),
-        () => {
-          workspaceDirectoryAuthority.invalidate('auth_reject');
-          workspaceExactAuthorityCache.invalidate(exactWorkspaceId);
-          workspaceExactContextCache.invalidate(
-            exactWorkspaceId,
-            'auth_reject',
-          );
-        },
-      );
-      recordWorkspaceAuthorityRevocationClear(
-        workspaceAuthorityCacheMode,
-        performance.now() - revocationReceivedAt,
-      );
-      requestWorkspaceDirectoryRefresh(
-        'auth_reject',
-        `revoked:${exactWorkspaceId}`,
-      );
-    },
-    onDirectoryEvent: (event, connection) => {
-      if (
-        connection.identityKey
-        && connection.identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      requestWorkspaceDirectoryRefresh(
-        'event_dirty',
-        event.at
-          ? [event.type, event.workspaceId, event.change, event.at].join(':')
-          : undefined,
-        connection.identityKey ?? currentWorkspaceDirectoryIdentity(),
-      );
-    },
-    onEvent: (event, connection) => {
-      if (
-        connection.identityKey
-        && connection.identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      const eventWorkspaceId =
-        event.workspaceId ?? subscribedWorkspaceId;
-      console.info(
-        `[od] hub workspace event received type=${event.type} ` +
-          `workspaceId=${eventWorkspaceId} ` +
-          `projectId=${event.projectId ?? 'unknown'} version=${event.version ?? 'unknown'}`,
-      );
-      switch (event.type) {
-        case 'team-projects-changed': {
-          // Catalog changed (share/unshare). Run a real `workspace_projects`
-          // reconciliation pass, then refresh the display cache.
-          hubEventRefreshes.request(
-            `team-projects:${eventWorkspaceId}`,
-            () => handleHubTeamProjectsChanged(
-              () => refreshTeamProjects(eventWorkspaceId),
-              () => reconcileWorkspaceProjectsFromRemote(
-                eventWorkspaceId,
-              ),
-            ),
-            hubEventRefreshToken(event),
-          );
-          break;
-        }
-        case 'project-metadata-changed': {
-          const targetProjectId = event.projectId?.trim() ?? '';
-          const refreshMetadata = () => {
-            refreshTeamProjects(eventWorkspaceId);
-            if (event.projectId) {
-              emitProjectEvent(event.projectId, {
-                type: 'project-metadata-changed',
-                projectId: event.projectId,
-                at: Date.now(),
-              });
-            }
-          };
-          hubEventRefreshes.request(
-            `project-metadata:${eventWorkspaceId}:${targetProjectId || '*'}`,
-            () => handleHubProjectMetadataChanged(
-              refreshMetadata,
-              targetProjectId
-                ? () => reconcileWorkspaceProjectMetadataFromRemote(
-                    eventWorkspaceId,
-                    targetProjectId,
-                  )
-                : async () => false,
-            ),
-            hubEventRefreshToken(event),
-          );
-          break;
-        }
-        case 'project-content-changed': {
-          // Content is fetched only by an explicit client pull. Keep the thin
-          // metadata nudge for an open legacy view so it can refresh status.
-          if (event.projectId && activeProjectEventSinks.has(event.projectId)) {
-            emitProjectEvent(event.projectId, {
-              type: 'project-metadata-changed',
-              projectId: event.projectId,
-              at: Date.now(),
-            });
-          }
-          break;
-        }
-        case 'workspace-context-changed':
-          // Cache invalidation is an authorization boundary and must happen for
-          // every event in the caller's turn. Only the downstream snapshot work
-          // is coalesced below.
-          workspaceDirectoryAuthority.invalidate('event_dirty');
-          workspaceExactAuthorityCache.invalidate(eventWorkspaceId);
-          workspaceExactContextCache.invalidate(
-            eventWorkspaceId,
-            'event_dirty',
-          );
-          hubEventRefreshes.request(
-            `workspace-context:${eventWorkspaceId}`,
-            () => handleHubWorkspaceContextChanged(
-              eventWorkspaceId,
-              () => pollWorkspaceInvalidationForWorkspace(eventWorkspaceId),
-            ),
-            hubEventRefreshToken(event),
-          );
-          break;
-        case 'workspace-members-changed':
-          workspaceDirectoryAuthority.invalidate('event_dirty');
-          workspaceExactAuthorityCache.invalidate(eventWorkspaceId);
-          workspaceExactContextCache.invalidate(
-            eventWorkspaceId,
-            'event_dirty',
-          );
-          hubEventRefreshes.request(
-            `workspace-context:${eventWorkspaceId}`,
-            () => handleHubWorkspaceContextChanged(
-              eventWorkspaceId,
-              () => pollWorkspaceInvalidationForWorkspace(eventWorkspaceId),
-            ),
-            hubEventRefreshToken(event),
-          );
-          break;
-        case 'team-resources-changed': {
-          if (event.resourceKind === 'project') {
-            hubEventRefreshes.request(
-              `team-projects:${eventWorkspaceId}`,
-              () => handleHubTeamProjectsChanged(
-                () => refreshTeamProjects(eventWorkspaceId),
-                () => reconcileWorkspaceProjectsFromRemote(eventWorkspaceId),
-              ),
-              hubEventRefreshToken(event),
-            );
-          }
-          break;
-        }
-      }
-    },
-    onReconnect: (connection) => {
-      if (
-        connection.identityKey
-        && connection.identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      // Close the disconnect gap: one catch-up cycle over the same reads the
-      // pollers watch, plus a comment pull for open projects.
-      void refreshWorkspaceDigestFaces(
-        subscribedWorkspaceId,
-        { revalidate: true },
-      )
-        .then(() =>
-          pollWorkspaceInvalidationForWorkspace(subscribedWorkspaceId),
-        )
-        .catch(() => undefined);
-      void reconcileWorkspaceProjectsFromRemote(subscribedWorkspaceId)
-        .catch(() => undefined);
-    },
-    onSourceGap: ({ workspaceId, identityKey, listenerEpoch }) => {
-      if (
-        identityKey
-        && identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      console.warn(
-        `[od] hub source gap detected listenerEpoch=${listenerEpoch} ` +
-          `workspaceId=${workspaceId ?? 'unknown'}`,
-      );
-      const exactWorkspaceId = workspaceId ?? subscribedWorkspaceId;
-      requestWorkspaceDirectoryRefresh(
-        'catch_up',
-        `source-gap:${listenerEpoch}`,
-        identityKey ?? currentWorkspaceDirectoryIdentity(),
-      );
-      void refreshWorkspaceDigestFaces(exactWorkspaceId, { revalidate: true })
-        .then(() => pollWorkspaceInvalidationForWorkspace(exactWorkspaceId))
-        .catch(() => undefined);
-      void reconcileWorkspaceProjectsFromRemote(exactWorkspaceId)
-        .catch(() => undefined);
-    },
-    onError: (error) => {
-      console.warn('[od] hub events channel error (will reconnect):', String(error));
-    },
-  });
-  workspaceHubSubscriptions = createWorkspaceHubSubscriptionManager({
-    start: startWorkspaceHubSubscriber,
-  });
-
 
   registerMemoryRoutes(app, {
     http: { createSseResponse, requireLocalDaemonRequest },
@@ -5768,7 +4996,7 @@ export async function startServer({
       // AMR credentials may be overridden through Settings. Observe every
       // completed write so even an A -> B -> A transition with no intervening
       // directory/status read fences exact authority from the old A session.
-      refreshWorkspaceHubAccountIdentity();
+      refreshWorkspaceAccountIdentity();
       void attributionService.processPending().catch((err: unknown) => {
         console.warn('[attribution] pending claim failed', err);
       });
@@ -13761,9 +12989,6 @@ export async function startServer({
       composioConnectorProvider.stopCatalogRefreshLoop();
       orbitService.stop();
       routineService?.stop();
-      workspaceHubSubscriptions?.dispose();
-      hubEventRefreshes.dispose();
-      workspaceDirectoryRefreshes.dispose();
     };
     const shutdownDaemonRuns = async () => {
       if (daemonShutdownStarted) return;

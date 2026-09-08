@@ -21,7 +21,6 @@ import {
   type VelaControlApiContext,
   type VelaUser,
 } from '../integrations/vela.js';
-import type { HubEventsEndpoint } from './hub-events-subscriber.js';
 import {
   createDevWorkspaceContextProvider,
   resolveWorkspaceSettingsUrl,
@@ -477,39 +476,6 @@ export function velaWorkspaceDirectoryIdentityForSession(
     session.configMtimeMs ?? '',
     credentialFingerprint,
   ].join(':');
-}
-
-/** Build one Vela hub endpoint from one captured control session. */
-function createVelaWorkspaceHubEventsEndpoint(
-  session: VelaControlApiContext | null,
-  workspaceIdInput: string,
-): HubEventsEndpoint | null {
-  const workspaceId = workspaceIdInput.trim();
-  if (!workspaceId || !session?.controlKey || !session.apiUrl) return null;
-  return {
-    url: new URL('/api/v1/collab/events', session.apiUrl).toString(),
-    workspaceId,
-    identityKey: velaWorkspaceDirectoryIdentityForSession(session),
-    headers: {
-      authorization: `Bearer ${session.controlKey}`,
-      'x-vela-workspace-id': workspaceId,
-    },
-  };
-}
-
-/**
- * Resolve a single merged session, then derive every authenticated hub field
- * from that immutable snapshot.
- */
-export function resolveVelaWorkspaceHubEventsEndpoint(
-  workspaceId: string,
-  env: NodeJS.ProcessEnv = process.env,
-  configuredEnv: Record<string, string> = {},
-): HubEventsEndpoint | null {
-  return createVelaWorkspaceHubEventsEndpoint(
-    readVelaControlApiContext(env, configuredEnv),
-    workspaceId,
-  );
 }
 
 /**

@@ -13,8 +13,8 @@ import { createPersistentSyncCache } from '../../src/collab/persistent-sync-cach
 import type { SyncDigest, SyncDigestReading } from '../../src/collab/sync-digest.js';
 import type { TeamProject } from '@open-design/contracts';
 
-// The persistent half of the workspace sync design: SSE marks dirty, B's
-// sync-digest hands out opaque comparison tokens, and this layer decides
+// The persistent half of the workspace sync design: B's sync-digest hands out
+// opaque comparison tokens, and this layer decides
 // whether the payload already on disk can stand in for a real round-trip.
 //
 // The reuse rule under test is three conditions AND-ed — local token, local

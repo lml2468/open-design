@@ -5,10 +5,9 @@
 // (routes/project/index.ts) — not a shallow "the function was called" check.
 //
 // The concrete, repeatedly-reported scenario this closes: a member's local
-// `workspace_projects` row keeps claiming `visibility: 'team'` forever after
-// the owner unshares (or deletes) the project, because neither the hub-push
-// nor the 15s poller ever re-examined the row — they only refreshed the
-// DISPLAY cache. See that file's header comment for the full design.
+// `workspace_projects` row keeps claiming `visibility: 'team'` after the owner
+// unshares (or deletes) the project unless a complete remote-catalog read
+// reconciles the durable row.
 import express from 'express';
 import type http from 'node:http';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
@@ -737,9 +736,9 @@ describe('reconcileWorkspaceProjectsWithRemote, verified through the real worksp
   // team catalog lists projects the member has NEVER opened or pulled. Those
   // projects have no local `projects` row, and `workspace_projects.project_id`
   // is a FOREIGN KEY into `projects(id)` (db.ts), so the bind fallback's
-  // INSERT threw SQLITE_CONSTRAINT_FOREIGNKEY on every single reconciliation
-  // pass (hub push + ~15s poller), forever — 4700+ log lines across restarts
-  // on the live member instance. Materializing a project is the open/pull
+  // INSERT threw SQLITE_CONSTRAINT_FOREIGNKEY on every reconciliation pass,
+  // forever — 4700+ log lines across restarts on the live member instance.
+  // Materializing a project is the open/pull
   // path's job (`ensureSharedProjectPlaceholder` / `registerPulledProject` in
   // routes/collab-sync.ts); the reconciler must SKIP what has never been
   // materialized here, exactly like its request-scoped sibling

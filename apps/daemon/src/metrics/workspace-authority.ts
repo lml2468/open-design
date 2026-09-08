@@ -6,8 +6,7 @@ export type WorkspaceAuthorityMetricSource =
   | 'cache'
   | 'directory'
   | 'current'
-  | 'billing'
-  | 'sse';
+  | 'billing';
 
 export type WorkspaceAuthorityMetricReason =
   | 'cold'
@@ -20,12 +19,7 @@ export type WorkspaceAuthorityMetricReason =
   | 'event_dirty'
   | 'auth_reject'
   | 'catch_up'
-  | 'safety_floor'
-  | 'mode_disabled'
-  | 'capability_missing'
-  | 'source_gap'
-  | 'unhealthy'
-  | 'healthy';
+  | 'unhealthy';
 
 export type WorkspaceAuthorityMetricOutcome =
   | 'allow'
@@ -54,26 +48,11 @@ export const workspaceAuthorityInvalidationsTotal = new Counter({
   registers: [register],
 });
 
-export const workspaceAuthorityRealtimeTransitionsTotal = new Counter({
-  name: 'open_design_workspace_authority_realtime_transitions_total',
-  help: 'Strict Workspace authority realtime health observations.',
-  labelNames: ['mode', 'health', 'member_events', 'listener_status', 'source_gap'] as const,
-  registers: [register],
-});
-
 export const workspaceAuthorityAgeMs = new Histogram({
   name: 'open_design_workspace_authority_age_ms',
   help: 'Age of cached Workspace authority when it is used for a local response.',
   labelNames: ['mode', 'source'] as const,
   buckets: [10, 100, 500, 1_000, 5_000, 10_000, 15_000, 30_000, 60_000, 300_000],
-  registers: [register],
-});
-
-export const workspaceAuthorityRevocationClearMs = new Histogram({
-  name: 'open_design_workspace_authority_revocation_clear_ms',
-  help: 'Time from receiving an access-revoked frame to clearing local authority state.',
-  labelNames: ['mode'] as const,
-  buckets: [0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1_000],
   registers: [register],
 });
 
@@ -105,7 +84,7 @@ export function recordWorkspaceAuthorityDecision(input: {
 export function recordWorkspaceAuthoritySuppressedRequest(input: {
   mode: WorkspaceAuthorityCacheMode;
   source: WorkspaceAuthorityMetricSource;
-  reason: 'lease_hit' | 'in_flight' | 'failure_backoff' | 'safety_floor';
+  reason: 'lease_hit' | 'in_flight' | 'failure_backoff';
 }): void {
   try {
     workspaceAuthoritySuppressedRequestsTotal.inc(input);
@@ -126,43 +105,9 @@ export function recordWorkspaceAuthorityInvalidation(input: {
   }
 }
 
-export function recordWorkspaceAuthorityRealtimeTransition(input: {
-  mode: WorkspaceAuthorityCacheMode;
-  healthy: boolean;
-  memberEvents: boolean;
-  listenerStatus: boolean;
-  sourceGap: boolean;
-}): void {
-  try {
-    workspaceAuthorityRealtimeTransitionsTotal.inc({
-      mode: input.mode,
-      health: input.healthy ? 'healthy' : 'unhealthy',
-      member_events: input.memberEvents ? 'present' : 'missing',
-      listener_status: input.listenerStatus ? 'present' : 'missing',
-      source_gap: input.sourceGap ? 'yes' : 'no',
-    });
-  } catch {
-    // Metrics are diagnostic only and must never change an authority result.
-  }
-}
-
-export function recordWorkspaceAuthorityRevocationClear(
-  mode: WorkspaceAuthorityCacheMode,
-  durationMs: number,
-): void {
-  if (!Number.isFinite(durationMs) || durationMs < 0) return;
-  try {
-    workspaceAuthorityRevocationClearMs.observe({ mode }, durationMs);
-  } catch {
-    // Metrics are diagnostic only and must never change an authority result.
-  }
-}
-
 export function __resetWorkspaceAuthorityMetricsForTests(): void {
   workspaceAuthorityDecisionsTotal.reset();
   workspaceAuthoritySuppressedRequestsTotal.reset();
   workspaceAuthorityInvalidationsTotal.reset();
-  workspaceAuthorityRealtimeTransitionsTotal.reset();
   workspaceAuthorityAgeMs.reset();
-  workspaceAuthorityRevocationClearMs.reset();
 }
