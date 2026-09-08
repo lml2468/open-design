@@ -166,9 +166,6 @@ function projectWorkspaceCollabValue(
   return {
     workspaceContext,
     workspaceContextLoading: false,
-    enabled: false,
-    publishedVersion: null,
-    isOwner: false,
   };
 }
 
@@ -8330,6 +8327,8 @@ describe('FileViewer tweaks toolbar', () => {
       'chat.comments.targetText': 'Text',
       'chat.comments.targetLink': 'Link',
       'chat.comments.selectAll': 'Select all',
+      'collaboration.review.reviewer': 'Reviewer',
+      'collaboration.review.agent': 'Reviewer Agent',
       'common.close': 'Close',
       'common.delete': 'Delete',
       'preview.showSidebar': 'Show Comments',
@@ -11088,13 +11087,10 @@ describe('FileViewer tweaks toolbar', () => {
     });
   });
 
-  it('keeps the Comment CTA for a new element annotation in a viewer-only team project', async () => {
+  it('keeps the Comment CTA for a new element annotation in a viewer-only project', async () => {
     const collab: CollabContextValue = {
       workspaceContext: teamWorkspaceContext(),
       workspaceContextLoading: false,
-      enabled: true,
-      publishedVersion: 1,
-      isOwner: false,
     };
 
     render(
@@ -12667,9 +12663,9 @@ describe('FileViewer tweaks toolbar', () => {
     expect(showComments.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('renders the signed-in user avatar and name from the project workspace context', async () => {
+  it('renders projected Collaboration review provenance without Workspace identity', async () => {
     const comment: PreviewComment = {
-      id: 'comment-mine',
+      id: 'comment-review',
       projectId: 'project-1',
       conversationId: 'conversation-1',
       filePath: 'preview.html',
@@ -12681,12 +12677,24 @@ describe('FileViewer tweaks toolbar', () => {
       position: { x: 16, y: 24, width: 320, height: 48 },
       note: 'Tighten this headline.',
       status: 'open',
-      authorMemberId: 'wm-self',
+      reviewSource: {
+        kind: 'collaboration-review',
+        remoteProjectId: 'remote-project',
+        remoteVersionId: 'version-1',
+        remoteVersionNumber: 1,
+        remoteCommentId: 'remote-comment',
+        remoteCommentRevision: 1,
+        authorUserId: 'reviewer-user',
+        source: 'human',
+        status: 'open',
+        targetSelectionKind: 'element',
+        targetPosition: { x: 16, y: 24, width: 320, height: 48 },
+      },
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
-    renderWithProjectWorkspace(
+    render(
       <CommentSidePanel
         comments={[comment]}
         selectedIds={new Set()}
@@ -12701,25 +12709,18 @@ describe('FileViewer tweaks toolbar', () => {
         sending={false}
         t={t}
       />,
-      {
-        ...teamWorkspaceContext(),
-        workspaceMemberId: 'wm-self',
-        displayName: '琼羽',
-        role: 'owner',
-        permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-      },
     );
 
     const item = await screen.findByTestId('comment-side-item');
     await waitFor(() => {
-      expect(item.querySelector('.comment-side-avatar')?.textContent).toBe('琼');
+      expect(item.querySelector('.comment-side-avatar')?.textContent).toBe('R');
     });
-    expect(within(item).getByText(/琼羽/)).toBeTruthy();
+    expect(within(item).getByText(/reviewer-user/)).toBeTruthy();
   });
 
-  it('leaves a comment by an unresolved other member on its id-only rendering', async () => {
+  it('keeps a project-local comment free of remote author chrome', async () => {
     const comment: PreviewComment = {
-      id: 'comment-theirs',
+      id: 'comment-local',
       projectId: 'project-1',
       conversationId: 'conversation-1',
       filePath: 'preview.html',
@@ -12731,12 +12732,11 @@ describe('FileViewer tweaks toolbar', () => {
       position: { x: 16, y: 24, width: 320, height: 48 },
       note: 'Tighten this headline.',
       status: 'open',
-      authorMemberId: 'wm-someone-else',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
-    renderWithProjectWorkspace(
+    render(
       <CommentSidePanel
         comments={[comment]}
         selectedIds={new Set()}
@@ -12751,18 +12751,11 @@ describe('FileViewer tweaks toolbar', () => {
         sending={false}
         t={t}
       />,
-      {
-        ...teamWorkspaceContext(),
-        workspaceMemberId: 'wm-self',
-        displayName: '琼羽',
-        role: 'owner',
-        permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-      },
     );
 
     const item = await screen.findByTestId('comment-side-item');
     expect(item.querySelector('.comment-side-avatar')).toBeNull();
-    expect(within(item).queryByText(/琼羽/)).toBeNull();
+    expect(within(item).queryByText(/reviewer-user/)).toBeNull();
   });
 
   it('lets the inspect panel shrink inside narrow preview layouts', () => {

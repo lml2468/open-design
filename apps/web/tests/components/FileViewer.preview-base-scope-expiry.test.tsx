@@ -62,9 +62,6 @@ function renderTeamViewer(ui: ReactElement) {
   const value: CollabContextValue = {
     workspaceContext,
     workspaceContextLoading: false,
-    enabled: false,
-    publishedVersion: null,
-    isOwner: false,
   };
   return render(<CollabProvider value={value}>{ui}</CollabProvider>);
 }

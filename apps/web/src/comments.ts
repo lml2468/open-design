@@ -246,7 +246,7 @@ export interface CommentAnchorResolution {
 }
 
 /**
- * Team collaboration comment drift ladder. Resolves a stored comment against
+ * Version-aware comment drift ladder. Resolves a stored comment against
  * the live DOM snapshots without relying on an injected stable id:
  *   0. exact anchor hit + matching version → `anchored` (older version → `reanchored`)
  *   1. content-based fuzzy match (selector / htmlHint / text, position tie-break) → `stale`

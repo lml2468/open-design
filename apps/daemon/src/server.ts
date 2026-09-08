@@ -660,7 +660,6 @@ import {
   getMessage,
   getMessageTelemetryFinalizationState,
   getPreviewComment,
-  getProjectPreviewComment,
   getProject,
   findTeamWorkspaceIdForProject,
   getWorkspaceProject,
@@ -687,7 +686,6 @@ import {
   listLatestProjectRunStatuses,
   listMessages,
   listPreviewComments,
-  listProjectPreviewComments,
   listProjects,
   listWorkspaceResources,
   listRoutines,
@@ -700,7 +698,7 @@ import {
   deleteRoutine as dbDeleteRoutine,
   openDatabase,
   reorderPreviewComment,
-  repairTeamProjectCommentAnchorConversations,
+  migrateLegacyProjectCommentAnchors,
   setTabs,
   updateConversation,
   updatePreviewCommentAnchor,
@@ -2763,10 +2761,10 @@ export async function startServer({
     next();
   });
   const db = openDatabase(PROJECT_ROOT, { dataDir: RUNTIME_DATA_DIR });
-  const commentAnchorRepair = repairTeamProjectCommentAnchorConversations(db);
-  if (commentAnchorRepair.created > 0) {
+  const legacyCommentAnchorMigration = migrateLegacyProjectCommentAnchors(db);
+  if (legacyCommentAnchorMigration.anchorsRemoved > 0) {
     console.warn(
-      `[comments] repaired ${commentAnchorRepair.created} historical Team project comment anchor(s)`,
+      `[comments] migrated ${legacyCommentAnchorMigration.anchorsRemoved} legacy comment anchor(s)`,
     );
   }
   // Restore paired browser-extension origins into the in-memory allowlist the
@@ -3319,75 +3317,6 @@ export async function startServer({
     projectId,
     { fresh: false },
   );
-  const resolveLocalProjectCommentWorkspaceContext = async (
-    req: any,
-    projectId: string,
-  ) => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    if (!binding?.workspaceId) {
-      return { ok: true as const, context: null };
-    }
-    if (binding.resourceState === 'deleted') {
-      return {
-        ok: false as const,
-        status: 403 as const,
-        code: 'WORKSPACE_PROJECT_PERMISSION_DENIED',
-        message: 'workspace project read is not allowed',
-      };
-    }
-    const local = resolveOptionalLocalWorkspaceRequestAuthority(req);
-    if (!local.ok) return local;
-    if (local.context) {
-      if (
-        local.context.workspaceId !== binding.workspaceId
-        || (
-          binding.visibility !== 'team'
-          && binding.createdByWorkspaceMemberId
-          && local.context.workspaceMemberId
-            !== binding.createdByWorkspaceMemberId
-        )
-      ) {
-        return {
-          ok: false as const,
-          status: 403 as const,
-          code: 'WORKSPACE_PROJECT_PERMISSION_DENIED',
-          message: 'workspace project access is not allowed',
-        };
-      }
-      return {
-        ok: true as const,
-        context: {
-          ...local.context,
-          workspaceType: binding.visibility === 'team' ? 'team' : 'personal',
-          ...(binding.visibility === 'team'
-            ? { teamId: binding.workspaceId }
-            : { teamId: null }),
-        },
-      };
-    }
-    const persistedMemberId = binding.createdByWorkspaceMemberId?.trim()
-      || 'local-user';
-    return {
-      ok: true as const,
-      context: workspaceContextFromDirectoryItem({
-        workspaceId: binding.workspaceId,
-        workspaceName: binding.workspaceId,
-        workspaceType: binding.visibility === 'team' ? 'team' : 'personal',
-        workspaceMemberId: persistedMemberId,
-        role: 'member',
-        memberStatus: 'active',
-        lifecycleState: 'active',
-      }, configuredAmrEnv()),
-    };
-  };
-  const resolveProjectCommentWorkspaceContext = (
-    req: any,
-    projectId: string,
-  ) => resolveLocalProjectCommentWorkspaceContext(req, projectId);
-  const resolveProjectCommentReadWorkspaceContext = (
-    req: any,
-    projectId: string,
-  ) => resolveLocalProjectCommentWorkspaceContext(req, projectId);
   let workspaceAnalyticsService: AnalyticsService | null = null;
   registerCollabContextRoutes(app, {
     workspaceContext: workspaceContextProvider,
@@ -3916,10 +3845,8 @@ export async function startServer({
     listMessages,
     upsertMessage,
     listPreviewComments,
-    listProjectPreviewComments,
     upsertPreviewComment,
     getPreviewComment,
-    getProjectPreviewComment,
     updatePreviewCommentStatus,
     updatePreviewCommentAnchor,
     deletePreviewComment,
@@ -4211,8 +4138,6 @@ export async function startServer({
     // a workspace the directory says is personal, even if the caller's headers
     // claim otherwise. See collab/team-share-scope.ts.
     workspaceTypes,
-    resolveWorkspaceContext: resolveProjectCommentWorkspaceContext,
-    resolveReadWorkspaceContext: resolveProjectCommentReadWorkspaceContext,
   });
   registerTerminalRoutes(app, {
     db,

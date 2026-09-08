@@ -58,7 +58,7 @@ describe('preview comment persistence', () => {
     expect(critiqueTable?.name).toBe('critique_runs');
   });
 
-  it('adds the team-collab anchor columns on a fresh database', () => {
+  it('adds version-aware anchor and review provenance columns on a fresh database', () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'od-comments-'));
     const db = openDatabase(tempDir);
     expect(tableColumnNames(db.prepare(`PRAGMA table_info(preview_comments)`).all())).toEqual(
@@ -72,24 +72,21 @@ describe('preview comment persistence', () => {
     );
   });
 
-  it('round-trips team-collab anchor creation metadata and defers resolved state', () => {
+  it('round-trips version-aware anchor creation metadata and defers resolved state', () => {
     const db = seededDb();
     const saved = upsertPreviewComment(db, 'project-1', 'conversation-1', {
       target: target({ elementId: 'hero-title', anchoredVersion: 7 }),
       note: 'Anchor me',
-      authorMemberId: 'member-42',
     });
     if (!saved) throw new Error('comment upsert failed');
     // Creation metadata persists...
     expect(saved.anchoredVersion).toBe(7);
-    expect(saved.authorMemberId).toBe('member-42');
     // ...while the resolved state is left for the drift ladder to fill in.
     expect(saved.anchorState).toBeUndefined();
     expect(saved.lastGoodPosition).toBeUndefined();
     // Survives the re-fetch (the list read path).
     const [listed] = listPreviewComments(db, 'project-1', 'conversation-1');
     expect(listed?.anchoredVersion).toBe(7);
-    expect(listed?.authorMemberId).toBe('member-42');
   });
 
   it('round-trips self-hosted review provenance without exposing it as an author identity', () => {
@@ -116,7 +113,6 @@ describe('preview comment persistence', () => {
     });
 
     expect(saved?.reviewSource).toEqual(reviewSource);
-    expect(saved?.authorMemberId).toBeUndefined();
     expect(listPreviewComments(db, 'project-1', 'conversation-1')[0]?.reviewSource).toEqual(reviewSource);
   });
 

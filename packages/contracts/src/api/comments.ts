@@ -34,7 +34,7 @@ export type PreviewCommentSelectionKind = 'element' | 'pod';
 export type PreviewVisualMarkKind = 'click' | 'stroke' | 'click+stroke';
 
 /**
- * Team-collaboration comment anchor state.
+ * Version-aware comment anchor state.
  * Resolved each render from the live DOM — this is an anchor state, not a
  * processing state. Ladder (strong → weak): exact selector/xpath hit →
  * `anchored`; content changed but re-found via htmlHint → `reanchored`
@@ -105,7 +105,7 @@ export interface PreviewCommentTarget {
   /** Zero-based deck slide index when the comment was placed. */
   slideIndex?: number;
   /**
-   * Team collaboration: content version this anchor was captured against. Persisted as
+   * Content version this anchor was captured against. Persisted as
    * {@link PreviewComment.anchoredVersion}; drives the drift ladder's
    * "based on older vN" badge.
    */
@@ -153,15 +153,13 @@ export interface PreviewComment {
    */
   sortKey?: number;
   /**
-   * Team-collaboration anchor fields (all optional; single-user comments omit
-   * them). See {@link PreviewCommentAnchorState}. Resolved/updated at render or
-   * sync time by the drift ladder; persisted as the last-known values.
+   * Version-aware anchor fields. See {@link PreviewCommentAnchorState}.
+   * Resolved/updated at render time by the drift ladder and persisted as the
+   * last-known values.
    */
   anchorState?: PreviewCommentAnchorState;
   /** Content version the comment was anchored to; drives the "based on older vN" badge. */
   anchoredVersion?: number;
-  /** Comment author's workspaceMemberId (for cross-member attribution/display). */
-  authorMemberId?: string;
   /**
    * Bbox written back on each successful anchor. The `lost` ghost pin renders
    * here (last known-good position), NOT the creation-time `position`, which
@@ -179,15 +177,10 @@ export interface PreviewCommentUpsertRequest {
   target: PreviewCommentTarget;
   note: string;
   attachments?: PreviewCommentAttachment[];
-  /**
-   * Team collaboration: comment author's workspaceMemberId. Server-set from the request
-   * identity (B token → member context); clients do not supply it.
-   */
-  authorMemberId?: string;
 }
 
 /**
- * Team collaboration: drift-ladder write-back. The anchoring engine reports where a
+ * Drift-ladder write-back. The anchoring engine reports where a
  * comment resolved this render so the resolved state persists across sessions
  * (see {@link PreviewCommentAnchorState}).
  */

@@ -382,9 +382,6 @@ describe("DesignFilesPanel selection", () => {
         value={{
           workspaceContext,
           workspaceContextLoading: false,
-          enabled: true,
-          publishedVersion: null,
-          isOwner: true,
         }}
       >
         <DesignFilesPanel

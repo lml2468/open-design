@@ -1853,9 +1853,6 @@ export function ProjectView({
       workspaceContextLoading: false,
       projectResourceAuthority,
       onLostAnchors: handleLostAnchors,
-      enabled: false,
-      publishedVersion: null,
-      isOwner: true,
     }),
     [
       projectRunWorkspaceContext,

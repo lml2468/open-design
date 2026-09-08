@@ -123,9 +123,6 @@ function collabValue(workspaceContext: WorkspaceCollabContext): CollabContextVal
   return {
     workspaceContext,
     workspaceContextLoading: false,
-    enabled: false,
-    publishedVersion: null,
-    isOwner: true,
   };
 }
 

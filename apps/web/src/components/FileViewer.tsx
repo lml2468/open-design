@@ -16,7 +16,6 @@ import {
 import {
   buildSocialSharePayload,
   OPEN_DESIGN_GITHUB_REPO_URL,
-  type CollabMemberRole,
   type AgentInfo,
   type ProjectFileVersion,
   type SocialShareRequest,
@@ -1714,7 +1713,7 @@ interface Props {
   // Bumped nonce asking a deck preview to flip to `slideIndex` (a queued chat
   // send for this file just started processing).
   slideNavRequest?: { slideIndex: number; nonce: number } | null;
-  // Read-only viewer of a team-shared project: the viewer can comment but not
+  // Read-only reviewer snapshot: the viewer can comment but not
   // edit, export, share, download, or send changes to Chat.
   viewerOnly?: boolean;
   projectName?: string;
@@ -3366,7 +3365,7 @@ function FileVersionManagerModal({
   onExportToastDismiss?: () => void;
   onClose: () => void;
   onRestored: (content: string, version: ProjectFileVersion) => Promise<void> | void;
-  // Read-only viewer of a team-shared project can browse versions but not restore.
+  // Read-only reviewer snapshots can browse versions but not restore them.
   viewerOnly?: boolean;
 }) {
   const { locale, t } = useI18n();
@@ -4403,10 +4402,6 @@ function commentAuthorInitials(name: string): string {
   return (first ?? '?').toUpperCase();
 }
 
-function commentAuthorRoleLabel(role: CollabMemberRole): string {
-  return role.charAt(0).toUpperCase() + role.slice(1);
-}
-
 function commentDisplayLabel(comment: PreviewComment, t: TranslateFn): string {
   if (comment.elementId.startsWith('pin-')) return t('chat.comments.pin');
   const label = String(comment.label || '').trim().toLowerCase();
@@ -4475,23 +4470,8 @@ export function CommentSidePanel({
   t: TranslateFn;
   composer?: ReactNode;
 }) {
-  const { workspaceContext } = useProjectCollabContext();
   const [newCommentDraft, setNewCommentDraft] = useState('');
   const [dragState, setDragState] = useState<CommentSideDragState | null>(null);
-  // The project context already carries the current viewer's identity. Legacy
-  // comments from any other opaque member id keep their id-only rendering; the
-  // retired Team Workspace roster is no longer queried just for display data.
-  const currentUser = useMemo(() => {
-    const memberId = workspaceContext?.workspaceMemberId.trim();
-    if (!workspaceContext || !memberId) return null;
-    return {
-      memberId,
-      displayName: workspaceContext.displayName?.trim() || memberId,
-      role: workspaceContext.role,
-    };
-  }, [workspaceContext]);
-  const resolveCommentAuthor = (memberId: string | null | undefined) =>
-    currentUser && memberId === currentUser.memberId ? currentUser : null;
   const sorted = comments;
   // recvq5BVsolIxi: the inline "N." prefix must match the canvas pin number
   // (comment.pinSeq) so the two surfaces always agree, even when this panel
@@ -4511,11 +4491,9 @@ export function CommentSidePanel({
   }
   const visibleSelectedIds = new Set(comments.filter((comment) => selectedIds.has(comment.id)).map((comment) => comment.id));
   const selectedCount = visibleSelectedIds.size;
-  // Team-collab send-to-agent gate: only the author or the project owner may
-  // send a comment. When no predicate is supplied (single-user), every comment
-  // is sendable and the select affordances behave exactly as before. Selecting
-  // is the ONLY thing a checkbox drives here (batch send-to-chat), so a comment
-  // the viewer can't send gets no checkbox and "select all" ignores it.
+  // The owner can send any locally stored comment to their Agent. Reviewer
+  // permissions are enforced by the Collaboration Server before a review
+  // comment is projected into this local list.
   const canSend = canSendComment ?? (() => true);
   const sendableCount = comments.reduce((count, comment) => (canSend(comment) ? count + 1 : count), 0);
   const allSelected = sendableCount > 0 && selectedCount === sendableCount;
@@ -4688,7 +4666,14 @@ export function CommentSidePanel({
           const selected = visibleSelectedIds.has(comment.id);
           const active = comment.id === activeCommentId;
           const sendable = canSend(comment);
-          const author = resolveCommentAuthor(comment.authorMemberId);
+          const reviewAuthor = comment.reviewSource
+            ? {
+                id: comment.reviewSource.authorUserId,
+                name: comment.reviewSource.source === 'agent'
+                  ? comment.reviewSource.agent?.name ?? t('collaboration.review.agent')
+                  : t('collaboration.review.reviewer'),
+              }
+            : null;
           const isDragging = dragState?.draggingId === comment.id;
           const dropClass = dragState?.overId === comment.id &&
             dragState.draggingId !== comment.id &&
@@ -4728,22 +4713,22 @@ export function CommentSidePanel({
                   <Icon name="grip-vertical" size={13} />
                 </button>
                 <span className="comment-side-author">
-                  {author ? (
+                  {reviewAuthor ? (
                     <span
                       className="comment-side-avatar"
-                      style={{ background: commentAuthorAvatarColor(comment.authorMemberId ?? author.memberId) }}
+                      style={{ background: commentAuthorAvatarColor(reviewAuthor.id) }}
                       aria-hidden="true"
                     >
-                      {commentAuthorInitials(author.displayName)}
+                      {commentAuthorInitials(reviewAuthor.name)}
                     </span>
                   ) : null}
                   <span className="comment-side-author-copy">
                     <strong>{`${displayCommentNumber(comment, index)}. ${commentDisplayLabel(comment, t)}`}</strong>
-                    {author ? (
+                    {reviewAuthor ? (
                       <small>
-                        {author.displayName}
+                        {reviewAuthor.name}
                         {' · '}
-                        {commentAuthorRoleLabel(author.role)}
+                        {reviewAuthor.id}
                       </small>
                     ) : null}
                   </span>
@@ -4768,11 +4753,7 @@ export function CommentSidePanel({
               {projectId && comment.attachments && comment.attachments.length > 0 ? (
                 <div className="comment-side-attachments">
                   {comment.attachments.map((attachment) => {
-                    const url = projectRawUrl(
-                      projectId,
-                      attachment.path,
-                      workspaceContext,
-                    );
+                    const url = projectRawUrl(projectId, attachment.path, null);
                     return (
                       <a
                         key={attachment.path}
@@ -4971,8 +4952,7 @@ function CommentSideDock({
   onReply: (comment: PreviewComment) => void;
   onSendSelected: () => void | Promise<void>;
   onCreateComment?: (note: string) => boolean | Promise<boolean>;
-  /** Team-collab gate: which comments the viewer may send to the agent (author
-   * OR project owner). Defaults to all-sendable when absent (single-user). */
+  /** Optional gate for comments that may be sent to the Agent. */
   canSendComment?: (comment: PreviewComment) => boolean;
   sending: boolean;
   queueOnSend?: boolean;
@@ -5770,12 +5750,12 @@ function CommentPreviewOverlays({
   offsetY: number;
   strokePoints: StrokePoint[];
   activeSlideIndex?: number | null;
-  /** Team collaboration: resolve anchors through the drift ladder (keep + badge stale/lost)
-   *  instead of the exact-match silent drop. Off for single-user. */
+  /** Version-aware review: resolve anchors through the drift ladder (keep +
+   *  badge stale/lost) instead of the exact-match silent drop. */
   driftLadder?: boolean;
   /** Current content version, used by the ladder to flag reanchored (older vN). */
   currentVersion?: number;
-  /** Team collaboration: persist the durable `lost` capture (last-good position) so the
+  /** Persist the durable `lost` capture (last-good position) so the
    *  ghost pin survives reload. Only fires in drift-ladder mode. */
   onLostAnchors?: (writeBacks: AnchorWriteBack[]) => void;
   onOpenComment: (comment: PreviewComment, snapshot: PreviewCommentSnapshot) => void;
@@ -5817,7 +5797,7 @@ function CommentPreviewOverlays({
         .filter(({ comment }) => commentVisibleOnDeckSlide(comment, activeSlideIndex)),
     [comments, liveTargets, activeSlideIndex, driftLadder, currentVersion],
   );
-  // Team collaboration durability: when a comment first drifts to `lost`, persist its
+  // Version-aware durability: when a comment first drifts to `lost`, persist its
   // last-good position once so the ghost pin survives reload. The ref set keeps
   // pointermove re-renders (during pod drawing) from re-firing the same capture;
   // the server COALESCEs too, so this is belt-and-suspenders idempotency.
@@ -6832,7 +6812,7 @@ function HtmlViewer({
   shareRequest?: { nonce: number } | null;
   downloadRequest?: { nonce: number } | null;
   slideNavRequest?: { slideIndex: number; nonce: number } | null;
-  // Read-only viewer of a team-shared project: comment-only, no edit/export.
+  // Read-only reviewer snapshot: comment-only, no edit/export.
   viewerOnly?: boolean;
   projectName?: string;
   projectDir?: string | null;
@@ -6903,10 +6883,9 @@ function HtmlViewer({
   const filesRefreshPending = filesRefreshKey !== 0
     && appliedFilesRefreshKeyRef.current !== filesRefreshKey;
   const analytics = useAnalytics();
-  // Team collaboration: resolve comment anchors through the drift ladder when
-  // the viewer is a team member of a shared project. Off (exact-match, single
-  // user) otherwise. From the ProjectView-provided collab context — no props to
-  // thread, no second collab client.
+  // The ProjectView context still owns persistence callbacks used by preview
+  // annotations. Whether the drift ladder runs is derived from immutable
+  // Collaboration review provenance, not legacy Workspace state.
   const collab = useProjectCollabContext();
   // Latest per-slide capture progress for the programmatic exporters, read by
   // the loading-toast ticker in fireShareExport to render elapsed time + ETA.
@@ -13740,7 +13719,7 @@ function HtmlViewer({
   }
 
   function selectMode(nextMode: 'preview' | 'source') {
-    // Read-only viewer of a team-shared project can preview but not inspect source.
+    // Read-only reviewer snapshot can preview but not inspect source.
     if (viewerOnly && nextMode === 'source') return;
     if (nextMode === 'source') setDrawOverlayOpen(false);
     setMode(nextMode);
@@ -14143,7 +14122,7 @@ function HtmlViewer({
   const canPptx = showPptxExport && !streaming;
   const showMarkdownExport = source !== null && isMarkdownArtifact && !viewerOnly;
   const showImageExport = canShare;
-  // Read-only viewer of a team-shared project: comment-only copy for the
+  // Read-only reviewer snapshot: comment-only copy for the
   // disabled edit/export controls and the comment composer's send-to-chat path.
   const viewerOnlyDisabledTitle = t('fileViewer.readonlySharedNoExport');
 
@@ -14672,6 +14651,16 @@ function HtmlViewer({
       .sort((a, b) => commentCreatedAt(a) - commentCreatedAt(b)),
     [file.name, previewComments],
   );
+  const latestReviewVersion = useMemo(() => {
+    let latest: number | undefined;
+    for (const comment of creationSortedSideComments) {
+      const version = comment.reviewSource?.remoteVersionNumber;
+      if (typeof version === 'number' && (latest === undefined || version > latest)) {
+        latest = version;
+      }
+    }
+    return latest;
+  }, [creationSortedSideComments]);
   // Provisional number for the next (not-yet-saved) pin. Computed over the
   // file's comments across ALL statuses — a resolved/attached/failed comment
   // keeps its pin_seq row in the daemon DB, so its number stays retired even
@@ -15063,35 +15052,13 @@ function HtmlViewer({
     : null;
   const activeComposerAttachments =
     activeComposerComment?.attachments ?? activeCommentExistingAttachments;
-  // Team-collab permission model for a comment's action buttons (庆雨,
-  // 2026-07-09). `myMemberId` is the exact project workspace identity stamped
-  // by the B lane on `authorMemberId`; null off-team.
-  // `iAmProjectOwner` is the collab-resolved project owner (the single writer),
-  // failing closed until the status poll confirms it. A comment with no author
-  // (a brand-new one in the create flow, or any off-team / legacy row) is the
-  // current user's to act on, so it reads as "mine". Only the author may EDIT
-  // their own note; the author OR the project owner may delete it or send it to
-  // the agent. The B lane enforces the same rules server-side.
-  const myMemberId = collab.workspaceContext?.workspaceMemberId ?? null;
-  const iAmProjectOwner = collab.isOwner;
-  const commentAuthoredByMe = (comment: PreviewComment | null | undefined): boolean => {
-    // No persisted comment means this is the create flow: the draft belongs
-    // to the current viewer, including a read-only member/admin annotating
-    // someone else's shared project.
-    if (!comment) return true;
-    const authorId = comment?.authorMemberId ?? null;
-    // A legacy shared comment without an author is deliberately owner-only.
-    // Treating it as "mine" for every member made the client advertise a
-    // destructive action the daemon must reject. Personal/unshared comments
-    // retain their historical single-user behavior.
-    if (authorId == null) return !collab.enabled || iAmProjectOwner;
-    return authorId === myMemberId;
-  };
-  const canSendCommentToAgent = (comment: PreviewComment | null | undefined): boolean =>
-    commentAuthoredByMe(comment) || iAmProjectOwner;
-  const canEditActiveComment = commentAuthoredByMe(activeComposerComment);
-  const canDeleteActiveComment = canEditActiveComment || iAmProjectOwner;
-  const canSendActiveComment = canEditActiveComment || iAmProjectOwner;
+  // Project-local notes are editable. A projected Server review retains its
+  // immutable reviewer provenance and can be sent to the Owner Agent or removed
+  // from the local projection, but its text is edited only through the Server.
+  const canSendCommentToAgent = (_comment?: PreviewComment | null) => true;
+  const canEditActiveComment = !activeComposerComment?.reviewSource;
+  const canDeleteActiveComment = true;
+  const canSendActiveComment = true;
   const commentComposerPortalMetrics = (() => {
     if (!commentComposerHost || !commentPreviewCanvasNode) return null;
     const hostRect = commentComposerHost.getBoundingClientRect();
@@ -16536,8 +16503,8 @@ function HtmlViewer({
                 <CommentPreviewOverlays
                   comments={commentCreateMode ? creationSortedSideComments : []}
                   provisionalPinNumber={nextProvisionalPinNumber}
-                  driftLadder={collab.enabled}
-                  currentVersion={collab.publishedVersion ?? undefined}
+                  driftLadder={latestReviewVersion !== undefined}
+                  currentVersion={latestReviewVersion}
                   {...(collab.onLostAnchors ? { onLostAnchors: collab.onLostAnchors } : {})}
                   liveTargets={liveCommentTargets}
                   hoveredTarget={hoveredCommentTarget}

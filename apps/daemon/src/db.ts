@@ -454,8 +454,9 @@ function migrate(db: SqliteDb): void {
     db.exec(`ALTER TABLE preview_comments ADD COLUMN slide_index INTEGER`);
   }
   migratePreviewCommentsSlideKey(db);
-  // Team collaboration anchor columns — added after the slide-key rebuild so a legacy
-  // table rebuild cannot drop them.
+  // Version-aware anchor columns and the retired Workspace author column are
+  // added after the slide-key rebuild so a legacy table rebuild cannot drop
+  // persisted data. New code no longer reads or writes author_member_id.
   const previewCommentAnchorCols = db.prepare(`PRAGMA table_info(preview_comments)`).all() as DbRow[];
   if (!previewCommentAnchorCols.some((c: DbRow) => c.name === 'anchor_state')) {
     db.exec(`ALTER TABLE preview_comments ADD COLUMN anchor_state TEXT`);
@@ -1944,7 +1945,6 @@ export function listConversations(db: SqliteDb, projectId: string) {
                  created_at AS createdAt, updated_at AS updatedAt
            FROM conversations
            WHERE project_id = ?
-             AND id NOT LIKE 'comment-anchor-%'
         ),
         latest_runs AS (
           SELECT conversation_id AS conversationId,
@@ -3098,7 +3098,7 @@ export function listPreviewComments(db: SqliteDb, projectId: string, conversatio
               attachments_json AS attachmentsJson,
               slide_index AS slideIndex,
               anchor_state AS anchorState, anchored_version AS anchoredVersion,
-              author_member_id AS authorMemberId, last_good_position_json AS lastGoodPositionJson,
+              last_good_position_json AS lastGoodPositionJson,
               review_source_json AS reviewSourceJson,
               pin_seq AS pinSeq, sort_key AS sortKey,
               note, status, created_at AS createdAt, updated_at AS updatedAt
@@ -3107,34 +3107,6 @@ export function listPreviewComments(db: SqliteDb, projectId: string, conversatio
         ORDER BY created_at ASC, rowid ASC`,
     )
     .all(projectId, conversationId) as DbRow[])
-    .map(normalizePreviewComment);
-}
-
-/**
- * Team preview annotations are project resources, not chat transcript rows.
- * Different daemons intentionally use different local conversation ids as the
- * SQLite foreign-key anchor, so shared reads must not filter on that local id.
- */
-export function listProjectPreviewComments(db: SqliteDb, projectId: string) {
-  return (db
-    .prepare(
-      `SELECT id, project_id AS projectId, conversation_id AS conversationId,
-              file_path AS filePath, element_id AS elementId, selector, label,
-              text, position_json AS positionJson, html_hint AS htmlHint,
-              selection_kind AS selectionKind, member_count AS memberCount,
-              pod_members_json AS podMembersJson, style_json AS styleJson,
-              attachments_json AS attachmentsJson,
-              slide_index AS slideIndex,
-              anchor_state AS anchorState, anchored_version AS anchoredVersion,
-              author_member_id AS authorMemberId, last_good_position_json AS lastGoodPositionJson,
-              review_source_json AS reviewSourceJson,
-              pin_seq AS pinSeq, sort_key AS sortKey,
-              note, status, created_at AS createdAt, updated_at AS updatedAt
-         FROM preview_comments
-        WHERE project_id = ?
-        ORDER BY created_at ASC, rowid ASC`,
-    )
-    .all(projectId) as DbRow[])
     .map(normalizePreviewComment);
 }
 
@@ -3167,15 +3139,11 @@ export function upsertPreviewComment(
     : 0;
   const slideIndex = Number.isFinite(target.slideIndex) ? Math.max(0, Math.round(target.slideIndex)) : null;
   const slideKey = slideIndex ?? -1;
-  // Team collaboration creation metadata. anchor_state / last_good_position stay null at
-  // creation — the drift ladder resolves and writes them back (updatePreviewCommentAnchor).
+  // Version-aware anchor metadata. anchor_state / last_good_position stay null
+  // at creation; the drift ladder resolves and writes them back.
   const anchoredVersion = Number.isFinite(target.anchoredVersion)
     ? Math.max(0, Math.round(target.anchoredVersion))
     : null;
-  const authorMemberId =
-    typeof input?.authorMemberId === 'string' && input.authorMemberId.trim()
-      ? input.authorMemberId.trim()
-      : null;
   const reviewSource = normalizePreviewCommentReviewSource(input?.reviewSource);
   const requestedId =
     typeof input?.id === 'string' && input.id.trim()
@@ -3272,7 +3240,7 @@ export function upsertPreviewComment(
     createdAt,
     now,
     anchoredVersion,
-    authorMemberId,
+    null,
     reviewSource ? JSON.stringify(reviewSource) : null,
     pinSeq,
     sortKey,
@@ -3313,7 +3281,7 @@ export function updatePreviewCommentStatus(db: SqliteDb, projectId: string, conv
 }
 
 /**
- * Team collaboration drift-ladder write-back: persist how a comment resolved this render.
+ * Persist how a version-aware comment resolved during this render.
  * `lastGoodPosition`/`anchoredVersion` are COALESCEd so a `lost` resolve (which omits
  * them) keeps the last known-good values instead of wiping them. Does not bump
  * `updated_at` — anchor resolution is a derived read, not a content edit.
@@ -3357,236 +3325,72 @@ export function deletePreviewComment(db: SqliteDb, projectId: string, conversati
   return result.changes > 0;
 }
 
-/** Return the most-recently updated local conversation for a project. */
-export function getLatestConversationIdForProject(
-  db: SqliteDb,
-  projectId: string,
-  excludeConversationId: string | null = null,
-): string | null {
-  const row = db
-    .prepare(
-      `SELECT id FROM conversations
-        WHERE project_id = ?
-          AND id NOT LIKE ?
-          AND (? IS NULL OR id != ?)
-        ORDER BY updated_at DESC, rowid DESC
-        LIMIT 1`,
-    )
-    .get(
-      projectId,
-      `${PROJECT_COMMENT_ANCHOR_PREFIX}%`,
-      excludeConversationId,
-      excludeConversationId,
-    ) as DbRow | undefined;
-  return row && typeof row.id === 'string' ? row.id : null;
-}
-
-const PROJECT_COMMENT_ANCHOR_PREFIX = 'comment-anchor-';
-
-export function isProjectCommentAnchorConversationId(
-  conversationId: string,
-): boolean {
-  return conversationId.startsWith(PROJECT_COMMENT_ANCHOR_PREFIX);
-}
+const LEGACY_PROJECT_COMMENT_ANCHOR_PREFIX = 'comment-anchor-';
 
 /**
- * Return the daemon-local conversation reserved for Team preview comments.
- *
- * Synced comments are project resources, while conversation ids are private to
- * each daemon. A dedicated empty conversation gives those rows a stable FK that
- * does not follow whichever chat happened to be updated most recently.
+ * Remove the daemon-local anchor conversations created by the retired Team
+ * Workspace comment transport. Existing local comments are moved to the most
+ * recent ordinary conversation for the same Project; when none exists, the
+ * migration creates one. New collaboration review comments already arrive
+ * with an explicit local conversation selected by the Owner.
  */
-export function getProjectCommentAnchorConversationId(
-  db: SqliteDb,
-  projectId: string,
-  excludeConversationId: string | null = null,
-): string | null {
-  const row = db
-    .prepare(
-      `SELECT id FROM conversations
-        WHERE project_id = ?
-          AND id LIKE ?
-          AND (? IS NULL OR id != ?)
-        ORDER BY created_at ASC, rowid ASC
-        LIMIT 1`,
-    )
-    .get(
-      projectId,
-      `${PROJECT_COMMENT_ANCHOR_PREFIX}%`,
-      excludeConversationId,
-      excludeConversationId,
-    ) as DbRow | undefined;
-  return row && typeof row.id === 'string' ? row.id : null;
-}
-
-/**
- * Ensure a Team project has one dedicated LOCAL conversation row that preview
- * comments can use as their stable foreign-key anchor.
- *
- * Conversation ids and chat transcripts are daemon-local; Team project
- * materialization deliberately does not copy the owner's private conversations
- * or messages. A member mirror can therefore have zero conversations even
- * after every shared file is present. Preview comments still need a local
- * conversation FK, so the materializer creates one empty reserved thread exactly
- * once. Ordinary chat conversations never become comment anchors.
- */
-export function ensureProjectCommentAnchorConversation(
-  db: SqliteDb,
-  projectId: string,
-  now = Date.now(),
-  excludeConversationId: string | null = null,
-): { conversationId: string; created: boolean } | null {
-  const existing = getProjectCommentAnchorConversationId(
-    db,
-    projectId,
-    excludeConversationId,
-  );
-  if (existing) return { conversationId: existing, created: false };
-  if (!getProject(db, projectId)) return null;
-
-  const conversationId = `${PROJECT_COMMENT_ANCHOR_PREFIX}${randomUUID()}`;
-  insertConversation(db, {
-    id: conversationId,
-    projectId,
-    title: null,
-    sessionMode: 'design',
-    createdAt: now,
-    updatedAt: now,
-  });
-  return { conversationId, created: true };
-}
-
-/**
- * Ensure a normal daemon-local conversation exists for UI/comment HTTP
- * routing. The internal comment anchor is deliberately excluded: it must never
- * become the user's active chat, but a read-only Team mirror with no private
- * chat still needs one routable conversation to create and read comments.
- */
-export function ensureProjectCommentRoutingConversation(
-  db: SqliteDb,
-  projectId: string,
-  now = Date.now(),
-  excludeConversationId: string | null = null,
-): { conversationId: string; created: boolean } | null {
-  const existing = getLatestConversationIdForProject(
-    db,
-    projectId,
-    excludeConversationId,
-  );
-  if (existing) return { conversationId: existing, created: false };
-  if (!getProject(db, projectId)) return null;
-
-  const conversationId = `conversation-${randomUUID()}`;
-  insertConversation(db, {
-    id: conversationId,
-    projectId,
-    title: null,
-    sessionMode: 'design',
-    createdAt: now,
-    updatedAt: now,
-  });
-  return { conversationId, created: true };
-}
-
-export function ensureTeamProjectCommentConversations(
-  db: SqliteDb,
-  projectId: string,
-  now = Date.now(),
-  excludeConversationId: string | null = null,
-): { anchorCreated: boolean; routingCreated: boolean } {
-  return {
-    anchorCreated:
-      ensureProjectCommentAnchorConversation(
-        db,
-        projectId,
-        now,
-        excludeConversationId,
-      )?.created === true,
-    routingCreated:
-      ensureProjectCommentRoutingConversation(
-        db,
-        projectId,
-        now,
-        excludeConversationId,
-      )?.created === true,
-  };
-}
-
-/**
- * Repair the comment-anchor invariant for historical active Team projects.
- *
- * Older databases can contain Team bindings created before pulled mirrors and
- * Team shares seeded a local conversation. Comments are project-scoped in the
- * collaboration protocol but still need a daemon-local conversation FK. Run
- * this once at startup instead of mutating the database from a comments GET.
- * Personal and deleted bindings intentionally keep their existing behavior.
- */
-export function repairTeamProjectCommentAnchorConversations(
+export function migrateLegacyProjectCommentAnchors(
   db: SqliteDb,
   now = Date.now(),
-): { checked: number; created: number } {
-  const rows = db
-    .prepare(
-      `SELECT project_id AS projectId
-         FROM workspace_projects
-        WHERE visibility = 'team'
-          AND resource_state != 'deleted'`,
-    )
-    .all() as Array<{ projectId: string }>;
-
-  let created = 0;
-  const repair = db.transaction(() => {
-    for (const row of rows) {
-      if (ensureTeamProjectCommentConversations(db, row.projectId, now).anchorCreated) {
-        created += 1;
+): { anchorsRemoved: number; commentsMoved: number; conversationsCreated: number } {
+  const anchors = db.prepare(
+    `SELECT id, project_id AS projectId
+       FROM conversations
+      WHERE id LIKE ?
+      ORDER BY project_id ASC, created_at ASC, rowid ASC`,
+  ).all(`${LEGACY_PROJECT_COMMENT_ANCHOR_PREFIX}%`) as Array<{
+    id: string;
+    projectId: string;
+  }>;
+  let anchorsRemoved = 0;
+  let commentsMoved = 0;
+  let conversationsCreated = 0;
+  const migrateAnchors = db.transaction(() => {
+    const destinations = new Map<string, string>();
+    for (const anchor of anchors) {
+      let destinationId = destinations.get(anchor.projectId);
+      if (!destinationId) {
+        const existing = db.prepare(
+          `SELECT id FROM conversations
+            WHERE project_id = ?
+              AND id NOT LIKE ?
+            ORDER BY updated_at DESC, rowid DESC
+            LIMIT 1`,
+        ).get(anchor.projectId, `${LEGACY_PROJECT_COMMENT_ANCHOR_PREFIX}%`) as
+          | { id: string }
+          | undefined;
+        destinationId = existing?.id;
+        if (!destinationId) {
+          destinationId = `conversation-${randomUUID()}`;
+          insertConversation(db, {
+            id: destinationId,
+            projectId: anchor.projectId,
+            title: null,
+            sessionMode: 'design',
+            createdAt: now,
+            updatedAt: now,
+          });
+          conversationsCreated += 1;
+        }
+        destinations.set(anchor.projectId, destinationId);
       }
+      const moved = db.prepare(
+        `UPDATE preview_comments
+            SET conversation_id = ?
+          WHERE project_id = ? AND conversation_id = ?`,
+      ).run(destinationId, anchor.projectId, anchor.id);
+      commentsMoved += moved.changes;
+      deleteConversation(db, anchor.id);
+      anchorsRemoved += 1;
     }
   });
-  repair();
-  return { checked: rows.length, created };
-}
-
-/**
- * Delete one validated project conversation while preserving Team comments.
- * A dedicated anchor is established and attached comments are moved to it
- * before the conversation delete can trigger its FK cascade. The whole repair
- * and delete is one SQLite transaction. Personal projects retain the existing
- * cascade-delete behavior.
- */
-export function deleteConversationAndRepairTeamCommentAnchor(
-  db: SqliteDb,
-  projectId: string,
-  conversationId: string,
-  now = Date.now(),
-): { anchorCreated: boolean } {
-  let anchorCreated = false;
-  const remove = db.transaction(() => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    if (binding?.visibility === 'team' && binding.resourceState !== 'deleted') {
-      const repaired = ensureTeamProjectCommentConversations(
-        db,
-        projectId,
-        now,
-        conversationId,
-      );
-      anchorCreated = repaired.anchorCreated;
-      const anchorConversationId = getProjectCommentAnchorConversationId(
-        db,
-        projectId,
-        conversationId,
-      );
-      if (anchorConversationId) {
-        db.prepare(
-          `UPDATE preview_comments
-              SET conversation_id = ?
-            WHERE project_id = ? AND conversation_id = ?`,
-        ).run(anchorConversationId, projectId, conversationId);
-      }
-    }
-    deleteConversation(db, conversationId);
-  });
-  remove();
-  return { anchorCreated };
+  migrateAnchors();
+  return { anchorsRemoved, commentsMoved, conversationsCreated };
 }
 
 
@@ -3601,7 +3405,7 @@ export function getPreviewComment(db: SqliteDb, projectId: string, conversationI
               attachments_json AS attachmentsJson,
               slide_index AS slideIndex,
               anchor_state AS anchorState, anchored_version AS anchoredVersion,
-              author_member_id AS authorMemberId, last_good_position_json AS lastGoodPositionJson,
+              last_good_position_json AS lastGoodPositionJson,
               review_source_json AS reviewSourceJson,
               pin_seq AS pinSeq, sort_key AS sortKey,
               note, status, created_at AS createdAt, updated_at AS updatedAt
@@ -3609,29 +3413,6 @@ export function getPreviewComment(db: SqliteDb, projectId: string, conversationI
         WHERE id = ? AND project_id = ? AND conversation_id = ?`,
     )
     .get(id, projectId, conversationId) as DbRow | undefined;
-  return row ? normalizePreviewComment(row) : null;
-}
-
-/** Resolve a Team annotation independently from its daemon-local FK anchor. */
-export function getProjectPreviewComment(db: SqliteDb, projectId: string, id: string) {
-  const row = db
-    .prepare(
-      `SELECT id, project_id AS projectId, conversation_id AS conversationId,
-              file_path AS filePath, element_id AS elementId, selector, label,
-              text, position_json AS positionJson, html_hint AS htmlHint,
-              selection_kind AS selectionKind, member_count AS memberCount,
-              pod_members_json AS podMembersJson, style_json AS styleJson,
-              attachments_json AS attachmentsJson,
-              slide_index AS slideIndex,
-              anchor_state AS anchorState, anchored_version AS anchoredVersion,
-              author_member_id AS authorMemberId, last_good_position_json AS lastGoodPositionJson,
-              review_source_json AS reviewSourceJson,
-              pin_seq AS pinSeq, sort_key AS sortKey,
-              note, status, created_at AS createdAt, updated_at AS updatedAt
-         FROM preview_comments
-        WHERE id = ? AND project_id = ?`,
-    )
-    .get(id, projectId) as DbRow | undefined;
   return row ? normalizePreviewComment(row) : null;
 }
 
@@ -3666,7 +3447,6 @@ function normalizePreviewComment(row: DbRow) {
     updatedAt: row.updatedAt,
     anchorState: typeof row.anchorState === 'string' ? row.anchorState : undefined,
     anchoredVersion: Number.isFinite(row.anchoredVersion) ? row.anchoredVersion : undefined,
-    authorMemberId: typeof row.authorMemberId === 'string' ? row.authorMemberId : undefined,
     reviewSource: normalizePreviewCommentReviewSource(parseJsonOrUndef(row.reviewSourceJson)),
     lastGoodPosition: parseJsonOrUndef(row.lastGoodPositionJson),
     pinSeq: Number.isFinite(row.pinSeq) ? row.pinSeq : undefined,

@@ -1,244 +1,38 @@
-import type { Express, Request } from 'express';
-import type {
-  PreviewComment,
-  WorkspaceCollabContext,
-} from '@open-design/contracts';
+import type { Express } from 'express';
+import type { PreviewComment } from '@open-design/contracts';
 import { projectKindFromMetadataToTrackingOrLegacyDefault } from '@open-design/contracts/analytics';
 import type { RouteDeps } from '../../server-context.js';
-import { getProject, isProjectCommentAnchorConversationId } from '../../db.js';
-
-export type ProjectCommentWorkspaceContextResolution =
-  | { ok: true; context: WorkspaceCollabContext | null }
-  | {
-      ok: false;
-      status: 400 | 401 | 403 | 503;
-      code: string;
-      message: string;
-      retryable?: true;
-    };
+import { getProject } from '../../db.js';
 
 export interface RegisterProjectCommentRoutesDeps extends RouteDeps<'db' | 'projectStore' | 'conversations'> {
   /** Optional in focused CRUD fixtures; production supplies request-scoped analytics. */
   telemetry?: RouteDeps<'telemetry'>['telemetry'];
-  sendApiError?: (res: any, status: number, code: string, message: string) => unknown;
-  /**
-   * Resolve and authorize the PERSISTED project's Workspace scope. Production
-   * wiring verifies request headers against the membership directory and then
-   * checks that the resulting workspace id matches the project's binding.
-   * Directory failure is returned as a typed error and must fail closed before
-   * any local mutation or relay call.
-   */
-  resolveWorkspaceContext?: (
-    req: Request,
-    projectId: string,
-  ) => Promise<ProjectCommentWorkspaceContextResolution>;
-  /**
-   * Bounded successful authority lease for pure comment-list reads. Production
-   * uses the same cached verifier as other project GET routes. Comment
-   * mutations continue to use `resolveWorkspaceContext` above, which is fresh
-   * and fail-closed on every write.
-   */
-  resolveReadWorkspaceContext?: (
-    req: Request,
-    projectId: string,
-  ) => Promise<ProjectCommentWorkspaceContextResolution>;
-  /**
-   * Resolve the CURRENT caller's workspaceMemberId from the request identity
-   * (workspace context). Server-authoritative — used both to stamp the author on
-   * a new/edited comment and to gate status/delete on the caller's identity.
-   * Optional: off-team it returns undefined and comments are stored without an
-   * author and no permission gating applies.
-   */
-  resolveAuthorMemberId?: (authorization: string | undefined) => Promise<string | undefined>;
-  /**
-   * Resolve a shared project's OWNER workspaceMemberId (server-authoritative,
-   * from the team hub). Used to let the project owner delete / send-to-agent on
-   * another member's comment. Null off-team / when the project is not shared.
-   */
-  resolveProjectOwnerMemberId?: (
-    projectId: string,
-    context?: WorkspaceCollabContext | null,
-  ) => Promise<string | null>;
-  /**
-   * Server-authoritative shared-project test. Legacy comments without an
-   * author remain mutable in personal/unshared projects, but in a shared
-   * project they are owner-only. Resolution failure must deny rather than
-   * degrading open.
-   */
-  isSharedProject?: (
-    projectId: string,
-    context?: WorkspaceCollabContext | null,
-  ) => Promise<boolean>;
 }
 
 export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectCommentRoutesDeps): void {
   const { db } = ctx;
-  const { updateProject, getWorkspaceProjectByProjectId } = ctx.projectStore;
+  const { updateProject } = ctx.projectStore;
   const {
     getConversation,
     listPreviewComments,
-    listProjectPreviewComments,
     upsertPreviewComment,
     getPreviewComment,
-    getProjectPreviewComment,
     updatePreviewCommentStatus,
     updatePreviewCommentAnchor,
     deletePreviewComment,
     reorderPreviewComment,
   } = ctx.conversations;
   const getRoutableConversation = (projectId: string, conversationId: string) => {
-    if (isProjectCommentAnchorConversationId(conversationId)) return null;
     const conversation = getConversation(db, conversationId);
     return conversation?.projectId === projectId ? conversation : null;
   };
-
-  function commentsAreProjectScoped(
-    projectId: string,
-    context: WorkspaceCollabContext | null,
-  ): boolean {
-    if (typeof getWorkspaceProjectByProjectId !== 'function') return false;
-    const binding = getWorkspaceProjectByProjectId(db, projectId) as {
-      workspaceId?: string;
-      visibility?: string;
-      resourceState?: string;
-    } | undefined;
-    if (
-      !binding
-      || binding.visibility !== 'team'
-      || binding.resourceState === 'deleted'
-    ) {
-      return false;
-    }
-    if ((ctx.resolveReadWorkspaceContext || ctx.resolveWorkspaceContext) && !context) {
-      return false;
-    }
-    // The null case preserves narrow local fixtures that deliberately omit
-    // Workspace auth; production requires an exact context match.
-    return !context || binding.workspaceId === context.workspaceId;
-  }
 
   function getRequestPreviewComment(
     projectId: string,
     conversationId: string,
     commentId: string,
-    context: WorkspaceCollabContext | null,
   ): PreviewComment | null {
-    return (commentsAreProjectScoped(projectId, context)
-      && typeof getProjectPreviewComment === 'function'
-      ? getProjectPreviewComment(db, projectId, commentId)
-      : getPreviewComment(db, projectId, conversationId, commentId)) as PreviewComment | null;
-  }
-
-  async function resolveRequestWorkspaceContext(
-    req: Request,
-    projectId: string,
-  ): Promise<ProjectCommentWorkspaceContextResolution> {
-    if (!ctx.resolveWorkspaceContext) return { ok: true, context: null };
-    try {
-      return await ctx.resolveWorkspaceContext(req, projectId);
-    } catch {
-      return {
-        ok: false,
-        status: 503,
-        code: 'WORKSPACE_AUTHORITY_UNAVAILABLE',
-        message: 'workspace membership authority is temporarily unavailable',
-        retryable: true,
-      };
-    }
-  }
-
-  async function resolveReadRequestWorkspaceContext(
-    req: Request,
-    projectId: string,
-  ): Promise<ProjectCommentWorkspaceContextResolution> {
-    if (!ctx.resolveReadWorkspaceContext) {
-      return resolveRequestWorkspaceContext(req, projectId);
-    }
-    try {
-      return await ctx.resolveReadWorkspaceContext(req, projectId);
-    } catch {
-      return {
-        ok: false,
-        status: 503,
-        code: 'WORKSPACE_AUTHORITY_UNAVAILABLE',
-        message: 'workspace membership authority is temporarily unavailable',
-        retryable: true,
-      };
-    }
-  }
-
-  function sendWorkspaceResolutionError(
-    res: any,
-    resolution: Extract<ProjectCommentWorkspaceContextResolution, { ok: false }>,
-  ): unknown {
-    if (ctx.sendApiError) {
-      return ctx.sendApiError(
-        res,
-        resolution.status,
-        resolution.code,
-        resolution.message,
-      );
-    }
-    return res.status(resolution.status).json({
-      error: resolution.code,
-      message: resolution.message,
-      ...(resolution.retryable ? { retryable: true } : {}),
-    });
-  }
-
-  /** The caller's workspaceMemberId, or undefined off-team / personal mode. */
-  async function resolveCaller(
-    req: Request,
-    context: WorkspaceCollabContext | null,
-  ): Promise<string | undefined> {
-    if (ctx.resolveWorkspaceContext) {
-      return context?.workspaceMemberId || undefined;
-    }
-    if (!ctx.resolveAuthorMemberId) return undefined;
-    return ctx.resolveAuthorMemberId(req.headers.authorization);
-  }
-
-  /**
-   * Server-authoritative permission gate for status change + delete. Both are
-   * allowed for the comment's author and the project owner (owner drives
-   * send-to-agent and may delete any comment). Degrades open only when the
-   * comment itself has no author (legacy/personal comments). Authored shared
-   * comments fail closed if the current caller cannot be resolved.
-   */
-  async function callerMayMutate(
-    req: Request,
-    projectId: string,
-    comment: PreviewComment,
-    context: WorkspaceCollabContext | null,
-  ): Promise<boolean> {
-    const author = comment.authorMemberId;
-    if (!author) {
-      if (!ctx.isSharedProject) return true;
-      let shared: boolean;
-      try {
-        shared = await ctx.isSharedProject(projectId, context);
-      } catch {
-        return false;
-      }
-      if (!shared) return true;
-    }
-    let me: string | undefined;
-    try {
-      me = await resolveCaller(req, context);
-    } catch {
-      return false;
-    }
-    if (!me) return false;
-    if (author && me === author) return true;
-    if (ctx.resolveProjectOwnerMemberId) {
-      try {
-        const owner = await ctx.resolveProjectOwnerMemberId(projectId, context);
-        if (owner && owner === me) return true;
-      } catch {
-        return false;
-      }
-    }
-    return false;
+    return getPreviewComment(db, projectId, conversationId, commentId) as PreviewComment | null;
   }
 
   // ---- Preview comments ----------------------------------------------------
@@ -248,20 +42,8 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
     if (!conv) {
       return res.status(404).json({ error: 'conversation not found' });
     }
-    const workspaceResolution = await resolveReadRequestWorkspaceContext(
-      req,
-      req.params.id,
-    );
-    if (!workspaceResolution.ok) {
-      return sendWorkspaceResolutionError(res, workspaceResolution);
-    }
     res.json({
-      comments: commentsAreProjectScoped(
-        req.params.id,
-        workspaceResolution.context,
-      ) && typeof listProjectPreviewComments === 'function'
-        ? listProjectPreviewComments(db, req.params.id)
-        : listPreviewComments(db, req.params.id, req.params.cid),
+      comments: listPreviewComments(db, req.params.id, req.params.cid),
     });
   });
 
@@ -270,21 +52,11 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
     if (!conv) {
       return res.status(404).json({ error: 'conversation not found' });
     }
-    const workspaceResolution = await resolveRequestWorkspaceContext(
-      req,
-      req.params.id,
-    );
-    if (!workspaceResolution.ok) {
-      return sendWorkspaceResolutionError(res, workspaceResolution);
-    }
-    const workspaceContext = workspaceResolution.context;
     try {
-      // Server-authoritative author: stamp the current member id so the stored
-      // comment carries who wrote it, rather than trusting the body.
-      // New comments do not use a natural element key; editing requires an id
-      // and is author-only.
-      const body = { ...(req.body || {}) };
-      const authorMemberId = await resolveCaller(req, workspaceContext);
+      // Local preview comments belong to this daemon session. Remote review
+      // comments are authored and authorized by Collaboration Server routes,
+      // then projected directly into this store with immutable provenance.
+      const body = { ...(req.body || {}), reviewSource: undefined };
       const requestedId = typeof body.id === 'string' && body.id.trim() ? body.id.trim() : '';
       let existing: PreviewComment | null = null;
       if (requestedId) {
@@ -292,22 +64,15 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
           req.params.id,
           req.params.cid,
           requestedId,
-          workspaceContext,
         );
         if (!existing) {
           return res.status(404).json({ error: 'comment not found' });
         }
-        const existingAuthor = existing.authorMemberId ?? null;
-        if (existingAuthor) {
-          if (!authorMemberId || existingAuthor !== authorMemberId) {
-            return res.status(403).json({ error: 'not permitted' });
-          }
-          body.authorMemberId = existingAuthor;
-        } else if (authorMemberId) {
-          body.authorMemberId = authorMemberId;
+        if (existing.reviewSource) {
+          return res.status(409).json({
+            error: 'collaboration review comments cannot be edited locally',
+          });
         }
-      } else if (authorMemberId) {
-        body.authorMemberId = authorMemberId;
       }
       const targetConversationId = requestedId
         ? existing?.conversationId ?? req.params.cid
@@ -321,25 +86,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
       // Edits reuse this POST route with an id and must not inflate creation.
       if (comment && !requestedId) {
         const project = getProject(db, req.params.id);
-        const localBinding = typeof getWorkspaceProjectByProjectId === 'function'
-          ? getWorkspaceProjectByProjectId(db, req.params.id) as
-              | { createdByWorkspaceMemberId?: string | null }
-              | undefined
-          : undefined;
-        let ownerMemberId = localBinding?.createdByWorkspaceMemberId ?? null;
-        if (!ownerMemberId && ctx.resolveProjectOwnerMemberId) {
-          ownerMemberId = await ctx.resolveProjectOwnerMemberId(
-            req.params.id,
-            workspaceContext,
-          ).catch(() => null);
-        }
-        const targetProjectRelation =
-          authorMemberId && ownerMemberId
-            ? authorMemberId === ownerMemberId
-              ? 'self'
-              : 'other'
-            : 'unknown';
-        const planId = workspaceContext?.planId?.trim().toLowerCase();
         void ctx.telemetry?.captureProductEvent?.(
           req,
           'project_comment_create_result',
@@ -347,23 +93,10 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
             page_name: 'artifact',
             area: 'comments',
             result: 'success',
-            target_project_relation: targetProjectRelation,
+            target_project_relation: 'self',
             comment_level: 'top_level',
             project_id: req.params.id,
             project_kind: projectKindFromMetadataToTrackingOrLegacyDefault(project?.metadata),
-            ...(workspaceContext
-              ? {
-                  workspace_key: workspaceContext.workspaceId,
-                  workspace_type: workspaceContext.workspaceType,
-                  workspace_role: workspaceContext.role,
-                  workspace_lifecycle: workspaceContext.lifecycleState,
-                  billing_state: workspaceContext.billingState,
-                  plan_bucket: !planId || planId === 'free' ? 'free' : 'paid',
-                  provider_mode: workspaceContext.providerMode,
-                  seat_state: workspaceContext.seatSummary.isSeatFull ? 'full' : 'available',
-                  $groups: { workspace: workspaceContext.workspaceId },
-                }
-              : {}),
           },
         );
       }
@@ -380,32 +113,13 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
       if (!conv) {
         return res.status(404).json({ error: 'conversation not found' });
       }
-      const workspaceResolution = await resolveRequestWorkspaceContext(
-        req,
-        req.params.id,
-      );
-      if (!workspaceResolution.ok) {
-        return sendWorkspaceResolutionError(res, workspaceResolution);
-      }
-      const workspaceContext = workspaceResolution.context;
       try {
         const existing = getRequestPreviewComment(
           req.params.id,
           req.params.cid,
           req.params.commentId,
-          workspaceContext,
         );
         if (!existing) return res.status(404).json({ error: 'comment not found' });
-        // Status change is the send-to-agent lifecycle: allowed for the author
-        // and the project owner, blocked for other members.
-        if (!(await callerMayMutate(
-          req,
-          req.params.id,
-          existing,
-          workspaceContext,
-        ))) {
-          return res.status(403).json({ error: 'not permitted' });
-        }
         const comment = db.transaction(() => {
           const saved = updatePreviewCommentStatus(
             db,
@@ -434,14 +148,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
       if (!conv) {
         return res.status(404).json({ error: 'conversation not found' });
       }
-      const workspaceResolution = await resolveRequestWorkspaceContext(
-        req,
-        req.params.id,
-      );
-      if (!workspaceResolution.ok) {
-        return sendWorkspaceResolutionError(res, workspaceResolution);
-      }
-      const workspaceContext = workspaceResolution.context;
       try {
         // Drift-ladder write-back: the client resolves anchor state each render
         // and reports it here. This is a per-daemon DERIVED read-back (each
@@ -452,7 +158,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
           req.params.id,
           req.params.cid,
           req.params.commentId,
-          workspaceContext,
         );
         if (!existing) return res.status(404).json({ error: 'comment not found' });
         const comment = updatePreviewCommentAnchor(
@@ -477,14 +182,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
       if (!conv) {
         return res.status(404).json({ error: 'conversation not found' });
       }
-      const workspaceResolution = await resolveRequestWorkspaceContext(
-        req,
-        req.params.id,
-      );
-      if (!workspaceResolution.ok) {
-        return sendWorkspaceResolutionError(res, workspaceResolution);
-      }
-      const workspaceContext = workspaceResolution.context;
       const sortKey = Number(req.body?.sortKey);
       if (!Number.isFinite(sortKey)) {
         return res.status(400).json({ error: 'sortKey must be a finite number' });
@@ -498,7 +195,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
           req.params.id,
           req.params.cid,
           req.params.commentId,
-          workspaceContext,
         );
         if (!existing) return res.status(404).json({ error: 'comment not found' });
         const comment = reorderPreviewComment(
@@ -523,31 +219,12 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
       if (!conv) {
         return res.status(404).json({ error: 'conversation not found' });
       }
-      const workspaceResolution = await resolveRequestWorkspaceContext(
-        req,
-        req.params.id,
-      );
-      if (!workspaceResolution.ok) {
-        return sendWorkspaceResolutionError(res, workspaceResolution);
-      }
-      const workspaceContext = workspaceResolution.context;
-      // Load before deleting so we can gate on the author and build the tombstone.
       const existing = getRequestPreviewComment(
         req.params.id,
         req.params.cid,
         req.params.commentId,
-        workspaceContext,
       );
       if (!existing) return res.status(404).json({ error: 'comment not found' });
-      // Delete is allowed for the comment's author and the project owner.
-      if (!(await callerMayMutate(
-        req,
-        req.params.id,
-        existing,
-        workspaceContext,
-      ))) {
-        return res.status(403).json({ error: 'not permitted' });
-      }
       let ok = false;
       try {
         ok = db.transaction(() => {

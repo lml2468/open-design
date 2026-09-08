@@ -76,9 +76,6 @@ function renderWithWorkspace(ui: React.ReactElement, workspaceContext: Workspace
   const collab: CollabContextValue = {
     workspaceContext,
     workspaceContextLoading: false,
-    enabled: true,
-    publishedVersion: null,
-    isOwner: true,
   };
   return render(<CollabProvider value={collab}>{ui}</CollabProvider>);
 }

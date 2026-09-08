@@ -105,7 +105,6 @@ import {
 import { auditDesignSystemPackage } from '../../tools-connectors-cli.js';
 import { parseOrchestratorWorkspace } from '../../workspace-contract.js';
 import { registerProjectConversationRoutes } from './conversations.js';
-import type { ProjectCommentWorkspaceContextResolution } from './comments.js';
 import {
   refuseTeamShareScope,
   type TeamShareScopeRefusal,
@@ -255,29 +254,6 @@ export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | '
     input: UserDesignSystemInput,
     context: WorkspaceResourceContext | null,
   ) => Promise<DesignSystemSummary>;
-  /**
-   * Workspace comment identity seams. `resolveAuthorMemberId` stamps the
-   * server-authoritative author and identifies the caller for permission
-   * gating; `resolveProjectOwnerMemberId` lets the owner delete or drive status
-   * on any comment.
-   */
-  resolveAuthorMemberId?: (authorization: string | undefined) => Promise<string | undefined>;
-  resolveWorkspaceContext?: (
-    req: Request,
-    projectId: string,
-  ) => Promise<ProjectCommentWorkspaceContextResolution>;
-  resolveReadWorkspaceContext?: (
-    req: Request,
-    projectId: string,
-  ) => Promise<ProjectCommentWorkspaceContextResolution>;
-  resolveProjectOwnerMemberId?: (
-    projectId: string,
-    context?: WorkspaceCollabContext | null,
-  ) => Promise<string | null>;
-  isSharedProject?: (
-    projectId: string,
-    context?: WorkspaceCollabContext | null,
-  ) => Promise<boolean>;
   /**
    * What the daemon has learned about each workspace's type, used to refuse a
    * team share aimed at a personal workspace even when the caller's headers say
@@ -3636,10 +3612,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     }
   });
 
-  registerProjectConversationRoutes(app, {
-    ...ctx,
-    sendApiError,
-  });
+  registerProjectConversationRoutes(app, ctx);
 
   // ---- Tabs -----------------------------------------------------------------
 

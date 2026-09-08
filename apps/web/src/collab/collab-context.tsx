@@ -19,20 +19,12 @@ export interface CollabContextValue {
   /** Persist a drifted-to-`lost` comment's last-good position (needs the active
    * conversation id, which only ProjectView has). Absent when unavailable. */
   onLostAnchors?: (writeBacks: AnchorWriteBack[]) => void;
-  /** Legacy PreviewComment synchronization is disabled for local projects. */
-  enabled: boolean;
-  publishedVersion: number | null;
-  /** The local project owner may manage projected review comments. */
-  isOwner: boolean;
 }
 
 const DISABLED: CollabContextValue = {
   workspaceContext: null,
   workspaceContextLoading: false,
   projectResourceAuthority: 'local',
-  enabled: false,
-  publishedVersion: null,
-  isOwner: true,
 };
 
 const CollabContext = createContext<CollabContextValue>(DISABLED);

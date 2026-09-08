@@ -11,13 +11,10 @@ import { cancelRunsOwnedBy } from './cancel-owned-runs.js';
 import {
   compactAdjacentMessageAgentEvents,
   countMessages,
-  deleteConversationAndRepairTeamCommentAnchor,
-  isProjectCommentAnchorConversationId,
+  deleteConversation,
 } from '../../db.js';
 
-export interface RegisterProjectConversationRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'projectStore' | 'conversations' | 'ids' | 'telemetry' | 'appConfig' | 'agents'> {
-  sendApiError?: (res: any, status: number, code: string, message: string) => unknown;
-}
+export type RegisterProjectConversationRoutesDeps = RouteDeps<'db' | 'design' | 'http' | 'paths' | 'projectStore' | 'conversations' | 'ids' | 'telemetry' | 'appConfig' | 'agents'>;
 
 function normalizeChatSessionMode(value: unknown): ChatSessionMode {
   return value === 'chat' || value === 'plan' ? value : 'design';
@@ -45,7 +42,6 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
   const { readAppConfig } = ctx.appConfig;
   const { getAgentDef } = ctx.agents;
   const getRoutableConversation = (projectId: string, conversationId: string) => {
-    if (isProjectCommentAnchorConversationId(conversationId)) return null;
     const conversation = getConversation(db, conversationId);
     return conversation?.projectId === projectId ? conversation : null;
   };
@@ -211,7 +207,7 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
     // Stop any live agent run for this conversation before the row is gone,
     // otherwise the CLI subprocess is orphaned and keeps billing (#5468).
     await cancelRunsOwnedBy(design.runs, { conversationId: req.params.cid });
-    deleteConversationAndRepairTeamCommentAnchor(db, req.params.id, req.params.cid);
+    deleteConversation(db, req.params.cid);
     res.json({ ok: true });
   });
 

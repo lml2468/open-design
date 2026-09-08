@@ -38,9 +38,6 @@ function collabValue(): CollabContextValue {
     workspaceContext: WORKSPACE_CONTEXT,
     workspaceContextLoading: false,
     projectResourceAuthority: 'workspace',
-    enabled: false,
-    publishedVersion: null,
-    isOwner: false,
   };
 }
 
