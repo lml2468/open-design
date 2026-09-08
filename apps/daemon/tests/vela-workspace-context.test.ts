@@ -324,37 +324,6 @@ describe('createCachedWorkspaceDirectoryFetcher', () => {
     await expect(accountB).resolves.toEqual({ ok: true, items: [] });
   });
 
-  it('reports directory lease hits and mutation invalidation without identity labels', async () => {
-    let now = 1_000;
-    const onDecision = vi.fn();
-    const onSuppressedRequest = vi.fn();
-    const onInvalidation = vi.fn();
-    const broker = createWorkspaceDirectoryAuthorityBroker({
-      now: () => now,
-      ttlMs: 5_000,
-      fetchDirectory: async () => ({ ok: true, items: [] }),
-      onDecision,
-      onSuppressedRequest,
-      onInvalidation,
-    });
-
-    await broker.read();
-    now += 250;
-    await broker.read();
-    expect(onDecision).toHaveBeenLastCalledWith({
-      source: 'cache',
-      reason: 'lease_hit',
-      outcome: 'allow',
-      ageMs: 250,
-    });
-    expect(onSuppressedRequest).toHaveBeenCalledOnce();
-
-    await broker.refreshAfterMutation();
-    expect(onInvalidation).toHaveBeenCalledWith({
-      source: 'cache',
-      reason: 'mutation',
-    });
-  });
 });
 
 describe('createFreshWorkspaceDirectoryFetcher', () => {
@@ -407,82 +376,6 @@ describe('createFreshWorkspaceDirectoryFetcher', () => {
 });
 
 describe('createWorkspaceDirectoryAuthorityBroker', () => {
-  it('keeps a successful lease past 15s while realtime is healthy, then expires it after disconnect', async () => {
-    let now = 0;
-    const first = { ok: true as const, items: [{ ...B_DIRECTORY_ITEM }] };
-    const second = { ok: true as const, items: [] };
-    const fetchDirectory = vi
-      .fn()
-      .mockResolvedValueOnce(first)
-      .mockResolvedValueOnce(second);
-    const authority = createWorkspaceDirectoryAuthorityBroker({
-      fetchDirectory,
-      identityKey: () => 'account-a:config-a',
-      ttlMs: 15_000,
-      now: () => now,
-    });
-
-    await expect(authority.read()).resolves.toEqual(first);
-    authority.setRealtimeHealthy(true);
-    now = 120_000;
-    await expect(authority.read()).resolves.toEqual(first);
-    expect(fetchDirectory).toHaveBeenCalledOnce();
-
-    authority.setRealtimeHealthy(false);
-    await expect(authority.read()).resolves.toEqual(second);
-    expect(fetchDirectory).toHaveBeenCalledTimes(2);
-  });
-
-  it('preserves the outage circuit when event storms invalidate successful state', async () => {
-    let now = 0;
-    const unavailable = {
-      ok: false as const,
-      items: [],
-      reason: 'network' as const,
-    };
-    const fetchDirectory = vi.fn(async () => unavailable);
-    const authority = createWorkspaceDirectoryAuthorityBroker({
-      fetchDirectory,
-      identityKey: () => 'account-a:config-a',
-      failureBackoffMinMs: 15_000,
-      now: () => now,
-      random: () => 0,
-    });
-
-    await authority.backgroundFresh();
-    for (let index = 0; index < 100; index += 1) {
-      authority.invalidate('event_dirty');
-      await authority.backgroundFresh();
-    }
-    expect(fetchDirectory).toHaveBeenCalledOnce();
-
-    now = 15_000;
-    await authority.backgroundFresh();
-    expect(fetchDirectory).toHaveBeenCalledTimes(2);
-  });
-
-  it('invalidates the current account lease and forces the next read to refresh', async () => {
-    const first = {
-      ok: true as const,
-      items: [{ ...B_DIRECTORY_ITEM }],
-    };
-    const second = { ok: true as const, items: [] };
-    const fetchDirectory = vi
-      .fn()
-      .mockResolvedValueOnce(first)
-      .mockResolvedValueOnce(second);
-    const authority = createWorkspaceDirectoryAuthorityBroker({
-      fetchDirectory,
-      identityKey: () => 'account-a:config-a',
-    });
-
-    await expect(authority.read()).resolves.toEqual(first);
-    await expect(authority.read()).resolves.toEqual(first);
-    authority.invalidate();
-    await expect(authority.read()).resolves.toEqual(second);
-    expect(fetchDirectory).toHaveBeenCalledTimes(2);
-  });
-
   it('retires every settled lease across an observed A -> B -> A identity round trip', async () => {
     let identity = 'account-a:config-a';
     const accountA = {
@@ -500,61 +393,11 @@ describe('createWorkspaceDirectoryAuthorityBroker', () => {
     });
 
     await expect(authority.read()).resolves.toEqual(accountA);
-    authority.setRealtimeHealthy(true);
     identity = 'account-b:config-b';
     authority.resetIdentity();
     identity = 'account-a:config-a';
 
     await expect(authority.read()).resolves.toEqual(refreshedAccountA);
-    expect(fetchDirectory).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not let an invalidated in-flight result seed or satisfy the new generation', async () => {
-    const pending: Array<
-      (result: { ok: true; items: WorkspaceDirectoryItem[] }) => void
-    > = [];
-    const fetchDirectory = vi.fn(
-      () =>
-        new Promise<{ ok: true; items: WorkspaceDirectoryItem[] }>(
-          (resolve) => pending.push(resolve),
-        ),
-    );
-    const onAcceptedResult = vi.fn();
-    const authority = createWorkspaceDirectoryAuthorityBroker({
-      fetchDirectory,
-      identityKey: () => 'account-a:config-a',
-      onAcceptedResult,
-    });
-
-    const staleRead = authority.read();
-    authority.invalidate();
-    const currentRead = authority.read();
-    expect(fetchDirectory).toHaveBeenCalledTimes(2);
-
-    const stale = { ok: true as const, items: [{ ...B_DIRECTORY_ITEM }] };
-    pending[0]!(stale);
-    await expect(staleRead).resolves.toEqual(stale);
-    expect(onAcceptedResult).not.toHaveBeenCalled();
-
-    let currentSettled = false;
-    void currentRead.then(() => {
-      currentSettled = true;
-    });
-    await Promise.resolve();
-    expect(currentSettled).toBe(false);
-
-    const current = {
-      ok: true as const,
-      items: [{ ...B_DIRECTORY_ITEM, workspaceId: 'ws-team-2' }],
-    };
-    pending[1]!(current);
-    await expect(currentRead).resolves.toEqual(current);
-    expect(onAcceptedResult).toHaveBeenCalledOnce();
-    expect(onAcceptedResult).toHaveBeenCalledWith(
-      current,
-      'account-a:config-a',
-    );
-    await expect(authority.read()).resolves.toEqual(current);
     expect(fetchDirectory).toHaveBeenCalledTimes(2);
   });
 
@@ -632,10 +475,8 @@ describe('createWorkspaceDirectoryAuthorityBroker', () => {
     expect(failedFetch).toHaveBeenCalledOnce();
   });
 
-  it('uses one account-wide exponential outage circuit across read and fresh callers', async () => {
+  it('uses one account-wide exponential outage circuit across read callers', async () => {
     let now = 0;
-    const onDecision = vi.fn();
-    const onSuppressedRequest = vi.fn();
     const networkFailure = {
       ok: false as const,
       items: [],
@@ -654,32 +495,21 @@ describe('createWorkspaceDirectoryAuthorityBroker', () => {
       failureBackoffMaxMs: 400,
       now: () => now,
       random: () => 0,
-      onDecision,
-      onSuppressedRequest,
     });
 
     await expect(authority.read()).resolves.toEqual(networkFailure);
     await expect(Promise.all([
       authority.read(),
-      authority.backgroundFresh(),
+      authority.read(),
       authority.read(),
     ])).resolves.toEqual([networkFailure, networkFailure, networkFailure]);
     expect(fetchDirectory).toHaveBeenCalledOnce();
-    expect(onDecision).toHaveBeenCalledWith({
-      source: 'cache',
-      reason: 'failure_backoff',
-      outcome: 'unavailable',
-    });
-    expect(onSuppressedRequest).toHaveBeenCalledWith({
-      source: 'directory',
-      reason: 'failure_backoff',
-    });
 
     now = 99;
     await authority.read();
     expect(fetchDirectory).toHaveBeenCalledOnce();
     now = 100;
-    await authority.backgroundFresh();
+    await authority.read();
     expect(fetchDirectory).toHaveBeenCalledTimes(2);
 
     // The second failed probe doubles the floor to 200ms. Positive jitter never
@@ -722,7 +552,7 @@ describe('createWorkspaceDirectoryAuthorityBroker', () => {
     expect(fetchDirectory).toHaveBeenCalledTimes(2);
   });
 
-  it('does not outage-cache authorization rejection and lets authoritative invalidation probe immediately', async () => {
+  it('does not outage-cache authorization rejection and lets a fresh probe recover immediately', async () => {
     let now = 0;
     const unauthorized = {
       ok: false as const,
@@ -753,41 +583,8 @@ describe('createWorkspaceDirectoryAuthorityBroker', () => {
     await expect(authority.read()).resolves.toEqual(networkFailure);
     expect(fetchDirectory).toHaveBeenCalledTimes(2);
 
-    authority.invalidate('catch_up');
     await expect(authority.fresh()).resolves.toEqual(recovered);
     expect(fetchDirectory).toHaveBeenCalledTimes(3);
-  });
-
-  it('avoids directory reads for status and heartbeat while realtime stays healthy', async () => {
-    let now = 0;
-    let activeReads = 0;
-    let maxActiveReads = 0;
-    const fetchDirectory = vi.fn(async () => {
-      activeReads += 1;
-      maxActiveReads = Math.max(maxActiveReads, activeReads);
-      await Promise.resolve();
-      activeReads -= 1;
-      return { ok: true as const, items: [] };
-    });
-    const authority = createWorkspaceDirectoryAuthorityBroker({
-      fetchDirectory,
-      identityKey: () => 'account-a:config-a',
-      now: () => now,
-    });
-
-    await authority.read();
-    authority.setRealtimeHealthy(true);
-    // Model the production order pessimistically: status first every 5s, then
-    // heartbeat at each 10s boundary. Both are idempotent display
-    // reads of the same directory authority while the strict account event
-    // stream remains healthy.
-    for (now = 0; now <= 30_000; now += 5_000) {
-      await authority.read();
-      if (now % 10_000 === 0) await authority.read();
-    }
-
-    expect(fetchDirectory).toHaveBeenCalledOnce();
-    expect(maxActiveReads).toBe(1);
   });
 
   it('coalesces unsettled read and mutation checks without reusing settled authority', async () => {
@@ -815,38 +612,6 @@ describe('createWorkspaceDirectoryAuthorityBroker', () => {
     expect(fetchDirectory).toHaveBeenCalledTimes(2);
     resolveRead?.({ ok: true, items: [] });
     await nextMutation;
-  });
-
-  it('starts a post-mutation fetch after draining an older in-flight directory read', async () => {
-    let resolvePreMutation:
-      | ((result: { ok: true; items: [] }) => void)
-      | undefined;
-    const accepted = {
-      ok: true as const,
-      items: [{ ...B_TEAM_CONTEXT }],
-    };
-    const fetchDirectory = vi
-      .fn()
-      .mockImplementationOnce(
-        () => new Promise<{ ok: true; items: [] }>((resolve) => {
-          resolvePreMutation = resolve;
-        }),
-      )
-      .mockResolvedValueOnce(accepted);
-    const authority = createWorkspaceDirectoryAuthorityBroker({
-      fetchDirectory,
-      identityKey: () => 'account-a:config-a',
-    });
-
-    const preMutationRead = authority.read();
-    const postMutationRefresh = authority.refreshAfterMutation();
-    expect(fetchDirectory).toHaveBeenCalledTimes(1);
-
-    resolvePreMutation?.({ ok: true, items: [] });
-    await expect(preMutationRead).resolves.toEqual({ ok: true, items: [] });
-    await expect(postMutationRefresh).resolves.toEqual(accepted);
-    expect(fetchDirectory).toHaveBeenCalledTimes(2);
-    await expect(authority.read()).resolves.toEqual(accepted);
   });
 
   it('publishes a fresh revocation result into the subsequent read lease', async () => {

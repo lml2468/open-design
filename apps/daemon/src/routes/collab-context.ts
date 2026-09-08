@@ -31,17 +31,11 @@ export interface RegisterCollabContextRoutesDeps {
   workspaceContext: WorkspaceContextProvider;
   /** Current settings-backed AMR environment for synthesized contexts. */
   configuredEnv?: () => Record<string, string>;
-  /** Optional settled verifier for exact-scoped display GETs. Mutations and
-   * SSE subscriptions retain their fresh directory verification below. */
+  /** Optional settled verifier for exact-scoped display GETs. Mutations retain
+   * their fresh directory verification below. */
   verifyWorkspaceReadAuthority?: (
     req: Request,
   ) => Promise<VerifiedWorkspaceRequestContextResult>;
-  /** Returns an exact, strict-SSE-backed membership only in adaptive mode.
-   * Null preserves the legacy directory preflight byte-for-byte. */
-  readCachedWorkspaceAuthority?: (
-    req: Request,
-    workspaceId: string,
-  ) => WorkspaceCollabContext | null;
   /** Injectable for tests; defaults to the resource-hub team-project lister
    *  built from the same workspace context + env-configured hub client the share
    *  path uses. */

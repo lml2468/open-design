@@ -483,13 +483,10 @@ export function velaWorkspaceDirectoryIdentityForSession(
  *
  * Successful authority reads seed a bounded display-read lease. General
  * mutations ignore that settled success lease and perform a fresh directory
- * read, while still sharing an already-unsettled request and a short outage
- * circuit from the same Vela session. The cached-only accessor never starts
- * I/O; its one production consumer may use a valid same-session lease for
- * personal local-only project cleanup, then falls back to fresh authority on
- * every miss. This keeps the 5s status poll off the control plane without
- * weakening Team/hub mutation freshness, and prevents a status/heartbeat
- * boundary from launching duplicate directory requests.
+ * read, while still sharing an already-unsettled request from the same Vela
+ * session. A short outage circuit prevents repeated display reads from
+ * hammering an unavailable authority. The cached-only accessor never starts
+ * I/O and returns only an unexpired same-session lease.
  */
 export function createWorkspaceDirectoryAuthorityBroker(options: {
   fetchDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
@@ -499,44 +496,13 @@ export function createWorkspaceDirectoryAuthorityBroker(options: {
   failureBackoffMaxMs?: number;
   now?: () => number;
   random?: () => number;
-  onDecision?: (input: {
-    source: 'cache' | 'directory';
-    reason:
-      | 'cold'
-      | 'lease_hit'
-      | 'lease_expired'
-      | 'in_flight'
-      | 'failure_backoff'
-      | 'fresh';
-    outcome: 'allow' | 'deny' | 'unavailable' | 'fallback';
-    ageMs?: number;
-  }) => void;
-  onSuppressedRequest?: (input: {
-    source: 'directory';
-    reason: 'lease_hit' | 'in_flight' | 'failure_backoff';
-  }) => void;
-  onInvalidation?: (input: {
-    source: 'cache';
-    reason: 'mutation' | 'event_dirty' | 'auth_reject' | 'catch_up';
-  }) => void;
-  /** Called only when a successful result belongs to the current generation. */
-  onAcceptedResult?: (
-    result: WorkspaceDirectoryFetchResult,
-    identity: string,
-  ) => void;
 } = {}): {
   cached: () => Promise<WorkspaceDirectoryFetchResult>;
   read: () => Promise<WorkspaceDirectoryFetchResult>;
   /** User-initiated authority probe: ignores a settled outage circuit. */
   fresh: () => Promise<WorkspaceDirectoryFetchResult>;
-  /** Background fresh read: shares the account-wide outage circuit. */
-  backgroundFresh: () => Promise<WorkspaceDirectoryFetchResult>;
-  /** Keep successful display reads alive while account-directory SSE is strict. */
-  setRealtimeHealthy: (healthy: boolean) => void;
   /** Retire every identity partition and fence all unsettled directory reads. */
   resetIdentity: () => void;
-  invalidate: (reason?: 'event_dirty' | 'auth_reject' | 'catch_up') => void;
-  refreshAfterMutation: () => Promise<WorkspaceDirectoryFetchResult>;
 } {
   const fetchDirectory =
     options.fetchDirectory ?? (() => fetchVelaWorkspaceDirectory());
@@ -576,18 +542,13 @@ export function createWorkspaceDirectoryAuthorityBroker(options: {
       nextDelayMs: number;
     }
   >();
-  let realtimeHealthyIdentity: string | null = null;
-
   const generationFor = (identity: string): number =>
     generations.get(identity) ?? 0;
 
-  const invalidateIdentity = (
-    identity: string,
-    preserveFailure = false,
-  ): void => {
+  const invalidateIdentity = (identity: string): void => {
     generations.set(identity, generationFor(identity) + 1);
     cached.delete(identity);
-    if (!preserveFailure) failures.delete(identity);
+    failures.delete(identity);
   };
 
   const resetIdentity = (): void => {
@@ -598,7 +559,6 @@ export function createWorkspaceDirectoryAuthorityBroker(options: {
       ...failures.keys(),
     ]);
     for (const identity of identities) invalidateIdentity(identity);
-    realtimeHealthyIdentity = null;
   };
 
   const failureBackoffHit = (
@@ -607,15 +567,6 @@ export function createWorkspaceDirectoryAuthorityBroker(options: {
     const failure = failures.get(identity);
     if (!failure) return null;
     if (now() >= failure.retryAt) return null;
-    recordDecision({
-      source: 'cache',
-      reason: 'failure_backoff',
-      outcome: 'unavailable',
-    });
-    options.onSuppressedRequest?.({
-      source: 'directory',
-      reason: 'failure_backoff',
-    });
     return failure.result;
   };
 
@@ -650,22 +601,10 @@ export function createWorkspaceDirectoryAuthorityBroker(options: {
     });
   };
 
-  const recordDecision = (
-    input: Parameters<NonNullable<typeof options.onDecision>>[0],
-  ): void => {
-    options.onDecision?.(input);
-  };
-
-  const start = (
-    identity: string,
-    reason: 'cold' | 'lease_expired' | 'fresh',
-  ): Promise<WorkspaceDirectoryFetchResult> => {
+  const start = (identity: string): Promise<WorkspaceDirectoryFetchResult> => {
     const generation = generationFor(identity);
     const pending = inFlight.get(identity);
-    if (pending?.generation === generation) {
-      options.onSuppressedRequest?.({ source: 'directory', reason: 'in_flight' });
-      return pending.request;
-    }
+    if (pending?.generation === generation) return pending.request;
     const request = fetchDirectory()
       .then((result) => {
         if (result.ok && generationFor(identity) === generation) {
@@ -675,24 +614,10 @@ export function createWorkspaceDirectoryAuthorityBroker(options: {
             expiresAt: now() + ttlMs,
             result,
           });
-          options.onAcceptedResult?.(result, identity);
         } else if (!result.ok && generationFor(identity) === generation) {
           rememberFailure(identity, result);
         }
-        recordDecision({
-          source: 'directory',
-          reason,
-          outcome: result.ok ? 'allow' : 'unavailable',
-        });
         return result;
-      })
-      .catch((error) => {
-        recordDecision({
-          source: 'directory',
-          reason,
-          outcome: 'unavailable',
-        });
-        throw error;
       })
       .finally(() => {
         if (inFlight.get(identity)?.request === request) {
@@ -712,18 +637,8 @@ export function createWorkspaceDirectoryAuthorityBroker(options: {
         && cachedEntry.generation === generationFor(identity)
         && now() < cachedEntry.expiresAt
       ) {
-        const ageMs = Math.max(0, ttlMs - (cachedEntry.expiresAt - now()));
-        recordDecision({
-          source: 'cache',
-          reason: 'lease_hit',
-          outcome: 'allow',
-          ageMs,
-        });
-        options.onSuppressedRequest?.({ source: 'directory', reason: 'lease_hit' });
         return Promise.resolve(cachedEntry.result);
       }
-      const reason = cachedEntry ? 'lease_expired' : 'cold';
-      recordDecision({ source: 'cache', reason, outcome: 'fallback' });
       return Promise.resolve({ ok: false, items: [] });
     },
     read: () => {
@@ -732,63 +647,17 @@ export function createWorkspaceDirectoryAuthorityBroker(options: {
       if (
         cachedEntry
         && cachedEntry.generation === generationFor(identity)
-        && (
-          now() < cachedEntry.expiresAt
-          || realtimeHealthyIdentity === identity
-        )
+        && now() < cachedEntry.expiresAt
       ) {
-        const ageMs = Math.max(0, ttlMs - (cachedEntry.expiresAt - now()));
-        recordDecision({
-          source: 'cache',
-          reason: 'lease_hit',
-          outcome: 'allow',
-          ageMs,
-        });
-        options.onSuppressedRequest?.({ source: 'directory', reason: 'lease_hit' });
         return Promise.resolve(cachedEntry.result);
       }
       const backoffResult = failureBackoffHit(identity);
       if (backoffResult) return Promise.resolve(backoffResult);
-      const reason = cachedEntry ? 'lease_expired' : 'cold';
       cached.delete(identity);
-      return start(identity, reason);
+      return start(identity);
     },
-    fresh: () => start(identityKey(), 'fresh'),
-    backgroundFresh: () => {
-      const identity = identityKey();
-      const backoffResult = failureBackoffHit(identity);
-      return backoffResult
-        ? Promise.resolve(backoffResult)
-        : start(identity, 'fresh');
-    },
-    setRealtimeHealthy: (healthy) => {
-      const identity = identityKey();
-      realtimeHealthyIdentity = healthy ? identity : null;
-    },
+    fresh: () => start(identityKey()),
     resetIdentity,
-    invalidate: (reason = 'event_dirty') => {
-      // A dirty event voids successful state, but a sustained event storm must
-      // not punch through the account-wide outage circuit on every frame.
-      // Explicit catch-up/auth boundaries and successful mutations remain
-      // stronger signals and still clear the circuit immediately.
-      invalidateIdentity(identityKey(), reason === 'event_dirty');
-      options.onInvalidation?.({ source: 'cache', reason });
-    },
-    refreshAfterMutation: async () => {
-      // A read that started before the remote mutation can still be in flight
-      // after the mutation commits. Drain it, then deliberately start another
-      // fetch so the settled lease is based on post-mutation authority.
-      const identity = identityKey();
-      // The mutation has already succeeded upstream, which is a stronger
-      // recovery signal than the old failed directory probe. Refresh its
-      // authority immediately instead of waiting behind the read circuit.
-      failures.delete(identity);
-      const pending = inFlight.get(identity)?.request;
-      if (pending) await pending.catch(() => undefined);
-      invalidateIdentity(identity);
-      options.onInvalidation?.({ source: 'cache', reason: 'mutation' });
-      return start(identityKey(), 'fresh');
-    },
   };
 }
 

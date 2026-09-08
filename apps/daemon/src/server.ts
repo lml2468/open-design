@@ -834,12 +834,6 @@ import {
   workspaceContextFromDirectoryItem,
 } from './collab/vela-workspace-context.js';
 import { verifyWorkspaceRequestContext } from './collab/request-workspace-context.js';
-import { resolveWorkspaceAuthorityCacheMode } from './collab/workspace-authority-health.js';
-import {
-  recordWorkspaceAuthorityDecision,
-  recordWorkspaceAuthorityInvalidation,
-  recordWorkspaceAuthoritySuppressedRequest,
-} from './metrics/workspace-authority.js';
 import { createProjectContentTransferStateStore } from './collab/project-content-transfer-state.js';
 import {
   emitSharedProjectPullTiming,
@@ -854,7 +848,6 @@ import {
 import { createPersistentSyncCache } from './collab/persistent-sync-cache.js';
 import { createSwrCache } from './collab/swr-cache.js';
 import { readVelaControlApiContext } from './integrations/vela.js';
-import { createWorkspaceExactAuthorityCache } from './collab/workspace-exact-authority-cache.js';
 import {
   isUnmaterializedSharedPlaceholder,
   SHARED_PROJECT_PLACEHOLDER_METADATA_KEY,
@@ -867,7 +860,6 @@ import {
   type ResourceHubPrincipal,
 } from './collab/resource-principal.js';
 import { createCollabCloudClientFromEnv } from './integrations/collab-cloud.js';
-import { createWorkspaceExactContextCache } from './collab/workspace-exact-context-cache.js';
 import { createVelaCliCollabClientFromEnv } from './collab/vela-cli-collab-client.js';
 import {
   createScopedVelaTeamProjectCatalogClientCache,
@@ -2528,10 +2520,6 @@ export async function startServer({
   let resolvedPort = port;
   let daemonShuttingDown = false;
   const extraAllowedOrigins = configuredAllowedOrigins();
-  const workspaceAuthorityCacheMode = resolveWorkspaceAuthorityCacheMode(
-    process.env.OD_WORKSPACE_AUTHORITY_CACHE_MODE,
-  );
-
   // Plan §3.K1 / spec §15.7 — bound-API-token guard.
   //
   // The daemon refuses to bind to a public interface unless an
@@ -3084,12 +3072,6 @@ export async function startServer({
   const workspaceTypes = createWorkspaceTypeRegistry();
   const configuredAmrEnv = () =>
     agentCliEnvForAgent(readAppConfigSync(RUNTIME_DATA_DIR).agentCliEnv, 'amr');
-  const workspaceExactAuthorityCache = createWorkspaceExactAuthorityCache({
-    identity: () => velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    ),
-  });
   const workspaceDirectoryAuthority = createWorkspaceDirectoryAuthorityBroker({
     fetchDirectory: async () => {
       const result = await fetchVelaWorkspaceDirectory({
@@ -3102,37 +3084,18 @@ export async function startServer({
       readVelaControlApiContext,
       configuredAmrEnv(),
     ),
-    onDecision: (input) => recordWorkspaceAuthorityDecision({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onSuppressedRequest: (input) => recordWorkspaceAuthoritySuppressedRequest({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onInvalidation: (input) => recordWorkspaceAuthorityInvalidation({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onAcceptedResult: (result, identity) =>
-      workspaceExactAuthorityCache.observe(identity, result.items),
   });
   const fetchWorkspaceDirectory = workspaceDirectoryAuthority.read;
   const fetchFreshMutationWorkspaceDirectory =
     workspaceDirectoryAuthority.fresh;
-  const fetchFreshBackgroundWorkspaceDirectory =
-    workspaceDirectoryAuthority.backgroundFresh;
   const verifyExplicitWorkspaceRequestContext = async (input: {
     req: any;
     requireTeam?: boolean;
-  }, options: { fresh?: boolean; backgroundFresh?: boolean } = {}) => {
+  }, options: { fresh?: boolean } = {}) => {
     if (process.env.OD_WORKSPACE_CONTEXT_SOURCE?.trim() === 'vela') {
-      let fetchDirectory = fetchFreshMutationWorkspaceDirectory;
-      if (options.fresh === false) {
-        fetchDirectory = fetchWorkspaceDirectory;
-      } else if (options.backgroundFresh) {
-        fetchDirectory = fetchFreshBackgroundWorkspaceDirectory;
-      }
+      const fetchDirectory = options.fresh === false
+        ? fetchWorkspaceDirectory
+        : fetchFreshMutationWorkspaceDirectory;
       return verifyWorkspaceRequestContext({
         ...input,
         fetchWorkspaceDirectory: fetchDirectory,
@@ -3212,16 +3175,12 @@ export async function startServer({
   };
   const resolveAuthoritativeTeamWorkspaceContext = async (
     workspaceId: string | null | undefined,
-    options: { fresh?: boolean; backgroundFresh?: boolean } = {},
+    options: { fresh?: boolean } = {},
   ): Promise<WorkspaceCollabContext | null> => {
     const requestedWorkspaceId = workspaceId?.trim() ?? '';
     if (!requestedWorkspaceId) return null;
     let fetchDirectory = fetchWorkspaceDirectory;
-    if (options.fresh) {
-      fetchDirectory = options.backgroundFresh
-        ? fetchFreshBackgroundWorkspaceDirectory
-        : fetchFreshMutationWorkspaceDirectory;
-    }
+    if (options.fresh) fetchDirectory = fetchFreshMutationWorkspaceDirectory;
     const directory = await fetchDirectory().catch(() => ({
       ok: false as const,
       items: [],
@@ -3369,33 +3328,12 @@ export async function startServer({
         activeWorkspace.replaceIf(expectedWorkspaceId, workspaceId),
     }),
   );
-  const workspaceExactContextCache = createWorkspaceExactContextCache({
-    provider: workspaceContext,
-    identity: () => velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    ),
-    onDecision: (input) => recordWorkspaceAuthorityDecision({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onSuppressedRequest: (input) => recordWorkspaceAuthoritySuppressedRequest({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onInvalidation: (input) => recordWorkspaceAuthorityInvalidation({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-  });
   let workspaceAccountIdentity = velaWorkspaceDirectoryIdentity(
     readVelaControlApiContext,
     configuredAmrEnv(),
   );
-  const resetWorkspaceIdentityCaches = (): void => {
+  const resetWorkspaceDirectoryIdentity = (): void => {
     workspaceDirectoryAuthority.resetIdentity();
-    workspaceExactAuthorityCache.resetIdentity();
-    workspaceExactContextCache.resetIdentity();
   };
   const refreshWorkspaceAccountIdentity = (): void => {
     const currentIdentity = velaWorkspaceDirectoryIdentity(
@@ -3404,51 +3342,15 @@ export async function startServer({
     );
     if (currentIdentity === workspaceAccountIdentity) return;
     workspaceAccountIdentity = currentIdentity;
-    resetWorkspaceIdentityCaches();
+    resetWorkspaceDirectoryIdentity();
   };
   const fetchWorkspaceDirectoryForAccountSurface = () => {
     refreshWorkspaceAccountIdentity();
     return fetchWorkspaceDirectory();
   };
-  const workspaceContextProvider = workspaceExactContextCache.provider;
-  const cachedWorkspaceContextForRequest = (
-    req: unknown,
-    requestedWorkspaceId?: string,
-  ): WorkspaceCollabContext | null => {
+  const workspaceContextProvider = workspaceContext;
+  const verifyWorkspaceContextReadAuthority = (req: unknown) => {
     refreshWorkspaceAccountIdentity();
-    const claimed = workspaceResourceContextFromRequest(req);
-    if (!claimed || claimed === 'missing') return null;
-    if (
-      requestedWorkspaceId &&
-      claimed.workspaceId !== requestedWorkspaceId.trim()
-    ) {
-      return null;
-    }
-    const cached = workspaceExactContextCache.cached(claimed.workspaceId);
-    return cached &&
-      cached.workspaceMemberId === claimed.workspaceMemberId &&
-      cached.memberStatus === 'active' &&
-      cached.lifecycleState !== 'deleted'
-      ? cached
-      : null;
-  };
-  const verifyWorkspaceContextReadAuthority = async (req: unknown) => {
-    refreshWorkspaceAccountIdentity();
-    const claimed = workspaceResourceContextFromRequest(req);
-    if (claimed && claimed !== 'missing') {
-      const cached = workspaceExactAuthorityCache.cached(
-        claimed.workspaceId,
-        claimed.workspaceMemberId,
-      );
-      if (cached) {
-        return {
-          ok: true as const,
-          context: workspaceContextFromDirectoryItem(cached, configuredAmrEnv()),
-        };
-      }
-    }
-    // The exact cache is directory-sourced and usable only under strict SSE
-    // health. Every miss preserves the legacy directory verification.
     return verifyWorkspaceReadAuthority(req);
   };
   /**
@@ -4295,7 +4197,6 @@ export async function startServer({
     workspaceContext: collab.workspaceContext,
     configuredEnv: configuredAmrEnv,
     verifyWorkspaceReadAuthority: verifyWorkspaceContextReadAuthority,
-    readCachedWorkspaceAuthority: cachedWorkspaceContextForRequest,
     activeWorkspace,
     // A tab-local selection leaves this exact Workspace's scoped caches cold.
     // Warm only the directory-verified id announced by that request; the
