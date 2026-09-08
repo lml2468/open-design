@@ -37,7 +37,7 @@ reproducible one:
   `odNextTaskTypeForProjectScenarioBinding`) requires
   `provenance === 'automatic_default'`. A project where the user explicitly
   picked a scenario resolves `taskType` to null and takes the legacy path.
-- `agentId` must be one of `codex` / `claude` / `opencode` / `amr`,
+- `agentId` must be one of `codex` / `claude` / `opencode`,
   `sourceKind` must be `bundled`, and the runtime capability preflight must
   have passed.
 

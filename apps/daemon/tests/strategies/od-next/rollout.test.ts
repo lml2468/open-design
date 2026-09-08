@@ -35,6 +35,7 @@ describe('OD Next controlled rollout', () => {
       requestedMode: 'active',
       requestedModeSource: 'env',
       eligibleTaskTypes: ['prototype', 'ppt', 'marketing', 'hyperframes'],
+      eligibleAgents: ['codex', 'claude', 'opencode'],
       productionActiveApproved: true,
       assignmentPercent: 100,
     });

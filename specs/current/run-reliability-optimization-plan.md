@@ -103,7 +103,6 @@ Safe first retry scope:
 Explicit no-retry scope:
 
 - auth/login failures;
-- AMR insufficient balance;
 - hard quota/session limit;
 - prompt/context too large;
 - model unavailable;
