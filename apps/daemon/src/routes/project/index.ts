@@ -124,7 +124,6 @@ import {
 } from '../../collab/project-workspace-scope.js';
 import {
   createAuthorizeProjectRequest,
-  enforceLocalProjectDataPlaneRequest,
   type AuthorizeProjectRequest,
 } from '../../collab/project-request-authority.js';
 import {
@@ -337,68 +336,44 @@ function teamShareRefusalFor(
  * The non-rejecting counterpart of `createEnforceWorkspaceProjectMutation`,
  * for a read route that would otherwise write as a local side effect.
  */
-export function createWorkspaceProjectWriteAuthorityCheck(
-  _verifyWorkspaceRequestAuthority?: VerifyWorkspaceRequestAuthority,
-) {
+export function createWorkspaceProjectWriteAuthorityCheck() {
   return async function requestCanWriteWorkspaceProject(
-    req: any,
-    getWorkspaceProject: (db: unknown, workspaceId: string, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
-    getWorkspaceProjectByProjectId: (db: unknown, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
-    db: unknown,
-    projectId: string,
+    _req: any,
+    _getWorkspaceProject: (db: unknown, workspaceId: string, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
+    _getWorkspaceProjectByProjectId: (db: unknown, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
+    _db: unknown,
+    _projectId: string,
   ): Promise<boolean> {
-    return enforceLocalProjectDataPlaneRequest({
-      req,
-      projectId,
-      options: { mode: 'write', capability: 'writeFiles' },
-      db,
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-    });
+    return true;
   };
 }
 
 export function createEnforceWorkspaceProjectMutation(
-  _verifyWorkspaceRequestAuthority?: VerifyWorkspaceRequestAuthority,
-  _verifyPersonalProjectDeleteLeaseAuthority?: VerifyWorkspaceRequestAuthority,
   authorizeProjectRequest?: AuthorizeProjectRequest,
 ) {
   return async function enforceWorkspaceProjectMutation(
     req: any,
     res: Response,
-    sendApiError: (
+    _sendApiError: (
       res: Response,
       status: number,
       code: string,
       message: string,
       details?: Record<string, unknown>,
     ) => unknown,
-    getWorkspaceProject: (db: unknown, workspaceId: string, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
-    getWorkspaceProjectByProjectId: (db: unknown, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
-    db: unknown,
+    _getWorkspaceProject: (db: unknown, workspaceId: string, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
+    _getWorkspaceProjectByProjectId: (db: unknown, projectId: string) => WorkspaceProjectAccessInput | null | undefined,
+    _db: unknown,
     projectId: string,
     capability: WorkspaceProjectMutationCapability,
   ): Promise<boolean> {
-    // Production routes converge on the central project authority gate. Keep
-    // the local-data-plane fallback solely for focused legacy fixtures that do
-    // not provide the production authorizer.
     if (authorizeProjectRequest) {
       return authorizeProjectRequest(req, res, projectId, {
         mode: 'write',
         capability,
       });
     }
-    return enforceLocalProjectDataPlaneRequest({
-      req,
-      projectId,
-      options: { mode: 'write', capability },
-      db,
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      onDenied: (status, code, message, details) => details === undefined
-        ? sendApiError(res, status, code, message)
-        : sendApiError(res, status, code, message, details),
-    });
+    return true;
   };
 }
 
@@ -1951,18 +1926,8 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
   };
   const authorizeProjectRequest =
     ctx.authorizeProjectRequest ??
-    createAuthorizeProjectRequest({
-      db,
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      ...(ctx.verifyWorkspaceRequestAuthority
-        ? { verifyWorkspaceRequestAuthority: ctx.verifyWorkspaceRequestAuthority }
-        : {}),
-      sendApiError,
-    });
+    createAuthorizeProjectRequest();
   const enforceWorkspaceProjectMutation = createEnforceWorkspaceProjectMutation(
-    ctx.verifyWorkspaceRequestAuthority,
-    ctx.verifyPersonalProjectDeleteLeaseAuthority,
     authorizeProjectRequest,
   );
   // Duplicate/import paths use the same optional local attribution as ordinary
@@ -4146,23 +4111,11 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
   const { getProject, getWorkspaceProject, getWorkspaceProjectByProjectId } = ctx.projectStore;
   const authorizeProjectRequest =
     ctx.authorizeProjectRequest ??
-    createAuthorizeProjectRequest({
-      db,
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      ...(ctx.verifyWorkspaceRequestAuthority
-        ? { verifyWorkspaceRequestAuthority: ctx.verifyWorkspaceRequestAuthority }
-        : {}),
-      sendApiError,
-    });
+    createAuthorizeProjectRequest();
   const enforceWorkspaceProjectMutation = createEnforceWorkspaceProjectMutation(
-    ctx.verifyWorkspaceRequestAuthority,
-    undefined,
     authorizeProjectRequest,
   );
-  const requestCanWriteWorkspaceProject = createWorkspaceProjectWriteAuthorityCheck(
-    ctx.verifyWorkspaceRequestAuthority,
-  );
+  const requestCanWriteWorkspaceProject = createWorkspaceProjectWriteAuthorityCheck();
   const { listFiles, listProjectFolders, createProjectFolder, deleteProjectFolder, searchProjectFiles, readProjectFile, resolveProjectDir, resolveProjectFilePath, parseByteRange, renameProjectFile, deleteProjectFile, writeProjectFile, sanitizeName, sanitizePath, ensureProject } = ctx.projectFiles;
   const { buildDocumentPreview } = ctx.documents;
   const { validateArtifactManifestInput } = ctx.artifacts;
@@ -6225,18 +6178,8 @@ export function registerProjectUploadRoutes(app: Express, ctx: RegisterProjectUp
   const { fs } = ctx.node;
   const authorizeProjectRequest =
     ctx.authorizeProjectRequest ??
-    createAuthorizeProjectRequest({
-      db,
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      ...(ctx.verifyWorkspaceRequestAuthority
-        ? { verifyWorkspaceRequestAuthority: ctx.verifyWorkspaceRequestAuthority }
-        : {}),
-      sendApiError,
-    });
+    createAuthorizeProjectRequest();
   const enforceWorkspaceProjectMutation = createEnforceWorkspaceProjectMutation(
-    ctx.verifyWorkspaceRequestAuthority,
-    undefined,
     authorizeProjectRequest,
   );
 

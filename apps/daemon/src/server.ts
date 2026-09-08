@@ -3860,12 +3860,7 @@ export async function startServer({
     stageProjectDirsForDelete,
     validateLinkedDirs,
   };
-  const authorizeProjectRequest = createAuthorizeProjectRequest({
-    db,
-    getWorkspaceProject,
-    getWorkspaceProjectByProjectId,
-    sendApiError,
-  });
+  const authorizeProjectRequest = createAuthorizeProjectRequest();
   registerCollaborationServerRoutes(app, {
     runtimeDataDir: RUNTIME_DATA_DIR,
     requireLocalDaemonRequest,
@@ -3897,13 +3892,9 @@ export async function startServer({
       )))();
     },
   });
-  // Legacy registrars still receive the historical bound mutation-gate shape,
-  // but production delegates it to the same central authorizer as newer route
-  // modules. This keeps placeholder stamps authoritative across Figma import,
-  // library/import helpers, runs/chat, and every project/file mutation route.
+  // Legacy registrars still receive their historical mutation-gate callback,
+  // but local Project access no longer depends on Workspace metadata.
   const enforceAuthoritativeProjectMutation = createEnforceWorkspaceProjectMutation(
-    verifyWorkspaceRequestAuthority,
-    undefined,
     authorizeProjectRequest,
   );
   const authorizeProjectToolRequest = async (

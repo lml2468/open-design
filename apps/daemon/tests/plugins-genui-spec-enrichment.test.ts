@@ -20,8 +20,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createAuthorizeProjectRequest } from '../src/collab/project-request-authority.js';
 import {
   ensureWorkspaceProject,
-  getWorkspaceProject,
-  getWorkspaceProjectByProjectId,
 } from '../src/db.js';
 import { registerGenuiRoutes } from '../src/routes/genui.js';
 import { startServer } from '../src/server.js';
@@ -250,31 +248,7 @@ describe('GET /api/runs/:runId/genui/:surfaceId enriches with snapshot spec', ()
 
     const routeApp = express();
     routeApp.use(express.json());
-    const authorizeProjectRequest = createAuthorizeProjectRequest({
-      db,
-      getWorkspaceProject: (_db, workspaceId, candidateProjectId) =>
-        getWorkspaceProject(db, workspaceId, candidateProjectId),
-      getWorkspaceProjectByProjectId: (_db, candidateProjectId) =>
-        getWorkspaceProjectByProjectId(db, candidateProjectId),
-      verifyWorkspaceRequestAuthority: async (req: any) => {
-        const workspaceId = req.get('x-od-workspace-id')?.trim();
-        const workspaceMemberId = req.get('x-od-workspace-member-id')?.trim();
-        if (
-          workspaceId !== WORKSPACE_ID
-          || workspaceMemberId !== WORKSPACE_MEMBER_ID
-        ) {
-          return {
-            ok: false,
-            status: 403,
-            code: 'WORKSPACE_ACCESS_DENIED',
-            message: 'workspace identity does not match the GenUI fixture',
-          };
-        }
-        return { ok: true, context: workspaceContext() };
-      },
-      sendApiError: (res, status, code, message, details) =>
-        res.status(status).json({ error: { code, message, ...details } }),
-    });
+    const authorizeProjectRequest = createAuthorizeProjectRequest();
     registerGenuiRoutes(routeApp, {
       db,
       design: {

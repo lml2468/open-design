@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+import { ensureWorkspaceProject, openDatabase } from '../../src/db.js';
 import { startServer } from '../../src/server.js';
 
 describe('GET /api/projects/:id resolvedDir', () => {
@@ -167,6 +168,61 @@ describe('GET /api/projects/:id resolvedDir', () => {
       id: projectId,
       workspaceId: null,
     });
+  });
+
+  it('keeps a historically bound local project readable and writable without Workspace headers', async () => {
+    const projectId = `proj-legacy-bound-${Date.now()}`;
+    const createResp = await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: projectId,
+        name: 'Legacy bound project',
+        skillId: null,
+        designSystemId: null,
+      }),
+    });
+    expect(createResp.status).toBe(200);
+
+    const dataDir = process.env.OD_DATA_DIR;
+    if (!dataDir) throw new Error('OD_DATA_DIR is required for daemon route tests');
+    const db = openDatabase(process.cwd(), { dataDir });
+    ensureWorkspaceProject(db, {
+      projectId,
+      workspaceId: 'legacy-team-workspace',
+      visibility: 'team',
+      resourceState: 'frozen',
+      createdByWorkspaceMemberId: 'legacy-owner',
+      updatedByWorkspaceMemberId: 'legacy-owner',
+      syncState: 'synced',
+      resourceHubResourceId: 'legacy-resource',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const detailResp = await fetch(`${baseUrl}/api/projects/${projectId}`);
+    expect(detailResp.status).toBe(200);
+
+    const patchResp = await fetch(`${baseUrl}/api/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Locally renamed project' }),
+    });
+    expect(patchResp.status).toBe(200);
+    await expect(patchResp.json()).resolves.toMatchObject({
+      project: { id: projectId, name: 'Locally renamed project' },
+    });
+
+    const writeResp = await fetch(`${baseUrl}/api/projects/${projectId}/files`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'index.html', content: '<h1>local truth</h1>' }),
+    });
+    expect(writeResp.status).toBe(200);
+
+    const fileResp = await fetch(`${baseUrl}/api/projects/${projectId}/files/index.html`);
+    expect(fileResp.status).toBe(200);
+    expect(await fileResp.text()).toContain('local truth');
   });
 
   it('fails GET /api/projects/:id?ensureDir=1 when a managed folder cannot be materialized', async () => {
