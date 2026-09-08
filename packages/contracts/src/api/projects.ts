@@ -6,7 +6,6 @@ import type {
   ProjectContextPluginRef,
 } from './context.js';
 import type { ProjectSyncIntent, ProjectSyncIntentEvent, ProjectSyncState } from './project-sync.js';
-import type { TeamResourceState } from './team-resources.js';
 import type { WorkspaceCollabContext } from './collab.js';
 
 export type ProjectKind =
@@ -628,7 +627,7 @@ export interface WorkspaceProjectSummary {
   name: string;
   workspaceId: string;
   visibility: ProjectVisibility;
-  resourceState: TeamResourceState;
+  resourceState: 'active' | 'frozen' | 'deleted';
   createdByWorkspaceMemberId: string | null;
   updatedByWorkspaceMemberId?: string | null;
   /**

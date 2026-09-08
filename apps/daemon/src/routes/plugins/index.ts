@@ -7,15 +7,10 @@ import type {
   ProjectMetadata,
   WorkspaceCollabContext,
 } from '@open-design/contracts';
-import { TeamResourceCopyForbiddenError } from '@open-design/contracts';
 import {
   duplicatePluginExampleIntoProject,
   PluginDuplicateProjectError,
 } from '../../plugins/duplicate-project.js';
-import {
-  enforceTeamResourceCopyAllowed,
-  type TeamResourceStateProvider,
-} from '../../collab/team-resource-state.js';
 import {
   enforceVerifiedWorkspaceResourceMutation,
   resolveOptionalLocalWorkspaceRequestAuthority,
@@ -192,9 +187,6 @@ interface PluginRouteHelpers {
 export interface RegisterPluginRoutesDeps {
   db: SqliteDbLike;
   authorizeProjectRequest: AuthorizeProjectRequest;
-  /** Team-resource copy red-line (D3). When present, a frozen team plugin cannot
-   *  be duplicated into a personal project. Omit to skip the guard (no-op). */
-  teamResources?: TeamResourceStateProvider;
   paths: { PROJECTS_DIR: string; PLUGIN_REGISTRY_ROOTS: string[]; PLUGIN_LOCKFILE_PATH: string };
   ids: { randomId(): string };
   projectStore: {
@@ -395,7 +387,7 @@ export function registerPluginEventRoutes(app: Express, deps: RegisterPluginEven
 }
 
 export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDeps): void {
-  const { db, paths, ids, projectStore, conversations, plugins, helpers, teamResources, workspaceResources } = deps;
+  const { db, paths, ids, projectStore, conversations, plugins, helpers, workspaceResources } = deps;
   const resolveWorkspaceAuthority = async (
     req: Request,
     res: Response,
@@ -711,13 +703,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       if (typeof plugin.id !== 'string' || typeof plugin.fsPath !== 'string') {
         return res.status(422).json({ error: { code: 'plugin-not-duplicable', message: 'plugin record is missing a filesystem source' } });
       }
-      // AC-9 copy red-line (D3): a frozen team plugin cannot be duplicated into a
-      // personal project. Runs before any project is created (nothing to clean up
-      // if it throws). No-op until the resource-hub reports this plugin as a
-      // frozen team resource.
-      if (teamResources) {
-        await enforceTeamResourceCopyAllowed(teamResources, { kind: 'plugin', resourceId: plugin.id });
-      }
       const createWorkspace = await authorizeCreatedProjectWorkspace(
         req,
         deps.fetchProjectCreationWorkspaceDirectory,
@@ -813,9 +798,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
         } finally {
           await projectStore.removeProjectDir(paths.PROJECTS_DIR, cleanupProjectId).catch(() => {});
         }
-      }
-      if (err instanceof TeamResourceCopyForbiddenError) {
-        return res.status(403).json({ error: { code: err.code, message: err.message } });
       }
       if (err instanceof PluginDuplicateProjectError) {
         return res.status(err.status).json({ error: { code: err.code, message: err.message } });

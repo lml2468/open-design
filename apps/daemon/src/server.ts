@@ -840,7 +840,6 @@ import {
   emitWorkspaceEventToScope,
   registerCollabContextRoutes,
 } from './routes/collab-context.js';
-import { registerTeamResourceRoutes } from './routes/team-resources.js';
 import { registerTeamResourceShareRoutes } from './routes/team-resource-share.js';
 import { createCollabRuntime } from './collab/runtime.js';
 import {
@@ -5299,7 +5298,6 @@ export async function startServer({
     start: startWorkspaceHubSubscriber,
   });
 
-  registerTeamResourceRoutes(app, { teamResources: collab.teamResources });
 
   // Team resource sharing is request-scoped. The browser's explicit Workspace
   // headers choose a membership, then the signed-in account's authoritative
@@ -7448,7 +7446,6 @@ export async function startServer({
     paths: pathDeps,
     verifyWorkspaceReadAuthority,
     verifyWorkspaceRequestAuthority,
-    teamResources: collab.teamResources,
     resources: {
       listAllSkills,
       listAllDesignTemplates,
@@ -8119,7 +8116,6 @@ export async function startServer({
   registerPluginRoutes(app, {
     db,
     authorizeProjectRequest,
-    teamResources: collab.teamResources,
     paths: { PROJECTS_DIR, PLUGIN_REGISTRY_ROOTS, PLUGIN_LOCKFILE_PATH },
     ids: idDeps,
     projectStore: projectStoreDeps,

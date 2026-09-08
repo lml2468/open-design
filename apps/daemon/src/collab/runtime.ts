@@ -13,10 +13,6 @@ import {
 import type { ResourceHubPrincipal } from './resource-principal.js';
 import { createStubResourcePublishAdapter } from './stub-resource-adapter.js';
 import {
-  createDevTeamResourceStateProvider,
-  type TeamResourceStateProvider,
-} from './team-resource-state.js';
-import {
   createVelaCliResourceAdapter,
   shouldUseVelaCliResourceTransport,
 } from './vela-cli-resource-adapter.js';
@@ -67,8 +63,6 @@ export interface CollabRuntime {
   scheduler: CollabRuntimeScheduler;
   /** Workspace-context provider — the B-integration seam (identity/visibility). */
   workspaceContext: WorkspaceContextProvider;
-  /** Team-resource state provider — the E-resource-hub seam (share/freeze state). */
-  teamResources: TeamResourceStateProvider;
   /** Last published version for a project (members poll this to know what to pull). */
   publishedVersion(projectId: string, principal?: ResourceHubPrincipal | null): number | null;
   /**
@@ -122,8 +116,6 @@ export interface CreateCollabRuntimeOptions {
   describeProject?: (projectId: string) => Record<string, unknown> | null | Promise<Record<string, unknown> | null>;
   /** Workspace-context provider. Defaults to a dev provider until wired to an identity source. */
   workspaceContext?: WorkspaceContextProvider;
-  /** Team-resource state provider. Defaults to a dev provider until wired to the hub. */
-  teamResources?: TeamResourceStateProvider;
   /** Vela-owned team-project discovery catalog. Runtime treats it as an injectable sink. */
   teamProjectCatalog?: TeamProjectCatalogSink;
   /** Fired after a project is published so the caller can notify online members. */
@@ -753,12 +745,9 @@ export function createCollabRuntime(options: CreateCollabRuntimeOptions = {}): C
       );
     },
   };
-  const teamResources = options.teamResources ?? createDevTeamResourceStateProvider();
-
   return {
     scheduler: schedulerFacade,
     workspaceContext,
-    teamResources,
     publishedVersion: (projectId, principal) => {
       if (principal) return published.get(scopedProjectKey(projectId, principal)) ?? null;
       return published.get(projectId) ?? null;
