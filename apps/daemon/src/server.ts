@@ -4480,12 +4480,10 @@ export async function startServer({
     uploads: uploadDeps,
     node: nodeDeps,
     projectStore: projectStoreDeps,
-    authorizeProjectRequest,
     projectFiles: projectFileDeps,
     documents: { buildDocumentPreview },
     artifacts: artifactDeps,
     projectPreviewScopes,
-    verifyWorkspaceRequestAuthority,
   });
 
   registerMediaRoutes(app, {
@@ -4910,10 +4908,7 @@ export async function startServer({
     node: nodeDeps,
     paths: { PROJECTS_DIR },
     projectStore: projectStoreDeps,
-    authorizeProjectRequest,
-    authorizeProjectToolRequest,
     projectFiles: projectFileDeps,
-    verifyWorkspaceRequestAuthority,
   });
 
   const composeDaemonSystemPrompt = async ({

@@ -4048,8 +4048,6 @@ export function registerProjectArtifactRoutes(app: Express, ctx: RegisterProject
 }
 
 export interface RegisterProjectFileRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'uploads' | 'node' | 'projectStore' | 'projectFiles' | 'documents' | 'artifacts' | 'projectPreviewScopes'> {
-  verifyWorkspaceRequestAuthority?: VerifyWorkspaceRequestAuthority;
-  authorizeProjectRequest?: AuthorizeProjectRequest;
 }
 
 export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFileRoutesDeps) {
@@ -4060,14 +4058,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
   const { PROJECTS_DIR, DESIGN_SYSTEMS_DIR, USER_DESIGN_SYSTEMS_DIR } = ctx.paths;
   const { upload } = ctx.uploads;
   const { fs } = ctx.node;
-  const { getProject, getWorkspaceProject, getWorkspaceProjectByProjectId } = ctx.projectStore;
-  const authorizeProjectRequest =
-    ctx.authorizeProjectRequest ??
-    createAuthorizeProjectRequest();
-  const enforceWorkspaceProjectMutation = createEnforceWorkspaceProjectMutation(
-    authorizeProjectRequest,
-  );
-  const requestCanWriteWorkspaceProject = createWorkspaceProjectWriteAuthorityCheck();
+  const { getProject } = ctx.projectStore;
   const { listFiles, listProjectFolders, createProjectFolder, deleteProjectFolder, searchProjectFiles, readProjectFile, resolveProjectDir, resolveProjectFilePath, parseByteRange, renameProjectFile, deleteProjectFile, writeProjectFile, sanitizeName, sanitizePath, ensureProject } = ctx.projectFiles;
   const { buildDocumentPreview } = ctx.documents;
   const { validateArtifactManifestInput } = ctx.artifacts;
@@ -4621,87 +4612,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
     return prependAfterDoctype(html, `${baseTag}${bridge}`);
   }
 
-  function rewriteWorkspaceScopedHtmlAssetUrls(
-    html: string,
-    projectId: string,
-    ownerFilePath: string,
-    workspaceId: string,
-    workspaceMemberId: string,
-  ): string {
-    const assetAttr = /(\s)(src|poster|data-src)(\s*=\s*)(["'])([^"']*)\4/gi;
-    const linkTag = /<link\b[^>]*>/gi;
-    const linkHref = /(\shref\s*=\s*)(["'])([^"']*)\2/i;
-    const srcsetAttr = /(\ssrcset\s*=\s*)(["'])([^"']*)\2/gi;
-    const cssUrl = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
-    const ownerDir = path.posix.dirname(ownerFilePath);
-    const scopeQuery = `workspaceId=${encodeURIComponent(workspaceId)}`
-      + `&workspaceMemberId=${encodeURIComponent(workspaceMemberId)}`;
-
-    const rewrite = (ref: string): string => {
-      const trimmed = ref.trim();
-      if (!trimmed || /^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(trimmed)) return ref;
-      const match = trimmed.match(/^([^?#]*)([?#][\s\S]*)?$/);
-      const rawPath = match?.[1] ?? trimmed;
-      const suffix = match?.[2] ?? '';
-      let decodedPath = rawPath;
-      try {
-        decodedPath = decodeURIComponent(rawPath);
-      } catch {
-        return ref;
-      }
-      const resolved = path.posix.normalize(path.posix.join(ownerDir, decodedPath));
-      if (!resolved || resolved === '..' || resolved.startsWith('../') || path.posix.isAbsolute(resolved)) {
-        return ref;
-      }
-      const scoped = `/api/projects/${encodeURIComponent(projectId)}/raw/`
-        + `${encodeProjectPathForUrl(resolved)}?${scopeQuery}`;
-      if (!suffix) return scoped;
-      if (suffix.startsWith('#')) return `${scoped}${suffix}`;
-      return `${scoped}&${suffix.slice(1)}`;
-    };
-
-    const rewriteChunk = (chunk: string): string => {
-      let next = chunk.replace(
-        assetAttr,
-        (match, space: string, name: string, eq: string, quote: string, value: string) => {
-          const rewritten = rewrite(value);
-          return rewritten === value ? match : `${space}${name}${eq}${quote}${rewritten}${quote}`;
-        },
-      );
-      next = next.replace(linkTag, (tag) =>
-        tag.replace(linkHref, (match, prefix: string, quote: string, value: string) => {
-          const rewritten = rewrite(value);
-          return rewritten === value ? match : `${prefix}${quote}${rewritten}${quote}`;
-        }),
-      );
-      next = next.replace(srcsetAttr, (match, prefix: string, quote: string, value: string) => {
-        // A data URL contains an unescaped comma, so the lightweight candidate
-        // splitter below cannot safely rewrite a mixed data-URL srcset. Leave the
-        // whole attribute untouched rather than corrupting embedded bytes.
-        if (/(?:^|,\s*)data:/i.test(value)) return match;
-        const rewritten = value
-          .split(',')
-          .map((candidate) => {
-            const body = candidate.trim();
-            if (!body) return candidate;
-            const [url = '', ...descriptors] = body.split(/\s+/);
-            const rewrittenUrl = rewrite(url);
-            if (rewrittenUrl === url) return candidate;
-            const leading = candidate.match(/^\s*/)?.[0] ?? '';
-            return `${leading}${[rewrittenUrl, ...descriptors].join(' ')}`;
-          })
-          .join(',');
-        return rewritten === value ? match : `${prefix}${quote}${rewritten}${quote}`;
-      });
-      return next.replace(cssUrl, (match, quote: string, value: string) => {
-        const rewritten = rewrite(value);
-        return rewritten === value ? match : `url(${quote}${rewritten}${quote})`;
-      });
-    };
-
-    return rewriteOutsideExecutableHtmlRanges(html, rewriteChunk);
-  }
-
   async function maybeResolveVitePreviewHtml({
     file,
     projectId,
@@ -4753,7 +4663,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
       const files = await listFiles(PROJECTS_DIR, req.params.id, {
         since: Number.isFinite(since) ? since : undefined,
         metadata: project?.metadata,
@@ -4779,7 +4688,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!searchProject) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await authorizeProjectRequest(req, res, searchProject.id, { mode: 'read' })) return;
       const query = String(req.query.q ?? '');
       if (!query) {
         sendApiError(res, 400, 'BAD_REQUEST', 'q query parameter is required');
@@ -4809,7 +4717,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
         return;
       }
-      if (!await authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
       const allowedProps = new Set([
         'color',
         'backgroundColor',
@@ -4866,7 +4773,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
       const folders = await listProjectFolders(PROJECTS_DIR, req.params.id, {
         metadata: project.metadata,
       });
@@ -4888,16 +4794,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        project.id,
-        'writeFiles',
-      )) return;
       const folder = await createProjectFolder(
         PROJECTS_DIR,
         req.params.id,
@@ -4922,16 +4818,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        project.id,
-        'writeFiles',
-      )) return;
       await deleteProjectFolder(
         PROJECTS_DIR,
         req.params.id,
@@ -4953,7 +4839,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
         return;
       }
-      if (!await authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
       const projectRoot = resolveProjectDir(PROJECTS_DIR, project.id, project.metadata);
       const audit = await auditDesignSystemPackage(projectRoot);
       res.setHeader('Cache-Control', 'no-store');
@@ -4970,7 +4855,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
         return;
       }
-      if (!await authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
       const requestedPath = previewFilePathForProject(project, req.query.file);
       const meta = await resolveProjectFilePath(
         PROJECTS_DIR,
@@ -4978,16 +4862,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         requestedPath,
         project.metadata,
       );
-      const requestContext = workspaceProjectContextFromRequest(req);
-      const scope = projectPreviewScopes.mint(
-        project.id,
-        requestContext === null || requestContext === 'missing'
-          ? null
-          : {
-              workspaceId: requestContext.workspaceId,
-              workspaceMemberId: requestContext.workspaceMemberId,
-            },
-      );
+      const scope = projectPreviewScopes.mint(project.id, null);
       const expiresAt = projectPreviewScopes.expiresAt(project.id, scope);
       if (expiresAt === undefined) {
         sendApiError(res, 503, 'PREVIEW_SCOPE_NOT_FOUND', 'preview scope not found');
@@ -5035,27 +4910,10 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
         return;
       }
-      const previewWorkspace = projectPreviewScopes.resolve(project.id, scope);
-      if (previewWorkspace === undefined) {
+      if (projectPreviewScopes.resolve(project.id, scope) === undefined) {
         sendApiError(res, 404, 'PREVIEW_SCOPE_NOT_FOUND', 'preview scope not found');
         return;
       }
-      const authorityRequest = previewWorkspace
-        ? {
-            query: {
-              ...req.query,
-              workspaceId: previewWorkspace.workspaceId,
-              workspaceMemberId: previewWorkspace.workspaceMemberId,
-            },
-            get: req.get.bind(req),
-          }
-        : req;
-      if (!await authorizeProjectRequest(
-        authorityRequest,
-        res,
-        project.id,
-        { mode: 'read', allowNavigationQuery: true },
-      )) return;
       const expiresAt = projectPreviewScopes.renew(project.id, scope);
       if (expiresAt === undefined) {
         sendApiError(res, 404, 'PREVIEW_SCOPE_NOT_FOUND', 'preview scope not found');
@@ -5086,12 +4944,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await authorizeProjectRequest(
-        req,
-        res,
-        projectId,
-        { mode: 'read', allowNavigationQuery: true },
-      )) return;
       const meta = await resolveProjectFilePath(
         PROJECTS_DIR,
         projectId,
@@ -5146,27 +4998,10 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
         return;
       }
-      const previewWorkspace = projectPreviewScopes.resolve(project.id, scope);
-      if (previewWorkspace === undefined) {
+      if (projectPreviewScopes.resolve(project.id, scope) === undefined) {
         sendApiError(res, 404, 'PREVIEW_SCOPE_NOT_FOUND', 'preview scope not found');
         return;
       }
-      const authorityRequest = previewWorkspace
-        ? {
-            query: {
-              ...req.query,
-              workspaceId: previewWorkspace.workspaceId,
-              workspaceMemberId: previewWorkspace.workspaceMemberId,
-            },
-            get: req.get.bind(req),
-          }
-        : req;
-      if (!await authorizeProjectRequest(
-        authorityRequest,
-        res,
-        projectId,
-        { mode: 'read', allowNavigationQuery: true },
-      )) return;
       if (req.headers.origin === 'null') {
         res.header('Access-Control-Allow-Origin', '*');
       }
@@ -5220,12 +5055,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await authorizeProjectRequest(
-        req,
-        res,
-        projectId,
-        { mode: 'read', allowNavigationQuery: true },
-      )) return;
       // PreviewModal loads artifact HTML via srcdoc, giving the iframe Origin: "null".
       // data: URIs, file://, and some sandboxed iframes also send null — all are
       // local-only callers, so this is safe. Real cross-origin sites send a real
@@ -5263,39 +5092,15 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
             file.mime,
             req.query.odPreviewBridge,
           );
-          const workspaceId = typeof req.query.workspaceId === 'string'
-            ? req.query.workspaceId
-            : null;
-          const workspaceMemberId = typeof req.query.workspaceMemberId === 'string'
-            ? req.query.workspaceMemberId
-            : null;
           if (!/^text\/html(?:;|$)/i.test(file.mime)) {
             return bridged;
           }
-          let html = Buffer.isBuffer(bridged) ? bridged.toString('utf8') : String(bridged);
-          if (workspaceId && workspaceMemberId) {
-            html = rewriteWorkspaceScopedHtmlAssetUrls(
-              html,
-              projectId,
-              relPath,
-              workspaceId,
-              workspaceMemberId,
-            );
-          }
+          const html = Buffer.isBuffer(bridged) ? bridged.toString('utf8') : String(bridged);
           // Plain raw-file reads (code view, download, API clients) must keep
           // returning the same bytes as before. The containment base is only a
           // URL-preview transport detail requested by FileViewer.
           if (req.query.odPreviewBridge === undefined) return html;
-          const headerContext = workspaceProjectContextFromRequest(req);
-          const previewWorkspace = workspaceId && workspaceMemberId
-            ? { workspaceId, workspaceMemberId }
-            : headerContext && headerContext !== 'missing'
-              ? {
-                  workspaceId: headerContext.workspaceId,
-                  workspaceMemberId: headerContext.workspaceMemberId,
-                }
-              : null;
-          const scope = projectPreviewScopes.mint(projectId, previewWorkspace);
+          const scope = projectPreviewScopes.mint(projectId, null);
           const expiresAt = projectPreviewScopes.expiresAt(projectId, scope);
           if (expiresAt === undefined) return html;
           return injectProjectPreviewBase(
@@ -5342,12 +5147,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await authorizeProjectRequest(
-        req,
-        res,
-        projectId,
-        { mode: 'read', allowNavigationQuery: true },
-      )) return;
       const meta = await resolveProjectFilePath(
         PROJECTS_DIR,
         projectId,
@@ -5396,16 +5195,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        project.id,
-        'writeFiles',
-      )) return;
       await deleteProjectFile(PROJECTS_DIR, projectId, rawSplat, project?.metadata);
       await markProjectFileVersionStoreDeleted(PROJECTS_DIR, projectId, rawSplat, project?.metadata);
       /** @type {import('@open-design/contracts').DeleteProjectFileResponse} */
@@ -5428,12 +5217,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await authorizeProjectRequest(
-        req,
-        res,
-        project.id,
-        { mode: 'read', allowNavigationQuery: true },
-      )) return;
       const file = await readProjectFile(
         PROJECTS_DIR,
         req.params.id,
@@ -5468,7 +5251,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
       if (!/\.html?$/i.test(fileName)) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'versions are only available for HTML files');
       }
@@ -5487,22 +5269,9 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         if (err?.code !== 'ENOENT') throw err;
       }
       let versions = await listProjectFileVersions(PROJECTS_DIR, project.id, historyFileName, project.metadata);
-      // Bootstrapping a baseline version is a WRITE, so it belongs only to a
-      // caller with write authority over this project. A readonly member
-      // reading a mirror of someone else's shared project gets the truthful
-      // empty history instead — the owner's real history can never be here
-      // (`.file-versions` is excluded from member mirrors), so synthesizing
-      // one would only manufacture history that never existed, inside a
-      // project the member is told they cannot modify. The read itself is
-      // never refused: browsing history stays open (飞书 recvq56vFjQKfT).
-      if (workingFileContent !== null && versions.length === 0
-        && await requestCanWriteWorkspaceProject(
-          req,
-          getWorkspaceProject,
-          getWorkspaceProjectByProjectId,
-          db,
-          project.id,
-        )) {
+      // Local Project history is owner-writable. Seed the baseline lazily the
+      // first time an existing HTML file's history is requested.
+      if (workingFileContent !== null && versions.length === 0) {
         const initial = await ensureCurrentProjectFileVersion(
           PROJECTS_DIR,
           project.id,
@@ -5544,16 +5313,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        project.id,
-        'writeFiles',
-      )) return;
       const requestedFile = await readProjectFile(PROJECTS_DIR, project.id, fileName, project.metadata);
       if (!/\.html?$/i.test(requestedFile.name)) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'versions are only available for HTML files');
@@ -5640,16 +5399,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        project.id,
-        'writeFiles',
-      )) return;
       const restored = await readProjectFileVersion(
         PROJECTS_DIR,
         project.id,
@@ -5717,7 +5466,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
       const body = await readProjectFileVersion(
         PROJECTS_DIR,
         project.id,
@@ -5750,12 +5498,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await authorizeProjectRequest(
-        req,
-        res,
-        project.id,
-        { mode: 'read', allowNavigationQuery: true },
-      )) return;
       const file = await readProjectFile(
         PROJECTS_DIR,
         projectId,
@@ -5788,26 +5530,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
     async (req, res) => {
       try {
         const uploadProject = getProject(db, req.params.id);
-        const cleanupRejectedUpload = () => {
-          if (req.file?.path) fs.promises.unlink(req.file.path).catch(() => {});
-        };
-        if (!uploadProject && workspaceProjectContextFromRequest(req) !== null) {
-          cleanupRejectedUpload();
-          return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
-        }
-        if (!await enforceWorkspaceProjectMutation(
-          req,
-          res,
-          sendApiError,
-          getWorkspaceProject,
-          getWorkspaceProjectByProjectId,
-          db,
-          req.params.id,
-          'writeFiles',
-        )) {
-          cleanupRejectedUpload();
-          return;
-        }
         await ensureProject(PROJECTS_DIR, req.params.id, uploadProject?.metadata);
         if (req.file) {
           try {
@@ -6041,16 +5763,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        project.id,
-        'writeFiles',
-      )) return;
       const result = await renameProjectFile(
         PROJECTS_DIR,
         req.params.id,
@@ -6087,16 +5799,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       if (!delProject) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await enforceWorkspaceProjectMutation(
-        req,
-        res,
-        sendApiError,
-        getWorkspaceProject,
-        getWorkspaceProjectByProjectId,
-        db,
-        delProject.id,
-        'writeFiles',
-      )) return;
       await deleteProjectFile(PROJECTS_DIR, req.params.id, req.params.name, delProject?.metadata);
       await markProjectFileVersionStoreDeleted(PROJECTS_DIR, req.params.id, req.params.name, delProject?.metadata);
       /** @type {import('@open-design/contracts').DeleteProjectFileResponse} */
@@ -6116,8 +5818,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
 }
 
 export interface RegisterProjectUploadRoutesDeps extends RouteDeps<'db' | 'http' | 'uploads' | 'node' | 'paths' | 'projectStore' | 'projectFiles'> {
-  verifyWorkspaceRequestAuthority?: VerifyWorkspaceRequestAuthority;
-  authorizeProjectRequest?: AuthorizeProjectRequest;
 }
 
 export function registerProjectUploadRoutes(app: Express, ctx: RegisterProjectUploadRoutesDeps) {
@@ -6125,40 +5825,15 @@ export function registerProjectUploadRoutes(app: Express, ctx: RegisterProjectUp
   const { sendApiError } = ctx.http;
   const { handleProjectUpload } = ctx.uploads;
   const { PROJECTS_DIR } = ctx.paths;
-  const { getProject, getWorkspaceProject, getWorkspaceProjectByProjectId } = ctx.projectStore;
+  const { getProject } = ctx.projectStore;
   const { readProjectFile } = ctx.projectFiles;
   const { fs } = ctx.node;
-  const authorizeProjectRequest =
-    ctx.authorizeProjectRequest ??
-    createAuthorizeProjectRequest();
-  const enforceWorkspaceProjectMutation = createEnforceWorkspaceProjectMutation(
-    authorizeProjectRequest,
-  );
-
   app.post(
     '/api/projects/:id/upload',
     handleProjectUpload,
     async (req, res) => {
       try {
         const incoming = Array.isArray(req.files) ? req.files : [];
-        const cleanupRejectedUpload = () => {
-          for (const f of incoming) {
-            if (f?.path) fs.promises.unlink(f.path).catch(() => {});
-          }
-        };
-        if (!await enforceWorkspaceProjectMutation(
-          req,
-          res,
-          sendApiError,
-          getWorkspaceProject,
-          getWorkspaceProjectByProjectId,
-          db,
-          req.params.id,
-          'writeFiles',
-        )) {
-          cleanupRejectedUpload();
-          return;
-        }
         // Subfolder the upload targeted (sanitized, forward-slash, '' for root),
         // stashed by the multer destination resolver. Prepend it so callers
         // get the file's true project-relative path, not just its basename.
