@@ -36,27 +36,27 @@ function sseResponse(frames: string[]) {
 }
 
 describe('handleHubTeamProjectsChanged', () => {
-  it('emits the thin display-cache signal only after reconciliation finishes', async () => {
-    const emit = vi.fn();
+  it('refreshes the display cache only after reconciliation finishes', async () => {
+    const refresh = vi.fn();
     let finishReconcile!: () => void;
     const reconcile = vi.fn(() => new Promise<void>((resolve) => {
       finishReconcile = resolve;
     }));
-    handleHubTeamProjectsChanged(emit, reconcile);
+    handleHubTeamProjectsChanged(refresh, reconcile);
     expect(reconcile).toHaveBeenCalledTimes(1);
-    expect(emit).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
 
     finishReconcile();
-    await vi.waitFor(() => expect(emit).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
   });
 
   it('never lets a reconciliation failure throw or reject out of the hub event handler', async () => {
-    const emit = vi.fn();
+    const refresh = vi.fn();
     const reconcile = vi.fn(() => Promise.reject(new Error('vela unreachable')));
     const unhandled = vi.fn();
     process.once('unhandledRejection', unhandled);
 
-    expect(() => handleHubTeamProjectsChanged(emit, reconcile)).not.toThrow();
+    expect(() => handleHubTeamProjectsChanged(refresh, reconcile)).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(reconcile).toHaveBeenCalledTimes(1);
@@ -69,7 +69,7 @@ describe('handleHubTeamProjectsChanged', () => {
   // "real push" half of the verification: a genuine `team-projects-changed`
   // wire frame, parsed by real code, must reach the reconciler.
   it('fires from a genuine team-projects-changed SSE frame parsed by the real hub subscriber', async () => {
-    const emit = vi.fn();
+    const refresh = vi.fn();
     const reconcile = vi.fn(async () => undefined);
     let resolveDone!: () => void;
     const done = new Promise<void>((resolve) => {
@@ -88,7 +88,7 @@ describe('handleHubTeamProjectsChanged', () => {
       onEvent: (event) => {
         expect(parseHubWorkspaceEvent(JSON.stringify(event))).toEqual(event);
         if (event.type === 'team-projects-changed') {
-          handleHubTeamProjectsChanged(emit, reconcile);
+          handleHubTeamProjectsChanged(refresh, reconcile);
           resolveDone();
         }
       },
@@ -97,7 +97,7 @@ describe('handleHubTeamProjectsChanged', () => {
 
     try {
       await done;
-      expect(emit).toHaveBeenCalledTimes(1);
+      expect(refresh).toHaveBeenCalledTimes(1);
       expect(reconcile).toHaveBeenCalledTimes(1);
     } finally {
       subscriber.stop();
@@ -130,35 +130,45 @@ describe('handleHubProjectMetadataChanged', () => {
 });
 
 describe('handlePolledWorkspaceInvalidation', () => {
-  it('forwards every payload to emit unchanged', () => {
-    const emit = vi.fn();
+  it('ignores non-project invalidations', () => {
     const reconcile = vi.fn(async () => undefined);
-    const payload = { type: 'members-changed' as const, at: 1 };
-    handlePolledWorkspaceInvalidation(payload, emit, reconcile);
-    expect(emit).toHaveBeenCalledWith(payload);
+    handlePolledWorkspaceInvalidation(
+      { type: 'members-changed', at: 1 },
+      reconcile,
+    );
+    expect(reconcile).not.toHaveBeenCalled();
   });
 
   it('kicks reconciliation only for a team-projects-changed payload', () => {
-    const emit = vi.fn();
     const reconcile = vi.fn(async () => undefined);
 
-    handlePolledWorkspaceInvalidation({ type: 'workspace-context-changed', at: 1 }, emit, reconcile);
-    handlePolledWorkspaceInvalidation({ type: 'members-changed', at: 1 }, emit, reconcile);
-    handlePolledWorkspaceInvalidation({ type: 'workspace-directory-changed', at: 1 }, emit, reconcile);
+    handlePolledWorkspaceInvalidation(
+      { type: 'workspace-context-changed', at: 1 },
+      reconcile,
+    );
+    handlePolledWorkspaceInvalidation(
+      { type: 'members-changed', at: 1 },
+      reconcile,
+    );
     expect(reconcile).not.toHaveBeenCalled();
 
-    handlePolledWorkspaceInvalidation({ type: 'team-projects-changed', at: 1 }, emit, reconcile);
+    handlePolledWorkspaceInvalidation(
+      { type: 'team-projects-changed', at: 1 },
+      reconcile,
+    );
     expect(reconcile).toHaveBeenCalledTimes(1);
   });
 
   it('never lets a reconciliation failure throw out of the poller emit path', async () => {
-    const emit = vi.fn();
     const reconcile = vi.fn(() => Promise.reject(new Error('vela unreachable')));
     const unhandled = vi.fn();
     process.once('unhandledRejection', unhandled);
 
     expect(() =>
-      handlePolledWorkspaceInvalidation({ type: 'team-projects-changed', at: 1 }, emit, reconcile),
+      handlePolledWorkspaceInvalidation(
+        { type: 'team-projects-changed', at: 1 },
+        reconcile,
+      ),
     ).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -282,7 +292,7 @@ describe('server.ts wiring (source boundary)', () => {
     expect(body).toContain(
       'event.workspaceId ?? subscribedWorkspaceId',
     );
-    expect(body).toMatch(/emitTeamProjectsChanged\(\s*eventWorkspaceId/);
+    expect(body).toMatch(/refreshTeamProjects\(eventWorkspaceId\)/);
   });
 
   it('runs reconnect and source-gap recovery for the exact subscribed Workspace', () => {

@@ -1,5 +1,5 @@
-// Collab realtime hop-2 — daemon-side change source for the WORKSPACE-scoped
-// thin invalidation events (`/api/workspace/events`).
+// Legacy Workspace reconciliation poller. It detects upstream changes so the
+// daemon can reconcile local mirror metadata while that removal is in progress.
 //
 // The daemon already learns cross-user workspace changes by reading Vela (team
 // projects, member directory, workspace context). Today the web POLLS the daemon
@@ -22,8 +22,12 @@ import type {
   CollabCloudMemberDirectoryEntry,
   TeamProject,
   WorkspaceCollabContext,
-  WorkspaceInvalidationSsePayload,
 } from '@open-design/contracts';
+
+export type WorkspaceInvalidationSignal =
+  | { type: 'team-projects-changed'; at?: number }
+  | { type: 'members-changed'; at?: number }
+  | { type: 'workspace-context-changed'; at?: number };
 
 export interface WorkspaceInvalidationPollerDeps {
   /** Current workspace context (proxies Vela/B in prod). Gates team reads and
@@ -35,9 +39,9 @@ export interface WorkspaceInvalidationPollerDeps {
   listMembers: (
     context: WorkspaceCollabContext,
   ) => Promise<CollabCloudMemberDirectoryEntry[]>;
-  /** Emit a thin workspace invalidation to the connected web sinks. */
+  /** Report an internal change signal to the reconciliation coordinator. */
   emit: (
-    payload: WorkspaceInvalidationSsePayload,
+    payload: WorkspaceInvalidationSignal,
     context: WorkspaceCollabContext | null,
   ) => void;
   /** Poll cadence; defaults to 15s (matches the web team-projects/members poll). */
@@ -126,7 +130,7 @@ export function createWorkspaceInvalidationPoller(
   const emitIfChanged = (
     previous: string | undefined,
     next: string,
-    payload: WorkspaceInvalidationSsePayload,
+    payload: WorkspaceInvalidationSignal,
     context: WorkspaceCollabContext | null,
   ): string => {
     if (previous !== undefined && previous !== next) deps.emit(payload, context);

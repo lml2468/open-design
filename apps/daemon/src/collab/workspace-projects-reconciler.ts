@@ -40,7 +40,7 @@
 //     reaches — an ALREADY-bound row the remote catalog no longer confirms —
 //     and runs proactively instead of waiting for the next list request.
 
-import type { WorkspaceInvalidationSsePayload } from '@open-design/contracts';
+import type { WorkspaceInvalidationSignal } from './workspace-invalidation-poller.js';
 import type { ResourceHubPrincipal } from './resource-principal.js';
 
 /** This daemon's one local `workspace_projects` row for a project, as far as
@@ -535,63 +535,54 @@ export async function reconcileWorkspaceProjectMetadataWithRemote(
  * `startHubEventsSubscriber`'s `onEvent` in server.ts). Sibling of
  * `handleHubWorkspaceContextChanged` just above it in that file: besides
  * refreshing the display cache, this runs a real `workspace_projects`
- * reconciliation pass before sending the thin web signal
- * (`emitTeamProjectsChangedDeduped`), so a member whose owner just unshared a
- * project (or who just gained access to a new one) converges immediately
- * instead of waiting for the ~15s poller.
+ * reconciliation pass first, so a member whose owner just unshared a project
+ * (or who just gained access to a new one) converges immediately instead of
+ * waiting for the ~15s poller.
  *
  * Extracted as its own named, exported step for the same reason
  * `handleHubWorkspaceContextChanged` is: directly unit-testable without
  * standing up a real hub connection.
  */
 export function handleHubTeamProjectsChanged(
-  emitTeamProjectsChangedDeduped: () => void,
+  refreshTeamProjects: () => void,
   reconcileWorkspaceProjects: () => Promise<unknown>,
 ): Promise<void> {
-  // The web treats this signal as permission to re-read the currently open
-  // project's scope. Emit only after the authoritative catalog diff has been
-  // persisted; an eager signal can race the revoke write, re-confirm the stale
-  // Team binding, and then leave the open page with no durable follow-up.
+  // Refresh only after the authoritative catalog diff has been persisted; an
+  // eager refresh can race the revoke write and retain stale Team metadata.
   return reconcileWorkspaceProjects()
-    .then(() => emitTeamProjectsChangedDeduped())
+    .then(() => refreshTeamProjects())
     .catch(() => undefined);
 }
 
-/** Emit immediately for catalog-backed UI, then emit once more only after a
- * targeted local metadata write so SQLite-backed recent/project views refetch
- * after the durable state has changed. */
+/** Refresh immediately for catalog-backed reads, then refresh once more only
+ * after a targeted local metadata write so SQLite-backed views converge. */
 export function handleHubProjectMetadataChanged(
-  emitProjectMetadataChanged: () => void,
+  refreshProjectMetadata: () => void,
   reconcileProjectMetadata: () => Promise<boolean>,
 ): Promise<void> {
-  emitProjectMetadataChanged();
+  refreshProjectMetadata();
   return reconcileProjectMetadata()
     .then((changed) => {
-      if (changed) emitProjectMetadataChanged();
+      if (changed) refreshProjectMetadata();
     })
     .catch(() => undefined);
 }
 
 /**
- * `workspaceInvalidationPoller`'s `emit` wrapper (server.ts). The poller
- * itself stays a pure "diff and signal" utility
+ * `workspaceInvalidationPoller`'s internal change callback (server.ts). The
+ * poller stays a pure "diff and signal" utility
  * (`collab/workspace-invalidation-poller.ts`) with no opinion on
  * `workspace_projects`; this is the one seam where a `team-projects-changed`
- * signal ALSO kicks the real reconciliation — the poller's own ~15s-cadence
+ * signal kicks the real reconciliation — the poller's own ~15s-cadence
  * twin of `handleHubTeamProjectsChanged` above, for daemons that are signed
  * in but whose hub SSE channel is down (the poller is the sole delivery
  * mechanism in that state, per `startHubEventsSubscriber`'s own doc comment).
  */
 export function handlePolledWorkspaceInvalidation(
-  payload: WorkspaceInvalidationSsePayload,
-  emit: (payload: WorkspaceInvalidationSsePayload) => void,
+  payload: WorkspaceInvalidationSignal,
   reconcileWorkspaceProjects: () => Promise<unknown>,
 ): void {
-  if (payload.type !== 'team-projects-changed') {
-    emit(payload);
-    return;
-  }
+  if (payload.type !== 'team-projects-changed') return;
   void reconcileWorkspaceProjects()
-    .then(() => emit(payload))
     .catch(() => undefined);
 }

@@ -3,9 +3,11 @@ import type {
   CollabCloudMemberDirectoryEntry,
   TeamProject,
   WorkspaceCollabContext,
-  WorkspaceInvalidationSsePayload,
 } from '@open-design/contracts';
-import { createWorkspaceInvalidationPoller } from '../src/collab/workspace-invalidation-poller.js';
+import {
+  createWorkspaceInvalidationPoller,
+  type WorkspaceInvalidationSignal,
+} from '../src/collab/workspace-invalidation-poller.js';
 
 // Minimal team context — `isTeamContext` only reads `workspaceType`/`teamId`,
 // and `contextSignature` stringifies the whole object, so a partial cast is a
@@ -36,7 +38,7 @@ function member(id: string, extra: Partial<CollabCloudMemberDirectoryEntry> = {}
 }
 
 interface Harness {
-  emitted: WorkspaceInvalidationSsePayload[];
+  emitted: WorkspaceInvalidationSignal[];
   types: () => string[];
   context: WorkspaceCollabContext | null;
   projects: TeamProject[] | null; // null simulates a transient read failure

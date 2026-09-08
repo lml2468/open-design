@@ -256,7 +256,7 @@ describe('od:// proxy cancellation plumbing (SSE pool-slot leak guard)', () => {
       return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
     };
 
-    const request = new Request('od://app/api/workspace/events');
+    const request = new Request('od://app/api/projects/project-1/events');
     const response = await handleOdRequest(request, 'http://127.0.0.1:17579/', fetchImpl);
     expect(response.status).toBe(200);
     expect(response.body).not.toBeNull();
@@ -280,7 +280,9 @@ describe('od:// proxy cancellation plumbing (SSE pool-slot leak guard)', () => {
     };
 
     const controller = new AbortController();
-    const request = new Request('od://app/api/workspace/events', { signal: controller.signal });
+    const request = new Request('od://app/api/projects/project-1/events', {
+      signal: controller.signal,
+    });
     const response = await handleOdRequest(request, 'http://127.0.0.1:17579/', fetchImpl);
     expect(response.status).toBe(200);
 

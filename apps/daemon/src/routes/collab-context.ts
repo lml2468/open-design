@@ -8,7 +8,6 @@ import type {
   WorkspaceCollabContext,
   WorkspaceContextResponse,
   WorkspaceActiveResponse,
-  WorkspaceInvalidationSsePayload,
   WorkspaceTeamProjectsResponse,
 } from '@open-design/contracts';
 import { workspaceSeatCapacityState } from '@open-design/contracts';
@@ -26,67 +25,7 @@ import {
   verifyWorkspaceRequestContext,
   type VerifiedWorkspaceRequestContextResult,
 } from '../collab/request-workspace-context.js';
-import { requestWithWorkspaceNavigationScope } from '../collab/workspace-resource-mutation.js';
 import { sendApiError } from '../http/api-errors.js';
-
-export type WorkspaceEventSink = (payload: WorkspaceInvalidationSsePayload) => void;
-export type WorkspaceEventSinksByWorkspace =
-  Map<string, Set<WorkspaceEventSink>>;
-
-/**
- * Deliver one thin invalidation only to clients whose EventSource connection
- * was freshly verified for the affected Workspace. Member identity is still
- * verified at subscription time; delivery is workspace-wide because roster,
- * catalog and context changes legitimately invalidate every
- * active member's view of that Workspace.
- */
-export function emitWorkspaceEventToScope(
-  sinksByWorkspace: WorkspaceEventSinksByWorkspace,
-  workspaceIdInput: string,
-  payload: WorkspaceInvalidationSsePayload,
-): boolean {
-  const workspaceId = workspaceIdInput.trim();
-  if (!workspaceId) return false;
-  const sinks = sinksByWorkspace.get(workspaceId);
-  if (!sinks || sinks.size === 0) return false;
-  for (const sink of Array.from(sinks)) {
-    try {
-      sink(payload);
-    } catch {
-      sinks.delete(sink);
-    }
-  }
-  if (sinks.size === 0) sinksByWorkspace.delete(workspaceId);
-  return true;
-}
-
-/**
- * Deliver an account-level dirty signal through every already-authorized local
- * Workspace stream. The payload deliberately contains no Workspace id/content,
- * so this broad local nudge reveals no cross-workspace data; each browser then
- * re-reads the account directory through the daemon's current credential.
- */
-export function emitWorkspaceEventToAllScopes(
-  sinksByWorkspace: WorkspaceEventSinksByWorkspace,
-  payload: Extract<
-    WorkspaceInvalidationSsePayload,
-    { type: 'workspace-directory-changed' }
-  >,
-): boolean {
-  let emitted = false;
-  for (const [workspaceId, sinks] of Array.from(sinksByWorkspace)) {
-    for (const sink of Array.from(sinks)) {
-      try {
-        sink(payload);
-        emitted = true;
-      } catch {
-        sinks.delete(sink);
-      }
-    }
-    if (sinks.size === 0) sinksByWorkspace.delete(workspaceId);
-  }
-  return emitted;
-}
 
 export interface RegisterCollabContextRoutesDeps {
   workspaceContext: WorkspaceContextProvider;
@@ -142,19 +81,6 @@ export interface RegisterCollabContextRoutesDeps {
    * must never be collapsed into a confirmed empty membership list.
    */
   fetchWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
-  /**
-   * Collab realtime hop-2 — the workspace-scoped invalidation SSE seams. When
-   * both are provided the daemon registers `GET /api/workspace/events`; the route
-   * adds its per-connection sink to `workspaceEventSinks` (fed by the
-   * workspace-invalidation poller) and drops it on disconnect. Omitted in tests
-   * that do not exercise the stream — the route then 404s cleanly.
-   */
-  createSseResponse?: (res: unknown, opts?: unknown) => {
-    send: (event: string, data: unknown, id?: string | number | null) => boolean;
-  };
-  workspaceEventSinks?: WorkspaceEventSinksByWorkspace;
-  /** Keep one upstream Vela carrier while this local Workspace SSE is open. */
-  retainWorkspaceEventInterest?: (workspaceId: string) => () => void;
   /** Best-effort PostHog group update; never affects the route response. */
   observeWorkspace?: (
     req: Request,
@@ -272,72 +198,6 @@ export function registerCollabContextRoutes(app: Express, deps: RegisterCollabCo
     void deps.observeWorkspace?.(req, context, workspaceGroupProperties(context));
     res.json(body);
   });
-
-  // Collab realtime hop-2: workspace-scoped invalidation SSE. Browser-owned
-  // EventSource cannot send custom headers, so it carries the exact
-  // Workspace/member pair in the navigation query. The pair is promoted to
-  // the normal request-header shape, freshly directory-verified, then used
-  // only to select the sink partition; authority-bearing role/lifecycle bits
-  // always come from the verified directory context.
-  //
-  // Carries thin
-  // `WorkspaceInvalidationSsePayload` signals (`team-projects-changed`,
-  // `members-changed`, `workspace-context-changed`); the web
-  // re-fetches the affected resource on receipt. Modeled on the project events
-  // SSE (`/api/projects/:id/events`): one flat sink set, dropped on disconnect
-  // via `res.on('close')`. No event buffer — a disconnect gap is closed by the
-  // client's reconnect snapshot re-fetch, not a server-side replay.
-  const { createSseResponse, workspaceEventSinks } = deps;
-  if (createSseResponse && workspaceEventSinks) {
-    app.get('/api/workspace/events', async (req, res) => {
-      const scopedRequest = requestWithWorkspaceNavigationScope(req);
-      if (scopedRequest === 'conflict') {
-        res.status(400).json({
-          error: 'WORKSPACE_CONTEXT_CONFLICT',
-          message: 'workspace header and navigation scope must match',
-        });
-        return;
-      }
-      const verified = await verifyWorkspaceRequestContext({
-        req: scopedRequest,
-        fetchWorkspaceDirectory,
-        configuredEnv: configuredEnv(),
-      });
-      if (!verified.ok) {
-        sendWorkspaceVerificationFailure(res, verified);
-        return;
-      }
-      const workspaceId = verified.context.workspaceId;
-      const sse = createSseResponse(res);
-      const sink: WorkspaceEventSink = (payload) => {
-        const type =
-          payload && typeof payload === 'object' && 'type' in payload
-            ? String((payload as { type: unknown }).type)
-            : 'message';
-        sse.send(type, payload);
-      };
-      let workspaceSinks = workspaceEventSinks.get(workspaceId);
-      if (!workspaceSinks) {
-        workspaceSinks = new Set();
-        workspaceEventSinks.set(workspaceId, workspaceSinks);
-      }
-      workspaceSinks.add(sink);
-      const releaseWorkspaceEventInterest =
-        deps.retainWorkspaceEventInterest?.(workspaceId) ?? (() => undefined);
-      // Handshake so the client treats the stream as live and resets its
-      // reconnect backoff immediately (mirrors the project stream's `ready`).
-      sse.send('ready', { at: Date.now() });
-      const cleanup = () => {
-        workspaceSinks?.delete(sink);
-        if (workspaceSinks?.size === 0) {
-          workspaceEventSinks.delete(workspaceId);
-        }
-        releaseWorkspaceEventInterest();
-      };
-      res.on('close', cleanup);
-      res.on('finish', cleanup);
-    });
-  }
 
   app.get('/api/workspace/directory', async (req, res) => {
     const directory = await fetchWorkspaceDirectory().catch(

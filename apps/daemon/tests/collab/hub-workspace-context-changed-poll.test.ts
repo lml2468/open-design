@@ -119,13 +119,13 @@ describe('hub events onEvent switch (source boundary)', () => {
     ]);
   });
 
-  it('preserves the renamed project id and metadata kind on the workspace invalidation', () => {
+  it('refreshes the team-project cache and preserves the renamed id on the project invalidation', () => {
     const switchBody = extractOnEventSwitchBody();
     const metadataCase = switchBody
       .split(/(?=case '[a-z-]+':)/g)
       .find((chunk) => chunk.startsWith("case 'project-metadata-changed':"));
 
+    expect(metadataCase).toContain('refreshTeamProjects(eventWorkspaceId)');
     expect(metadataCase).toContain('projectId: event.projectId');
-    expect(metadataCase).toContain("kind: 'metadata'");
   });
 });

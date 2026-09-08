@@ -805,11 +805,7 @@ import {
   registerCollabSyncRoutes,
   type TeamMirrorPullScope,
 } from './routes/collab-sync.js';
-import {
-  emitWorkspaceEventToAllScopes,
-  emitWorkspaceEventToScope,
-  registerCollabContextRoutes,
-} from './routes/collab-context.js';
+import { registerCollabContextRoutes } from './routes/collab-context.js';
 import { createCollabRuntime } from './collab/runtime.js';
 import {
   createActiveWorkspaceSelectionStore,
@@ -904,7 +900,6 @@ import {
   createVelaCliTeamProjectCatalogClientFromEnv,
   createVelaCliTeamProjectCatalogFromEnv,
 } from './collab/vela-cli-team-projects.js';
-import { createTeamProjectsChangeEmitter } from './collab/team-projects-change-emitter.js';
 import { registerTelemetryRoutes } from './routes/telemetry.js';
 import {
   assembleExample,
@@ -1294,14 +1289,6 @@ async function refreshAndPersistToken(dataDir, serverId, current) {
 
 const activeChatAgentEventSinks = new Map();
 const activeProjectEventSinks = new Map();
-// Collab realtime hop-2: subscribers to the WORKSPACE-scoped invalidation SSE
-// (`GET /api/workspace/events`). Every connection is freshly verified for an
-// exact Workspace/member pair; sinks are partitioned by Workspace so one
-// daemon can safely serve tabs viewing A and B concurrently. Delivery is
-// workspace-wide within a partition because roster/catalog/context/team
-// billing invalidations legitimately affect every member of that Workspace.
-const workspaceEventSinks =
-  new Map<string, Set<(payload: unknown) => void>>();
 // Per-chat-run handles, keyed by runId. Lets non-stream side effects
 // (live-artifact create, project events) reach back into the chat
 // run's local state — currently used by the artifact quiet-period
@@ -1387,28 +1374,6 @@ function emitProjectEvent(projectId, payload) {
   return true;
 }
 
-// Broadcast a thin WORKSPACE-scoped invalidation only to the verified sink
-// partition for `workspaceId`. There is deliberately no account-wide fallback:
-// every producer below is attached to an explicit hub/poller/billing/project
-// scope, and broad delivery would reveal cross-workspace activity timing.
-function emitWorkspaceEvent(
-  workspaceId: string,
-  payload: { type: string; at?: number },
-): boolean {
-  return emitWorkspaceEventToScope(
-    workspaceEventSinks,
-    workspaceId,
-    payload,
-  );
-}
-
-function emitWorkspaceDirectoryChanged(): boolean {
-  return emitWorkspaceEventToAllScopes(workspaceEventSinks, {
-    type: 'workspace-directory-changed',
-    at: Date.now(),
-  });
-}
-
 function hubEventRefreshToken(event: {
   type?: string;
   revision?: string;
@@ -1447,7 +1412,7 @@ function hubEventRefreshToken(event: {
  * real hub connection.
  */
 export function handleHubWorkspaceContextChanged(
-  workspaceId: string,
+  _workspaceId: string,
   pollWorkspaceInvalidation: () => Promise<void>,
   invalidateWorkspaceDirectory: () => void = () => undefined,
 ): Promise<void> {
@@ -1456,10 +1421,6 @@ export function handleHubWorkspaceContextChanged(
   // event is allowed to finish for its original caller, but the broker will
   // not let it repopulate the post-event generation.
   invalidateWorkspaceDirectory();
-  emitWorkspaceEvent(
-    workspaceId,
-    { type: 'workspace-context-changed', at: Date.now() },
-  );
   return pollWorkspaceInvalidation().catch(() => undefined);
 }
 
@@ -1467,15 +1428,11 @@ export function handleHubWorkspaceContextChanged(
  * re-derived the stream principal and is closing the connection, so local
  * directory authority must be retired synchronously before reconciliation. */
 export function handleHubWorkspaceAccessRevoked(
-  workspaceId: string,
+  _workspaceId: string,
   pollWorkspaceInvalidation: () => Promise<void>,
   invalidateWorkspaceDirectory: () => void,
 ): void {
   invalidateWorkspaceDirectory();
-  emitWorkspaceEvent(
-    workspaceId,
-    { type: 'workspace-context-changed', at: Date.now() },
-  );
   void pollWorkspaceInvalidation().catch(() => undefined);
 }
 
@@ -4645,13 +4602,6 @@ export async function startServer({
     // Expose the collab-cloud member directory so the web client can resolve
     // comment authors + owner names to a name + role.
     ...(teamMembersCache ? { listMembers: teamMembersForDisplay } : {}),
-    // Collab realtime hop-2: the workspace-scoped invalidation SSE. The route
-    // registers/deregisters its sink here; the poller below feeds them.
-    createSseResponse,
-    workspaceEventSinks,
-    retainWorkspaceEventInterest: (workspaceId) =>
-      workspaceHubSubscriptions?.retainEventInterest(workspaceId)
-      ?? (() => undefined),
     observeWorkspace: async (req, context, properties) => {
       const service = workspaceAnalyticsService;
       const analyticsContext = readAnalyticsContext(req);
@@ -4688,8 +4638,6 @@ export async function startServer({
         emit: (payload, context) => {
           handlePolledWorkspaceInvalidation(
             payload,
-            (scopedPayload) =>
-              emitWorkspaceEvent(workspaceId, scopedPayload),
             () => reconcileWorkspaceProjectsFromRemote(
               context?.workspaceId ?? workspaceId,
             ),
@@ -4817,22 +4765,20 @@ export async function startServer({
         const directory = await fetchFreshBackgroundWorkspaceDirectory();
         if (currentWorkspaceDirectoryIdentity() !== expectedIdentity) return;
         if (!directory.ok) return;
-        emitWorkspaceDirectoryChanged();
       },
       token,
     );
   };
-  const emitTeamProjectsChanged = createTeamProjectsChangeEmitter({
-    invalidateWorkspace: (workspaceId) => {
-      teamProjectsDisplayCache.invalidateWorkspace(workspaceId);
-      workspaceTeamProjectCatalog?.invalidateWorkspace(workspaceId);
-    },
-    emit: emitWorkspaceEvent,
-    warmWorkspace: async (workspaceId) => {
-      const context = await resolveAuthoritativeTeamWorkspaceContext(workspaceId);
+  const refreshTeamProjects = (workspaceId: string): void => {
+    const exactWorkspaceId = workspaceId.trim();
+    if (!exactWorkspaceId) return;
+    teamProjectsDisplayCache.invalidateWorkspace(exactWorkspaceId);
+    workspaceTeamProjectCatalog?.invalidateWorkspace(exactWorkspaceId);
+    void (async () => {
+      const context = await resolveAuthoritativeTeamWorkspaceContext(exactWorkspaceId);
       await teamProjectsForDisplay(context);
-    },
-  });
+    })().catch(() => undefined);
+  };
   const startWorkspaceHubSubscriber = (subscribedWorkspaceId: string) =>
     startHubEventsSubscriber({
     resolveEndpoint: async () => {
@@ -5020,19 +4966,12 @@ export async function startServer({
       );
       switch (event.type) {
         case 'team-projects-changed': {
-          // Catalog changed (share/unshare). Refresh the display cache and
-          // signal the web, AND run a real `workspace_projects`
-          // reconciliation pass — see `collab/workspace-projects-reconciler.ts`.
+          // Catalog changed (share/unshare). Run a real `workspace_projects`
+          // reconciliation pass, then refresh the display cache.
           hubEventRefreshes.request(
             `team-projects:${eventWorkspaceId}`,
             () => handleHubTeamProjectsChanged(
-              () => emitTeamProjectsChanged(
-                eventWorkspaceId,
-                {
-                  ...(event.projectId ? { projectId: event.projectId } : {}),
-                  kind: 'catalog',
-                },
-              ),
+              () => refreshTeamProjects(eventWorkspaceId),
               () => reconcileWorkspaceProjectsFromRemote(
                 eventWorkspaceId,
               ),
@@ -5043,14 +4982,8 @@ export async function startServer({
         }
         case 'project-metadata-changed': {
           const targetProjectId = event.projectId?.trim() ?? '';
-          const emitMetadataChanged = () => {
-            emitTeamProjectsChanged(
-              eventWorkspaceId,
-              {
-                ...(event.projectId ? { projectId: event.projectId } : {}),
-                kind: 'metadata',
-              },
-            );
+          const refreshMetadata = () => {
+            refreshTeamProjects(eventWorkspaceId);
             if (event.projectId) {
               emitProjectEvent(event.projectId, {
                 type: 'project-metadata-changed',
@@ -5062,7 +4995,7 @@ export async function startServer({
           hubEventRefreshes.request(
             `project-metadata:${eventWorkspaceId}:${targetProjectId || '*'}`,
             () => handleHubProjectMetadataChanged(
-              emitMetadataChanged,
+              refreshMetadata,
               targetProjectId
                 ? () => reconcileWorkspaceProjectMetadataFromRemote(
                     eventWorkspaceId,
@@ -5126,13 +5059,7 @@ export async function startServer({
             hubEventRefreshes.request(
               `team-projects:${eventWorkspaceId}`,
               () => handleHubTeamProjectsChanged(
-                () => emitTeamProjectsChanged(
-                  eventWorkspaceId,
-                  {
-                    ...(event.projectId ? { projectId: event.projectId } : {}),
-                    kind: 'catalog',
-                  },
-                ),
+                () => refreshTeamProjects(eventWorkspaceId),
                 () => reconcileWorkspaceProjectsFromRemote(eventWorkspaceId),
               ),
               hubEventRefreshToken(event),

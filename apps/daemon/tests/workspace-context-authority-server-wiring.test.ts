@@ -98,17 +98,6 @@ describe('server workspace context authority wiring', () => {
     const directoryReadsAfterInitial = directoryReads;
     expect(directoryReadsAfterInitial).toBeGreaterThan(0);
 
-    const eventStreamAbort = new AbortController();
-    const eventStream = await fetch(
-      `${daemon.url}/api/workspace/events?workspaceId=${WORKSPACE_ID}&workspaceMemberId=${MEMBER_ID}`,
-      { signal: eventStreamAbort.signal },
-    );
-    expect(eventStream.status).toBe(200);
-    await vi.waitFor(
-      () => expect(directoryReads).toBeGreaterThan(directoryReadsAfterInitial),
-      { timeout: 10_000, interval: 50 },
-    );
-
     let warmContext: Record<string, unknown> | null = null;
     await vi.waitFor(async () => {
       const readsBefore = directoryReads;
@@ -148,7 +137,6 @@ describe('server workspace context authority wiring', () => {
       role: 'admin',
     });
     expect(directoryReads).toBeGreaterThan(directoryReadsBeforeCredentialRoundTrip);
-    eventStreamAbort.abort();
   }, 60_000);
 });
 

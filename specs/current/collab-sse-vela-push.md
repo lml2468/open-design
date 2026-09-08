@@ -4,15 +4,18 @@ Status: implemented on `main`. Owner: workspace-team.
 
 ## Implemented state
 
-Collaboration invalidations now travel over two implemented SSE hops:
+Project-scoped collaboration invalidations can travel over two SSE hops:
 
 - **Hop 1 (vela → daemon):** the daemon opens an exact-workspace cloud-hub
   subscription at `/api/v1/collab/events`. It verifies that the `ready` event
   names the requested workspace, uses heartbeats to monitor stream health,
   reconnects after interruptions, and performs source-gap catch-up.
-- **Hop 2 (daemon → web):** the daemon publishes thin invalidations at
-  `/api/projects/:id/events` and `/api/workspace/events`; web clients re-fetch
-  the affected state rather than receiving full resource payloads.
+- **Hop 2 (daemon → web):** the daemon publishes project-scoped thin
+  invalidations at `/api/projects/:id/events`; web clients re-fetch the
+  affected project state rather than receiving full resource payloads.
+- **Workspace reads:** workspace context, team projects, and members use bounded
+  polling plus focus, pageshow, and visibility-triggered re-fetches. The former
+  daemon-to-web Workspace invalidation stream has been removed.
 - **Polling floor:** polling remains as a slower recovery floor so missed or
   unavailable push events still converge.
 
