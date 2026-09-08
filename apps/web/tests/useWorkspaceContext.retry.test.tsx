@@ -27,7 +27,7 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
-// Silence the 30s compatibility poll / SSE floor so the ONLY re-reads a test
+// Silence the 30s compatibility poll so the ONLY re-reads a test
 // observes come from the failure-retry schedule under test.
 function makeDocumentHidden(): void {
   Object.defineProperty(document, 'visibilityState', {

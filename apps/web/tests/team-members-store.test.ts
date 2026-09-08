@@ -104,42 +104,4 @@ describe('team members identity store', () => {
     expect(teamMembersStoreFor(contexts[0]!, 0)).not.toBe(stores[0]);
   });
 
-  it('deduplicates one SSE payload fanned out to multiple consumers', async () => {
-    let reads = 0;
-    let resolveInvalidation!: (response: Response) => void;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((): Promise<Response> => {
-        reads += 1;
-        if (reads === 1) {
-          return Promise.resolve(
-            new Response(JSON.stringify({ members: [] }), { status: 200 }),
-          );
-        }
-        return new Promise<Response>((resolve) => {
-          resolveInvalidation = resolve;
-        });
-      }),
-    );
-
-    const store = teamMembersStoreFor(CONTEXT, 0)!;
-    const releaseFirst = store.retain(Symbol('first'));
-    const releaseSecond = store.retain(Symbol('second'));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(reads).toBe(1);
-
-    const payload = { type: 'members-changed' };
-    store.markDirty(payload);
-    store.markDirty(payload);
-    expect(reads).toBe(2);
-
-    resolveInvalidation(
-      new Response(JSON.stringify({ members: [] }), { status: 200 }),
-    );
-    await vi.advanceTimersByTimeAsync(0);
-    expect(reads).toBe(2);
-
-    releaseFirst();
-    releaseSecond();
-  });
 });

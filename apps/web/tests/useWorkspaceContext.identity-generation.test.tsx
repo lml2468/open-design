@@ -9,16 +9,12 @@
 // collapse into one read: the second switch is judged part of the first's
 // broadcast burst, skips the eviction, and is served the answer that was fetched
 // for the workspace the user already left. Nothing re-reads until the next poll
-// (30s connected, 120s on the SSE floor), so the whole shell — rail name, plan
+// (30s), so the whole shell — rail name, plan
 // nameplate, every permission judgement derived from the context — describes the
 // wrong workspace for that long.
 
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('../src/collab/workspace-events', () => ({
-  useWorkspaceInvalidation: vi.fn(() => ({ connected: false })),
-}));
 
 import {
   notifyWorkspaceContextRefresh,

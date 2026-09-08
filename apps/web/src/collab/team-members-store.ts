@@ -9,7 +9,6 @@ import {
 } from './workspace-identity';
 
 export const TEAM_MEMBERS_POLL_MS = 15_000;
-export const TEAM_MEMBERS_SSE_FLOOR_MS = 60_000;
 export const TEAM_MEMBERS_IDLE_TTL_MS = 5 * 60_000;
 export const TEAM_MEMBERS_MAX_RETAINED_IDENTITIES = 8;
 
@@ -40,15 +39,12 @@ export class TeamMembersIdentityStore {
   private readonly context: WorkspaceCollabContext;
   private readonly listeners = new Set<StoreListener>();
   private readonly consumers = new Set<symbol>();
-  private readonly connectedConsumers = new Map<symbol, boolean>();
-  private readonly seenDirtyEvents = new WeakSet<object>();
   private members: CollabCloudMemberDirectoryEntry[] = [];
   private inFlight: Promise<void> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private pollIntervalMs: number | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private requestEpoch = 0;
-  private dirty = false;
   private hasSuccessfulLoad = false;
   private disposed = false;
 
@@ -84,20 +80,14 @@ export class TeamMembersIdentityStore {
     return () => this.release(consumer);
   }
 
-  setConnected(consumer: symbol, connected: boolean): void {
-    if (!this.consumers.has(consumer)) return;
-    if (this.connectedConsumers.get(consumer) === connected) return;
-    this.connectedConsumers.set(consumer, connected);
-    this.rearmPoll();
-  }
-
   /** One explicit/background refresh. Concurrent callers join one promise. */
   readonly revalidate = async (): Promise<void> => {
     if (this.disposed) return;
     touchTeamMembersStore(this.identity, this);
     if (this.consumers.size === 0) this.refreshIdleEviction();
     if (this.inFlight) return this.inFlight;
-    const operation = this.drainRefreshes();
+    const requestEpoch = ++this.requestEpoch;
+    const operation = this.performLoad(requestEpoch);
     this.inFlight = operation;
     try {
       await operation;
@@ -105,22 +95,6 @@ export class TeamMembersIdentityStore {
       if (this.inFlight === operation) this.inFlight = null;
     }
   };
-
-  /**
-   * Record an authoritative invalidation. Multiple hook subscribers receive the
-   * same parsed SSE payload object, so dedupe that fan-out first. A genuinely
-   * newer event during an in-flight read leaves `dirty` set and produces one
-   * trailing refresh after the pending read settles.
-   */
-  markDirty(event?: object): void {
-    if (this.disposed) return;
-    if (event) {
-      if (this.seenDirtyEvents.has(event)) return;
-      this.seenDirtyEvents.add(event);
-    }
-    this.dirty = true;
-    if (this.consumers.size > 0) void this.revalidate();
-  }
 
   isRetained(): boolean {
     return this.consumers.size > 0;
@@ -132,12 +106,10 @@ export class TeamMembersIdentityStore {
     this.requestEpoch += 1;
     this.stopPoll();
     this.cancelIdleEviction();
-    this.connectedConsumers.clear();
   }
 
   private release(consumer: symbol): void {
     if (!this.consumers.delete(consumer)) return;
-    this.connectedConsumers.delete(consumer);
     if (this.consumers.size === 0) {
       // Network reads may finish into last-good, but an idle identity owns no
       // scheduler. TTL/LRU below bounds how long its snapshot stays warm.
@@ -147,17 +119,6 @@ export class TeamMembersIdentityStore {
       return;
     }
     this.rearmPoll();
-  }
-
-  private async drainRefreshes(): Promise<void> {
-    do {
-      this.dirty = false;
-      const requestEpoch = ++this.requestEpoch;
-      await this.performLoad(requestEpoch);
-      // If the final consumer left while this read was pending, preserve dirty
-      // for the next warm remount instead of doing background work for nobody.
-      if (this.consumers.size === 0 && this.dirty) return;
-    } while (this.dirty && !this.disposed);
   }
 
   private async performLoad(requestEpoch: number): Promise<void> {
@@ -187,9 +148,7 @@ export class TeamMembersIdentityStore {
       this.stopPoll();
       return;
     }
-    const nextIntervalMs = Array.from(this.connectedConsumers.values()).some(Boolean)
-      ? TEAM_MEMBERS_SSE_FLOOR_MS
-      : TEAM_MEMBERS_POLL_MS;
+    const nextIntervalMs = TEAM_MEMBERS_POLL_MS;
     if (this.pollTimer && this.pollIntervalMs === nextIntervalMs) return;
     this.stopPoll();
     this.pollIntervalMs = nextIntervalMs;

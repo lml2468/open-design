@@ -33,14 +33,6 @@ vi.mock('../../src/collab/useWorkspaceContext', () => ({
   useWorkspaceContext: () => workspaceHarness.state,
 }));
 
-vi.mock('../../src/collab/workspace-events', () => ({
-  useWorkspaceInvalidation: vi.fn(),
-}));
-
-vi.mock('../../src/collab/workspace-snapshot-activation', () => ({
-  useWorkspaceSnapshotActivation: () => vi.fn(),
-}));
-
 vi.mock('../../src/providers/registry', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/registry')>(
     '../../src/providers/registry',

@@ -10,7 +10,6 @@ import type {
   WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { useWorkspaceContext } from './useWorkspaceContext';
-import { useWorkspaceInvalidation } from './workspace-events';
 import { teamMembersStoreFor } from './team-members-store';
 
 const EMPTY_MEMBERS: CollabCloudMemberDirectoryEntry[] = [];
@@ -84,7 +83,7 @@ export function useTeamMembers(
 ): TeamMembersState {
   // The identity lives both on the request and in its cache key. When it
   // changes, the hook immediately re-reads that workspace's roster instead of
-  // waiting out the 15-60s poll or relying on daemon-global active state.
+  // waiting out the 15s poll or relying on daemon-global active state.
   //
   // This is not the duplicate GET `currentUserDirectoryEntry` warns about —
   // `useWorkspaceContext` shares one coalesced request and one module-level cache
@@ -124,30 +123,6 @@ export function useTeamMembers(
     if (!store) return;
     return store.retain(consumerRef.current);
   }, [store]);
-
-  const load = useCallback(() => {
-    void store?.revalidate();
-  }, [store]);
-
-  const markDirty = useCallback((payload?: object) => {
-    store?.markDirty(payload);
-  }, [store]);
-
-  // Collab realtime hop-2: subscribe to the workspace SSE and re-fetch on a
-  // pushed `members-changed` (someone joined/left/changed role). The daemon's
-  // workspace-invalidation poller diffs the roster and pushes only on an actual
-  // change. `connected` drives poll-as-floor below.
-  const { connected: sseConnected } = useWorkspaceInvalidation(
-    { 'members-changed': markDirty },
-    {
-      workspaceContext: activeWorkspaceContext,
-      onActive: () => void load(),
-    },
-  );
-
-  useEffect(() => {
-    store?.setConnected(consumerRef.current, sseConnected);
-  }, [sseConnected, store]);
 
   const members =
     !identityChangePending && store

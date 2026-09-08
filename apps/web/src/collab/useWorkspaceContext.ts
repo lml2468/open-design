@@ -14,7 +14,6 @@ import { BackoffController, type BackoffOptions } from '../lib/backoff';
 import {
   markProjectDisplaySnapshotsDirty,
 } from '../state/project-display-cache';
-import { useWorkspaceInvalidation } from './workspace-events';
 import {
   advanceWorkspaceAccountGeneration,
   beginWorkspaceScopedRead,
@@ -495,23 +494,6 @@ function explicitWorkspaceHeaders(selection: WorkspaceSelection): Record<string,
   };
 }
 
-function workspaceDirectoryItemFromContext(
-  context: WorkspaceCollabContext,
-): WorkspaceDirectoryItem {
-  return {
-    workspaceId: context.workspaceId,
-    workspaceName:
-      context.workspaceName?.trim()
-      || context.teamName?.trim()
-      || context.workspaceId,
-    workspaceType: context.workspaceType,
-    workspaceMemberId: context.workspaceMemberId,
-    role: context.role,
-    memberStatus: context.memberStatus,
-    lifecycleState: context.lifecycleState,
-  };
-}
-
 /** Test seam: clear the module-level context cache between tests. */
 export function resetWorkspaceContextCache(): void {
   cachedWorkspaceContext = null;
@@ -596,8 +578,6 @@ export function useWorkspaceContext(): WorkspaceContextState {
     options: {
       markLoading?: boolean;
       fresh?: boolean;
-      /** Revalidate the already-selected scope without listing the account. */
-      exactScopeOnly?: boolean;
     } = {},
   ) => {
     const requestEpoch = ++requestEpochRef.current;
@@ -614,34 +594,19 @@ export function useWorkspaceContext(): WorkspaceContextState {
     }
     try {
       const requestedSelection = readWorkspaceSelection();
-      const exactScopeContext =
-        options.exactScopeOnly
-        && requestedSelection
-        && cachedWorkspaceContext
-        && cachedWorkspaceContextGeneration === requestGeneration
-        && cachedWorkspaceContext.workspaceId === requestedSelection.workspaceId
-        && cachedWorkspaceContext.workspaceMemberId
-          === requestedSelection.workspaceMemberId
-          ? cachedWorkspaceContext
-          : null;
       const forceFresh = options.markLoading || options.fresh;
-      let directory: WorkspaceDirectoryResponse | null = null;
-      if (!exactScopeContext) {
-        directory = forceFresh
-          ? await readWorkspaceDirectoryForCurrentGeneration({ fresh: true })
-          : await readWorkspaceDirectoryForCurrentGeneration();
-      }
+      const directory: WorkspaceDirectoryResponse = forceFresh
+        ? await readWorkspaceDirectoryForCurrentGeneration({ fresh: true })
+        : await readWorkspaceDirectoryForCurrentGeneration();
       if (
         !mountedRef.current
         || requestEpochRef.current !== requestEpoch
         || workspaceContextRequestToken !== requestGeneration
       ) return;
-      const selected = exactScopeContext
-        ? workspaceDirectoryItemFromContext(exactScopeContext)
-        : chooseWorkspaceForTab(
-            directory?.items ?? [],
-            directory?.activeWorkspaceId ?? null,
-          );
+      const selected = chooseWorkspaceForTab(
+        directory.items ?? [],
+        directory.activeWorkspaceId ?? null,
+      );
       const exactSessionSelection = requestedSelection && selected
         && selected.workspaceId === requestedSelection.workspaceId
         && selected.workspaceMemberId === requestedSelection.workspaceMemberId
@@ -706,11 +671,11 @@ export function useWorkspaceContext(): WorkspaceContextState {
       // Coalesced: every mounted consumer of this hook (and every focus/pageshow
       // refresh across them) fires the same read on a home-view burst — collapse
       // them to one request. The nav shell tolerates sub-second staleness.
-      // Identity changes and exact-scope safety checks force a new generation
-      // read instead of sharing a settled answer that predates their trigger.
+      // Identity changes force a new generation read instead of sharing a
+      // settled answer that predates their trigger.
       // `forceCoalescedGet` still single-flights the burst across consumers.
       const coalesceKey = workspaceContextCoalesceKey();
-      const body = forceFresh || options.exactScopeOnly
+      const body = forceFresh
         ? await forceCoalescedGet(coalesceKey, fetchContext)
         : await coalescedGet(coalesceKey, fetchContext);
       if (
@@ -781,48 +746,17 @@ export function useWorkspaceContext(): WorkspaceContextState {
     void loadContext();
   }, [loadContext]);
 
-  // Collab realtime hop-2: subscribe to the workspace SSE and re-fetch on a
-  // pushed `workspace-context-changed`. `connected` drives poll-as-floor below.
-  // The re-fetch keeps the last-known context on failure rather than clearing it.
-  const { connected: sseConnected } = useWorkspaceInvalidation(
-    // A pushed invalidation is authoritative new state. Reusing either settled
-    // one-second cache here can keep a revoked Team membership selected until
-    // the SSE-floor poll runs much later.
-    { 'workspace-context-changed': () => void loadContext({ fresh: true }) },
-    {
-      workspaceContext: state.context,
-      // Reconnect is the gap-closing snapshot in the thin-event model. It must
-      // bypass settled one-second directory/context answers: a membership
-      // change may have landed while this browser had no sink, and accepting
-      // that stale snapshot would immediately slow the fallback poll to the
-      // healthy-SSE floor.
-      onActive: (reason) => void loadContext(
-        reason === 'ambient'
-          ? { exactScopeOnly: true }
-          : { fresh: true },
-      ),
-    },
-  );
-
   useEffect(() => {
-    // Poll-as-floor: slow the poll while the SSE is delivering, run it at full
-    // cadence when the stream is unavailable so there is no regression.
-    const intervalMs = sseConnected ? WORKSPACE_CONTEXT_SSE_FLOOR_MS : WORKSPACE_CONTEXT_POLL_MS;
     const interval = setInterval(() => {
       if (document.visibilityState !== 'visible') return;
-      // A healthy browser→daemon stream still gets a periodic safety read, but
-      // the scope is already known. Avoid listing the whole account merely to
-      // re-verify the current Workspace; the daemon decides whether its stricter
-      // upstream SSE authority is healthy enough to serve a bounded scoped
-      // cache or whether this request must fall back to `/api/v1/workspaces`.
-      void loadContext(sseConnected ? { exactScopeOnly: true } : undefined);
-    }, intervalMs);
+      void loadContext();
+    }, WORKSPACE_CONTEXT_POLL_MS);
     return () => clearInterval(interval);
-  }, [loadContext, sseConnected]);
+  }, [loadContext]);
 
   useEffect(() => {
     const refresh = () => {
-      void loadContext(sseConnected ? { exactScopeOnly: true } : undefined);
+      void loadContext();
     };
     // An EXPLICIT refresh means a caller just changed the identity (signed in
     // through onboarding or the rail callout) and is telling us so. Focus and
@@ -878,28 +812,21 @@ export function useWorkspaceContext(): WorkspaceContextState {
       if (detail?.requestKey !== workspaceContextRequestToken) return;
       void loadContext();
     };
-    // While the workspace EventSource is connected, its shared manager owns
-    // focus/visibility and labels those reads as ambient exact-scope checks.
-    // Keep these listeners only for the poll-only/disconnected fallback.
-    if (!sseConnected) window.addEventListener('focus', refresh);
+    window.addEventListener('focus', refresh);
     window.addEventListener('pageshow', refresh);
     window.addEventListener(WORKSPACE_CONTEXT_REFRESH_EVENT, refreshAfterIdentityChange);
     window.addEventListener(WORKSPACE_CONTEXT_RETRY_EVENT, onContextRetry);
     window.addEventListener('storage', onStorage);
-    if (!sseConnected) {
-      document.addEventListener('visibilitychange', onVisibilityChange);
-    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
-      if (!sseConnected) window.removeEventListener('focus', refresh);
+      window.removeEventListener('focus', refresh);
       window.removeEventListener('pageshow', refresh);
       window.removeEventListener(WORKSPACE_CONTEXT_REFRESH_EVENT, refreshAfterIdentityChange);
       window.removeEventListener(WORKSPACE_CONTEXT_RETRY_EVENT, onContextRetry);
       window.removeEventListener('storage', onStorage);
-      if (!sseConnected) {
-        document.removeEventListener('visibilitychange', onVisibilityChange);
-      }
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [loadContext, sseConnected]);
+  }, [loadContext]);
 
   const accountGeneration = currentWorkspaceAccountGeneration();
   return useMemo(
@@ -909,9 +836,6 @@ export function useWorkspaceContext(): WorkspaceContextState {
 }
 
 const WORKSPACE_CONTEXT_POLL_MS = 30_000;
-// Poll-as-floor cadence while the workspace SSE is connected — a slow safety net
-// behind the pushed `workspace-context-changed` events.
-const WORKSPACE_CONTEXT_SSE_FLOOR_MS = 120_000;
 export const WORKSPACE_CONTEXT_REFRESH_EVENT = 'od:workspace-context-refresh';
 // Keep the deployed storage string for old/new bundle interoperability. The
 // semantic name is deliberately narrower: only unseeded sign-in/sign-out
@@ -1043,8 +967,8 @@ function workspaceContextIdentity(context: WorkspaceCollabContext | null): strin
 // module-level and keyed by identity generation — one timer shared by every
 // mounted consumer (a per-hook timer would arm a dozen for the dozen-plus
 // mounted `useWorkspaceContext`s). Success
-// resets the depth; an ambient trigger (SSE `workspace-context-changed`, focus,
-// the poll floor) fetches immediately WITHOUT rewinding the depth, so unrelated
+// resets the depth; an ambient trigger (focus or the poll) fetches immediately
+// WITHOUT rewinding the depth, so unrelated
 // foreground activity cannot keep kicking a flaky transport back to a 1s cadence.
 const WORKSPACE_CONTEXT_RETRY_BASE_MS = 1_000;
 const WORKSPACE_CONTEXT_RETRY_MAX_MS = 30_000;

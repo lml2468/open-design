@@ -12,73 +12,6 @@ import {
 } from '../src/collab/useProjectWorkspaceScope';
 import { WORKSPACE_CONTEXT_REFRESH_EVENT } from '../src/collab/useWorkspaceContext';
 
-class OpeningEventSource {
-  static instances: OpeningEventSource[] = [];
-
-  readonly url: string;
-  readonly withCredentials = false;
-  readonly CONNECTING = 0;
-  readonly OPEN = 1;
-  readonly CLOSED = 2;
-  readyState = this.CONNECTING;
-  onopen: ((event: Event) => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-  closed = false;
-  deliveredListenerCalls = 0;
-  private readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
-
-  constructor(url: string | URL) {
-    this.url = String(url);
-    OpeningEventSource.instances.push(this);
-    queueMicrotask(() => {
-      if (this.closed) return;
-      this.readyState = this.OPEN;
-      this.onopen?.(new Event('open'));
-    });
-  }
-
-  addEventListener(
-    type: string,
-    listener: EventListenerOrEventListenerObject | null,
-  ): void {
-    if (!listener) return;
-    const listeners = this.listeners.get(type) ?? new Set();
-    listeners.add(listener);
-    this.listeners.set(type, listeners);
-  }
-
-  removeEventListener(
-    type: string,
-    listener: EventListenerOrEventListenerObject | null,
-  ): void {
-    if (!listener) return;
-    this.listeners.get(type)?.delete(listener);
-  }
-
-  dispatchEvent(event: Event): boolean {
-    for (const listener of this.listeners.get(event.type) ?? []) {
-      this.deliveredListenerCalls += 1;
-      if (typeof listener === 'function') listener.call(this, event);
-      else listener.handleEvent(event);
-    }
-    return true;
-  }
-
-  close(): void {
-    this.closed = true;
-    this.readyState = this.CLOSED;
-  }
-
-  emit(type: string, data: unknown = {}): void {
-    this.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(data) }));
-  }
-
-  listenerCount(type: string): number {
-    return this.listeners.get(type)?.size ?? 0;
-  }
-}
-
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((next) => {
@@ -137,15 +70,13 @@ describe('useProjectWorkspaceScope', () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
-    OpeningEventSource.instances = [];
   });
 
-  it('uses a fresh bootstrap scope without repeating the initial or connect-time read', async () => {
+  it('uses a fresh bootstrap scope without repeating the initial read', async () => {
     const response = teamScope('project-bootstrap', 'workspace-bootstrap', 'member-bootstrap');
     const caller = response.scope.context as WorkspaceCollabContext;
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    vi.stubGlobal('EventSource', OpeningEventSource as unknown as typeof EventSource);
 
     const hook = renderHook(() => useProjectWorkspaceScope(
       'project-bootstrap',
@@ -164,13 +95,10 @@ describe('useProjectWorkspaceScope', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('keeps a settled scope subscribed while SSE catch-up revalidates it', async () => {
-    let monotonicNow = 0;
-    vi.spyOn(globalThis.performance, 'now').mockImplementation(() => monotonicNow);
+  it('keeps a settled scope visible while focus revalidates it', async () => {
     const caller = teamScope('project-loop', 'workspace-loop', 'member-loop')
       .scope.context as WorkspaceCollabContext;
     const scopeUrls: string[] = [];
-    vi.stubGlobal('EventSource', OpeningEventSource as unknown as typeof EventSource);
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('/api/workspace/context')) {
@@ -183,9 +111,6 @@ describe('useProjectWorkspaceScope', () => {
         throw new Error(`Unexpected fetch: ${url}`);
       }
       scopeUrls.push(url);
-      // Bound a broken implementation's self-exciting reconnect loop so the
-      // red test fails deterministically instead of spinning forever.
-      if (scopeUrls.length > 5) return new Promise<Response>(() => {});
       const response = teamScope(
         'project-loop',
         'workspace-loop',
@@ -214,42 +139,17 @@ describe('useProjectWorkspaceScope', () => {
         context: { workspaceMemberId: 'member-loop' },
       });
     });
-    await waitFor(() => {
-      expect(scopeUrls).toHaveLength(2);
-      expect(hook.result.current.scope?.context).toMatchObject({
-        teamName: 'revision-2',
-      });
-    });
-    await act(async () => {
-      // Drain the fetch → React commit → EventSource onopen microtask chain.
-      // A broken implementation creates a new stream after every scope answer,
-      // whose onopen synchronously starts the next scope read.
-      for (let turn = 0; turn < 12; turn += 1) await Promise.resolve();
-    });
-
-    expect(scopeUrls).toHaveLength(2);
+    expect(scopeUrls).toHaveLength(1);
     expect(hook.result.current.loading).toBe(false);
     expect(hook.result.current.scope).not.toBeNull();
-    expect(OpeningEventSource.instances).toHaveLength(1);
-    expect(OpeningEventSource.instances[0]?.closed).toBe(false);
-    expect(
-      OpeningEventSource.instances[0]?.listenerCount('workspace-context-changed'),
-    ).toBe(1);
 
-    // Advance the coalescer's monotonic clock without sleeping so this is a
-    // distinct invalidation, not the same 250 ms reconnect burst.
-    monotonicNow = 251;
-    await act(async () => {
-      OpeningEventSource.instances[0]?.emit('workspace-context-changed', {
-        type: 'workspace-context-changed',
-      });
-      await Promise.resolve();
+    act(() => window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(scopeUrls).toHaveLength(2));
+    expect(hook.result.current.scope?.context).toMatchObject({
+      teamName: 'revision-2',
     });
-    expect(OpeningEventSource.instances[0]?.deliveredListenerCalls).toBeGreaterThan(0);
-    await waitFor(() => expect(scopeUrls).toHaveLength(3));
     expect(hook.result.current.loading).toBe(false);
     expect(hook.result.current.scope).not.toBeNull();
-    expect(OpeningEventSource.instances).toHaveLength(1);
 
     hook.unmount();
   });
@@ -646,14 +546,11 @@ describe('useProjectWorkspaceScope', () => {
   // Regression: the initial-read skip keyed off the CURRENT render's
   // "can seed" answer, so the late prop aborted the in-flight scope GET and
   // returned without ever seeding a scope or clearing `loading`. `loading`
-  // then pinned `true` forever — and because the workspace invalidation SSE is
-  // only subscribed once a scope resolves, no later event could re-trigger the
-  // read either. ProjectView reads that stuck `loading` as
+  // then pinned `true` forever. ProjectView reads that stuck `loading` as
   // `workspaceContextReadOnly`, so the whole workspace fell into the
   // "This is a shared project — you can view and comment" read-only mode with a
   // permanently non-editable composer.
   it('settles when a bootstrap scope arrives after the initial read started', async () => {
-    vi.stubGlobal('EventSource', OpeningEventSource as unknown as typeof EventSource);
     const bootstrapScope = {
       kind: 'unbound',
       projectId: 'project-late-bootstrap',

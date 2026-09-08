@@ -10,8 +10,6 @@ const harness = vi.hoisted(() => ({
   context: null as WorkspaceCollabContext | null,
   accountGeneration: 0,
   identityChangePending: false,
-  connected: false,
-  membersChanged: null as ((payload?: object) => void) | null,
 }));
 
 vi.mock('../src/collab/useWorkspaceContext', () => ({
@@ -20,15 +18,6 @@ vi.mock('../src/collab/useWorkspaceContext', () => ({
     identityChangePending: harness.identityChangePending,
     accountGeneration: harness.accountGeneration,
   }),
-}));
-
-vi.mock('../src/collab/workspace-events', () => ({
-  useWorkspaceInvalidation: (
-    handlers: Record<string, (payload?: object) => void>,
-  ) => {
-    harness.membersChanged = handlers['members-changed'] ?? null;
-    return { connected: harness.connected };
-  },
 }));
 
 import { useTeamMembers } from '../src/collab/useTeamMembers';
@@ -44,8 +33,6 @@ describe('useTeamMembers shared scheduler', () => {
     harness.context = TEAM_CONTEXT;
     harness.accountGeneration = 0;
     harness.identityChangePending = false;
-    harness.connected = false;
-    harness.membersChanged = null;
   });
 
   afterEach(() => {
@@ -207,62 +194,6 @@ describe('useTeamMembers shared scheduler', () => {
     second.unmount();
   });
 
-  it('queues one trailing refresh when members-changed arrives during a read', async () => {
-    const pending: Array<(response: Response) => void> = [];
-    let reads = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL): Promise<Response> => {
-        if (!String(input).includes('/api/workspace/members')) {
-          throw new Error(`unexpected fetch: ${String(input)}`);
-        }
-        reads += 1;
-        if (reads === 1) {
-          return Promise.resolve(
-            new Response(JSON.stringify({ members: [] }), { status: 200 }),
-          );
-        }
-        return new Promise<Response>((resolve) => pending.push(resolve));
-      }),
-    );
-
-    const hook = renderHook(() => useTeamMembers());
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(reads).toBe(1);
-
-    const firstEvent = { type: 'members-changed' };
-    act(() => harness.membersChanged?.(firstEvent));
-    expect(reads).toBe(2);
-
-    // A burst while the refresh is pending is dirty state, not a reason to
-    // spawn parallel reads. It must result in exactly one trailing refresh.
-    act(() => {
-      harness.membersChanged?.({ type: 'members-changed' });
-      harness.membersChanged?.({ type: 'members-changed' });
-      harness.membersChanged?.({ type: 'members-changed' });
-    });
-    expect(reads).toBe(2);
-
-    await act(async () => {
-      pending[0]?.(
-        new Response(JSON.stringify({ members: [] }), { status: 200 }),
-      );
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(reads).toBe(3);
-
-    await act(async () => {
-      pending[1]?.(
-        new Response(JSON.stringify({ members: [] }), { status: 200 }),
-      );
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(reads).toBe(3);
-    hook.unmount();
-  });
-
   it('partitions the same workspace membership by account generation', async () => {
     let reads = 0;
     let resolveSecondAccount!: (response: Response) => void;
@@ -356,49 +287,6 @@ describe('useTeamMembers shared scheduler', () => {
     expect(hook.result.current.members).toEqual([]);
     expect(reads).toBe(2);
     expect(resolveSecondAccount).toBeTypeOf('function');
-
-    hook.unmount();
-  });
-
-  it('uses the SSE floor while connected and the low-frequency fallback when disconnected', async () => {
-    const membersReads: number[] = [];
-    harness.connected = true;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        if (!String(input).includes('/api/workspace/members')) {
-          throw new Error(`unexpected fetch: ${String(input)}`);
-        }
-        membersReads.push(Date.now());
-        return new Response(JSON.stringify({ members: [] }), { status: 200 });
-      }),
-    );
-
-    const hook = renderHook(() => useTeamMembers());
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(membersReads).toHaveLength(1);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(59_999);
-    });
-    expect(membersReads).toHaveLength(1);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(membersReads).toHaveLength(2);
-
-    harness.connected = false;
-    hook.rerender();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(14_999);
-    });
-    expect(membersReads).toHaveLength(2);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(membersReads).toHaveLength(3);
 
     hook.unmount();
   });

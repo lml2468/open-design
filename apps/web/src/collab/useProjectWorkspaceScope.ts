@@ -11,7 +11,6 @@ import {
   forceSharedCancellableGet,
   sharedCancellableGet,
 } from '../lib/shared-cancellable-get';
-import { useWorkspaceInvalidation } from './workspace-events';
 import { workspaceIdentityCacheKey } from './workspace-identity';
 
 const PROJECT_SCOPE_RETRY_MS = 5_000;
@@ -429,7 +428,6 @@ export function useProjectWorkspaceScope(
     resolvedAuthorityKey: initialScopeCanSeed ? requestAuthorityKey : null,
     resolvedCallerIdentityKey: initialScopeCanSeed ? callerIdentityKey : 'none',
   }));
-  const skipFirstActiveRevalidationRef = useRef(initialScopeCanSeed);
   /**
    * Whether this hook's state was actually seeded from `initialScope` at mount.
    *
@@ -439,8 +437,7 @@ export function useProjectWorkspaceScope(
    * seed state — the state initializer ran once, without it. Skipping the
    * initial read on that late flip therefore cancels the in-flight scope GET
    * that is the only thing able to settle `loading`, and strands the hook at
-   * `{ loading: true, scope: null }` forever (no scope also means the workspace
-   * invalidation SSE never subscribes, so no later event can re-trigger it).
+   * `{ loading: true, scope: null }` forever.
    */
   const seededFromInitialScopeRef = useRef(initialScopeCanSeed);
 
@@ -476,39 +473,25 @@ export function useProjectWorkspaceScope(
     scheduleDeferredRevalidation();
   }, [scheduleDeferredRevalidation]);
 
-  const revalidateOnActive = useCallback(() => {
-    // A route bootstrap scope was fetched immediately before this hook mounted.
-    // The first EventSource `open` is connection establishment, not evidence of
-    // a change since that witness, so do not repeat the exact same scope read.
-    if (skipFirstActiveRevalidationRef.current) {
-      skipFirstActiveRevalidationRef.current = false;
-      return;
-    }
-    revalidateInBackground();
-  }, [revalidateInBackground]);
-
-  useWorkspaceInvalidation(
-    {
-      'workspace-context-changed': revalidateInBackground,
-    },
-    {
-      workspaceContext: projectWorkspaceContext(state.scope),
-      onActive: revalidateOnActive,
-    },
-  );
-
   useEffect(() => {
+    const revalidateWhenVisible = () => {
+      if (document.visibilityState === 'visible') revalidateInBackground();
+    };
     window.addEventListener(
       WORKSPACE_CONTEXT_REFRESH_EVENT,
       revalidateAfterIdentityChange,
     );
+    window.addEventListener('focus', revalidateInBackground);
     window.addEventListener('pageshow', revalidateInBackground);
+    document.addEventListener('visibilitychange', revalidateWhenVisible);
     return () => {
       window.removeEventListener(
         WORKSPACE_CONTEXT_REFRESH_EVENT,
         revalidateAfterIdentityChange,
       );
+      window.removeEventListener('focus', revalidateInBackground);
       window.removeEventListener('pageshow', revalidateInBackground);
+      document.removeEventListener('visibilitychange', revalidateWhenVisible);
       if (deferredRefreshTimerRef.current) {
         clearTimeout(deferredRefreshTimerRef.current);
         deferredRefreshTimerRef.current = null;
@@ -592,8 +575,8 @@ export function useProjectWorkspaceScope(
           controller.signal,
           {
             // Revision 0 is the initial mount read; anything later is an
-            // explicit revalidation (identity change, reconnect, pageshow,
-            // deferred TTL re-read) and must not be served from the burst cache.
+            // explicit revalidation (identity change, focus, pageshow, deferred
+            // TTL re-read) and must not be served from the burst cache.
             fresh: refreshRevision > 0,
             workspaceAuthority: requestWorkspaceAuthority,
             workspaceIdentityKey: callerIdentityKey,

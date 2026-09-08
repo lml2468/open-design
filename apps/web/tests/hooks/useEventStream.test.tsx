@@ -47,10 +47,10 @@ afterEach(() => {
 describe('useEventStream', () => {
   it('shares ONE EventSource across subscribers to the same URL', () => {
     const a = renderHook(() =>
-      useEventStream('/api/workspace/events', { events: { 'members-changed': () => {} }, EventSourceCtor: Ctor }),
+      useEventStream('/api/test/events', { events: { alpha: () => {} }, EventSourceCtor: Ctor }),
     );
     const b = renderHook(() =>
-      useEventStream('/api/workspace/events', { events: { 'team-projects-changed': () => {} }, EventSourceCtor: Ctor }),
+      useEventStream('/api/test/events', { events: { beta: () => {} }, EventSourceCtor: Ctor }),
     );
     // One shared connection, not one per hook.
     expect(MockEventSource.instances).toHaveLength(1);
@@ -66,10 +66,10 @@ describe('useEventStream', () => {
     const hits: string[] = [];
     let activeCount = 0;
     const { result } = renderHook(() =>
-      useEventStream('/api/workspace/events', {
+      useEventStream('/api/test/events', {
         events: {
-          'members-changed': () => hits.push('members'),
-          'team-projects-changed': () => hits.push('projects'),
+          alpha: () => hits.push('alpha'),
+          beta: () => hits.push('beta'),
         },
         onActive: () => {
           activeCount += 1;
@@ -83,14 +83,14 @@ describe('useEventStream', () => {
     expect(result.current.connected).toBe(true);
     expect(activeCount).toBe(1); // snapshot catch-up on connect
 
-    act(() => es.dispatch('members-changed', { type: 'members-changed' }));
-    act(() => es.dispatch('team-projects-changed', { type: 'team-projects-changed' }));
-    expect(hits).toEqual(['members', 'projects']);
+    act(() => es.dispatch('alpha', { type: 'alpha' }));
+    act(() => es.dispatch('beta', { type: 'beta' }));
+    expect(hits).toEqual(['alpha', 'beta']);
   });
 
   it('flips connected back to false on error (poll-as-floor resume)', () => {
     const { result } = renderHook(() =>
-      useEventStream('/api/workspace/events', { events: { 'members-changed': () => {} }, EventSourceCtor: Ctor }),
+      useEventStream('/api/test/events', { events: { alpha: () => {} }, EventSourceCtor: Ctor }),
     );
     const es = MockEventSource.instances[0]!;
     act(() => es.open());
@@ -105,8 +105,8 @@ describe('useEventStream', () => {
     vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
     let activeCount = 0;
     const { result } = renderHook(() =>
-      useEventStream('/api/workspace/events', {
-        events: { 'team-projects-changed': () => {} },
+      useEventStream('/api/test/events', {
+        events: { alpha: () => {} },
         onActive: () => {
           activeCount += 1;
         },
@@ -141,7 +141,7 @@ describe('useEventStream', () => {
     vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
     let activeCount = 0;
     renderHook(() =>
-      useEventStream('/api/workspace/events', {
+      useEventStream('/api/test/events', {
         events: {},
         onActive: () => { activeCount += 1; },
         EventSourceCtor: Ctor,
@@ -169,7 +169,7 @@ describe('useEventStream', () => {
   it('distinguishes connection catch-up from ambient focus revalidation', () => {
     const reasons: string[] = [];
     renderHook(() =>
-      useEventStream('/api/workspace/events', {
+      useEventStream('/api/test/events', {
         events: {},
         onActive: (reason) => reasons.push(reason),
         EventSourceCtor: Ctor,
@@ -184,8 +184,8 @@ describe('useEventStream', () => {
 
   it('stays poll-only (never connects) when disabled', () => {
     const { result } = renderHook(() =>
-      useEventStream('/api/workspace/events', {
-        events: { 'members-changed': () => {} },
+      useEventStream('/api/test/events', {
+        events: { alpha: () => {} },
         enabled: false,
         EventSourceCtor: Ctor,
       }),
