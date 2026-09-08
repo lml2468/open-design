@@ -112,10 +112,6 @@ async function startProjectStubServer(): Promise<StubServer> {
         res.end(JSON.stringify({ ok: true, deletedProjectIds: ['project-1', 'project-2'] }));
         return;
       }
-      // Workspace directory used by `od project list` to auto-resolve the
-      // signed-in workspace when no explicit --workspace/--workspace-member
-      // is supplied (#6679). Mirrors the personal workspace shape returned
-      // by the real daemon GET /api/workspace/directory.
       if (captured.method === 'GET' && captured.url === '/api/workspace/directory') {
         res.statusCode = 200;
         res.end(JSON.stringify({
@@ -144,10 +140,14 @@ async function startProjectStubServer(): Promise<StubServer> {
         }));
         return;
       }
-      // An unbound project catalog (no signed-in workspace / non-vela).
       if (captured.method === 'GET' && captured.url === '/api/projects') {
         res.statusCode = 200;
-        res.end(JSON.stringify({ projects: [] }));
+        res.end(JSON.stringify({
+          projects: [
+            { id: 'bound-project-1', name: 'Bound Project One', skillId: 'skill-1' },
+            { id: 'bound-project-2', name: 'Bound Project Two', skillId: 'skill-2' },
+          ],
+        }));
         return;
       }
 
@@ -328,7 +328,7 @@ describe('od project CLI', () => {
     });
   });
 
-  it('od project list without --workspace resolves the signed-in workspace automatically (#6679)', async () => {
+  it('od project list reads the complete local catalog without resolving a Workspace', async () => {
     stub = await startProjectStubServer();
 
     const result = await runCli(['project', 'list', '--json', '--daemon-url', stub.baseUrl]);
@@ -340,23 +340,14 @@ describe('od project CLI', () => {
       { id: 'bound-project-1', name: 'Bound Project One', skillId: 'skill-1' },
       { id: 'bound-project-2', name: 'Bound Project Two', skillId: 'skill-2' },
     ]);
-    // Should hit both the directory resolver and the workspace-scoped catalog.
-    expect(stub.requests).toHaveLength(2);
+    expect(stub.requests).toHaveLength(1);
     expect(stub.requests[0]).toMatchObject({
       method: 'GET',
-      url: '/api/workspace/directory',
-    });
-    expect(stub.requests[1]).toMatchObject({
-      method: 'GET',
-      url: '/api/workspaces/ws-personal/projects',
-    });
-    expect(stub.requests[1]!.headers).toMatchObject({
-      'x-od-workspace-id': 'ws-personal',
-      'x-od-workspace-member-id': 'mem-personal',
+      url: '/api/projects',
     });
   });
 
-  it('od project list with explicit --workspace routes to the workspace-scoped catalog (#6679)', async () => {
+  it('od project list ignores legacy Workspace flags for catalog selection', async () => {
     stub = await startProjectStubServer();
 
     const result = await runCli([
@@ -373,26 +364,14 @@ describe('od project CLI', () => {
 
     expect(result.code).toBe(0);
     expect(result.stderr).toBe('');
-    // No workspace/directory call — explicit flags win, but they route to
-    // the workspace-scoped catalog (/api/workspaces/:id/projects), not to
-    // the unbound /api/projects catalog. Passing --workspace to /api/projects
-    // does NOT scope it (#6679 repro), so the explicit path mirrors the
-    // implicit signed-in path.
     expect(stub.requests).toHaveLength(1);
     expect(stub.requests[0]).toMatchObject({
       method: 'GET',
-      url: '/api/workspaces/ws-1/projects',
-    });
-    expect(stub.requests[0]!.headers).toMatchObject({
-      'x-od-workspace-id': 'ws-1',
-      'x-od-workspace-member-id': 'member-1',
+      url: '/api/projects',
     });
   });
 
-  it('od project list falls back to headerless catalog when no signed-in workspace (#6679)', async () => {
-    // Custom stub whose directory endpoint returns empty (signed-out / no vela)
-    // so resolveMcpWorkspaceContext returns null and the CLI falls back to the
-    // headerless unbound catalog exactly as before the fix.
+  it('od project list remains independent of Workspace directory availability', async () => {
     const requests: CapturedRequest[] = [];
     const server = http.createServer((req, res) => {
       let raw = '';
@@ -408,11 +387,6 @@ describe('od project CLI', () => {
         };
         requests.push(captured);
         res.setHeader('content-type', 'application/json');
-        if (captured.method === 'GET' && captured.url === '/api/workspace/directory') {
-          res.statusCode = 200;
-          res.end(JSON.stringify({ items: [], activeWorkspaceId: null }));
-          return;
-        }
         if (captured.method === 'GET' && captured.url === '/api/projects') {
           res.statusCode = 200;
           res.end(JSON.stringify({ projects: [{ id: 'unbound-1', name: 'Unbound One' }] }));
@@ -444,10 +418,9 @@ describe('od project CLI', () => {
     expect(result.stderr).toBe('');
     const data = JSON.parse(result.stdout);
     expect(data.projects).toEqual([{ id: 'unbound-1', name: 'Unbound One' }]);
-    // Fallback path fires: directory probed then unbound catalog.
     const dirReq = requests.find((r) => r.method === 'GET' && r.url === '/api/workspace/directory');
     const catalogReq = requests.find((r) => r.method === 'GET' && r.url === '/api/projects');
-    expect(dirReq).toBeDefined();
+    expect(dirReq).toBeUndefined();
     expect(catalogReq).toBeDefined();
   });
 

@@ -38,19 +38,17 @@ afterEach(() => {
 });
 
 describe('MCP workspace-scoped project tools (#6569)', () => {
-  it('list_projects calls the workspace-scoped catalog with workspace headers', async () => {
+  it('list_projects reads the complete local catalog without resolving a Workspace', async () => {
     const calls: Array<{ url: string; init?: RequestInit | undefined }> = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
-      if (url.endsWith('/api/workspace/directory')) return directoryResponse();
-      if (url.includes('/api/workspaces/ws-personal/projects')) {
+      if (url.endsWith('/api/projects')) {
         return new Response(
           JSON.stringify({
             projects: [
               {
                 id: '22222222-2222-2222-2222-222222222222',
-                name: 'Bound Demo',
-                workspaceId: 'ws-personal',
+                name: 'Local Demo',
                 metadata: { kind: 'prototype' },
               },
             ],
@@ -64,14 +62,10 @@ describe('MCP workspace-scoped project tools (#6569)', () => {
 
     const result = await handleMcpToolCall(BASE, 'list_projects', {});
 
-    expect(calls[0]?.url).toBe(`${BASE}/api/workspace/directory`);
-    const scoped = calls.find((c) => c.url.includes('/api/workspaces/ws-personal/projects'));
-    expect(scoped).toBeTruthy();
-    expect((scoped?.init?.headers as Record<string, string>)['x-od-workspace-id']).toBe('ws-personal');
-    expect((scoped?.init?.headers as Record<string, string>)['x-od-workspace-member-id']).toBe('mem-1');
+    expect(calls).toEqual([{ url: `${BASE}/api/projects`, init: undefined }]);
     const body = firstJson<{ projects: Array<{ id: string; name: string }> }>(result);
     expect(body.projects).toHaveLength(1);
-    expect(body.projects[0]?.name).toBe('Bound Demo');
+    expect(body.projects[0]?.name).toBe('Local Demo');
   });
 
   it('get_project sends workspace headers on the bound-project read', async () => {
@@ -155,16 +149,16 @@ describe('MCP workspace-scoped project tools (#6569)', () => {
     expect(firstJson<{ id: string }>(result).id).toBe('new-project');
   });
 
-  it('name resolution uses the workspace-scoped catalog', async () => {
+  it('name resolution uses the local catalog while the project read stays scoped', async () => {
     const seen: Array<{ url: string; init?: RequestInit | undefined }> = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       seen.push({ url, init });
       if (url.endsWith('/api/workspace/directory')) return directoryResponse();
-      if (url.includes('/api/workspaces/ws-personal/projects')) {
+      if (url.endsWith('/api/projects')) {
         return new Response(
           JSON.stringify({
             projects: [
-              { id: '33333333-3333-3333-3333-333333333333', name: 'Bound Demo', workspaceId: 'ws-personal' },
+              { id: '33333333-3333-3333-3333-333333333333', name: 'Local Demo' },
             ],
           }),
           { status: 200 },
@@ -185,17 +179,18 @@ describe('MCP workspace-scoped project tools (#6569)', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await handleMcpToolCall(BASE, 'get_project', { project: 'Bound Demo' });
+    const result = await handleMcpToolCall(BASE, 'get_project', { project: 'Local Demo' });
 
-    const catalogCall = seen.find((c) => c.url.includes('/api/workspaces/ws-personal/projects'));
+    const catalogCall = seen.find((c) => c.url.endsWith('/api/projects'));
     expect(catalogCall).toBeTruthy();
+    expect(catalogCall?.init).toBeUndefined();
     const body = firstJson<{ id: string }>(result);
     expect(body.id).toBe('33333333-3333-3333-3333-333333333333');
   });
 });
 
-describe('MCP headerless fallback (#6569)', () => {
-  it('list_projects stays headerless when the directory has no membership', async () => {
+describe('MCP local project catalog', () => {
+  it('list_projects never depends on Workspace directory availability', async () => {
     const seen: Array<{ url: string; init?: RequestInit | undefined }> = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       seen.push({ url, init });
@@ -212,6 +207,7 @@ describe('MCP headerless fallback (#6569)', () => {
     const result = await handleMcpToolCall(BASE, 'list_projects', {});
 
     const catalog = seen.find((c) => c.url.endsWith('/api/projects'));
+    expect(seen).toHaveLength(1);
     expect(catalog).toBeTruthy();
     expect(catalog?.init).toBeUndefined();
     const body = firstJson<{ projects: Array<{ name: string }> }>(result);

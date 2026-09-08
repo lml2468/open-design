@@ -34,7 +34,6 @@ import {
   ANALYTICS_HEADER_SESSION_ID,
   buildProjectRawFileUrl,
   type McpAnalyticsContextResponse,
-  type WorkspaceProjectsResponse,
 } from '@open-design/contracts';
 import { randomUUID } from 'node:crypto';
 
@@ -1991,7 +1990,6 @@ function containsMcpCredentialField(value: unknown, depth = 0): boolean {
 // 400 with WORKSPACE_CONTEXT_REQUIRED (#6569). These resolve the signed-in
 // workspace and send x-od-workspace-* headers on every daemon call.
 const PROJECT_OR_RUN_TOOLS = new Set([
-  'list_projects',
   'get_project',
   'get_file',
   'list_files',
@@ -2059,20 +2057,6 @@ async function handleMcpToolCall(
         };
       }
       case 'list_projects':
-        if (workspaceId && headers) {
-          const data = await getJson<WorkspaceProjectsResponse>(
-            `${baseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/projects`,
-            headers,
-          );
-          return ok({
-            projects: (data?.projects ?? []).map((p) => ({
-              id: p.id,
-              name: p.name,
-              ...(p.metadata ? { metadata: p.metadata as unknown as JsonObject } : {}),
-              workspaceId: p.workspaceId,
-            })),
-          });
-        }
         return ok(await getJson<ProjectsPayload>(`${baseUrl}/api/projects`));
       case 'get_active_context': {
         const data = await getJson<ActiveContext>(`${baseUrl}/api/active`);
@@ -2859,35 +2843,19 @@ let projectListCache: ProjectListCache | null = null;
 
 async function fetchProjectList(
   baseUrl: string,
-  headers?: Record<string, string>,
+  _headers?: Record<string, string>,
 ): Promise<ProjectSummary[]> {
-  const workspaceId = headers?.['x-od-workspace-id'] ?? '';
-  // Cache key includes the workspace so a scoped and an unbound list never mix.
-  const cacheKey = workspaceId ? `${baseUrl}|${workspaceId}` : baseUrl;
   const now = Date.now();
   if (
     projectListCache &&
-    projectListCache.baseUrl === cacheKey &&
+    projectListCache.baseUrl === baseUrl &&
     now - projectListCache.t < PROJECT_LIST_TTL_MS
   ) {
     return projectListCache.list;
   }
-  let list: ProjectSummary[];
-  if (workspaceId && headers) {
-    const data = await getJson<WorkspaceProjectsResponse>(
-      `${baseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/projects`,
-      headers,
-    );
-    list = (data?.projects ?? []).map((p) => ({
-      id: p.id,
-      name: p.name,
-      ...(p.metadata ? { metadata: p.metadata as unknown as JsonObject } : {}),
-    }));
-  } else {
-    const data = await getJson<ProjectsPayload>(`${baseUrl}/api/projects`);
-    list = Array.isArray(data?.projects) ? data.projects : [];
-  }
-  projectListCache = { baseUrl: cacheKey, t: now, list };
+  const data = await getJson<ProjectsPayload>(`${baseUrl}/api/projects`);
+  const list = Array.isArray(data?.projects) ? data.projects : [];
+  projectListCache = { baseUrl, t: now, list };
   return list;
 }
 
