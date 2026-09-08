@@ -455,7 +455,7 @@ This project was created through the daemon API with \`skipDiscoveryBrief: true\
 // needs to (1) route the agent to the dispatcher instead of provider APIs,
 // (2) state the handoff/exit-code semantics, and (3) pin the behavioral
 // rules agents historically fumbled (PowerShell translation, jq, asking
-// for API keys, substituting fal-ai/* model paths).
+// for API keys, substituting provider model paths).
 const MEDIA_DISPATCH_HINT = `
 
 ---
@@ -463,10 +463,6 @@ const MEDIA_DISPATCH_HINT = `
 ## Media generation (if asked)
 
 If the user asks you to generate an image, video, or audio file — regardless of which provider or model they mention (fal, Replicate, OpenAI, etc.) — use the daemon dispatcher via your **Bash tool**. Do NOT call provider REST APIs directly.
-
-OpenDesign Cloud models use the \`vela/*\` prefix. Never invoke the \`vela\`
-CLI directly for those models: the OD dispatcher owns trusted Workspace
-attribution, polling, downloads, and final project-file placement.
 
 The daemon injects these env vars into your shell (**POSIX bash — not PowerShell**):
 
@@ -544,62 +540,22 @@ function renderMediaDispatchModelGuidance(defaults?: ByokMediaDefaults): string 
   const videoModel = defaults?.videoModel?.trim();
   const imagePart = imageModel
     ? `For image generation prefer your configured model: \`${imageModel}\`.`
-    : 'For the best fal image model use `--model flux-pro-ultra`.';
+    : 'For image generation use the catalogue default `--model gpt-image-2`.';
   const videoPart = videoModel
     ? `For video prefer your configured model: \`${videoModel}\`.`
     : 'For video use `--model veo-3-fal` or `--model wan-2.1-t2v`.';
   return `${imagePart} ${videoPart} Always pass \`--surface\` explicitly (\`image\`, \`video\`, or \`audio\`). Any \`fal-ai/*\` path (e.g. \`fal-ai/flux/schnell\`, \`fal-ai/wan-i2v\`) is also a valid \`--model\` value for image/video — pass it through as-is without substitution.`;
 }
 
-function renderMediaDispatchHint(
-  defaults?: ByokMediaDefaults,
-  runtimeDefaults?: ByokMediaDefaults,
-): string {
-  const effectiveDefaults = runtimeDefaults ?? defaults;
-  const imageModel = effectiveDefaults?.imageModel?.trim() || 'flux-pro-ultra';
+function renderMediaDispatchHint(defaults?: ByokMediaDefaults): string {
+  const imageModel = defaults?.imageModel?.trim() || 'gpt-image-2';
   const hint = MEDIA_DISPATCH_HINT
     .replace('IMAGE_MODEL_VALUE', shellDoubleQuote(imageModel))
     .replace(
       'MODEL_SELECTION_GUIDANCE',
-      renderMediaDispatchModelGuidance(effectiveDefaults),
+      renderMediaDispatchModelGuidance(defaults),
     );
-  return `${hint}${renderByokMediaDefaultsHint(defaults)}${renderRuntimeMediaDefaultsHint(runtimeDefaults, defaults)}`;
-}
-
-function mediaDefaultsForRuntime(
-  agentId: string | null | undefined,
-  defaults?: ByokMediaDefaults,
-): ByokMediaDefaults | undefined {
-  if (agentId !== 'amr') return defaults;
-  return {
-    ...defaults,
-    imageModel: defaults?.imageModel?.trim() || 'vela/gpt-image-2',
-    videoModel:
-      defaults?.videoModel?.trim()
-      || 'vela/doubao-seedance-2-0-260128',
-  };
-}
-
-function renderRuntimeMediaDefaultsHint(
-  runtimeDefaults: ByokMediaDefaults | undefined,
-  userDefaults: ByokMediaDefaults | undefined,
-): string {
-  if (!runtimeDefaults) return '';
-  const lines: string[] = [];
-  if (!userDefaults?.imageModel?.trim() && runtimeDefaults.imageModel?.trim()) {
-    lines.push(`- Image model: \`${runtimeDefaults.imageModel.trim()}\``);
-  }
-  if (!userDefaults?.videoModel?.trim() && runtimeDefaults.videoModel?.trim()) {
-    lines.push(`- Video model: \`${runtimeDefaults.videoModel.trim()}\``);
-  }
-  if (lines.length === 0) return '';
-  return `
-
-### OpenDesign Cloud media defaults
-
-This AMR run uses these managed media defaults when the user has not selected
-a different run-scoped model:
-${lines.join('\n')}`;
+  return `${hint}${renderByokMediaDefaultsHint(defaults)}`;
 }
 
 const FILESYSTEM_HANDOFF_OVERRIDE = `
@@ -931,10 +887,6 @@ export function composeSystemPrompt({
   // layered composition until the A/B comparison signs off.
   const isSlimCore = promptCoreVariant === 'slim';
   const isAskModeEarly = sessionMode === 'chat';
-  const runtimeMediaDefaults = mediaDefaultsForRuntime(
-    agentId,
-    byokMediaDefaults,
-  );
   // Media surfaces (image / video / audio) must be resolved BEFORE the head
   // is built: their generation contract, rather than the design charter's
   // HTML workflow, is the sole workflow authority on these runs.
@@ -1372,11 +1324,6 @@ export function composeSystemPrompt({
     // mode for anything that actually generates media.
   } else if (isMediaSurface) {
     parts.push(renderMediaGenerationContract(mediaExecution, byokMediaDefaults));
-    const runtimeDefaultsHint = renderRuntimeMediaDefaultsHint(
-      runtimeMediaDefaults,
-      byokMediaDefaults,
-    );
-    if (runtimeDefaultsHint) parts.push(runtimeDefaultsHint);
   } else if (mediaHintSignal ?? true) {
     // Non-media projects (prototype, deck, etc.): inject a lightweight hint
     // so the agent uses `od media generate` if the user asks for an image/video
@@ -1385,7 +1332,7 @@ export function composeSystemPrompt({
     // media, and the transcript-scanned signal flips the hint on for the
     // rest of the session as soon as one does.
     (isSlimCore ? slimTurnVariableParts : parts).push(
-      renderMediaDispatchHint(byokMediaDefaults, runtimeMediaDefaults),
+      renderMediaDispatchHint(byokMediaDefaults),
     );
   }
 
@@ -1895,12 +1842,7 @@ function renderMetadataBlock(
     lines.push(`### Reference prompt template — "${tpl.title ?? 'untitled'}"`);
     const meta = [];
     if (tpl.category) meta.push(`category: ${tpl.category}`);
-    const suggestedModel =
-      metadata.kind === 'image' &&
-      !metadata.imageModel?.trim() &&
-      tpl.model === 'gpt-image-2'
-        ? 'vela/gpt-image-2'
-        : tpl.model;
+    const suggestedModel = tpl.model;
     if (suggestedModel) meta.push(`suggested model: ${suggestedModel}`);
     if (tpl.aspect) meta.push(`aspect: ${tpl.aspect}`);
     if (Array.isArray(tpl.tags) && tpl.tags.length > 0) {

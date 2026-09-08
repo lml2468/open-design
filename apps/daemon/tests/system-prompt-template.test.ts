@@ -111,7 +111,7 @@ describe('composeSystemPrompt — metadata.promptTemplate', () => {
     expect(out).not.toContain('1:1 (default');
   });
 
-  it('normalizes a legacy template recommendation to Cloud when no image model is explicit', () => {
+  it('preserves the template model recommendation when no image model is explicit', () => {
     const out = composeSystemPrompt({
       metadata: {
         kind: 'image',
@@ -120,8 +120,7 @@ describe('composeSystemPrompt — metadata.promptTemplate', () => {
     });
 
     expect(out).toContain('**imageModel**: (not provided)');
-    expect(out).toContain('suggested model: vela/gpt-image-2');
-    expect(out).not.toContain('suggested model: gpt-image-2');
+    expect(out).toContain('suggested model: gpt-image-2');
   });
 
   it('inlines the prompt body for video projects too', () => {
@@ -293,7 +292,7 @@ describe('composeSystemPrompt — metadata.promptTemplate', () => {
       agentId: '  CoDeX  ',
       metadata: {
         kind: 'image',
-        imageModel: 'vela/gpt-image-2',
+        imageModel: 'gpt-image-2',
         imageAspect: '1:1',
         promptTemplate: { ...baseSummary },
       },
@@ -376,7 +375,7 @@ describe('composeSystemPrompt — metadata.promptTemplate', () => {
     const out = composeSystemPrompt({
       metadata: {
         kind: 'image',
-        imageModel: 'vela/gpt-image-2',
+        imageModel: 'flux-pro-ultra',
         imageAspect: '1:1',
       },
       byokMediaDefaults: {
@@ -384,7 +383,7 @@ describe('composeSystemPrompt — metadata.promptTemplate', () => {
       },
     });
 
-    expect(out).toContain('**imageModel**: vela/gpt-image-2');
+    expect(out).toContain('**imageModel**: flux-pro-ultra');
     expect(out).toContain('- Image model: `gpt-image-2`');
     expect(out.replace(/\s+/g, ' ')).toContain(
       'current user message, then the run-scoped BYOK image default, then the project metadata',
