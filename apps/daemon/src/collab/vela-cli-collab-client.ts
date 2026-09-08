@@ -1,5 +1,4 @@
 import type {
-  CollabCloudComment,
   CollabCloudMemberDirectoryEntry,
   CollabMemberRole,
 } from '@open-design/contracts';
@@ -22,11 +21,6 @@ type MemberWire = {
   displayName?: unknown;
   role?: unknown;
   avatarUrl?: unknown;
-};
-
-type PullCommentsWire = {
-  comments?: unknown;
-  latestSeq?: unknown;
 };
 
 export function createVelaCliCollabClient(options: VelaCliCollabClientOptions = {}) {
@@ -64,49 +58,6 @@ export function createVelaCliCollabClient(options: VelaCliCollabClientOptions = 
         _teamId,
       );
       return Array.isArray(payload.members) ? payload.members.map(toDirectoryEntry) : [];
-    },
-
-    async pushComment(
-      _teamId: string,
-      projectId: string,
-      comment: CollabCloudComment,
-    ): Promise<{ seq: number }> {
-      const payload = await runJson<{ seq?: unknown }>([
-        'comment',
-        'push',
-        projectId,
-        '--comment-json',
-        JSON.stringify(comment),
-      ], _teamId);
-      return { seq: typeof payload.seq === 'number' ? payload.seq : 0 };
-    },
-
-    async pullComments(
-      _teamId: string,
-      projectId: string,
-      sinceSeq: number,
-    ): Promise<{
-      comments: CollabCloudComment[];
-      latestSeq: number;
-      notModified: boolean;
-      etag: string | null;
-    }> {
-      const payload = await runJson<PullCommentsWire>([
-        'comment',
-        'pull',
-        projectId,
-        '--since-seq',
-        String(sinceSeq),
-      ], _teamId);
-      const comments = Array.isArray(payload.comments)
-        ? (payload.comments as CollabCloudComment[])
-        : [];
-      return {
-        comments,
-        latestSeq: typeof payload.latestSeq === 'number' ? payload.latestSeq : sinceSeq,
-        notModified: comments.length === 0,
-        etag: null,
-      };
     },
 
   };

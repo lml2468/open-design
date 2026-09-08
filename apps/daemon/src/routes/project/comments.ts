@@ -66,15 +66,6 @@ export interface RegisterProjectCommentRoutesDeps extends RouteDeps<'db' | 'proj
     projectId: string,
   ) => Promise<ProjectCommentWorkspaceContextResolution>;
   /**
-   * Fresh cloud authority used only before pulling remote comment state. Local
-   * list/create/edit/delete paths use the persisted project binding and must
-   * remain available while the membership directory is offline.
-   */
-  resolveFreshWorkspaceContext?: (
-    req: Request,
-    projectId: string,
-  ) => Promise<ProjectCommentWorkspaceContextResolution>;
-  /**
    * Resolve the CURRENT caller's workspaceMemberId from the request identity
    * (workspace context). Server-authoritative — used both to stamp the author on
    * a new/edited comment and to gate status/delete on the caller's identity.
@@ -101,42 +92,6 @@ export interface RegisterProjectCommentRoutesDeps extends RouteDeps<'db' | 'proj
     projectId: string,
     context?: WorkspaceCollabContext | null,
   ) => Promise<boolean>;
-  /**
-   * Fired after a comment is created OR edited (body upsert), so the collab-cloud
-   * service can push it to the cross-daemon relay (best-effort — a push failure
-   * must not fail the local save). No-op off-team / when the collab cloud is
-   * unconfigured.
-   */
-  onCommentCreated?: (
-    comment: PreviewComment,
-    context: WorkspaceCollabContext | null,
-  ) => boolean | void;
-  /**
-   * Fired after a comment's status changes (the send-to-agent lifecycle), so the
-   * new status propagates to other members. Best-effort.
-   */
-  onCommentUpdated?: (
-    comment: PreviewComment,
-    context: WorkspaceCollabContext | null,
-  ) => boolean | void;
-  /**
-   * Fired after a comment is deleted, with the comment as it last existed, so a
-   * tombstone can be pushed to the relay. Best-effort.
-   */
-  onCommentDeleted?: (
-    comment: PreviewComment,
-    context: WorkspaceCollabContext | null,
-  ) => boolean | void;
-  /**
-   * Optional freshness hook fired before the comment list is serialized.
-   * Implementations may await a remote pull so the first response after
-   * opening a project already includes newly available comments.
-   */
-  onCommentsRead?: (
-    projectId: string,
-    context: WorkspaceCollabContext | null,
-    resolveFreshWorkspaceContext: () => Promise<ProjectCommentWorkspaceContextResolution>,
-  ) => Promise<void> | void;
 }
 
 export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectCommentRoutesDeps): void {
@@ -298,34 +253,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
     return ctx.resolveAuthorMemberId(req.headers.authorization);
   }
 
-  function isLocalTeamRelayCandidate(
-    projectId: string,
-    context: WorkspaceCollabContext | null,
-    callbackConfigured: boolean,
-  ): boolean {
-    if (!ctx.resolveWorkspaceContext) return callbackConfigured;
-    if (
-      !callbackConfigured
-      || !context
-      || context.workspaceType !== 'team'
-      || context.memberStatus !== 'active'
-      || context.lifecycleState === 'deleted'
-    ) return false;
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    return Boolean(
-      binding
-      && binding.workspaceId === context.workspaceId
-      && binding.visibility === 'team'
-      && binding.resourceState !== 'deleted',
-    );
-  }
-
-  function requireRelayEnqueued(result: boolean | void): void {
-    if (result === false) {
-      throw new Error('failed to persist Team comment relay delivery');
-    }
-  }
-
   /**
    * Server-authoritative permission gate for status change + delete. Both are
    * allowed for the comment's author and the project owner (owner drives
@@ -383,13 +310,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
     if (!workspaceResolution.ok) {
       return sendWorkspaceResolutionError(res, workspaceResolution);
     }
-    await ctx.onCommentsRead?.(
-      req.params.id,
-      workspaceResolution.context,
-      () => ctx.resolveFreshWorkspaceContext
-        ? ctx.resolveFreshWorkspaceContext(req, req.params.id)
-        : resolveRequestWorkspaceContext(req, req.params.id),
-    );
     res.json({
       comments: commentsAreProjectScoped(
         req.params.id,
@@ -416,7 +336,7 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
     const workspaceContext = workspaceResolution.context;
     try {
       // Server-authoritative author: stamp the current member id so the stored
-      // (and pushed) comment carries who wrote it, rather than trusting the body.
+      // comment carries who wrote it, rather than trusting the body.
       // New comments do not use a natural element key; editing requires an id
       // and is author-only.
       const body = { ...(req.body || {}) };
@@ -445,31 +365,12 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
       } else if (authorMemberId) {
         body.authorMemberId = authorMemberId;
       }
-      // Resolved BEFORE the upsert (not just before the push below) so a
-      // genuinely new comment's pin_seq starts unconfirmed on a team-shared
-      // project — see UpsertPreviewCommentOptions in db.ts. Ignored on the
-      // edit branch, so computing it here for an edit-via-POST is harmless.
-      const syncEnabled = isLocalTeamRelayCandidate(
-        req.params.id,
-        workspaceContext,
-        Boolean(ctx.onCommentCreated),
-      );
       const targetConversationId = requestedId
         ? existing?.conversationId ?? req.params.cid
         : req.params.cid;
-      // Local row + durable relay intent commit atomically. Network delivery is
-      // still asynchronous, so a Vela outage never delays this transaction.
       const comment = db.transaction(() => {
-        const saved = upsertPreviewComment(db, req.params.id, targetConversationId, body, {
-          pinPendingCloudConfirm: syncEnabled,
-        });
+        const saved = upsertPreviewComment(db, req.params.id, targetConversationId, body);
         updateProject(db, req.params.id, {});
-        if (saved && syncEnabled) {
-          requireRelayEnqueued(ctx.onCommentCreated?.(
-            saved as unknown as PreviewComment,
-            workspaceContext,
-          ));
-        }
         return saved;
       })();
       // Only a genuinely new, successfully persisted comment is counted.
@@ -562,11 +463,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
         ))) {
           return res.status(403).json({ error: 'not permitted' });
         }
-        const syncEnabled = isLocalTeamRelayCandidate(
-          req.params.id,
-          workspaceContext,
-          Boolean(ctx.onCommentUpdated),
-        );
         const comment = db.transaction(() => {
           const saved = updatePreviewCommentStatus(
             db,
@@ -577,12 +473,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
           );
           if (!saved) return null;
           updateProject(db, req.params.id, {});
-          if (syncEnabled) {
-            requireRelayEnqueued(ctx.onCommentUpdated?.(
-              saved as unknown as PreviewComment,
-              workspaceContext,
-            ));
-          }
           return saved;
         })();
         if (!comment)
@@ -660,8 +550,7 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
         // Sidebar display order is a per-daemon viewing preference, not a
         // content edit: unlike status change/delete, it is not gated on
         // authorship (any member may reorder their OWN view of a shared
-        // project's comments), does not bump updated_at, and is never pushed
-        // to the collab-cloud relay — see PreviewComment.sortKey.
+        // project's comments) and does not bump updated_at.
         const existing = getRequestPreviewComment(
           req.params.id,
           req.params.cid,
@@ -717,11 +606,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
       ))) {
         return res.status(403).json({ error: 'not permitted' });
       }
-      const syncEnabled = isLocalTeamRelayCandidate(
-        req.params.id,
-        workspaceContext,
-        Boolean(ctx.onCommentDeleted),
-      );
       let ok = false;
       try {
         ok = db.transaction(() => {
@@ -733,9 +617,6 @@ export function registerProjectCommentRoutes(app: Express, ctx: RegisterProjectC
           );
           if (!deleted) return false;
           updateProject(db, req.params.id, {});
-          if (syncEnabled) {
-            requireRelayEnqueued(ctx.onCommentDeleted?.(existing, workspaceContext));
-          }
           return true;
         })();
       } catch (err: any) {

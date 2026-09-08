@@ -9,7 +9,6 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type {
-  CollabCloudComment,
   OdNextDevicePlatformV1,
   ProjectBrowserWorkspaceTab,
   ProjectTabsState,
@@ -484,14 +483,6 @@ function migrate(db: SqliteDb): void {
   const previewCommentPinCols = db.prepare(`PRAGMA table_info(preview_comments)`).all() as DbRow[];
   if (!previewCommentPinCols.some((c: DbRow) => c.name === 'pin_seq')) {
     db.exec(`ALTER TABLE preview_comments ADD COLUMN pin_seq INTEGER`);
-  }
-  if (!previewCommentPinCols.some((c: DbRow) => c.name === 'pin_seq_confirmed')) {
-    // 1 = final (no reconciliation pending). A NEW comment on a team-shared
-    // project starts at 0 until the collab-cloud push confirms the real
-    // cloud-assigned seq (see confirmPreviewCommentPinSeq) — see this file's
-    // upsertPreviewComment for why a locally-computed pin_seq can otherwise
-    // collide across two devices creating a comment in the same poll window.
-    db.exec(`ALTER TABLE preview_comments ADD COLUMN pin_seq_confirmed INTEGER NOT NULL DEFAULT 1`);
   }
   if (!previewCommentPinCols.some((c: DbRow) => c.name === 'sort_key')) {
     db.exec(`ALTER TABLE preview_comments ADD COLUMN sort_key REAL`);
@@ -3227,24 +3218,11 @@ export function listProjectPreviewComments(db: SqliteDb, projectId: string) {
     .map(normalizePreviewComment);
 }
 
-export interface UpsertPreviewCommentOptions {
-  /**
-   * True when this project currently syncs comments to the collab cloud (see
-   * `shouldSyncProjectComments`), so a genuinely NEW comment's `pin_seq`
-   * starts unconfirmed (0) instead of final (1). Ignored on the edit branch —
-   * `pin_seq`/`pin_seq_confirmed`/`sort_key` are assigned exactly once, at
-   * creation, and never revisited by an edit. Only meaningful together with a
-   * later `confirmPreviewCommentPinSeq` call once the cloud push resolves.
-   */
-  pinPendingCloudConfirm?: boolean;
-}
-
 export function upsertPreviewComment(
   db: SqliteDb,
   projectId: string,
   conversationId: string,
   input: DbRow,
-  options: UpsertPreviewCommentOptions = {},
 ) {
   const target = input?.target ?? {};
   const note = typeof input?.note === 'string' ? input.note.trim() : '';
@@ -3299,18 +3277,13 @@ export function upsertPreviewComment(
   const attachments = attachmentsProvided ? incomingAttachments : existingAttachments;
   // A comment must carry either a note or at least one image attachment.
   if (!note && attachments.length === 0) throw new Error('comment note required');
-  // pin_seq / pin_seq_confirmed / sort_key are assigned exactly once, on the
+  // pin_seq / sort_key are assigned exactly once, on the
   // INSERT branch, and are absent from the ON CONFLICT SET clause below so an
-  // edit (existing !== undefined) never rewrites them — see
-  // recvq5BVsolIxi / UpsertPreviewCommentOptions above. Computed against THIS
-  // db file only: safe as the initial guess even when a sibling device
-  // concurrently computes the same number for its own new comment, because a
-  // team-shared project's pin_seq_confirmed=0 row gets reconciled to the
-  // collab-cloud's globally-serialized seq by confirmPreviewCommentPinSeq
-  // once its push resolves (never by recomputing locally again).
+  // edit (existing !== undefined) never rewrites them. Both values are local
+  // presentation state; published review comments use the collaboration
+  // server's own immutable version/comment model instead of this table.
   let pinSeq: number | null = null;
   let sortKey: number | null = null;
-  let pinSeqConfirmed = 1;
   if (!existing) {
     const pinScope = db
       .prepare(
@@ -3328,15 +3301,14 @@ export function upsertPreviewComment(
       )
       .get(projectId, filePath) as DbRow;
     sortKey = Number(sortScope?.maxSortKey ?? 0) + 1;
-    pinSeqConfirmed = options.pinPendingCloudConfirm ? 0 : 1;
   }
   db.prepare(
     `INSERT INTO preview_comments
        (id, project_id, conversation_id, file_path, element_id, selector, label,
         text, position_json, html_hint, selection_kind, member_count, pod_members_json,
         style_json, attachments_json, slide_index, slide_key, note, status, created_at, updated_at,
-        anchored_version, author_member_id, review_source_json, pin_seq, pin_seq_confirmed, sort_key)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        anchored_version, author_member_id, review_source_json, pin_seq, sort_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        selector = excluded.selector,
        label = excluded.label,
@@ -3383,37 +3355,9 @@ export function upsertPreviewComment(
     authorMemberId,
     reviewSource ? JSON.stringify(reviewSource) : null,
     pinSeq,
-    pinSeqConfirmed,
     sortKey,
   );
   return getPreviewComment(db, projectId, conversationId, id);
-}
-
-/**
- * Reconcile a comment's provisional `pin_seq` to the collab-cloud's
- * confirmed, globally-serialized push `seq` — the step that closes the
- * cross-device race: two daemons that each computed the same local
- * `MAX(pin_seq)+1` for a comment created in the same ~5s poll window
- * converge to distinct numbers once their own push resolves, because the
- * guard below only ever applies ONCE per comment (idempotent — a later edit's
- * push resolving after the create's is a harmless no-op here). Returns false
- * when the row was already confirmed (nothing to do) or does not exist.
- */
-export function confirmPreviewCommentPinSeq(
-  db: SqliteDb,
-  projectId: string,
-  id: string,
-  seq: number,
-): boolean {
-  if (!Number.isFinite(seq)) return false;
-  const result = db
-    .prepare(
-      `UPDATE preview_comments
-          SET pin_seq = ?, pin_seq_confirmed = 1
-        WHERE id = ? AND project_id = ? AND pin_seq_confirmed = 0`,
-    )
-    .run(Math.round(seq), id, projectId);
-  return result.changes > 0;
 }
 
 /**
@@ -3725,180 +3669,6 @@ export function deleteConversationAndRepairTeamCommentAnchor(
   return { anchorCreated };
 }
 
-/**
- * Delete a synced comment by its global id (the author daemon's own id). Used to
- * apply an inbound tombstone. Scoped by project so a stray id can't reach across
- * projects. Returns true when a row was removed.
- */
-export function deleteSyncedPreviewComment(
-  db: SqliteDb,
-  projectId: string,
-  id: string,
-): boolean {
-  const result = db
-    .prepare(`DELETE FROM preview_comments WHERE id = ? AND project_id = ?`)
-    .run(id, projectId);
-  return result.changes > 0;
-}
-
-/**
- * Merge one collab-cloud comment into local `preview_comments`. The cloud
- * comment's id is used verbatim as the local id (it is the author daemon's own
- * id — a global dedup key), so a comment's whole lifecycle keys off that id:
- *
- * - Tombstone (`deleted: true`): delete the local row by id. Delete wins
- *   unconditionally (it does not compare `updatedAt`).
- * - Create/edit: UPSERT by id. A brand-new id inserts; an existing id updates
- *   IN PLACE only when the incoming `updatedAt` is strictly newer
- *   (last-writer-wins), so a re-pull of an unchanged comment is a no-op and a
- *   stale edit never overwrites a fresher local one. Comments are keyed by id,
- *   so multiple notes on the same element coexist, including from the same
- *   member.
- *
- * `conversationId` is the LOCAL project comment anchor (see
- * getProjectCommentAnchorConversationId);
- * the cloud comment's own conversationId is not a valid FK here. It is only used
- * when inserting a new row — an in-place update keeps the row's existing
- * conversation. Returns true when local state changed (insert, update, or delete).
- */
-export function mergeSyncedPreviewComment(
-  db: SqliteDb,
-  projectId: string,
-  conversationId: string,
-  comment: CollabCloudComment,
-): boolean {
-  if (comment.deleted) {
-    return deleteSyncedPreviewComment(db, projectId, comment.id);
-  }
-  const now = Date.now();
-  const slideIndex = Number.isFinite(comment.slideIndex)
-    ? Math.max(0, Math.round(comment.slideIndex as number))
-    : null;
-  const slideKey = slideIndex ?? -1;
-  const selectionKind = comment.selectionKind === 'pod' ? 'pod' : 'element';
-  const podMembers = selectionKind === 'pod' && Array.isArray(comment.podMembers)
-    ? comment.podMembers
-    : null;
-  const memberCount = selectionKind === 'pod'
-    ? (podMembers?.length ?? (Number.isFinite(comment.memberCount) ? comment.memberCount : 0))
-    : null;
-  const status = PREVIEW_COMMENT_STATUSES.has(comment.status) ? comment.status : 'open';
-  const attachments = Array.isArray(comment.attachments) && comment.attachments.length > 0
-    ? comment.attachments
-    : null;
-  const anchorState = typeof comment.anchorState === 'string' ? comment.anchorState : null;
-  const anchoredVersion = Number.isFinite(comment.anchoredVersion)
-    ? Math.max(0, Math.round(comment.anchoredVersion as number))
-    : null;
-  const updatedAt = Number.isFinite(comment.updatedAt) ? (comment.updatedAt as number) : now;
-  const existing = db
-    .prepare(`SELECT updated_at AS updatedAt FROM preview_comments WHERE id = ? AND project_id = ?`)
-    .get(comment.id, projectId) as DbRow | undefined;
-  if (existing) {
-    // Last-writer-wins: only apply a strictly-newer edit. Keeps the existing
-    // row's conversation/created_at/author identity; refreshes mutable content,
-    // status, and drift-ladder anchor state.
-    if (updatedAt <= Number(existing.updatedAt ?? 0)) return false;
-    db.prepare(
-      `UPDATE preview_comments SET
-         selector = ?, label = ?, text = ?, position_json = ?, html_hint = ?,
-         selection_kind = ?, member_count = ?, pod_members_json = ?, style_json = ?,
-         attachments_json = ?, slide_index = ?, slide_key = ?, note = ?, status = ?,
-         anchor_state = ?, anchored_version = ?, last_good_position_json = ?, updated_at = ?
-       WHERE id = ? AND project_id = ?`,
-    ).run(
-      comment.selector,
-      comment.label,
-      typeof comment.text === 'string' ? comment.text : '',
-      JSON.stringify(comment.position ?? { x: 0, y: 0, width: 0, height: 0 }),
-      typeof comment.htmlHint === 'string' ? comment.htmlHint : '',
-      selectionKind,
-      memberCount,
-      podMembers ? JSON.stringify(podMembers) : null,
-      comment.style ? JSON.stringify(comment.style) : null,
-      attachments ? JSON.stringify(attachments) : null,
-      slideIndex,
-      slideKey,
-      typeof comment.note === 'string' ? comment.note : '',
-      status,
-      anchorState,
-      anchoredVersion,
-      comment.lastGoodPosition ? JSON.stringify(comment.lastGoodPosition) : null,
-      updatedAt,
-      comment.id,
-      projectId,
-    );
-    return true;
-  }
-  // New comment. INSERT OR IGNORE guards against a rare id collision without
-  // throwing.
-  //
-  // pin_seq is taken straight from the wire's `seq` — the collab-cloud's own
-  // globally-serialized push sequence for this project (see
-  // CollabCloudComment.seq) — rather than recomputed as a local MAX+1. That
-  // is what makes a comment PULLED from a peer land on the exact same number
-  // the peer's own device converged to via confirmPreviewCommentPinSeq: both
-  // sides end up keyed off the one authoritative cloud value, never off a
-  // second independent local count. Already confirmed (pin_seq_confirmed=1)
-  // since the cloud is the source of truth here, not a local guess awaiting
-  // reconciliation. Falls back to a local MAX+1 only for a comment that
-  // somehow carries no real seq (e.g. an older relay build) so the row still
-  // gets a usable number instead of a permanent NULL.
-  const createdAt = Number.isFinite(comment.createdAt) ? comment.createdAt : now;
-  const hasWireSeq = Number.isFinite(comment.seq) && comment.seq > 0;
-  let pinSeq = hasWireSeq ? Math.round(comment.seq) : null;
-  if (!hasWireSeq) {
-    const pinScope = db
-      .prepare(
-        `SELECT COALESCE(MAX(pin_seq), 0) AS maxPinSeq
-           FROM preview_comments
-          WHERE project_id = ? AND file_path = ?`,
-      )
-      .get(projectId, comment.filePath) as DbRow;
-    pinSeq = Number(pinScope?.maxPinSeq ?? 0) + 1;
-  }
-  const result = db
-    .prepare(
-      `INSERT OR IGNORE INTO preview_comments
-         (id, project_id, conversation_id, file_path, element_id, selector, label,
-          text, position_json, html_hint, selection_kind, member_count, pod_members_json,
-          style_json, attachments_json, slide_index, slide_key, note, status, created_at, updated_at,
-          anchor_state, anchored_version, author_member_id, last_good_position_json,
-          pin_seq, pin_seq_confirmed, sort_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      comment.id,
-      projectId,
-      conversationId,
-      comment.filePath,
-      comment.elementId,
-      comment.selector,
-      comment.label,
-      typeof comment.text === 'string' ? comment.text : '',
-      JSON.stringify(comment.position ?? { x: 0, y: 0, width: 0, height: 0 }),
-      typeof comment.htmlHint === 'string' ? comment.htmlHint : '',
-      selectionKind,
-      memberCount,
-      podMembers ? JSON.stringify(podMembers) : null,
-      comment.style ? JSON.stringify(comment.style) : null,
-      attachments ? JSON.stringify(attachments) : null,
-      slideIndex,
-      slideKey,
-      typeof comment.note === 'string' ? comment.note : '',
-      status,
-      createdAt,
-      updatedAt,
-      anchorState,
-      anchoredVersion,
-      typeof comment.memberId === 'string' ? comment.memberId : null,
-      comment.lastGoodPosition ? JSON.stringify(comment.lastGoodPosition) : null,
-      pinSeq,
-      1,
-      createdAt,
-    );
-  return result.changes > 0;
-}
 
 export function getPreviewComment(db: SqliteDb, projectId: string, conversationId: string, id: string) {
   const row = db

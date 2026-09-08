@@ -1,5 +1,5 @@
-// Client for the collab cloud (C-lane §D4): the cross-daemon comment relay +
-// member directory. Mirrors the resource-hub integration shape — a factory with
+// Client for the remaining legacy member directory. Mirrors the resource-hub
+// integration shape — a factory with
 // injectable fetch/config/timeout, env-scoped config (this file, not
 // app-config.ts, owns OD_COLLAB_CLOUD_*), and a from-env constructor.
 //
@@ -9,7 +9,6 @@
 // hub verifies B's signed token, this stub presents a shared local token.
 
 import type {
-  CollabCloudComment,
   CollabCloudMemberDirectoryEntry,
   CollabMemberRole,
 } from '@open-design/contracts';
@@ -53,11 +52,6 @@ export class CollabCloudError extends Error {
 export interface CollabCloudMemberRegistration {
   displayName: string;
   role: CollabMemberRole;
-}
-
-export interface CollabCloudPullResult {
-  comments: CollabCloudComment[];
-  latestSeq: number;
 }
 
 interface CollabCloudClientOptions {
@@ -139,48 +133,6 @@ export function createCollabCloudClient(options: CollabCloudClientOptions = {}) 
       return payload.members ?? [];
     },
 
-    /** Append a comment to a project's stream; returns the assigned seq. */
-    async pushComment(
-      teamId: string,
-      projectId: string,
-      comment: CollabCloudComment,
-    ): Promise<{ seq: number }> {
-      const { payload } = await request<{ seq: number }>(
-        'POST',
-        `/teams/${encodeURIComponent(teamId)}/projects/${encodeURIComponent(projectId)}/comments`,
-        { comment },
-      );
-      return { seq: payload.seq };
-    },
-
-    /**
-     * Pull comments with `seq > sinceSeq`. `etag` (from a prior pull) enables a
-     * 304 short-circuit: on 304 the result echoes back `sinceSeq` as `latestSeq`
-     * with no comments, and `notModified` is true.
-     */
-    async pullComments(
-      teamId: string,
-      projectId: string,
-      sinceSeq: number,
-      etag?: string | null,
-    ): Promise<CollabCloudPullResult & { notModified: boolean; etag: string | null }> {
-      const query = `?sinceSeq=${encodeURIComponent(String(sinceSeq))}`;
-      const { status, payload, etag: nextEtag } = await request<CollabCloudPullResult>(
-        'GET',
-        `/teams/${encodeURIComponent(teamId)}/projects/${encodeURIComponent(projectId)}/comments${query}`,
-        undefined,
-        etag ? { 'if-none-match': etag } : undefined,
-      );
-      if (status === 304) {
-        return { comments: [], latestSeq: sinceSeq, notModified: true, etag: nextEtag };
-      }
-      return {
-        comments: payload.comments ?? [],
-        latestSeq: typeof payload.latestSeq === 'number' ? payload.latestSeq : sinceSeq,
-        notModified: false,
-        etag: nextEtag,
-      };
-    },
   };
 }
 

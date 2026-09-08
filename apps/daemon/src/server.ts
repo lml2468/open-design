@@ -3613,10 +3613,9 @@ export async function startServer({
   // (GET /api/workspace/projects/team). Each entry is keyed by the explicit,
   // immutable workspace + member scope captured for that request, so a later
   // active-workspace switch cannot retarget an in-flight read or its cache
-  // write. Deliberately NOT used by resolveSharedProject below: the pull gate
-  // and comment relays must observe an unshare immediately, so those
-  // use the uncached exact lookup. A just-shared/unshared project shows up in
-  // this list within the TTL.
+  // write. Deliberately NOT used by resolveSharedProject below: project access
+  // checks must observe an unshare immediately, so they use the uncached exact
+  // lookup. A just-shared/unshared project shows up in this list within the TTL.
   const teamProjectsDisplayCache = (() => {
     const freshMs = 3000;
     const lists = new Map<
@@ -3915,27 +3914,6 @@ export async function startServer({
     req: any,
     projectId: string,
   ) => resolveLocalProjectCommentWorkspaceContext(req, projectId);
-  const resolveFreshProjectCommentWorkspaceContext = async (
-    req: any,
-    projectId: string,
-  ) => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    if (
-      revokedTeamProjectMirrors.has(projectId)
-      || binding?.resourceState === 'deleted'
-    ) {
-      return {
-        ok: false as const,
-        status: 403 as const,
-        code: 'WORKSPACE_PROJECT_PERMISSION_DENIED',
-        message: 'workspace project read is not allowed',
-      };
-    }
-    if (!binding?.workspaceId) {
-      return { ok: true as const, context: null };
-    }
-    return verifiedWorkspaceContextForRequest(req, projectId);
-  };
   const verifiedTeamMirrorScope = async (
     scope: TeamMirrorPullScope,
   ): Promise<boolean> => {
@@ -4222,9 +4200,8 @@ export async function startServer({
     //
     // These routes are display reads: the Home team-project grid and the
     // deep-link "is this shared to my team?" check. Nothing here gates data
-    // access — the pull gate and comment relays reach
-    // `teamProjectsLister` on their own and still observe an unshare
-    // immediately.
+    // access — project access checks reach `teamProjectsLister` on their own
+    // and still observe an unshare immediately.
     //
     // Display freshness does not rest on the 3s TTL alone: share, unshare and
     // workspace-change invalidate this cache explicitly, via
@@ -5152,13 +5129,10 @@ export async function startServer({
     // a workspace the directory says is personal, even if the caller's headers
     // claim otherwise. See collab/team-share-scope.ts.
     workspaceTypes,
-    // Collab-cloud comment seams (no-op off-team / when unconfigured): stamp the
-    // server-authoritative author, gate status/delete on the caller vs the
-    // comment author / project owner, and push the comment lifecycle (create/edit,
-    // status change, tombstone) to the cross-daemon relay.
+    // Workspace comment identity: stamp the server-authoritative author and
+    // gate status/delete on the caller versus the author/project owner.
     resolveWorkspaceContext: resolveProjectCommentWorkspaceContext,
     resolveReadWorkspaceContext: resolveProjectCommentReadWorkspaceContext,
-    resolveFreshWorkspaceContext: resolveFreshProjectCommentWorkspaceContext,
     resolveProjectOwnerMemberId: async (projectId, context) => {
       if (!context || context.workspaceType !== 'team') return null;
       return resolveSharedProjectOwner(projectId, {

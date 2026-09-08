@@ -68,9 +68,6 @@ async function startServer({
   });
   insertConversation(db, { id: CONVERSATION, projectId: PROJECT, title: 'Chat', createdAt: 1, updatedAt: 1 });
 
-  const updated: string[] = [];
-  const deleted: string[] = [];
-  const created: string[] = [];
   const productEvents: Array<{
     eventName: string;
     properties: Record<string, unknown>;
@@ -97,9 +94,6 @@ async function startServer({
     // p1 is owned by OWNER.
     resolveProjectOwnerMemberId: async () => OWNER,
     isSharedProject: async () => shared,
-    onCommentCreated: (c) => { created.push(c.id); },
-    onCommentUpdated: (c) => { updated.push(c.id); },
-    onCommentDeleted: (c) => { deleted.push(c.id); },
     telemetry: {
       captureProductEvent: (_req: unknown, eventName: string, properties: Record<string, unknown>) => {
         productEvents.push({ eventName, properties });
@@ -166,9 +160,6 @@ async function startServer({
     json,
     createComment,
     listComments,
-    created,
-    updated,
-    deleted,
     productEvents,
     commentTarget,
   };
@@ -295,10 +286,8 @@ describe('preview comment permission gating', () => {
     );
     expect(del.status).toBe(403);
 
-    // Nothing changed / propagated.
+    // Nothing changed.
     expect(api.listComments()).toHaveLength(1);
-    expect(api.updated).toEqual([]);
-    expect(api.deleted).toEqual([]);
   });
 
   it('an authored shared comment cannot be changed or deleted without caller identity', async () => {
@@ -318,8 +307,6 @@ describe('preview comment permission gating', () => {
     expect(del.status).toBe(403);
 
     expect(api.listComments()).toHaveLength(1);
-    expect(api.updated).toEqual([]);
-    expect(api.deleted).toEqual([]);
   });
 
   it('the author can change status on their own comment', async () => {
@@ -331,8 +318,6 @@ describe('preview comment permission gating', () => {
     );
     expect(patch.status).toBe(200);
     expect(patch.body.comment.status).toBe('applying');
-    // The status change propagated to the relay seam.
-    expect(api.updated).toEqual([comment.id]);
   });
 
   it('the project owner can change status on and delete another member\'s comment', async () => {
@@ -350,7 +335,6 @@ describe('preview comment permission gating', () => {
       { method: 'DELETE', member: OWNER },
     );
     expect(del.status).toBe(200);
-    expect(api.deleted).toEqual([comment.id]);
     expect(api.listComments()).toHaveLength(0);
   });
 
@@ -451,15 +435,12 @@ describe('preview comment permission gating', () => {
     );
     expect(patch.status).toBe(200);
     expect(patch.body.comment.sortKey).toBe(42);
-    // Unlike status change/delete, reordering is not pushed to the relay and
-    // does not require caller identity at all.
+    // Reordering is local display state and does not require caller identity.
     const anon = await api.json(
       `/api/projects/${PROJECT}/conversations/${CONVERSATION}/comments/${comment.id}/reorder`,
       { method: 'PATCH', body: { sortKey: 43 } },
     );
     expect(anon.status).toBe(200);
-    expect(api.updated).toEqual([]);
-    expect(api.created).toEqual([comment.id]);
   });
 
   it('reorder writes only sort_key — pin_seq stays exactly what creation assigned', async () => {

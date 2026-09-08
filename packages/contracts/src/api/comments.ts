@@ -137,16 +137,9 @@ export interface PreviewComment {
   updatedAt: number;
   /**
    * Permanent canvas pin number within (projectId, filePath). Assigned exactly
-   * once, on creation, and never rewritten by an edit — see
-   * `apps/daemon/src/db.ts`'s `upsertPreviewComment`. On a team-shared project
-   * the freshly-inserted value is a LOCAL provisional guess (this daemon's own
-   * `MAX(pinSeq)+1`) that a background reconciliation
-   * (`confirmPreviewCommentPinSeq`) overwrites once with the collab-cloud's
-   * globally-serialized push `seq` — the mechanism that keeps two devices
-   * creating a comment in the same poll window from ever landing on the same
-   * number. Optional so legacy rows created before this field existed (or a
-   * caller that hasn't migrated a fixture) fall back to a client-computed
-   * creation-order index.
+   * once from local project state and never rewritten by an edit. Optional so
+   * legacy rows created before this field existed (or a caller that has not
+   * migrated a fixture) fall back to a client-computed creation-order index.
    */
   pinSeq?: number;
   /**

@@ -1,14 +1,5 @@
 import type { OkResponse } from '../common.js';
 import type { ProjectMetadata } from './projects.js';
-import type {
-  PreviewAnnotationStyle,
-  PreviewCommentAnchorState,
-  PreviewCommentAttachment,
-  PreviewCommentMember,
-  PreviewCommentPosition,
-  PreviewCommentSelectionKind,
-  PreviewCommentStatus,
-} from './comments.js';
 
 // Legacy Team-edition collaboration DTOs retained while the sync path is
 // removed. New self-hosted collaboration contracts live under
@@ -349,15 +340,12 @@ export function buildWorkspaceSeatSummary(input: {
 
 
 // ————————————————————————————————————————————————————————————————————————————
-// Collab cloud (C-lane §D2.5 / §D4): cross-daemon comment sync + member directory
+// Legacy collaboration member directory
 // ————————————————————————————————————————————————————————————————————————————
 //
-// A member's comment on a shared project must reach the OTHER members' daemons
-// (chiefly the owner's), and members need a way to turn an opaque
-// `ownerMemberId` / `authorMemberId` into a display name + role. The collab
-// cloud is the light append-only relay + directory that carries both. Every
-// daemon talks to it as a bearer client (auth in §D4.4); a local fixture stub
-// stands in for the real vela `services/collab` until it ships.
+// The remaining legacy workspace UI needs to turn an opaque owner/author member
+// id into a display name and role. New self-hosted collaboration contracts live
+// under `api/collaboration`.
 //
 // STUB SCOPE: the spec's identity source is B's token → {memberId, teamId,
 // role} plus B's member roster. B does not yet expose names, so the directory
@@ -390,97 +378,4 @@ export interface CollabCloudMemberRegisterResponse extends OkResponse {
 /** GET /teams/:teamId/members and GET /api/workspace/members response. */
 export interface CollabCloudMembersResponse {
   members: CollabCloudMemberDirectoryEntry[];
-}
-
-/**
- * The comment sync unit — a faithful serialization of the daemon's local
- * `preview_comments` row (see {@link PreviewComment}) so a pulled comment
- * reinserts locally without a parallel model. The anchoring payload
- * (`selector`/`label`/`position`/`htmlHint`/`selectionKind`/`podMembers`/
- * `slideIndex`) plus the drift-ladder fields (`anchorState`/`anchoredVersion`/
- * `lastGoodPosition`) ride along so a synced comment keeps pointing at the same
- * element on the receiver. The stream carries the comment's full lifecycle: a
- * create/edit is pushed with the current `updatedAt` (receivers apply the newest
- * by `updatedAt`), and a delete is pushed as a tombstone (`deleted: true`) that
- * removes the comment by `id` on every receiver.
- */
-export interface CollabCloudComment {
-  /**
-   * The author daemon's local comment id — the GLOBAL dedup key. A receiver
-   * merges idempotently by this id, so a member's own comment pulled back is a
-   * no-op and re-pulls never double-insert.
-   */
-  id: string;
-  projectId: string;
-  /**
-   * The author's local conversation id the comment was filed under.
-   * Informational on the wire: a receiver re-homes the comment onto one of its
-   * OWN local conversations for the project (conversation ids do not cross
-   * daemons), so this is not used as a foreign key on merge.
-   */
-  conversationId: string;
-  /**
-   * The AUTHOR's workspaceMemberId — who WROTE this comment, not whoever is
-   * currently viewing it. The client resolves it against the member directory
-   * to render the author's name + role on the card. Mirrors
-   * {@link PreviewComment.authorMemberId}.
-   */
-  memberId: string;
-  /**
-   * Cloud-assigned monotonic sequence within a project's comment stream — the
-   * pull cursor. Clients ignore it on push (send 0); the cloud assigns the real
-   * value and returns it.
-   */
-  seq: number;
-  note: string;
-  filePath: string;
-  elementId: string;
-  selector: string;
-  label: string;
-  text: string;
-  htmlHint: string;
-  position: PreviewCommentPosition;
-  style?: PreviewAnnotationStyle;
-  selectionKind?: PreviewCommentSelectionKind;
-  memberCount?: number;
-  podMembers?: PreviewCommentMember[];
-  slideIndex?: number;
-  attachments?: PreviewCommentAttachment[];
-  status: PreviewCommentStatus;
-  /** Drift-ladder anchor state (see {@link PreviewCommentAnchorState}). */
-  anchorState?: PreviewCommentAnchorState;
-  /** Content version the comment was anchored to (drives the "based on older vN" badge). */
-  anchoredVersion?: number;
-  /** Last known-good bbox for the `lost` ghost pin. */
-  lastGoodPosition?: PreviewCommentPosition;
-  createdAt: number;
-  updatedAt: number;
-  /**
-   * Tombstone marker. When `true`, this record is a delete: receivers remove the
-   * comment with this `id` from their local store (delete wins regardless of
-   * `updatedAt`). The remaining fields may be a best-effort snapshot of the
-   * comment as it last existed and should not be re-materialized.
-   */
-  deleted?: boolean;
-}
-
-/** POST /teams/:teamId/projects/:projectId/comments request body. */
-export interface CollabCloudCommentPushRequest {
-  comment: CollabCloudComment;
-}
-
-/** POST /teams/:teamId/projects/:projectId/comments response. */
-export interface CollabCloudCommentPushResponse extends OkResponse {
-  /** The monotonic sequence the cloud assigned to the stored comment. */
-  seq: number;
-}
-
-/**
- * GET /teams/:teamId/projects/:projectId/comments?sinceSeq=N response. Returns
- * only comments with `seq > sinceSeq`, ascending, plus the highest `seq` seen
- * (the caller's next cursor even when `comments` is empty).
- */
-export interface CollabCloudCommentsResponse {
-  comments: CollabCloudComment[];
-  latestSeq: number;
 }

@@ -274,54 +274,6 @@ describe('project comments — workspace mutation gate', () => {
     ]);
   });
 
-  it('includes a dirty relay pull in the first comments response', async () => {
-    let releasePull!: () => void;
-    const pullGate = new Promise<void>((resolve) => {
-      releasePull = resolve;
-    });
-    const onCommentsRead = vi.fn(async () => {
-      await pullGate;
-      upsertPreviewComment(
-        database!,
-        TEAM_MIRROR_PROJECT,
-        'conv-team-mirror',
-        {
-          id: 'remote-comment-after-dirty-read',
-          target: COMMENT_TARGET,
-          note: 'remote comment merged by the dirty pull',
-          authorMemberId: OWNER_MEMBER_ID,
-        },
-      );
-    });
-    const baseUrl = await startServer({
-      resolveReadWorkspaceContext: async () => ({
-        ok: true,
-        context: activeTeamContext(OTHER_MEMBER_ID, 'member'),
-      }),
-      onCommentsRead,
-    });
-    const commentsUrl =
-      `${baseUrl}/api/projects/${TEAM_MIRROR_PROJECT}/conversations/conv-team-mirror/comments`;
-
-    const responsePromise = fetch(commentsUrl, {
-      headers: workspaceHeaders(OTHER_MEMBER_ID, 'member'),
-    });
-    await vi.waitFor(() => expect(onCommentsRead).toHaveBeenCalledTimes(1));
-    releasePull();
-
-    const response = await responsePromise;
-    expect(response.status).toBe(200);
-    const payload = (await response.json()) as {
-      comments: Array<{ id: string; note: string }>;
-    };
-    expect(payload.comments).toEqual([
-      expect.objectContaining({
-        id: 'remote-comment-after-dirty-read',
-        note: 'remote comment merged by the dirty pull',
-      }),
-    ]);
-  });
-
   it('leases directory authority only for GET while mutations stay fresh and revocation fails closed', async () => {
     let clock = 0;
     let directoryItems = [{
@@ -392,142 +344,12 @@ describe('project comments — workspace mutation gate', () => {
     expect(fetchReadDirectory).toHaveBeenCalledTimes(2);
   });
 
-  it.each([
-    ['revocation', 'revoked'],
-    ['authority outage', 'outage'],
-  ] as const)(
-    'keeps the warm GET lease but does not redeem a dirty pull during %s',
-    async (_label, deniedMode) => {
-      let readClock = 0;
-      let freshMode: 'active' | 'revoked' | 'outage' = 'active';
-      const activeDirectory = [{
-        workspaceId: WORKSPACE_ID,
-        workspaceName: 'Team',
-        workspaceType: 'team' as const,
-        workspaceMemberId: OTHER_MEMBER_ID,
-        role: 'member' as const,
-        memberStatus: 'active' as const,
-        lifecycleState: 'active' as const,
-      }];
-      const cachedReadDirectory = createCachedWorkspaceDirectoryFetcher({
-        fetchDirectory: async () => ({
-          ok: true as const,
-          items: activeDirectory,
-        }),
-        identityKey: () => 'member-comment-dirty-read',
-        ttlMs: 5_000,
-        now: () => readClock,
-      });
-      const pullProject = vi.fn(
-        async (
-          _projectId: string,
-          _context: WorkspaceCollabContext,
-        ) => true,
-      );
-      let dirty = false;
-      let redemption = Promise.resolve();
-      const baseUrl = await startServer({
-        resolveReadWorkspaceContext: (req: unknown) =>
-          verifyWorkspaceRequestContext({
-            req,
-            fetchWorkspaceDirectory: cachedReadDirectory,
-          }),
-        resolveWorkspaceContext: (req: unknown) =>
-          verifyWorkspaceRequestContext({
-            req,
-            fetchWorkspaceDirectory: async () => {
-              if (freshMode === 'outage') {
-                return { ok: false as const, items: [] };
-              }
-              return {
-                ok: true as const,
-                items: freshMode === 'active' ? activeDirectory : [],
-              };
-            },
-          }),
-        onCommentsRead: (
-          projectId: string,
-          leasedContext: WorkspaceCollabContext | null,
-          resolveFreshContext: () => Promise<
-            | { ok: true; context: WorkspaceCollabContext | null }
-            | { ok: false }
-          >,
-        ) => {
-          if (!dirty) return;
-          dirty = false;
-          redemption = (async () => {
-            const fresh = await resolveFreshContext();
-            if (
-              !fresh.ok
-              || !fresh.context
-              || !leasedContext
-              || fresh.context.workspaceId !== leasedContext.workspaceId
-              || fresh.context.workspaceMemberId
-                !== leasedContext.workspaceMemberId
-            ) {
-              dirty = true;
-              return;
-            }
-            if (!await pullProject(projectId, fresh.context)) dirty = true;
-          })();
-        },
-      });
-      const commentsUrl =
-        `${baseUrl}/api/projects/${TEAM_MIRROR_PROJECT}/conversations/conv-team-mirror/comments`;
-      const headers = workspaceHeaders(OTHER_MEMBER_ID, 'member');
-
-      // Warm the successful read lease while authority is active.
-      expect((await fetch(commentsUrl, { headers })).status).toBe(200);
-
-      // The list read still succeeds from that bounded lease, but the dirty
-      // cloud pull/local merge must independently prove fresh authority.
-      freshMode = deniedMode;
-      dirty = true;
-      expect((await fetch(commentsUrl, { headers })).status).toBe(200);
-      await redemption;
-      expect(pullProject).not.toHaveBeenCalled();
-      expect(dirty).toBe(true);
-
-      // The unredeemed mark survives the denial/outage and is consumed exactly
-      // once after fresh authority recovers. The read lease never expired.
-      freshMode = 'active';
-      expect((await fetch(commentsUrl, { headers })).status).toBe(200);
-      await redemption;
-      expect(pullProject).toHaveBeenCalledTimes(1);
-      expect(pullProject).toHaveBeenCalledWith(
-        TEAM_MIRROR_PROJECT,
-        expect.objectContaining({
-          workspaceId: WORKSPACE_ID,
-          workspaceMemberId: OTHER_MEMBER_ID,
-        }),
-      );
-      expect(dirty).toBe(false);
-
-      readClock = 1;
-      expect((await fetch(commentsUrl, { headers })).status).toBe(200);
-      await redemption;
-      expect(pullProject).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it('uses the verified project A scope after ambient identity moved to B', async () => {
+  it('uses the verified project scope for comment authorship after ambient identity moved', async () => {
     const projectContext = activeTeamContext();
-    const pushedScopes: Array<{ workspaceId: string; workspaceMemberId: string }> = [];
     const baseUrl = await startServer({
       // Models the stale daemon-global answer after another tab moved to B.
       resolveAuthorMemberId: async () => 'member-b',
       resolveWorkspaceContext: async () => ({ ok: true, context: projectContext }),
-      onCommentCreated: (
-        _comment: unknown,
-        scope: WorkspaceCollabContext | null,
-      ) => {
-        if (scope) {
-          pushedScopes.push({
-            workspaceId: scope.workspaceId,
-            workspaceMemberId: scope.workspaceMemberId,
-          });
-        }
-      },
     });
     const response = await fetch(
       `${baseUrl}/api/projects/${TEAM_MIRROR_PROJECT}/conversations/conv-team-mirror/comments`,
@@ -546,29 +368,21 @@ describe('project comments — workspace mutation gate', () => {
       comment: { authorMemberId?: string };
     };
     expect(comment.authorMemberId).toBe(OTHER_MEMBER_ID);
-    expect(pushedScopes).toEqual([
-      {
-        workspaceId: WORKSPACE_ID,
-        workspaceMemberId: OTHER_MEMBER_ID,
-      },
-    ]);
   });
 
-  it('persists and enqueues without waiting for a pending remote catalog read', async () => {
+  it('persists without consulting a pending legacy remote catalog read', async () => {
     const projectContext = activeTeamContext();
     const remoteCatalogGate = vi.fn(
       () => new Promise<boolean>(() => {
-        // Deliberately never resolves: delivery authority belongs to the
-        // outbox worker, not the mutation response path.
+        // Deliberately never resolves: local comment creation must not depend
+        // on the retired collaboration transport.
       }),
     );
-    const enqueued: string[] = [];
     const baseUrl = await startServer({
       resolveWorkspaceContext: async () => ({ ok: true, context: projectContext }),
-      // Compatibility-shaped trap: the route must not call/await this remote
-      // catalog seam before placing the local mutation into the outbox.
+      // Compatibility-shaped trap: an unknown legacy seam must not affect the
+      // local mutation path.
       shouldSyncProjectComments: remoteCatalogGate,
-      onCommentCreated: (comment: { id: string }) => enqueued.push(comment.id),
     });
 
     const response = await fetch(
@@ -585,86 +399,12 @@ describe('project comments — workspace mutation gate', () => {
 
     expect(response.status).toBe(200);
     const payload = await response.json() as { comment: { id: string } };
-    expect(enqueued).toEqual([payload.comment.id]);
     expect(remoteCatalogGate).not.toHaveBeenCalled();
     expect(listPreviewComments(database!, TEAM_MIRROR_PROJECT, 'conv-team-mirror'))
       .toEqual([expect.objectContaining({ id: payload.comment.id })]);
   });
 
-  it('rolls back create, update, and delete when durable enqueue fails', async () => {
-    const projectContext = activeTeamContext(OWNER_MEMBER_ID, 'owner');
-    const baseUrl = await startServer({
-      resolveWorkspaceContext: async () => ({ ok: true, context: projectContext }),
-      onCommentCreated: () => false,
-      onCommentUpdated: () => false,
-      onCommentDeleted: () => false,
-    });
-    const commentsUrl =
-      `${baseUrl}/api/projects/${TEAM_PROJECT}/conversations/conv-team/comments`;
-    const headers = {
-      'Content-Type': 'application/json',
-      ...workspaceHeaders(OWNER_MEMBER_ID, 'owner'),
-    };
-
-    const create = await fetch(commentsUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ target: COMMENT_TARGET, note: 'must roll back' }),
-    });
-    expect(create.status).toBe(400);
-    expect(listPreviewComments(database!, TEAM_PROJECT, 'conv-team')).toEqual([]);
-
-    const updateTarget = upsertPreviewComment(
-      database!,
-      TEAM_PROJECT,
-      'conv-team',
-      {
-        id: 'comment-update-rollback',
-        target: COMMENT_TARGET,
-        note: 'keep open',
-        authorMemberId: OWNER_MEMBER_ID,
-      },
-    );
-    const removeTarget = upsertPreviewComment(
-      database!,
-      TEAM_PROJECT,
-      'conv-team',
-      {
-        id: 'comment-delete-rollback',
-        target: COMMENT_TARGET,
-        note: 'keep row',
-        authorMemberId: OWNER_MEMBER_ID,
-      },
-    );
-
-    const update = await fetch(`${commentsUrl}/${updateTarget!.id}`, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({ status: 'applying' }),
-    });
-    expect(update.status).toBe(400);
-    expect(getPreviewComment(
-      database!,
-      TEAM_PROJECT,
-      'conv-team',
-      updateTarget!.id,
-    )?.status).toBe('open');
-
-    const remove = await fetch(`${commentsUrl}/${removeTarget!.id}`, {
-      method: 'DELETE',
-      headers,
-    });
-    expect(remove.status).toBe(400);
-    expect(getPreviewComment(
-      database!,
-      TEAM_PROJECT,
-      'conv-team',
-      removeTarget!.id,
-    )).not.toBeNull();
-  });
-
-  it('fails closed before saving or relaying when project scope authority is unavailable', async () => {
-    let relayed = 0;
+  it('fails closed before saving when project scope authority is unavailable', async () => {
     const baseUrl = await startServer({
       resolveWorkspaceContext: async () => ({
         ok: false,
@@ -673,9 +413,6 @@ describe('project comments — workspace mutation gate', () => {
         message: 'workspace membership authority is temporarily unavailable',
         retryable: true,
       }),
-      onCommentCreated: () => {
-        relayed += 1;
-      },
     });
     const response = await fetch(
       `${baseUrl}/api/projects/${TEAM_PROJECT}/conversations/conv-team/comments`,
@@ -690,7 +427,6 @@ describe('project comments — workspace mutation gate', () => {
     );
 
     expect(response.status).toBe(503);
-    expect(relayed).toBe(0);
     expect(database).not.toBeNull();
     expect(listPreviewComments(database!, TEAM_PROJECT, 'conv-team')).toEqual([]);
   });

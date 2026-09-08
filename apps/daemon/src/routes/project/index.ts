@@ -33,7 +33,6 @@ import {
   defaultScenarioPluginIdForProjectMetadata,
   type ChatSessionMode,
   type PluginManifest,
-  type PreviewComment,
   type ProjectDesignTokenSuggestionProp,
   type ProjectDesignTokenSuggestionQuery,
   type ProjectFile,
@@ -292,13 +291,10 @@ export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | '
     context: WorkspaceResourceContext | null,
   ) => Promise<DesignSystemSummary>;
   /**
-   * Collab-cloud comment seams, threaded to the nested preview-comment routes.
-   * `resolveAuthorMemberId` stamps the server-authoritative author AND identifies
-   * the caller for permission gating; `resolveProjectOwnerMemberId` resolves the
-   * shared project's owner so the owner may delete / drive status on any comment.
-   * `onCommentCreated`/`onCommentUpdated`/`onCommentDeleted` push the comment's
-   * lifecycle (create/edit, status change, tombstone) to the cross-daemon relay.
-   * All optional and no-op off-team / when the collab cloud is unconfigured.
+   * Workspace comment identity seams. `resolveAuthorMemberId` stamps the
+   * server-authoritative author and identifies the caller for permission
+   * gating; `resolveProjectOwnerMemberId` lets the owner delete or drive status
+   * on any comment.
    */
   resolveAuthorMemberId?: (authorization: string | undefined) => Promise<string | undefined>;
   resolveWorkspaceContext?: (
@@ -317,23 +313,6 @@ export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | '
     projectId: string,
     context?: WorkspaceCollabContext | null,
   ) => Promise<boolean>;
-  onCommentCreated?: (
-    comment: PreviewComment,
-    context: WorkspaceCollabContext | null,
-  ) => boolean | void;
-  onCommentUpdated?: (
-    comment: PreviewComment,
-    context: WorkspaceCollabContext | null,
-  ) => boolean | void;
-  onCommentDeleted?: (
-    comment: PreviewComment,
-    context: WorkspaceCollabContext | null,
-  ) => boolean | void;
-  onCommentsRead?: (
-    projectId: string,
-    context: WorkspaceCollabContext | null,
-    resolveFreshWorkspaceContext: () => Promise<ProjectCommentWorkspaceContextResolution>,
-  ) => Promise<void> | void;
   /**
    * What the daemon has learned about each workspace's type, used to refuse a
    * team share aimed at a personal workspace even when the caller's headers say
