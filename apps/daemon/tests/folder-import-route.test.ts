@@ -122,7 +122,7 @@ describe('POST /api/import/folder', () => {
     expect(typeof tabs.updatedAt).toBe('number');
   });
 
-  it('keeps a workspace-attributed folder import visible in the local catalog', async () => {
+  it('keeps a legacy-attributed folder import visible as a local project', async () => {
     const folder = makeFolder();
     await writeFile(path.join(folder, 'index.html'), '<!doctype html>');
     const headersA = workspaceHeaders('workspace-folder-a', 'member-folder-a');
@@ -139,7 +139,7 @@ describe('POST /api/import/folder', () => {
     await expect(detail.json()).resolves.toMatchObject({
       project: {
         id: body.project.id,
-        workspaceId: 'workspace-folder-a',
+        workspaceId: null,
       },
     });
 
@@ -170,7 +170,7 @@ describe('POST /api/import/folder', () => {
     expect(after.projects).toEqual(before.projects);
   });
 
-  it('atomically binds a Claude Design import to the exact request workspace', async () => {
+  it('exposes a legacy-attributed Claude Design import as a local project', async () => {
     const zip = new JSZip();
     zip.file('index.html', '<!doctype html><title>Claude import</title>');
     const archive = await zip.generateAsync({ type: 'uint8array' });
@@ -198,7 +198,7 @@ describe('POST /api/import/folder', () => {
     await expect(detail.json()).resolves.toMatchObject({
       project: {
         id: body.project.id,
-        workspaceId: 'workspace-claude-a',
+        workspaceId: null,
       },
     });
   });
@@ -461,7 +461,7 @@ describe('POST /api/import/folder', () => {
     expect(body.error?.message).toMatch(/unsupported field: source_reference/i);
   });
 
-  it('requires the exact explicit Workspace member before replacing a bound project working directory', async () => {
+  it('replaces a local working directory regardless of legacy Workspace member headers', async () => {
     const originalFolder = makeFolder();
     await writeFile(path.join(originalFolder, 'index.html'), '<!doctype html><title>original</title>');
     const ownerHeaders = workspaceHeaders('workspace-working-dir', 'member-working-dir-owner');
@@ -471,30 +471,30 @@ describe('POST /api/import/folder', () => {
       project: { id: string; metadata?: { baseDir?: string } };
     };
 
-    const unauthorizedFolder = makeFolder();
-    await writeFile(path.join(unauthorizedFolder, 'index.html'), '<!doctype html><title>denied</title>');
-    const deniedResp = await fetch(`${baseUrl}/api/projects/${project.id}/working-dir`, {
+    const teammateFolder = makeFolder();
+    await writeFile(path.join(teammateFolder, 'index.html'), '<!doctype html><title>local</title>');
+    const teammateResp = await fetch(`${baseUrl}/api/projects/${project.id}/working-dir`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...workspaceHeaders('workspace-working-dir', 'member-working-dir-teammate'),
       },
-      body: JSON.stringify({ baseDir: unauthorizedFolder }),
+      body: JSON.stringify({ baseDir: teammateFolder }),
     });
-    expect(deniedResp.status).toBe(403);
-    await expect(deniedResp.json()).resolves.toMatchObject({
-      error: { code: 'WORKSPACE_PROJECT_PERMISSION_DENIED' },
+    expect(teammateResp.status).toBe(200);
+    await expect(teammateResp.json()).resolves.toMatchObject({
+      project: { id: project.id, metadata: { baseDir: await realpath(teammateFolder) } },
     });
 
-    const afterDenied = await fetch(
+    const afterTeammateUpdate = await fetch(
       `${baseUrl}/api/projects/${project.id}`,
       { headers: ownerHeaders },
     );
-    expect(afterDenied.status).toBe(200);
-    await expect(afterDenied.json()).resolves.toMatchObject({
+    expect(afterTeammateUpdate.status).toBe(200);
+    await expect(afterTeammateUpdate.json()).resolves.toMatchObject({
       project: {
         id: project.id,
-        metadata: { baseDir: project.metadata?.baseDir },
+        metadata: { baseDir: await realpath(teammateFolder) },
       },
     });
 

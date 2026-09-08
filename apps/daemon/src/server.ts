@@ -4292,7 +4292,6 @@ export async function startServer({
     projectFiles: projectFileDeps,
     validation: validationDeps,
     fetchProjectCreationWorkspaceDirectory,
-    enforceWorkspaceProjectMutation: enforceAuthoritativeProjectMutation,
   });
 
   // Resource catalog
@@ -4438,7 +4437,6 @@ export async function startServer({
     projectStore: projectStoreDeps,
     validation: validationDeps,
     finalize: finalizeDeps,
-    authorizeProjectRequest,
   });
   registerHandoffRoutes(app, {
     db,
@@ -4467,7 +4465,6 @@ export async function startServer({
     projectFiles: projectFileDeps,
     validation: validationDeps,
     auth: authDeps,
-    authorizeProjectRequest,
     authorizeProjectToolRequest,
     isApiTokenAuthorization,
     projectPreviewScopes,
