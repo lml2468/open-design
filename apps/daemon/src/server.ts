@@ -4503,7 +4503,6 @@ export async function startServer({
     projectFiles: projectFileDeps,
     conversations: conversationDeps,
     research: researchDeps,
-    authorizeProjectRequest,
     authorizeProjectToolRequest,
   });
 

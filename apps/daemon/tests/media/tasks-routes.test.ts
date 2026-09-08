@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {
   closeDatabase,
-  ensureWorkspaceProject,
   insertProject,
   openDatabase,
 } from '../../src/db.js';
@@ -13,16 +12,11 @@ import { toolTokenRegistry } from '../../src/tool-tokens.js';
 
 describe('media task route recovery', () => {
   let server: http.Server | null = null;
-  let authorityServer: http.Server | null = null;
 
   afterEach(async () => {
     if (server) {
       await new Promise<void>((resolve) => server?.close(() => resolve()));
       server = null;
-    }
-    if (authorityServer) {
-      await new Promise<void>((resolve) => authorityServer?.close(() => resolve()));
-      authorityServer = null;
     }
     vi.unstubAllEnvs();
     toolTokenRegistry.clear();
@@ -39,15 +33,9 @@ describe('media task route recovery', () => {
 
     insertProject(db, {
       id: projectId,
-      name: 'Token-polled Team media project',
+      name: 'Token-polled local media project',
       createdAt: now,
       updatedAt: now,
-    });
-    ensureWorkspaceProject(db, {
-      projectId,
-      workspaceId: 'workspace-team',
-      visibility: 'team',
-      createdByWorkspaceMemberId: 'member-creator',
     });
     insertMediaTask(db, {
       id: taskId,
@@ -200,24 +188,17 @@ describe('media task route recovery', () => {
     }
   });
 
-  it('uses the tool grant and persisted project binding without querying Workspace authority', async () => {
+  it('uses the tool grant and persisted local project binding without Workspace authority', async () => {
     const dataDir = process.env.OD_DATA_DIR;
     const db = openDatabase(process.cwd(), dataDir === undefined ? {} : { dataDir });
     const projectId = `project_${randomUUID()}`;
-    const workspaceId = `workspace_${randomUUID()}`;
     const now = Date.now();
 
     insertProject(db, {
       id: projectId,
-      name: 'Fresh-authority Team media project',
+      name: 'Local media project',
       createdAt: now,
       updatedAt: now,
-    });
-    ensureWorkspaceProject(db, {
-      projectId,
-      workspaceId,
-      visibility: 'team',
-      createdByWorkspaceMemberId: 'member-creator',
     });
     const token = toolTokenRegistry.mint({
       projectId,
@@ -225,46 +206,11 @@ describe('media task route recovery', () => {
       allowedEndpoints: ['/api/media/tasks/:id/wait'],
       allowedOperations: ['media:generate'],
     }).token;
-    let authorityMode: 'active' | 'outage' | 'removed' = 'removed';
-    let authorityRequests = 0;
-    authorityServer = http.createServer((_req, res) => {
-      authorityRequests += 1;
-      res.setHeader('content-type', 'application/json');
-      if (authorityMode === 'outage') {
-        res.statusCode = 503;
-        res.end(JSON.stringify({ error: 'authority unavailable' }));
-        return;
-      }
-      res.end(JSON.stringify({
-        items: [{
-          workspaceId,
-          workspaceName: 'Fresh authority workspace',
-          workspaceType: 'team',
-          workspaceMemberId: 'member-creator',
-          role: 'owner',
-          memberStatus: authorityMode === 'removed' ? 'removed' : 'active',
-          lifecycleState: 'active',
-        }],
-      }));
-    });
-    await new Promise<void>((resolve) => {
-      authorityServer?.listen(0, '127.0.0.1', resolve);
-    });
-    const authorityAddress = authorityServer.address();
-    if (!authorityAddress || typeof authorityAddress === 'string') {
-      throw new Error('authority server did not bind to a TCP port');
-    }
-    vi.stubEnv('OD_WORKSPACE_CONTEXT_SOURCE', 'vela');
-    vi.stubEnv('VELA_CONTROL_KEY', 'test-control-key');
-    vi.stubEnv('VELA_API_URL', `http://127.0.0.1:${authorityAddress.port}`);
-
     const started = await startServer({ port: 0, returnServer: true }) as {
       url: string;
       server: http.Server;
     };
     server = started.server;
-    await vi.waitFor(() => expect(authorityRequests).toBeGreaterThanOrEqual(1));
-    const startupAuthorityRequests = authorityRequests;
     const waitForMissingTask = () => fetch(
       `${started.url}/api/media/tasks/missing-task/wait`,
       {
@@ -277,17 +223,8 @@ describe('media task route recovery', () => {
       },
     );
 
-    const removed = await waitForMissingTask();
-    expect(removed.status).toBe(404);
-
-    authorityMode = 'outage';
-    const unavailable = await waitForMissingTask();
-    expect(unavailable.status).toBe(404);
-
-    authorityMode = 'active';
-    const authorized = await waitForMissingTask();
-    expect(authorized.status).toBe(404);
-    expect(authorityRequests).toBe(startupAuthorityRequests);
+    const response = await waitForMissingTask();
+    expect(response.status).toBe(404);
   });
 
   it('recovers a pre-restart running task so wait returns interrupted instead of 404', async () => {
