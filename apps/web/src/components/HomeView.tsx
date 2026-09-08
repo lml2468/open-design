@@ -17,9 +17,7 @@ import type {
   InputFieldSpec,
   McpServerConfig,
   InstalledPluginRecord,
-  LocalCatalogScope,
   ProjectKind,
-  WorkspaceCollabContext,
   AudioVoiceOption,
   WorkspaceContextItem,
 } from '@open-design/contracts';
@@ -332,7 +330,6 @@ const EMPTY_PROMPT_TEMPLATES: PromptTemplateSummary[] = [];
 // safely.
 const HOME_COMPOSER_PROMPT_KEY = 'open-design:home-composer:prompt';
 const HOME_COMPOSER_DESIGN_SYSTEM_KEY = 'open-design:home-composer:design-system';
-const HOME_COMPOSER_DESIGN_SYSTEM_SCOPE_KEY = 'open-design:home-composer:design-system-scope';
 // The active type-chip + bound plugin (the "创作类型" + "示例提示词" pick) is a
 // third piece of composer state that used to fall through this same crack:
 // `active` (below) held only a live `InstalledPluginRecord` + resolved apply
@@ -389,31 +386,6 @@ function writeHomeComposerDraft(key: string, value: string | null): void {
   }
 }
 
-function localCatalogScopeFromWorkspaceContext(
-  context: WorkspaceCollabContext | null,
-): LocalCatalogScope | null {
-  if (!context?.workspaceId?.trim() || !context.workspaceMemberId?.trim()) return null;
-  return {
-    workspaceId: context.workspaceId.trim(),
-    workspaceMemberId: context.workspaceMemberId.trim(),
-  };
-}
-
-function readLocalCatalogScopeDraft(key: string): LocalCatalogScope | null {
-  const raw = readHomeComposerDraft(key);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<LocalCatalogScope> | null;
-    if (!parsed?.workspaceId?.trim() || !parsed.workspaceMemberId?.trim()) return null;
-    return {
-      workspaceId: parsed.workspaceId.trim(),
-      workspaceMemberId: parsed.workspaceMemberId.trim(),
-    };
-  } catch {
-    return null;
-  }
-}
-
 function readHomeComposerChipDraft(): HomeComposerChipDraft | null {
   const raw = readHomeComposerDraft(HOME_COMPOSER_CHIP_KEY);
   if (!raw) return null;
@@ -454,7 +426,6 @@ function writeHomeComposerChipDraft(draft: HomeComposerChipDraft | null): void {
 function clearHomeComposerDraft(): void {
   writeHomeComposerDraft(HOME_COMPOSER_PROMPT_KEY, null);
   writeHomeComposerDraft(HOME_COMPOSER_DESIGN_SYSTEM_KEY, null);
-  writeHomeComposerDraft(HOME_COMPOSER_DESIGN_SYSTEM_SCOPE_KEY, null);
   writeHomeComposerChipDraft(null);
 }
 
@@ -518,13 +489,6 @@ export function HomeView({
   const workspaceContextState = useWorkspaceContext();
   const { context: workspaceContext } = workspaceContextState;
   const pluginCatalogWorkspaceContext = workspaceResourceReadContext(workspaceContextState);
-  const lastSettledLocalCatalogScopeRef = useRef<LocalCatalogScope | null>(
-    localCatalogScopeFromWorkspaceContext(workspaceContext),
-  );
-  if (!workspaceContextState.identityChangePending) {
-    lastSettledLocalCatalogScopeRef.current =
-      localCatalogScopeFromWorkspaceContext(workspaceContext);
-  }
   const pluginAccountGeneration = currentWorkspaceAccountGeneration();
   const pluginCatalogOptions = {
     workspaceContext: pluginCatalogWorkspaceContext,
@@ -609,8 +573,6 @@ export function HomeView({
   // per-conversation picker still lives in the project chat composer.
   const sessionMode: ChatSessionMode = 'design';
   const [activeSkill, setActiveSkill] = useState<SkillSummary | null>(null);
-  const [activeSkillCatalogScope, setActiveSkillCatalogScope] =
-    useState<LocalCatalogScope | null>(null);
   const [selectedPluginContexts, setSelectedPluginContexts] = useState<SelectedPluginContext[]>([]);
   const [selectedMcpContexts, setSelectedMcpContexts] = useState<SelectedMcpContext[]>([]);
   const [selectedConnectorContexts, setSelectedConnectorContexts] = useState<SelectedConnectorContext[]>([]);
@@ -634,30 +596,20 @@ export function HomeView({
   const restoredDraftRef = useRef<{
     prompt: string;
     designSystemId: string | null;
-    designSystemCatalogScope: LocalCatalogScope | null;
   } | null>(null);
   if (restoredDraftRef.current === null) {
     restoredDraftRef.current = ownsComposerDraft
       ? {
           prompt: readHomeComposerDraft(HOME_COMPOSER_PROMPT_KEY) ?? '',
           designSystemId: readHomeComposerDraft(HOME_COMPOSER_DESIGN_SYSTEM_KEY),
-          designSystemCatalogScope: readLocalCatalogScopeDraft(
-            HOME_COMPOSER_DESIGN_SYSTEM_SCOPE_KEY,
-          ),
         }
-      : { prompt: '', designSystemId: null, designSystemCatalogScope: null };
+      : { prompt: '', designSystemId: null };
   }
   const restoredDraft = restoredDraftRef.current;
   const [designSystemId, setDesignSystemId] = useState<string | null>(() =>
     restoredDraft.designSystemId ??
     homeDefaultDesignSystemId(designSystems, defaultDesignSystemId),
   );
-  const [designSystemCatalogScope, setDesignSystemCatalogScope] =
-    useState<LocalCatalogScope | null>(() =>
-      restoredDraft.designSystemId
-        ? restoredDraft.designSystemCatalogScope
-        : localCatalogScopeFromWorkspaceContext(workspaceContext),
-    );
   // A restored pick counts as user-touched so the async default re-seed effect
   // below does not overwrite it once the catalogue resolves.
   const designSystemTouchedRef = useRef(restoredDraft.designSystemId != null);
@@ -706,15 +658,6 @@ export function HomeView({
     if (!ownsComposerDraft) return;
     writeHomeComposerDraft(HOME_COMPOSER_DESIGN_SYSTEM_KEY, designSystemId);
   }, [designSystemId, ownsComposerDraft]);
-  useEffect(() => {
-    if (!ownsComposerDraft) return;
-    writeHomeComposerDraft(
-      HOME_COMPOSER_DESIGN_SYSTEM_SCOPE_KEY,
-      designSystemId && designSystemCatalogScope
-        ? JSON.stringify(designSystemCatalogScope)
-        : null,
-    );
-  }, [designSystemCatalogScope, designSystemId, ownsComposerDraft]);
   // Persist the active chip/plugin identity the same way — only the
   // serializable fields, not `active` itself (see the module note above).
   // Clearing on `active === null` covers the explicit-clear (×) and the
@@ -1092,7 +1035,6 @@ export function HomeView({
 
     setActive(null);
     setActiveSkill(null);
-    setActiveSkillCatalogScope(null);
     setSelectedPluginContexts([]);
     setSelectedMcpContexts([]);
     setSelectedConnectorContexts([]);
@@ -1261,27 +1203,19 @@ export function HomeView({
     if (skillsLoading) return;
     setActiveSkill((current) => {
       if (!current) return current;
-      const rebound = selectableSkills.find((skill) => skill.id === current.id) ?? null;
-      setActiveSkillCatalogScope(
-        rebound ? localCatalogScopeFromWorkspaceContext(workspaceContext) : null,
-      );
-      return rebound;
+      return selectableSkills.find((skill) => skill.id === current.id) ?? null;
     });
     setDetailsSkill((current) => {
       if (!current) return current;
       return selectableSkills.find((skill) => skill.id === current.id) ?? null;
     });
-  }, [selectableSkills, skillsLoading, workspaceContext]);
+  }, [selectableSkills, skillsLoading]);
 
   useEffect(() => {
     if (designSystemsLoading || !designSystemId) return;
-    if (designSystemPickerSystems.some((system) => system.id === designSystemId)) {
-      setDesignSystemCatalogScope(localCatalogScopeFromWorkspaceContext(workspaceContext));
-      return;
-    }
+    if (designSystemPickerSystems.some((system) => system.id === designSystemId)) return;
     setDesignSystemId(null);
-    setDesignSystemCatalogScope(null);
-  }, [designSystemId, designSystemPickerSystems, designSystemsLoading, workspaceContext]);
+  }, [designSystemId, designSystemPickerSystems, designSystemsLoading]);
 
   // Re-seed the default selection when the catalogue or the user's default
   // resolves after mount (async load), unless the user already picked one.
@@ -1289,10 +1223,7 @@ export function HomeView({
     if (designSystemTouchedRef.current) return;
     const nextId = homeDefaultDesignSystemId(designSystems, defaultDesignSystemId);
     setDesignSystemId(nextId);
-    setDesignSystemCatalogScope(
-      nextId ? localCatalogScopeFromWorkspaceContext(workspaceContext) : null,
-    );
-  }, [designSystems, defaultDesignSystemId, workspaceContext]);
+  }, [designSystems, defaultDesignSystemId]);
   // Title of the globally-selected design system (or the "No design system"
   // label). Seeds the active plugin's `designSystem` input — the apply-template
   // hint the rendered brief references — so it mirrors the persistent picker.
@@ -2179,9 +2110,6 @@ export function HomeView({
   function handleDesignSystemChange(id: string | null) {
     designSystemTouchedRef.current = true;
     setDesignSystemId(id);
-    setDesignSystemCatalogScope(
-      id ? localCatalogScopeFromWorkspaceContext(workspaceContext) : null,
-    );
     if (active && active.inputFields.some((field) => field.name === 'designSystem')) {
       const title = id
         ? designSystemPickerSystems.find((system) => system.id === id)?.title
@@ -2305,7 +2233,6 @@ export function HomeView({
   // to be discarded to keep the rule defined.
   function useSkill(skill: SkillSummary, nextPrompt: string | null) {
     setActiveSkill(skill);
-    setActiveSkillCatalogScope(localCatalogScopeFromWorkspaceContext(workspaceContext));
     setError(null);
     const replacement = nextPrompt ?? localizeSkillPrompt(locale, skill) ?? '';
     if (replacement.trim().length > 0) {
@@ -2368,7 +2295,6 @@ export function HomeView({
     runWithReplacementConfirmation('Plugin authoring', nextPrompt, async () => {
       setActive(null);
       setActiveSkill(null);
-      setActiveSkillCatalogScope(null);
       setFallbackProjectKind('other');
       setFallbackProjectMetadata(null);
       setError(null);
@@ -2908,11 +2834,6 @@ export function HomeView({
           ? null
           : submittedActive?.record.marketplaceTrust ?? (routedPluginId ? 'official' : null),
         skillId: resolvedSkillId,
-        ...(resolvedSkillId && activeSkillCatalogScope
-          ? { skillCatalogScope: activeSkillCatalogScope }
-          : resolvedSkillId && lastSettledLocalCatalogScopeRef.current
-            ? { skillCatalogScope: lastSettledLocalCatalogScopeRef.current }
-          : {}),
         appliedPluginSnapshotId: automaticStrategyTaskProfile
           ? null
           : submittedActive?.result?.appliedPlugin?.snapshotId ?? null,
@@ -2924,11 +2845,6 @@ export function HomeView({
         projectKind: submittedProjectKind,
         projectMetadata: submittedProjectMetadata,
         designSystemId: submittedDesignSystemId,
-        ...(submittedDesignSystemId && designSystemCatalogScope
-          ? { designSystemCatalogScope }
-          : submittedDesignSystemId && lastSettledLocalCatalogScopeRef.current
-            ? { designSystemCatalogScope: lastSettledLocalCatalogScopeRef.current }
-          : {}),
         contextPlugins,
         contextMcpServers,
         contextConnectors,
@@ -3019,7 +2935,6 @@ export function HomeView({
         onClearActiveChip={clearActiveChipSelection}
         onClearActiveSkill={() => {
           setActiveSkill(null);
-          setActiveSkillCatalogScope(null);
         }}
         selectedPluginContexts={selectedPluginContexts.map((item) => item.record)}
         selectedMcpContexts={selectedMcpContexts.map((item) => item.server)}

@@ -7,7 +7,6 @@ import type {
   ProjectKind,
   ProjectMetadata,
   ProjectScenarioTaskProfile,
-  LocalCatalogScope,
   RunContextSelection,
 } from '@open-design/contracts';
 import {
@@ -48,7 +47,6 @@ export interface PluginLoopSubmit {
   // to attribute project_create_result to a plugin type. Null when no plugin.
   pluginType?: string | null;
   skillId?: string | null;
-  skillCatalogScope?: LocalCatalogScope | null;
   appliedPluginSnapshotId: string | null;
   pluginTitle: string | null;
   taskKind: string | null;
@@ -58,7 +56,6 @@ export interface PluginLoopSubmit {
   contextConnectors?: Array<{ id: string; name: string; provider?: string; category?: string; status?: string; accountLabel?: string }> | null;
   initialRunContext?: RunContextSelection | null;
   designSystemId?: string | null;
-  designSystemCatalogScope?: LocalCatalogScope | null;
   // Stage B of plugin-driven-flow-plan: when the user picked a Home
   // chip the rail tells the submit handler which `ProjectKind` to
   // stamp on the new project's metadata. The daemon-side default

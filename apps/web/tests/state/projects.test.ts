@@ -174,47 +174,6 @@ describe('createProject local plugin identity', () => {
     expect(body).not.toHaveProperty('pluginInputs');
   });
 
-  it('preserves selected local resource catalogue scopes without adding Workspace headers', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({
-      project: {
-        id: 'project-local-resources',
-        name: 'Local resource project',
-        skillId: 'workspace-skill',
-        designSystemId: 'user:workspace-brand',
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      conversationId: 'conversation-1',
-    }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await createProject({
-      name: 'Local resource project',
-      skillId: 'workspace-skill',
-      skillCatalogScope: {
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-      },
-      designSystemId: 'user:workspace-brand',
-      designSystemCatalogScope: {
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-      },
-    });
-
-    const init = fetchMock.mock.calls[0]?.[1];
-    expect(new Headers(init?.headers).has('x-od-workspace-id')).toBe(false);
-    expect(JSON.parse(String(init?.body))).toMatchObject({
-      skillCatalogScope: {
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-      },
-      designSystemCatalogScope: {
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-      },
-    });
-  });
 });
 
 describe('createConversation', () => {

@@ -241,61 +241,6 @@ describe('project resource selection uses the persisted exact member', () => {
     expect(insertProject).toHaveBeenCalledOnce();
   });
 
-  it('uses selected local catalog provenance while project attribution is unavailable', async () => {
-    const validateDesignSystem = vi.fn(async (id) => ({ ok: true, id }));
-    const validateSkill = vi.fn(async (id) => ({ ok: true, id }));
-    const insertProject = vi.fn((_: unknown, input: Record<string, unknown>) => input);
-    const baseUrl = await start(buildDeps({
-      validateDesignSystem,
-      validateSkill,
-      insertProject,
-    }));
-
-    const response = await fetch(`${baseUrl}/api/projects`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        id: 'cold-local-catalog-create',
-        name: 'Cold local catalog create',
-        designSystemId: 'user:workspace-brand',
-        designSystemCatalogScope: {
-          workspaceId: WORKSPACE_ID,
-          workspaceMemberId: MEMBER_ID,
-        },
-        skillId: 'workspace-skill',
-        skillCatalogScope: {
-          workspaceId: WORKSPACE_ID,
-          workspaceMemberId: MEMBER_ID,
-        },
-      }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(validateDesignSystem).toHaveBeenCalledWith('user:workspace-brand', {
-      workspaceId: WORKSPACE_ID,
-      workspaceMemberId: MEMBER_ID,
-    });
-    expect(validateSkill).toHaveBeenCalledWith('workspace-skill', {
-      workspaceId: WORKSPACE_ID,
-      workspaceMemberId: MEMBER_ID,
-    });
-    expect(insertProject).toHaveBeenCalledOnce();
-    expect(insertProject).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      metadata: {
-        localCatalogScopes: {
-          skill: {
-            workspaceId: WORKSPACE_ID,
-            workspaceMemberId: MEMBER_ID,
-          },
-          designSystem: {
-            workspaceId: WORKSPACE_ID,
-            workspaceMemberId: MEMBER_ID,
-          },
-        },
-      },
-    }));
-  });
-
   it('passes exact member scope to both create validators', async () => {
     const validateDesignSystem = vi.fn(async (id) => ({ ok: true, id }));
     const validateSkill = vi.fn(async () => ({

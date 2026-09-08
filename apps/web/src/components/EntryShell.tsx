@@ -244,8 +244,6 @@ type EntryCreateProjectInput = Omit<CreateInput, 'metadata'> & {
   pendingPrompt?: string;
   pluginId?: string;
   pluginSource?: string;
-  skillCatalogScope?: PluginLoopSubmit['skillCatalogScope'];
-  designSystemCatalogScope?: PluginLoopSubmit['designSystemCatalogScope'];
   pluginType?: string;
   appliedPluginSnapshotId?: string;
   pluginInputs?: Record<string, unknown>;
@@ -809,13 +807,7 @@ export function EntryShell({
     const createInput: EntryCreateProjectInput = {
       name,
       ...strategyRoutingFields,
-      ...(strategyRoutingFields.skillId && payload.skillCatalogScope
-        ? { skillCatalogScope: payload.skillCatalogScope }
-        : {}),
       designSystemId: payload.designSystemId ?? null,
-      ...(payload.designSystemCatalogScope
-        ? { designSystemCatalogScope: payload.designSystemCatalogScope }
-        : {}),
       metadata,
       pendingPrompt: payload.prompt,
       ...(payload.pluginId && !payload.pluginSelectionProvenance

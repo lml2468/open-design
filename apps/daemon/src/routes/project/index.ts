@@ -32,7 +32,6 @@ import {
   automaticStrategyTaskProfileForProjectMetadata,
   defaultScenarioPluginIdForProjectMetadata,
   type ChatSessionMode,
-  type LocalCatalogScope,
   type PluginManifest,
   type PreviewComment,
   type ProjectDesignTokenSuggestionProp,
@@ -241,28 +240,6 @@ export function rewriteOutsideExecutableHtmlRanges(
     rewrittenHtml = rewrittenHtml.split(marker).join(value);
   }
   return rewrittenHtml;
-}
-
-function parseLocalCatalogScope(value: unknown, field: string): LocalCatalogScope | null {
-  if (value === undefined || value === null) return null;
-  if (!value || typeof value !== 'object') {
-    throw new Error(`${field} must contain workspaceId and workspaceMemberId`);
-  }
-  const record = value as Record<string, unknown>;
-  const workspaceId = typeof record.workspaceId === 'string'
-    ? record.workspaceId.trim()
-    : '';
-  const workspaceMemberId = typeof record.workspaceMemberId === 'string'
-    ? record.workspaceMemberId.trim()
-    : '';
-  if (!workspaceId || !workspaceMemberId) {
-    throw new Error(`${field} must contain workspaceId and workspaceMemberId`);
-  }
-  return { workspaceId, workspaceMemberId };
-}
-
-function sameLocalCatalogScopes(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
 export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'projectStore' | 'projectFiles' | 'conversations' | 'templates' | 'status' | 'events' | 'ids' | 'telemetry' | 'appConfig' | 'agents' | 'validation' | 'collabSync'> {
@@ -3787,27 +3764,9 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         workspaceId: createWorkspace.context?.workspaceId ?? null,
         workspaceMemberId: createWorkspace.context?.workspaceMemberId ?? null,
       };
-      let skillCatalogScope: LocalCatalogScope | null;
-      let designSystemCatalogScope: LocalCatalogScope | null;
-      try {
-        skillCatalogScope = parseLocalCatalogScope(
-          req.body?.skillCatalogScope,
-          'skillCatalogScope',
-        );
-        designSystemCatalogScope = parseLocalCatalogScope(
-          req.body?.designSystemCatalogScope,
-          'designSystemCatalogScope',
-        );
-      } catch (error) {
-        return sendApiError(res, 400, 'BAD_REQUEST', String(error));
-      }
-      // A staged local resource can outlive the shell's current identity
-      // snapshot while a Workspace switch is loading. Use the partition that
-      // produced that exact selection for local lookup only. It does not bind
-      // this local project to that Workspace or prove current membership.
       const designSystemValidation = await validateProjectDesignSystemId(
         designSystemId,
-        designSystemCatalogScope ?? creationWorkspaceScope,
+        creationWorkspaceScope,
       );
       if (!designSystemValidation.ok) {
         return sendApiError(
@@ -3820,7 +3779,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       const normalizedDesignSystemId = designSystemValidation.id;
       const skillValidation = await validateProjectSkillId(
         skillId,
-        skillCatalogScope ?? creationWorkspaceScope,
+        creationWorkspaceScope,
       );
       if (!skillValidation.ok) {
         return sendApiError(res, 400, skillValidation.code, skillValidation.message);
@@ -3881,21 +3840,10 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         && (metadata as { intent?: unknown }).intent === 'web-clone'
         && typeof pendingPrompt === 'string'
         && /https?:\/\/\S+/i.test(pendingPrompt);
-      const localCatalogScopes = {
-        ...(normalizedSkillId && skillCatalogScope ? { skill: skillCatalogScope } : {}),
-        ...(normalizedDesignSystemId && designSystemCatalogScope
-          ? { designSystem: designSystemCatalogScope }
-          : {}),
-      };
-      const hasLocalCatalogScopes = Object.keys(localCatalogScopes).length > 0;
-      // This metadata is daemon-owned. A caller may supply provenance through
-      // the typed top-level fields, but cannot smuggle a different partition
-      // inside the otherwise extensible project metadata object.
       const clientMetadata = metadata && typeof metadata === 'object'
         ? Object.fromEntries(
             Object.entries(metadata).filter(([key]) => (
-              key !== 'localCatalogScopes'
-              && key !== 'scenarioBinding'
+              key !== 'scenarioBinding'
               && key !== 'strategyBinding'
               && key !== 'exampleBinding'
             )),
@@ -3905,7 +3853,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         clientMetadata
           ? {
               ...clientMetadata,
-              ...(hasLocalCatalogScopes ? { localCatalogScopes } : {}),
               ...(skipDiscoveryBrief === true || webCloneUrlSkipsDiscovery
                 ? { skipDiscoveryBrief: true }
                 : {}),
@@ -3926,7 +3873,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           : skipDiscoveryBrief === true
             ? {
                 skipDiscoveryBrief: true,
-                ...(hasLocalCatalogScopes ? { localCatalogScopes } : {}),
                 ...(externalProjectDir
                   ? {
                       baseDir: externalProjectDir,
@@ -3942,11 +3888,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
                   importedFrom: 'project-location',
                   projectLocationId: selectedLocationId,
                 }
-              : hasLocalCatalogScopes
-                ? {
-                    localCatalogScopes,
-                  }
-                : null;
+              : null;
       const now = Date.now();
       const cid = randomId();
       const initialSessionMode = normalizeChatSessionMode(
@@ -4961,20 +4903,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         const existing = getProject(db, req.params.id);
         const existingMeta = existing?.metadata;
         if (
-          'localCatalogScopes' in patch.metadata
-          && !sameLocalCatalogScopes(
-            patch.metadata.localCatalogScopes,
-            existingMeta?.localCatalogScopes,
-          )
-        ) {
-          return sendApiError(
-            res,
-            400,
-            'BAD_REQUEST',
-            'localCatalogScopes can only be set during project creation',
-          );
-        }
-        if (
           'scenarioBinding' in patch.metadata
           && JSON.stringify(patch.metadata.scenarioBinding)
             !== JSON.stringify(existingMeta?.scenarioBinding)
@@ -5053,9 +4981,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           }
           patch.metadata = {
             ...patch.metadata,
-            ...(existingMeta?.localCatalogScopes
-              ? { localCatalogScopes: existingMeta.localCatalogScopes }
-              : {}),
             baseDir: existingMeta.baseDir,
             ...(existingMeta.importedFrom === 'folder'
               ? { importedFrom: 'folder' }
@@ -5085,11 +5010,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
             res, 400, 'BAD_REQUEST',
             'orchestratorWorkspace can only be set via POST /api/import/folder or POST /api/projects/:id/working-dir',
           );
-        } else if (existingMeta?.localCatalogScopes) {
-          patch.metadata = {
-            ...patch.metadata,
-            localCatalogScopes: existingMeta.localCatalogScopes,
-          };
         }
         if (existingMeta?.scenarioBinding) {
           patch.metadata = {
@@ -5164,33 +5084,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           return sendApiError(res, 400, skillValidation.code, skillValidation.message);
         }
         patch.skillId = skillValidation.id;
-      }
-      if (
-        (Object.prototype.hasOwnProperty.call(patch, 'skillId')
-          && patch.skillId !== patchProject.skillId)
-        || (Object.prototype.hasOwnProperty.call(patch, 'designSystemId')
-          && patch.designSystemId !== patchProject.designSystemId)
-      ) {
-        const currentMetadata = patch.metadata && typeof patch.metadata === 'object'
-          ? patch.metadata
-          : patchProject.metadata;
-        const currentScopes = currentMetadata?.localCatalogScopes;
-        if (currentScopes) {
-          const nextScopes = { ...currentScopes };
-          if (
-            Object.prototype.hasOwnProperty.call(patch, 'skillId')
-            && patch.skillId !== patchProject.skillId
-          ) delete nextScopes.skill;
-          if (
-            Object.prototype.hasOwnProperty.call(patch, 'designSystemId')
-            && patch.designSystemId !== patchProject.designSystemId
-          ) delete nextScopes.designSystem;
-          const { localCatalogScopes: _localCatalogScopes, ...metadataWithoutScopes } =
-            currentMetadata;
-          patch.metadata = Object.keys(nextScopes).length > 0
-            ? { ...metadataWithoutScopes, localCatalogScopes: nextScopes }
-            : metadataWithoutScopes;
-        }
       }
       if (typeof patch.name === 'string' && patch.name.trim().length > 0) {
         // Design-system workspace projects mirror their design system's

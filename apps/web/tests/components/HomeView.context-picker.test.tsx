@@ -185,7 +185,7 @@ async function pickHomeTemplate(id: string) {
 }
 
 describe('HomeView context picker', () => {
-  it('preserves selected local catalog provenance while Workspace identity transitions', async () => {
+  it('keeps selected local resources while Workspace identity transitions', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (url) => {
       if (typeof url === 'string' && url === '/api/plugins') {
         return new Response(JSON.stringify({ plugins: [] }), {
@@ -245,18 +245,13 @@ describe('HomeView context picker', () => {
     );
     fireEvent.click(screen.getByTestId('home-hero-submit'));
 
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+    const submitted = onSubmit.mock.calls[0]?.[0];
+    expect(submitted).toEqual(expect.objectContaining({
       skillId: SKILL.id,
-      skillCatalogScope: {
-        workspaceId: workspaceA.workspaceId,
-        workspaceMemberId: workspaceA.workspaceMemberId,
-      },
       designSystemId: WORKSPACE_DESIGN_SYSTEM.id,
-      designSystemCatalogScope: {
-        workspaceId: workspaceA.workspaceId,
-        workspaceMemberId: workspaceA.workspaceMemberId,
-      },
     }));
+    expect(submitted).not.toHaveProperty('skillCatalogScope');
+    expect(submitted).not.toHaveProperty('designSystemCatalogScope');
   });
 
   it('stages pasted files on Home and submits them as first-turn context', async () => {

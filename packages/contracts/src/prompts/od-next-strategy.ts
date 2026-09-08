@@ -440,7 +440,6 @@ const OMITTED_PROJECT_METADATA_KEYS = new Set([
   'userWorkingDir',
   'linkedDirs',
   'orchestratorWorkspace',
-  'localCatalogScopes',
   'designSystemReview',
   'sharedProjectPlaceholderAt',
   'contextMcpServers',

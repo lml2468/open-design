@@ -23,7 +23,6 @@ import type {
   ImportFolderRequest,
   ImportFolderResponse,
   InstalledPluginRecord,
-  LocalCatalogScope,
   PluginDuplicateProjectResponse,
   PluginInstallOutcome,
   PluginShareAction,
@@ -456,9 +455,7 @@ export async function createProject(
     name: string;
     projectLocationId?: string;
     skillId: string | null;
-    skillCatalogScope?: LocalCatalogScope | null;
     designSystemId: string | null;
-    designSystemCatalogScope?: LocalCatalogScope | null;
     pendingPrompt?: string;
     metadata?: ProjectMetadata;
     conversationMode?: ChatSessionMode;

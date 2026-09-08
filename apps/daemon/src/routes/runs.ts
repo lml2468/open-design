@@ -46,6 +46,7 @@ import {
   getFirstProjectConversation,
   getConversation,
   getProject,
+  getWorkspaceProjectByProjectId,
   listProjectsAwaitingInput,
   normalizeConversationSessionMode,
   updateProject,
@@ -98,7 +99,6 @@ import type { FrozenSkillPackageV1 } from '../strategies/od-next/frozen-skill-pa
 import { InvalidFrozenSkillPackageError } from '../strategies/od-next/frozen-skill-package.js';
 import type { ResolvedExamplePluginRecord } from '../strategies/od-next/example-skill-source.js';
 import { captureOdNextSessionSkillPackage } from '../strategies/od-next/session-skill-package.js';
-import { resolveSkillCatalogScope } from '../skill-catalog-scope.js';
 import type { SkillInfo } from '../skills.js';
 import {
   buildOdNextTaskConfigurationV1,
@@ -447,12 +447,7 @@ interface RunRoutesDesignService {
   getAppVersion(): string;
 }
 
-/**
- * The Skill catalogue a run resolves user-selected Skills from. Same listing
- * the system-prompt composer reads, scoped through
- * `resolveSkillCatalogScope`, so a Skill admitted on one surface is
- * resolvable on the other.
- */
+/** The Skill catalogue used to freeze user-selected Skills for a run. */
 interface RunRoutesSkillCatalogService {
   listAllSkillLikeEntries: (options?: {
     workspaceId?: string | null;
@@ -2237,6 +2232,9 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       // restart/continuation identity deterministic.
       const runProjectMetadata =
         runProject?.metadata as ContractProjectMetadata | null | undefined;
+      const runProjectWorkspace = typeof meta.projectId === 'string' && meta.projectId
+        ? getWorkspaceProjectByProjectId(db, meta.projectId)
+        : null;
       frozenSkillPackage = await captureOdNextSessionSkillPackage({
         metadata: runProjectMetadata,
         getLocalPluginBySource: ctx.plugins.getLocalPluginBySource,
@@ -2250,9 +2248,12 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
           skillIds: requestBody.skillIds,
         },
         listSkillCatalog: () => ctx.resources.listAllSkillLikeEntries(
-          resolveSkillCatalogScope({
-            metadata: runProjectMetadata,
-          }) ?? undefined,
+          runProjectWorkspace?.workspaceId
+            ? {
+                workspaceId: runProjectWorkspace.workspaceId,
+                workspaceMemberId: runProjectWorkspace.createdByWorkspaceMemberId ?? null,
+              }
+            : undefined,
         ),
       });
     }

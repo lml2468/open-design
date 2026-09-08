@@ -292,7 +292,6 @@ import {
   resolveSkillId,
   splitDerivedSkillId,
 } from './skills.js';
-import { resolveSkillCatalogScope } from './skill-catalog-scope.js';
 import { validateLinkedDirs } from './linked-dirs.js';
 import { installFromTarget, uninstallById, sanitizeRepoName } from './library-install.js';
 import {
@@ -6828,38 +6827,15 @@ export async function startServer({
         ? projectWorkspaceBinding.createdByWorkspaceMemberId.trim()
         : '';
     const metadata = project?.metadata;
-    const localCatalogScope = (value) => {
-      const workspaceId = typeof value?.workspaceId === 'string'
-        ? value.workspaceId.trim()
-        : '';
-      const workspaceMemberId = typeof value?.workspaceMemberId === 'string'
-        ? value.workspaceMemberId.trim()
-        : '';
-      return workspaceId && workspaceMemberId
-        ? { workspaceId, workspaceMemberId }
-        : null;
-    };
-    // Resource provenance is intentionally independent from project
-    // attribution. A Home selection can be staged while Workspace identity is
-    // transitioning; the daemon persists the local catalogue partition so
-    // the first run reads the same local record without waiting for identity
-    // discovery or treating this as remote membership authority.
-    const designSystemCatalogScope = localCatalogScope(
-      metadata?.localCatalogScopes?.designSystem,
-    );
-    const designSystemWorkspaceId =
-      designSystemCatalogScope?.workspaceId ?? projectWorkspaceId;
-    const designSystemMemberId =
-      designSystemCatalogScope?.workspaceMemberId ?? projectCreatorMemberId;
     const projectDesignSystemBinding = (summary) => {
-      if (!designSystemWorkspaceId || summary?.source === 'built-in') return null;
+      if (!projectWorkspaceId || summary?.source === 'built-in') return null;
       const logicalResourceId =
         typeof summary?.id === 'string' ? summary.id.trim() : '';
       if (!logicalResourceId) return null;
       return getWorkspaceResource(
         db,
         'design_system',
-        designSystemWorkspaceId,
+        projectWorkspaceId,
         logicalResourceId,
       ) ?? null;
     };
@@ -6868,7 +6844,7 @@ export async function startServer({
       // A truly unbound local project is the legacy CLI/BYOK lane. Bound
       // projects must resolve resources from their persisted project scope;
       // shell/current Workspace state never participates.
-      if (!designSystemWorkspaceId) return true;
+      if (!projectWorkspaceId) return true;
       const binding = projectDesignSystemBinding(summary);
       if (
         !binding
@@ -6877,8 +6853,8 @@ export async function startServer({
         return false;
       }
       return binding.visibility === 'personal'
-        && Boolean(designSystemMemberId)
-        && binding.createdByWorkspaceMemberId?.trim() === designSystemMemberId;
+        && Boolean(projectCreatorMemberId)
+        && binding.createdByWorkspaceMemberId?.trim() === projectCreatorMemberId;
     };
     let appConfigForPrompt = null;
     try {
@@ -6925,16 +6901,12 @@ export async function startServer({
           allowAppDefault: project === null,
         });
     const effectiveDesignSystemId = designSystemSelection.id;
-    const projectResourceScope =
-      typeof projectId === 'string' && projectId
-        ? getWorkspaceProjectByProjectId(db, projectId)
-        : null;
-    // Shared with OD Next's frozen-package capture so a Skill this prompt can
-    // resolve is a Skill that route can freeze, and vice versa.
-    const skillResourceScope = resolveSkillCatalogScope({
-      metadata,
-      workspaceBinding: projectResourceScope,
-    });
+    const skillResourceScope = projectWorkspaceId
+      ? {
+          workspaceId: projectWorkspaceId,
+          workspaceMemberId: projectCreatorMemberId || null,
+        }
+      : null;
     let allSkillsPromise: ReturnType<typeof listAllSkillLikeEntries> | null = null;
     const loadAllSkills = async () => {
       allSkillsPromise ??= skillResourceScope
