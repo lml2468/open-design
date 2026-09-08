@@ -72,7 +72,6 @@ async function startRoutes(
     ...(projectDeps ? {
       getProject: (projectId: string) => projectId === projectDeps.project.id ? projectDeps.project : null,
       listProjectFiles: async () => projectDeps.files,
-      authorizeProjectRequest: async () => true,
       ...(projectDeps.projectReviewComments
         ? { projectReviewComments: projectDeps.projectReviewComments }
         : {}),

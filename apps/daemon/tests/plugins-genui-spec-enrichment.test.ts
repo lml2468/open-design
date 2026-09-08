@@ -17,7 +17,6 @@ import Database from 'better-sqlite3';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createAuthorizeProjectRequest } from '../src/collab/project-request-authority.js';
 import {
   ensureWorkspaceProject,
 } from '../src/db.js';
@@ -248,7 +247,6 @@ describe('GET /api/runs/:runId/genui/:surfaceId enriches with snapshot spec', ()
 
     const routeApp = express();
     routeApp.use(express.json());
-    const authorizeProjectRequest = createAuthorizeProjectRequest();
     registerGenuiRoutes(routeApp, {
       db,
       design: {
@@ -258,7 +256,6 @@ describe('GET /api/runs/:runId/genui/:surfaceId enriches with snapshot spec', ()
         },
       },
       paths: { PROJECTS_DIR: path.join(serverRuntimeDataRoot, 'projects') },
-      authorizeProjectRequest,
     });
 
     let routeServer: http.Server | undefined;

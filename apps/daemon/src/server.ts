@@ -3867,7 +3867,6 @@ export async function startServer({
     sendApiError,
     getProject: (projectId) => getProject(db, projectId),
     listProjectFiles: (projectId, metadata) => listFiles(PROJECTS_DIR, projectId, { metadata }),
-    authorizeProjectRequest,
     projectReviewComments: ({
       localProjectId,
       conversationId,
@@ -4134,7 +4133,6 @@ export async function startServer({
     paths: pathDeps,
     projectStore: projectStoreDeps,
     projectFiles: projectFileDeps,
-    authorizeProjectRequest,
   });
   // OD Library — global asset registry (clipper ingest, grid, pairing, apply).
   registerLibraryRoutes(app, {
@@ -4367,7 +4365,6 @@ export async function startServer({
     deleteDesignSystemForRequest: designSystemRouteServices.deleteDesignSystemForRequest,
     isDesignSystemWorkspaceBound: (designSystemId) =>
       Boolean(getWorkspaceResourceByResourceId(db, 'design_system', designSystemId)),
-    authorizeProjectRequest,
     createWorkspaceOwnedDesignSystem: createWorkspaceOwnedDesignSystemForContext,
     deleteWorkspaceOwnedDesignSystem: (root, designSystemId) =>
       removeWorkspaceOwnedDesignSystem(root, designSystemId, {
@@ -4435,7 +4432,6 @@ export async function startServer({
     ids: idDeps,
     deploy: deployDeps,
     projectStore: projectStoreDeps,
-    authorizeProjectRequest,
   });
   registerFinalizeRoutes(app, {
     db,
@@ -4454,14 +4450,12 @@ export async function startServer({
     conversations: conversationDeps,
     validation: validationDeps,
     handoff: handoffDeps,
-    authorizeProjectRequest,
   });
   registerDeploymentCheckRoutes(app, {
     db,
     http: httpDeps,
     deploy: deployDeps,
     projectStore: projectStoreDeps,
-    authorizeProjectRequest,
   });
   app.use('/frames', express.static(FRAMES_DIR));
   registerProjectExportRoutes(app, {
@@ -4883,7 +4877,6 @@ export async function startServer({
     db,
     design,
     paths: { PROJECTS_DIR },
-    authorizeProjectRequest,
   });
 
   registerProjectPluginRoutes(app, {

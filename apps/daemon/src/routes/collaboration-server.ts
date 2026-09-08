@@ -60,12 +60,6 @@ export interface RegisterCollaborationServerRoutesDeps {
     projectId: string,
     metadata: unknown,
   ) => Promise<CollaborationProjectFile[]>;
-  authorizeProjectRequest?: (
-    req: Request,
-    res: Response,
-    projectId: string,
-    options: { mode: 'read' | 'write' },
-  ) => Promise<boolean>;
   projectReviewComments?: (input: {
     localProjectId: string;
     conversationId: string;
@@ -457,7 +451,7 @@ export function registerCollaborationServerRoutes(
     },
   );
 
-  if (!deps.getProject || !deps.listProjectFiles || !deps.authorizeProjectRequest) return;
+  if (!deps.getProject || !deps.listProjectFiles) return;
   const projectOperations = new Map<string, Promise<unknown>>();
 
   const loadOwnerBinding = async (localProjectId: string) => {
@@ -514,7 +508,6 @@ export function registerCollaborationServerRoutes(
     async (req, res) => {
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'read' })) return;
       res.setHeader('Cache-Control', 'no-store');
       return res.json({
         localProjectId: project.id,
@@ -533,7 +526,6 @@ export function registerCollaborationServerRoutes(
       }
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
       try {
         const binding = await withProjectOperation(projectOperations, project.id, async () => {
           const stored = await profiles.readCredentials();
@@ -589,7 +581,6 @@ export function registerCollaborationServerRoutes(
     async (req, res) => {
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
       await bindings.remove(project.id);
       return res.status(204).end();
     },
@@ -601,7 +592,6 @@ export function registerCollaborationServerRoutes(
     async (req, res) => {
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'read' })) return;
       try {
         const { binding } = await loadOwnerBinding(project.id);
         const result = await withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
@@ -623,7 +613,6 @@ export function registerCollaborationServerRoutes(
     async (req, res) => {
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'read' })) return;
       try {
         const { binding } = await loadOwnerBinding(project.id);
         const result = await withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
@@ -649,7 +638,6 @@ export function registerCollaborationServerRoutes(
       }
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
       try {
         const result = await withProjectOperation(projectOperations, project.id, async () => {
           const { binding } = await loadOwnerBinding(project.id);
@@ -688,7 +676,6 @@ export function registerCollaborationServerRoutes(
     async (req, res) => {
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
       try {
         const binding = await withProjectOperation(projectOperations, project.id, async () => {
           const current = await loadOwnerBinding(project.id);
@@ -725,7 +712,6 @@ export function registerCollaborationServerRoutes(
     async (req, res) => {
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
       try {
         const binding = await withProjectOperation(projectOperations, project.id, async () => {
           const current = await loadOwnerBinding(project.id);
@@ -762,7 +748,6 @@ export function registerCollaborationServerRoutes(
     async (req, res) => {
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'read' })) return;
       const versionId = typeof req.query.versionId === 'string' && req.query.versionId.trim()
         ? req.query.versionId.trim()
         : undefined;
@@ -786,7 +771,6 @@ export function registerCollaborationServerRoutes(
       }
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
       if (!deps.projectReviewComments) {
         return deps.sendApiError(res, 501, 'INTERNAL_ERROR', 'Review comment projection is unavailable');
       }
@@ -833,7 +817,6 @@ export function registerCollaborationServerRoutes(
       }
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
       try {
         const files = await deps.listProjectFiles!(project.id, project.metadata);
         const candidate = await buildCollaborationPublishCandidate({
@@ -858,7 +841,6 @@ export function registerCollaborationServerRoutes(
       }
       const project = deps.getProject!(projectIdParam(req));
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
-      if (!await deps.authorizeProjectRequest!(req, res, project.id, { mode: 'write' })) return;
       try {
         const result = await withProjectOperation(projectOperations, project.id, async () => {
           const binding = await bindings.read(project.id);

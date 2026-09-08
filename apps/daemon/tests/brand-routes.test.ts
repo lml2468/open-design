@@ -90,10 +90,8 @@ describe('brand routes', () => {
       res.status(403).json({ error: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED' });
       return false;
     });
-    const authorizeProjectRequest = vi.fn();
     const server = await startBrandServer({
       authorizeDesignSystemRead,
-      authorizeProjectRequest,
     });
     try {
       const response = await server.requestJson(
@@ -101,36 +99,26 @@ describe('brand routes', () => {
       );
       expect(response.status).toBe(403);
       expect(authorizeDesignSystemRead).toHaveBeenCalledTimes(1);
-      expect(authorizeProjectRequest).not.toHaveBeenCalled();
     } finally {
       await server.close();
     }
   });
 
-  it('uses the backing project gate when a brand logo has no bound design-system envelope', async () => {
+  it('serves a local brand logo when no design-system envelope is bound', async () => {
     writeBrandFixture('brand-project-owned-logo', {
       designSystemId: 'user:legacy-unbound-brand',
       projectId: 'project-bound-brand',
       logoPrimary: 'logos/header.svg',
       logoBody: '<svg xmlns="http://www.w3.org/2000/svg"/>',
     });
-    const authorizeDesignSystemRead = vi.fn();
-    const authorizeProjectRequest = vi.fn(async (_req, res, projectId, options) => {
-      expect(projectId).toBe('project-bound-brand');
-      expect(options).toEqual({ mode: 'read', allowNavigationQuery: true });
-      res.status(403).json({ error: 'WORKSPACE_PROJECT_PERMISSION_DENIED' });
-      return false;
-    });
     const server = await startBrandServer({
-      authorizeDesignSystemRead,
+      authorizeDesignSystemRead: vi.fn(),
       isDesignSystemWorkspaceBound: () => false,
-      authorizeProjectRequest,
     });
     try {
-      const response = await server.requestJson('/api/brands/brand-project-owned-logo/logo');
-      expect(response.status).toBe(403);
-      expect(authorizeProjectRequest).toHaveBeenCalledTimes(1);
-      expect(authorizeDesignSystemRead).not.toHaveBeenCalled();
+      const response = await server.requestText('/api/brands/brand-project-owned-logo/logo');
+      expect(response.status).toBe(200);
+      expect(response.contentType).toContain('image/svg+xml');
     } finally {
       await server.close();
     }
@@ -174,7 +162,7 @@ describe('brand routes', () => {
     expect(response.body).toContain('<circle');
   });
 
-  it('authorizes a backing-project logo through that project scope only', async () => {
+  it('serves a backing-project logo through the local Project boundary', async () => {
     writeBrandFixture('brand-project-scoped', {
       designSystemId: 'user:brand-project-scoped',
       projectId: 'project-brand-scoped',
@@ -192,28 +180,15 @@ describe('brand routes', () => {
       updatedAt: 1,
       metadata: { kind: 'brand', brandId: 'brand-project-scoped' },
     });
-    const authorizeDesignSystemRead = vi.fn();
-    const authorizeProjectRequest = vi.fn(async (req, res, projectId, options) => {
-      expect(req.query).toMatchObject({
-        workspaceId: 'ws-project-logo',
-        workspaceMemberId: 'member-project-logo',
-      });
-      expect(projectId).toBe('project-brand-scoped');
-      expect(options).toEqual({ mode: 'read', allowNavigationQuery: true });
-      res.status(403).json({ error: 'WORKSPACE_PROJECT_PERMISSION_DENIED' });
-      return false;
-    });
     const server = await startBrandServer({
-      authorizeDesignSystemRead,
-      authorizeProjectRequest,
+      authorizeDesignSystemRead: vi.fn(),
     });
     try {
-      const response = await server.requestJson(
+      const response = await server.requestText(
         '/api/brands/brand-project-scoped/logo?workspaceId=ws-project-logo&workspaceMemberId=member-project-logo',
       );
-      expect(response.status).toBe(403);
-      expect(authorizeProjectRequest).toHaveBeenCalledTimes(1);
-      expect(authorizeDesignSystemRead).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+      expect(response.contentType).toContain('image/svg+xml');
     } finally {
       await server.close();
     }

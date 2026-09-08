@@ -1,13 +1,9 @@
 import type { Express } from 'express';
 import type { RouteDeps } from '../server-context.js';
-import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
 
-export interface RegisterHandoffRoutesDeps
-  extends RouteDeps<
-    'db' | 'http' | 'paths' | 'projectStore' | 'conversations' | 'validation' | 'handoff'
-  > {
-  authorizeProjectRequest: AuthorizeProjectRequest;
-}
+export type RegisterHandoffRoutesDeps = RouteDeps<
+  'db' | 'http' | 'paths' | 'projectStore' | 'conversations' | 'validation' | 'handoff'
+>;
 
 /**
  * `POST /api/projects/:id/handoff` — synthesise a "first user message"
@@ -93,8 +89,6 @@ export function registerHandoffRoutes(app: Express, ctx: RegisterHandoffRoutesDe
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await ctx.authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
-
       // Handoff is conversation-scoped — the conversation must exist AND
       // belong to this project, otherwise the synthesized transcript would
       // either be empty or (worse) summarize an unrelated project's chat.

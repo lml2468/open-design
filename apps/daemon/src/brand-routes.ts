@@ -27,7 +27,6 @@ import {
   type insertProject,
 } from './db.js';
 import type { CreatedProjectWorkspaceResolver } from './collab/created-project-workspace.js';
-import type { AuthorizeProjectRequest } from './collab/project-request-authority.js';
 import type { WorkspaceResourceContext } from './collab/workspace-resource-mutation.js';
 import type { DesignSystemSummary, UserDesignSystemInput } from './design-systems/index.js';
 import { resolveProjectDir } from './projects.js';
@@ -85,8 +84,6 @@ export interface BrandRoutesDeps {
     designSystemId: string,
     options?: { beforeDelete?: () => Promise<boolean> },
   ) => Promise<boolean>;
-  /** Exact read gate for logo bytes served from the backing project. */
-  authorizeProjectRequest?: AuthorizeProjectRequest;
   /** `<dataDir>/projects` — backing brand-extraction projects. */
   projectsRoot: string;
   /**
@@ -683,20 +680,9 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
           designSystemId,
           true,
         ))) return;
-      } else if (brandLogoPath && detail?.meta.projectId && deps.authorizeProjectRequest) {
-        if (!(await deps.authorizeProjectRequest(req, res, detail.meta.projectId, {
-          mode: 'read',
-          allowNavigationQuery: true,
-        }))) return;
       }
       if (!logoPath) {
         logoPath = resolveBackingProjectLogoPath({ brandsRoot, projectsRoot, db }, id);
-        if (logoPath && detail?.meta.projectId && deps.authorizeProjectRequest) {
-          if (!(await deps.authorizeProjectRequest(req, res, detail.meta.projectId, {
-            mode: 'read',
-            allowNavigationQuery: true,
-          }))) return;
-        }
       }
       if (!logoPath) {
         res.status(404).json({ error: 'logo not found' });
