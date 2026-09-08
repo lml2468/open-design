@@ -110,7 +110,6 @@ function buildDeps(input: {
       validateProjectSkillId: input.validateSkill
         ?? vi.fn(async (id) => ({ ok: true, id })),
     },
-    collabSync: functionProxy(),
     authorizeProjectRequest: input.authorizeProjectRequest ?? vi.fn(async () => true),
     verifyWorkspaceRequestAuthority: async () => ({
       ok: true,

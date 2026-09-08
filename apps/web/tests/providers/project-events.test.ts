@@ -261,30 +261,6 @@ describe('createProjectEventsConnection', () => {
     conn.close();
   });
 
-  it('forwards project content transfer events as thin invalidations', () => {
-    const seen: ProjectEvent[] = [];
-    const conn = createProjectEventsConnection(
-      'p1',
-      (evt) => seen.push(evt),
-      { EventSourceCtor: MockEventSource as unknown as typeof EventSource },
-    );
-    const es = MockEventSource.instances[0]!;
-    es.dispatch('project-content-transfer-state', {
-      data: JSON.stringify({
-        type: 'project-content-transfer-state',
-        projectId: 'p1',
-      }),
-    });
-
-    expect(seen).toEqual([
-      {
-        type: 'project-content-transfer-state',
-        projectId: 'p1',
-      },
-    ]);
-    conn.close();
-  });
-
   it('reports connection status for poll-as-floor (ready → true, error → false)', () => {
     const statuses: boolean[] = [];
     const conn = createProjectEventsConnection(

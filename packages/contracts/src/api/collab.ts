@@ -6,14 +6,6 @@ import type { ProjectMetadata } from './projects.js';
 
 export type CollabMemberRole = 'owner' | 'admin' | 'member';
 
-/** Temporary daemon-local state for the remaining legacy mirror transfer. */
-export interface ProjectContentTransferState {
-  status: 'downloading' | 'idle';
-  version?: number;
-  startedAt: number;
-  updatedAt: number;
-}
-
 /**
  * A project shared to the caller's team, surfaced from the resource hub so a
  * member can discover + open projects the owner shared. `projectId` is the local

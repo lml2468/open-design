@@ -14,7 +14,6 @@ import type {
   ProjectTabsState,
 } from '@open-design/contracts';
 import { eventsEndedWithUnfinishedWork } from '@open-design/contracts';
-import { migrateCollabSyncSnapshots } from './collab/sync-snapshot-store.js';
 import {
   collapseWorkspaceProjectHomes,
   type WorkspaceProjectHomeRow,
@@ -547,7 +546,6 @@ function migrate(db: SqliteDb): void {
   migrateProjectScenarioBindings(db);
   migrateStrategyTaskStore(db);
   migrateOdNextRolloutStore(db);
-  migrateCollabSyncSnapshots(db);
 }
 
 /**
@@ -1180,7 +1178,7 @@ export function getWorkspaceProjectByProjectId(db: SqliteDb, projectId: string) 
  * pulled content, clearing a revocation or placeholder flag once that pull
  * lands, advancing `sync_state` after a background upload, reconciling a
  * binding against the team catalog. A writer on one of those paths must either
- * carry the ORIGIN's timestamp when it has one (as `materializePulledTeamMirror`
+ * carry the ORIGIN's timestamp when it has one (as an imported project
  * does) or pass this marker. Letting them fall through to "now" is what made a
  * member's card read 「刚刚更新」 hours after a background pull they never asked
  * for — the reported bug.

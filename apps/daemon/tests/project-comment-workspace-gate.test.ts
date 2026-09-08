@@ -149,7 +149,7 @@ async function startServer(
     visibility: 'team',
     createdByWorkspaceMemberId: OWNER_MEMBER_ID,
   });
-  // The exact row shape `materializePulledTeamMirror` writes on a MEMBER's own
+  // The exact row shape a materialized read-only project has on a member's own
   // daemon for someone else's shared project: bound + team visibility, but
   // UNATTRIBUTED (`createdByWorkspaceMemberId: null` — the adoption red line
   // means lazy projection never assigns the reader as creator). This is the

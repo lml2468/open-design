@@ -2098,8 +2098,7 @@ function AppInner() {
         // PRODUCT INVARIANT: ordinary project creation is local. Reuse a
         // current in-memory Workspace snapshot for `personal` + `local_only`
         // attribution when available, but never start identity discovery or
-        // block creation on Workspace availability. Remote share/sync/move
-        // operations retain their authoritative gates.
+        // block creation on Workspace availability.
         const createWorkspaceState = workspaceContextStateRef.current;
         createWorkspaceContext = createWorkspaceState.failure === 'unsupported'
           ? null

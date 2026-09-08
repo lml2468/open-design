@@ -7355,9 +7355,7 @@ async function runWorkspace(args) {
   if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
     console.log(`Usage:
   od workspace projects list --workspace <id> --member <id> [--view recent|drafts|team|all] [--json]
-  od workspace projects move <projectId> --workspace <id> --member <id> --visibility personal|team [--json]
   od workspace projects batch-delete --workspace <id> --member <id> --project <id> [--project <id> ...] [--json]
-  od workspace projects batch-move --workspace <id> --member <id> --visibility personal|team --project <id> [--project <id> ...] [--json]
 
 Common options:
   --daemon-url <url>   OpenDesign daemon HTTP base.
@@ -7450,22 +7448,6 @@ Common options:
       }
       return;
     }
-    case 'move': {
-      const projectId = positionalArgs(rest, WORKSPACE_STRING_FLAGS)[0];
-      const visibility = String(flags.visibility ?? '');
-      if (!projectId || !['personal', 'team'].includes(visibility)) {
-        console.error('Usage: od workspace projects move <projectId> --workspace <id> --visibility personal|team [--json]');
-        process.exit(2);
-      }
-      const data = await request(`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/move`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ visibility }),
-      });
-      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-      console.log(`[workspace] moved ${projectId} to ${visibility}`);
-      return;
-    }
     case 'batch-delete': {
       if (projectIds.length === 0) {
         console.error('Usage: od workspace projects batch-delete --workspace <id> --project <id> [--project <id> ...] [--json]');
@@ -7478,21 +7460,6 @@ Common options:
       });
       if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
       console.log(`[workspace] deleted ${projectIds.length} project(s)`);
-      return;
-    }
-    case 'batch-move': {
-      const visibility = String(flags.visibility ?? '');
-      if (projectIds.length === 0 || !['personal', 'team'].includes(visibility)) {
-        console.error('Usage: od workspace projects batch-move --workspace <id> --visibility personal|team --project <id> [--project <id> ...] [--json]');
-        process.exit(2);
-      }
-      const data = await request(`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/batch-move`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ projectIds, visibility }),
-      });
-      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
-      console.log(`[workspace] moved ${projectIds.length} project(s) to ${visibility}`);
       return;
     }
     default:

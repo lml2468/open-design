@@ -410,7 +410,7 @@ describe('createAuthorizeProjectRequest', () => {
         workspaceId: 'workspace-a',
         visibility: 'team',
         resourceState: 'active',
-        // The durable shape written by `materializePulledTeamMirror` when the
+        // The durable shape written when the
         // viewer is not the project owner.
         createdByWorkspaceMemberId: null,
       };

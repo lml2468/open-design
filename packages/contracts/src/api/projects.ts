@@ -303,14 +303,6 @@ export interface ProjectMetadata {
   // cohorts' retention/usage (tracking spec C15 / §6).
   enrichmentStatus?: 'programmatic' | 'ai_refined';
   enrichmentCompletedAt?: number;
-  // Stamped by the daemon when it registers a local placeholder record for a
-  // hub-shared project whose content has NOT been materialized locally yet
-  // (fresh data root / opened-before-pulled). While set, the daemon refuses
-  // to publish the project's local directory to the resource hub — the
-  // recvqzaDvUU6B3 fresh-install wipe guard. Cleared by the pull flow once
-  // real hub content lands on disk. See the daemon's
-  // collab/shared-project-placeholder.ts for the invariant.
-  sharedProjectPlaceholderAt?: number;
 }
 
 export interface Project {

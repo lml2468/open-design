@@ -3,7 +3,6 @@ import type { SkillInfo } from './skills.js';
 import type { DesignSystemSummary } from './design-systems/index.js';
 import type { RoutineRoutesService } from './routes/routine.js';
 import type { OpenDesignPublicMetadataService } from './services/open-design-public-metadata.js';
-import type { ResourceHubPrincipal } from './collab/resource-principal.js';
 import type {
   AuthorizeProjectRequest,
   AuthorizeProjectToolRequest,
@@ -196,44 +195,6 @@ export interface ServerContext {
   agents: any;
   critique: any;
   openDesignPublicMetadata: OpenDesignPublicMetadataService;
-  /**
-   * C-lane collaboration seam for D's project-visibility routes. After a
-   * successful personal→team move (D's move API), D's handler calls
-   * `collabSync.requestTeamShare(projectId, principal)` in-process to trigger
-   * the team sync: the project is marked pending and published to the resource
-   * hub so every teammate can discover + read it. Idempotent (safe to call again
-   * on a re-move). The principal is the same workspace/member that passed D's
-   * route-level permission check, so the side effect cannot publish/catalog
-   * under a different ambient workspace. D gates the move itself on
-   * `canShareProjects`, so this seam does NOT re-check permission. See
-   * routes/collab-sync.ts for the equivalent HTTP seam (POST /collab/sync-intent)
-   * used by the demo surface.
-   */
-  collabSync: {
-    requestTeamShare(projectId: string, share?: string | ResourceHubPrincipal): Promise<{ version: number | null }>;
-    requestTeamUnshare(projectId: string, share?: string | ResourceHubPrincipal): Promise<void>;
-    /**
-     * Pull and atomically register a catalog-only Team project before an
-     * exact-owner mutation needs local state. This preserves a Personal copy
-     * before unshare and gives a second-device rename a real row to update.
-     */
-    materializeTeamProject?(projectId: string, principal: ResourceHubPrincipal): Promise<void>;
-    /**
-     * Re-upsert the shared project's hub catalog entry after a metadata-only
-     * change (rename). Without this a rename with no follow-up content
-     * publish never reached teammates. Fire-and-forget; no-op for projects
-     * not shared from this daemon.
-     */
-    refreshTeamProjectMetadata(projectId: string): void;
-    /**
-     * Drop the cached team-project catalog because this daemon just changed it.
-     * The share/unshare response is what makes the client refetch, and without
-     * this that refetch is served the pre-change list out of the display cache
-     * — so a project the user just shared did not appear in 全部项目 until some
-     * later poll (acceptance #53). Fire-and-forget.
-     */
-    invalidateTeamProjectCatalog?(): void;
-  };
   lifecycle: {
     isDaemonShuttingDown: () => boolean;
   };

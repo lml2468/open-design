@@ -441,7 +441,6 @@ const OMITTED_PROJECT_METADATA_KEYS = new Set([
   'linkedDirs',
   'orchestratorWorkspace',
   'designSystemReview',
-  'sharedProjectPlaceholderAt',
   'contextMcpServers',
   'contextConnectors',
   // Machine provenance for the example card, carrying an absolute local

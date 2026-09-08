@@ -1586,8 +1586,7 @@ function projectEventToAgentEvent(evt: ProjectEvent): LiveArtifactEventItem['eve
   // `handleProjectEvent` (they trigger targeted re-fetches, not artifact cards).
   if (
     evt.type === 'comment-changed' ||
-    evt.type === 'project-metadata-changed' ||
-    evt.type === 'project-content-transfer-state'
+    evt.type === 'project-metadata-changed'
   ) {
     return null;
   }

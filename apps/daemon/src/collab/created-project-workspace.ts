@@ -47,8 +47,8 @@ export function sendCreatedProjectWorkspaceError(
  * it is not permission to publish and must not trigger a directory/network
  * lookup or block creation. A complete request snapshot is retained as local
  * attribution even if its remote state may have changed; missing or partial
- * identity produces an unbound local project. Later share/sync/move-to-Team
- * operations perform fresh authority checks at their actual remote boundary.
+ * identity produces an unbound local project. A later request with a complete
+ * local workspace identity can bind it explicitly.
  */
 export function localProjectWorkspaceAttribution(
   req: unknown,
