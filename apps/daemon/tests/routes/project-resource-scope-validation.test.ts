@@ -338,7 +338,7 @@ describe('project resource selection uses the persisted exact member', () => {
 
   it('rejects a plugin source missing from the reconciled local catalog', async () => {
     const insertProject = vi.fn();
-    const source = `team:plugin:${WORKSPACE_ID}:shared-id`;
+    const source = 'local:personal:shared-id';
     const getLocalPluginBySource = vi.fn(async () => null);
     const baseUrl = await start(buildDeps({ insertProject, getLocalPluginBySource }));
 
@@ -364,7 +364,7 @@ describe('project resource selection uses the persisted exact member', () => {
   it('does not create a project when an exact source retires during registry loading', async () => {
     const insertProject = vi.fn();
     const insertConversation = vi.fn();
-    const source = `team:plugin:${WORKSPACE_ID}:shared-id`;
+    const source = 'local:personal:shared-id';
     let bindingLive = true;
     const getLocalPluginBySource = vi.fn(async () =>
       bindingLive ? { id: 'shared-id', source } : null,

@@ -47,7 +47,7 @@ describe('resolveLocalPluginBySource', () => {
     await expect(resolveLocalPluginBySource({
       db,
       id: 'local-id',
-      source: 'team:plugin:workspace-a:local-id',
+      source: 'local:personal:other-id',
       userPluginsRoot: path.join(root, 'data', 'plugins'),
     })).resolves.toBeNull();
   });

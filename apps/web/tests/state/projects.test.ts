@@ -132,12 +132,12 @@ describe('createProject local plugin identity', () => {
       skillId: null,
       designSystemId: null,
       pluginId: 'shared-plugin-id',
-      pluginSource: 'team:plugin:workspace-a:shared-plugin-id',
+      pluginSource: 'local:personal:shared-plugin-id',
     });
 
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       pluginId: 'shared-plugin-id',
-      pluginSource: 'team:plugin:workspace-a:shared-plugin-id',
+      pluginSource: 'local:personal:shared-plugin-id',
     });
   });
 
@@ -396,14 +396,14 @@ describe('applyPlugin', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await applyPlugin('shared-plugin-id', {
-      pluginSource: 'team:plugin:workspace-a:shared-plugin-id',
+      pluginSource: 'local:personal:shared-plugin-id',
     });
 
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe('/api/plugins/shared-plugin-id/apply-local');
     expect(new Headers(init?.headers).has('x-od-workspace-id')).toBe(false);
     expect(JSON.parse(String(init?.body))).toMatchObject({
-      source: 'team:plugin:workspace-a:shared-plugin-id',
+      source: 'local:personal:shared-plugin-id',
       inputs: {},
       grantCaps: [],
     });
@@ -436,7 +436,7 @@ describe('applyPlugin', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(applyPlugin('shared-plugin-id', {
-      pluginSource: 'team:plugin:workspace-a:shared-plugin-id',
+      pluginSource: 'local:personal:shared-plugin-id',
     })).resolves.toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

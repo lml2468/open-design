@@ -471,8 +471,8 @@ describe('HomeView media composer options', () => {
     })));
   });
 
-  it('does not wait for rich Workspace context after a directory-scoped plugin was selected', async () => {
-    const fetchMock = stubFetch({ teamMediaPlugin: true });
+  it('does not wait for rich Workspace context after a local plugin was selected', async () => {
+    const fetchMock = stubFetch({ localMediaPlugin: true });
     const onSubmit = vi.fn();
     const props = homeProps({ onSubmit });
     const view = render(<HomeView {...props} />);
@@ -562,33 +562,10 @@ describe('HomeView media composer options', () => {
     expect(new Headers(submittedApply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
   });
 
-  it('does not expose a team plugin for unscoped apply while workspace identity is pending', async () => {
-    const fetchMock = stubFetch({
-      emptyWorkspaceDirectory: true,
-      teamMediaPlugin: true,
-    });
-    workspaceContextMock.state = {
-      context: null,
-      resourceReadIdentity: null,
-      loading: false,
-      identityChangePending: true,
-      failure: undefined,
-    };
-    renderHome();
-
-    await screen.findByTestId('home-hero-input');
-    expect(
-      (screen.getByTestId('home-hero-type-pill-deck') as HTMLButtonElement).disabled,
-    ).toBe(true);
-    expect(fetchMock.mock.calls.some(([url]) => (
-      typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
-    ))).toBe(false);
-  });
-
   it('keeps a locally catalogued plugin usable until local reconciliation removes it', async () => {
     const fetchMock = stubFetch({
       emptyWorkspaceDirectory: true,
-      teamMediaPlugin: true,
+      localMediaPlugin: true,
     });
     const onSubmit = vi.fn();
     workspaceContextMock.state = {
@@ -659,15 +636,15 @@ function stubFetch(options: {
   elevenLabsVoiceError?: string;
   emptyWorkspaceDirectory?: boolean;
   mediaApplyResponse?: Promise<Response>;
-  teamMediaPlugin?: boolean;
+  localMediaPlugin?: boolean;
   workspaceDirectoryStatus?: number;
 } = {}) {
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
     cb(0);
     return 0;
   });
-  const mediaPlugin = options.teamMediaPlugin
-    ? { ...MEDIA_PLUGIN, source: 'team:plugin:workspace-a:od-media-generation' }
+  const mediaPlugin = options.localMediaPlugin
+    ? { ...MEDIA_PLUGIN, source: 'local:personal:od-media-generation' }
     : MEDIA_PLUGIN;
   const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
     if (typeof url === 'string' && url === '/api/plugins') {

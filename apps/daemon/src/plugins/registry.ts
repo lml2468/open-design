@@ -254,7 +254,6 @@ function pluginVisibleFromWorkspace(
   scope: string | null | undefined,
   workspaceMemberId: string | null | undefined,
 ): boolean {
-  if (plugin.source.startsWith('team:plugin:')) return false;
   if (scope !== undefined && plugin.sourceKind === 'bundled') return true;
   let binding: ReturnType<typeof getWorkspaceResourceByResourceId>;
   try {
