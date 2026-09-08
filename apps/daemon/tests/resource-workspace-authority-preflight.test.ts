@@ -33,7 +33,7 @@ afterAll(async () => {
 });
 
 describe('Workspace resource mutation authority preflight', () => {
-  it('rejects a partial Plugin install scope before filesystem or database effects', async () => {
+  it('ignores legacy Workspace headers when installing a daemon-local Plugin', async () => {
     const pluginId = `partial-plugin-${Date.now()}`;
     const pluginSource = path.join(sourceRoot, pluginId);
     await mkdir(pluginSource, { recursive: true });
@@ -57,9 +57,9 @@ describe('Workspace resource mutation authority preflight', () => {
     });
     await response.text();
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(200);
     const db = openDatabase(process.cwd(), { dataDir: process.env.OD_DATA_DIR! });
-    expect(getInstalledPlugin(db, pluginId)).toBeNull();
+    expect(getInstalledPlugin(db, pluginId)?.id).toBe(pluginId);
   });
 
   it('rejects a partial Skill import scope before creating its folder or binding', async () => {

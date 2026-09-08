@@ -1131,13 +1131,13 @@ describe('fetchPluginExampleHtml', () => {
   });
 });
 
-describe('Workspace-scoped resource reads', () => {
+describe('resource read authority', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it('sends the exact Workspace/member headers on skill, plugin and asset fetches', async () => {
+  it('scopes skills to Workspace while plugin files remain daemon-local', async () => {
     const context = personalWorkspaceContext();
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -1146,15 +1146,16 @@ describe('Workspace-scoped resource reads', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await fetchSkillExample('skill-a', 'html', context);
-    await fetchPluginPreviewHtml('plugin-a', context);
-    await fetchPluginExampleHtml('plugin-a', 'example-a', context);
-    await fetchPluginAssetText('plugin-a', './DESIGN.md', context);
+    await fetchPluginPreviewHtml('plugin-a');
+    await fetchPluginExampleHtml('plugin-a', 'example-a');
+    await fetchPluginAssetText('plugin-a', './DESIGN.md');
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    for (const [, init] of fetchMock.mock.calls) {
-      const headers = new Headers(init?.headers);
-      expect(headers.get('x-od-workspace-id')).toBe(context.workspaceId);
-      expect(headers.get('x-od-workspace-member-id')).toBe(context.workspaceMemberId);
+    const skillHeaders = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect(skillHeaders.get('x-od-workspace-id')).toBe(context.workspaceId);
+    expect(skillHeaders.get('x-od-workspace-member-id')).toBe(context.workspaceMemberId);
+    for (const [, init] of fetchMock.mock.calls.slice(1)) {
+      expect(init).toBeUndefined();
     }
   });
 });

@@ -3167,13 +3167,10 @@ export async function fetchDesignSystemShowcase(
 // placeholder is the truthful UX.
 export async function fetchPluginPreviewHtml(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<SkillExampleResult> {
   try {
     const url = `/api/plugins/${encodeURIComponent(id)}/preview`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) {
       if (resp.status === 404) return { unavailable: true, kind: 'html' };
       return { error: `HTTP ${resp.status}` };
@@ -3191,14 +3188,11 @@ export async function fetchPluginPreviewHtml(
 export async function fetchPluginExampleHtml(
   pluginId: string,
   stem: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<SkillExampleResult> {
   try {
     const url =
       `/api/plugins/${encodeURIComponent(pluginId)}/example/${encodeURIComponent(stem)}`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) {
       if (resp.status === 404) return { unavailable: true, kind: 'html' };
       return { error: `HTTP ${resp.status}` };
@@ -3218,14 +3212,11 @@ export async function fetchPluginExampleHtml(
 export async function fetchPluginAssetText(
   pluginId: string,
   relpath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string | null> {
   try {
     const url =
       `/api/plugins/${encodeURIComponent(pluginId)}/asset/${encodePluginAssetPath(relpath)}`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) return null;
     return await resp.text();
   } catch {

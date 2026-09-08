@@ -33,14 +33,6 @@ function fakePlugin(
   };
 }
 
-function headers(memberId: string) {
-  return {
-    'x-od-workspace-id': 'event-workspace',
-    'x-od-workspace-member-id': memberId,
-    'x-od-workspace-role': 'member',
-  };
-}
-
 beforeAll(async () => {
   const started = await startServer({ port: 0, returnServer: true }) as {
     url: string;
@@ -55,31 +47,21 @@ beforeAll(async () => {
   for (const plugin of [
     fakePlugin('event-bundled', 'bundled'),
     fakePlugin('event-unbound'),
-    fakePlugin('event-personal-a'),
-    fakePlugin('event-personal-b'),
-    fakePlugin('event-team'),
+    fakePlugin('event-historically-bound'),
   ]) upsertInstalledPlugin(db, plugin);
 
-  ensureWorkspaceResource(db, 'plugin', 'event-workspace', 'event-personal-a', {
-    visibility: 'personal',
-    createdByWorkspaceMemberId: 'event-member-a',
-  });
-  ensureWorkspaceResource(db, 'plugin', 'event-workspace', 'event-personal-b', {
-    visibility: 'personal',
-    createdByWorkspaceMemberId: 'event-member-b',
-  });
-  ensureWorkspaceResource(db, 'plugin', 'event-workspace', 'event-team', {
+  ensureWorkspaceResource(db, 'plugin', 'legacy-workspace', 'event-historically-bound', {
     visibility: 'team',
-    createdByWorkspaceMemberId: 'event-member-a',
+    resourceState: 'deleted',
+    createdByWorkspaceMemberId: 'legacy-owner',
   });
 
   __resetPluginEventBufferForTests();
   for (const pluginId of [
     'event-bundled',
     'event-unbound',
-    'event-personal-a',
-    'event-personal-b',
-    'event-team',
+    'event-historically-bound',
+    'event-not-installed',
     '',
   ]) {
     recordPluginEvent({
@@ -96,80 +78,68 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-describe('plugin event workspace isolation', () => {
-  it('returns only events whose plugin is provably visible to the exact member', async () => {
+describe('plugin events use the local catalog', () => {
+  it('returns events for every installed plugin and ignores legacy Workspace bindings', async () => {
     const response = await fetch(`${baseUrl}/api/plugins/events/snapshot`, {
-      headers: headers('event-member-a'),
+      headers: {
+        'x-od-workspace-id': 'ignored-workspace',
+        'x-od-workspace-member-id': 'ignored-member',
+      },
     });
     expect(response.status).toBe(200);
     const body = await response.json() as {
-      events: Array<{ pluginId: string; details?: { source?: string } }>;
+      events: Array<{ pluginId: string }>;
     };
     expect(body.events.map((event) => event.pluginId).sort()).toEqual([
       'event-bundled',
-      'event-personal-a',
-    ]);
-    expect(JSON.stringify(body)).not.toContain('event-team');
-    expect(JSON.stringify(body)).not.toContain('event-personal-b');
-    expect(JSON.stringify(body)).not.toContain('/private/source/event-personal-b');
-  });
-
-  it('keeps headerless local compatibility to bundled and unbound events only', async () => {
-    const response = await fetch(`${baseUrl}/api/plugins/events/snapshot`);
-    expect(response.status).toBe(200);
-    const body = await response.json() as { events: Array<{ pluginId: string }> };
-    expect(body.events.map((event) => event.pluginId).sort()).toEqual([
-      'event-bundled',
+      'event-historically-bound',
       'event-unbound',
     ]);
   });
 
-  it('summarizes the filtered slice instead of the process-global buffer', async () => {
-    const response = await fetch(`${baseUrl}/api/plugins/events/stats`, {
-      headers: headers('event-member-a'),
-    });
+  it('summarizes the local installed-plugin event slice', async () => {
+    const response = await fetch(`${baseUrl}/api/plugins/events/stats`);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       stats: {
-        total: 2,
+        total: 3,
         byPluginId: {
           'event-bundled': 1,
-          'event-personal-a': 1,
+          'event-historically-bound': 1,
+          'event-unbound': 1,
         },
       },
     });
   });
 
-  it('filters both SSE backlog and live events with the same proof', async () => {
+  it('emits live events only when the plugin remains installed locally', async () => {
     const controller = new AbortController();
     const response = await fetch(`${baseUrl}/api/plugins/events?since=10000`, {
-      headers: headers('event-member-a'),
       signal: controller.signal,
     });
     expect(response.status).toBe(200);
     const reader = response.body!.getReader();
     recordPluginEvent({
       kind: 'plugin.upgraded',
-      pluginId: 'event-personal-b',
-      details: { source: '/private/source/member-b-live' },
+      pluginId: 'event-not-installed',
+      details: { source: '/private/source/not-installed-live' },
     });
     recordPluginEvent({
       kind: 'plugin.upgraded',
-      pluginId: 'event-personal-a',
-      details: { source: '/private/source/member-a-live' },
+      pluginId: 'event-historically-bound',
+      details: { source: '/private/source/installed-live' },
     });
 
     const chunk = await Promise.race([
       reader.read(),
       new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('timed out waiting for scoped plugin event')), 2_000);
+        setTimeout(() => reject(new Error('timed out waiting for local plugin event')), 2_000);
       }),
     ]);
     controller.abort();
     await reader.cancel().catch(() => undefined);
     const text = new TextDecoder().decode(chunk.value);
-    expect(text).toContain('event-personal-a');
-    expect(text).not.toContain('event-personal-b');
-    expect(text).not.toContain('member-b-live');
+    expect(text).toContain('event-historically-bound');
+    expect(text).not.toContain('event-not-installed');
   });
 });

@@ -45,10 +45,8 @@ import {
   duplicatePluginAsProject,
   listPlugins,
   listPluginsFresh,
-  pluginCatalogCacheKey,
   readCachedVisiblePlugins,
   patchProject,
-  resolvedWorkspaceContextForWrite,
   ProjectCreateError,
   renderPluginBriefTemplate,
   resolvePluginQueryFallback,
@@ -104,9 +102,7 @@ import { navigate } from '../router';
 import { setPendingDesignSystemCreateEntry } from '../analytics/ds-create-entry';
 import { workspaceContextLinkedDirs } from './workspace-context';
 import {
-  currentWorkspaceAccountGeneration,
   useWorkspaceContext,
-  workspaceResourceReadContext,
 } from '../collab/useWorkspaceContext';
 import {
   buildHomeMediaComposer,
@@ -488,20 +484,7 @@ export function HomeView({
   const ownsComposerDraft = variant === 'page';
   const workspaceContextState = useWorkspaceContext();
   const { context: workspaceContext } = workspaceContextState;
-  const pluginCatalogWorkspaceContext = workspaceResourceReadContext(workspaceContextState);
-  const pluginAccountGeneration = currentWorkspaceAccountGeneration();
-  const pluginCatalogOptions = {
-    workspaceContext: pluginCatalogWorkspaceContext,
-    accountGeneration: pluginAccountGeneration,
-  };
-  // Keep the provisional local catalogue available for default-template
-  // routing while Workspace discovery runs, but never expose that provisional
-  // projection in HomeHero. The prop below keeps the Examples rail in its
-  // stable loading shell until the Workspace identity and its exact cache
-  // partition have both settled.
-  const desiredPluginCatalogKey = workspaceContextState.identityChangePending
-    ? null
-    : pluginCatalogCacheKey(pluginCatalogOptions);
+  const desiredPluginCatalogKey = 'daemon-local';
   // P0 page_view page_name=home — fire once on mount. ref-keyed to survive
   // re-renders that flip parent state without remounting HomeView.
   const homePageViewFiredRef = useRef(false);
@@ -516,7 +499,7 @@ export function HomeView({
   // the user was in a project. The effect below still revalidates an expired
   // catalog; only a true cold start (no successful catalog yet) stays guarded.
   const initialPluginsRef = useRef<InstalledPluginRecord[] | null>(
-    desiredPluginCatalogKey ? readCachedVisiblePlugins(pluginCatalogOptions) : null,
+    readCachedVisiblePlugins(),
   );
   const [pluginCatalogKey, setPluginCatalogKey] = useState<string | null>(
     desiredPluginCatalogKey,
@@ -532,9 +515,7 @@ export function HomeView({
   // the exact new cache partition synchronously, or mask the old rows while a
   // deliberate identity change is unresolved.
   if (pluginCatalogKey !== desiredPluginCatalogKey) {
-    const cached = desiredPluginCatalogKey
-      ? readCachedVisiblePlugins(pluginCatalogOptions)
-      : null;
+    const cached = readCachedVisiblePlugins();
     setPluginCatalogKey(desiredPluginCatalogKey);
     setPlugins(cached ?? []);
     setPluginsLoading(cached === null);
@@ -750,10 +731,10 @@ export function HomeView({
   const detailsTemplate = useMemo(() => {
     if (!detailsRecord) return null;
     return (
-      buildCommunityTemplates(plugins, locale, t, workspaceContext)
+      buildCommunityTemplates(plugins, locale, t)
         .find((template) => template.id === detailsRecord.id) ?? null
     );
-  }, [detailsRecord, plugins, locale, t, workspaceContext]);
+  }, [detailsRecord, plugins, locale, t]);
   // Same synchronous single-flight gate the Community remix path uses: the
   // lightweight preview's Remix kicks off one project create; clicks landing
   // before React re-renders must all see the lock immediately, so a plain
@@ -839,7 +820,6 @@ export function HomeView({
     });
   }, [variant]);
   useEffect(() => {
-    if (!desiredPluginCatalogKey) return;
     let cancelled = false;
     let ownedPromise: Promise<void> | null = null;
     const issuedCatalogKey = desiredPluginCatalogKey;
@@ -847,11 +827,11 @@ export function HomeView({
     // explicit plugins-changed event forces a fresh fetch.
     const load = (force = false, supersede = false): Promise<void> => {
       const current = pluginCatalogReloadInFlightRef.current;
-      if (!supersede && current?.key === issuedCatalogKey) return current.promise;
+      if (!supersede && current && current.key === issuedCatalogKey) return current.promise;
       const requestGeneration = ++pluginCatalogRequestGenerationRef.current;
       const promise = (force
-        ? listPlugins(pluginCatalogOptions)
-        : listPluginsFresh(pluginCatalogOptions)).then((rows) => {
+        ? listPlugins()
+        : listPluginsFresh()).then((rows) => {
         if (
           cancelled
           || requestGeneration !== pluginCatalogRequestGenerationRef.current
@@ -881,11 +861,9 @@ export function HomeView({
     window.addEventListener('open-design:plugins-changed', onChanged);
     return () => {
       cancelled = true;
-      // A Workspace-directory refresh can briefly mask the catalog identity
-      // (K -> null -> K). Do not let the remounted K effect join this effect's
-      // cancelled promise: its response is intentionally prevented from
-      // committing, so reusing it would leave the new surface in the cold
-      // `pluginsLoading` state forever even though `/api/plugins` succeeded.
+      // Do not let a remounted effect join this effect's cancelled promise: its
+      // response is intentionally prevented from committing, so reusing it
+      // would leave the new surface loading even though `/api/plugins` succeeded.
       // A newer request has a different promise and must remain registered.
       const inFlight = pluginCatalogReloadInFlightRef.current;
       if (ownedPromise && inFlight?.promise === ownedPromise) {
@@ -899,7 +877,7 @@ export function HomeView({
   }, [desiredPluginCatalogKey]);
 
   useEffect(() => {
-    if (!isActive || !desiredPluginCatalogKey || !pluginCatalogStaleRef.current) return;
+    if (!isActive || !pluginCatalogStaleRef.current) return;
     pluginCatalogStaleRef.current = false;
     pluginCatalogReloadRef.current(true);
   }, [desiredPluginCatalogKey, isActive]);
@@ -1522,22 +1500,12 @@ export function HomeView({
         setPendingChipId(null);
       }
     }
-    // Applying a record that the local, Workspace-scoped catalogue already
-    // returned is local composition work. Do not add a second identity wait or
-    // membership probe here: directory refresh/SSE owns catalogue freshness,
-    // while remote install/share/sync mutations enforce current authority.
-    // During an identity transition, omit attribution instead of blocking Send.
-    const writeWorkspaceContext = workspaceContextState.identityChangePending
-      ? null
-      : resolvedWorkspaceContextForWrite(
-          workspaceContextState,
-          { unavailablePolicy: 'unscoped' },
-        );
+    // Applying an installed record is daemon-local composition work. Catalog
+    // refresh/SSE owns availability; Workspace identity is not an authority.
     const result = await applyPlugin(record.id, {
       locale,
       inputs,
       pluginSource: record.source,
-      workspaceContext: writeWorkspaceContext,
     });
     clearPendingApply();
     return result;
@@ -1895,7 +1863,7 @@ export function HomeView({
     try {
       const result = await duplicatePluginAsProject(record.id, {
         name: localizePluginTitle(locale, record),
-      }, resolvedWorkspaceContextForWrite(workspaceContextState));
+      });
       onOpenProject(result.projectId, result.relPath);
     } catch {
       setError(t('pluginCard.duplicateFailed'));
@@ -2960,11 +2928,7 @@ export function HomeView({
         onRemoveFile={removeStagedFile}
         onImportFigma={() => setFigmaModalOpen(true)}
         pluginOptions={plugins}
-        pluginsLoading={
-          pluginsLoading
-          || workspaceContextState.loading
-          || workspaceContextState.identityChangePending === true
-        }
+        pluginsLoading={pluginsLoading}
         skillOptions={selectableSkills}
         skillsLoading={skillsLoading}
         mcpOptions={enabledMcpServers}

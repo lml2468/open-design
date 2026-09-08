@@ -1608,9 +1608,9 @@ export function FileWorkspace({
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      void listPlugins({ workspaceContext }).then((records) => {
+      void listPlugins().then((records) => {
         if (cancelled) return;
-        setCommunityPluginPresets(communityPluginPagePresets(records, workspaceContext));
+        setCommunityPluginPresets(communityPluginPagePresets(records));
       });
     };
     load();
@@ -1619,7 +1619,7 @@ export function FileWorkspace({
       cancelled = true;
       window.removeEventListener('open-design:plugins-changed', load);
     };
-  }, [workspaceContext]);
+  }, []);
 
   const loadSketchFile = useCallback((file: ProjectFile): Promise<boolean> => {
     const sourceKey = sketchFileSourceKey(projectId, file);
@@ -2650,7 +2650,6 @@ export function FileWorkspace({
         preset,
         t,
         locale,
-        workspaceContext,
       );
       const file = await writeProjectTextFile(projectId, target, content, {
         versionSource: 'manual',
@@ -6579,7 +6578,6 @@ function slugifyPageFileBaseName(value: string, fallback = 'community-page'): st
 
 function communityPluginPagePresets(
   records: InstalledPluginRecord[],
-  workspaceContext?: WorkspaceCollabContext | null,
 ): ProjectPagePreset[] {
   return records
     .map((record): ProjectPagePreset | null => {
@@ -6592,8 +6590,8 @@ function communityPluginPagePresets(
         fileBaseName: slugifyPageFileBaseName(record.title || record.manifest?.title || record.id),
         source: 'community',
         plugin: record,
-        pluginPreview: inferPluginPreview(record, { preferBaked: true, workspaceContext }),
-        pluginHtmlPreview: inferPluginPreview(record, { workspaceContext }),
+        pluginPreview: inferPluginPreview(record, { preferBaked: true }),
+        pluginHtmlPreview: inferPluginPreview(record),
         featured: curatedPluginPriority(record) !== null,
       };
     })
@@ -6648,17 +6646,15 @@ async function contentForPagePreset(
   preset: ProjectPagePreset,
   t: TranslateFn,
   locale?: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string> {
   let html: string | null = null;
   if (preset.plugin && preset.pluginHtmlPreview?.kind === 'html') {
     const preview = preset.pluginHtmlPreview;
     const result = preview.source === 'preview'
-      ? await fetchPluginPreviewHtml(preset.plugin.id, workspaceContext)
+      ? await fetchPluginPreviewHtml(preset.plugin.id)
       : await fetchPluginExampleHtml(
           preset.plugin.id,
           preview.exampleStem ?? '',
-          workspaceContext,
         );
     if ('html' in result && typeof result.html === 'string' && result.html.trim().length > 0) {
       html = result.html;

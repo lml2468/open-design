@@ -143,8 +143,8 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
     return () => { cancelled = true; };
   }, []);
   const templates = useMemo(
-    () => buildCommunityTemplates(plugins, locale, t, workspaceContext),
-    [plugins, locale, t, workspaceContext],
+    () => buildCommunityTemplates(plugins, locale, t),
+    [plugins, locale, t],
   );
   const pluginById = useMemo(
     () => new Map(plugins.map((record) => [record.id, record])),

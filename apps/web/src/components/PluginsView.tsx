@@ -92,8 +92,6 @@ import {
 
 type PluginsTab = 'installed' | 'available' | 'sources';
 
-type PluginWorkspaceReadMode = 'scoped' | 'headerless' | 'pending' | 'blocked';
-
 const USER_SOURCE_KINDS = new Set<PluginSourceKind>([
   'user',
   'project',
@@ -179,38 +177,6 @@ export function PluginsView({
 }: PluginsViewProps) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
-  // Uses the same workspace identity as project reads so the daemon's
-  // `GET /api/plugins` / `POST /api/plugins/install` can apply the scoped filter and
-  // stamp new installs with the acting workspace. `useWorkspaceContext` is a
-  // coalesced read shared across the nav shell, so calling it again here does
-  // not fan out an extra fetch.
-  const pluginsWorkspaceContextState = useWorkspaceContext();
-  const {
-    context: pluginsWorkspaceContext,
-    loading: pluginsWorkspaceContextLoading,
-    identityChangePending: pluginsIdentityChangePending,
-    failure: pluginsWorkspaceContextFailure,
-  } = pluginsWorkspaceContextState;
-  const pluginsContextRef = useRef(pluginsWorkspaceContext);
-  pluginsContextRef.current = pluginsWorkspaceContext;
-  const pluginsAccountGeneration = currentWorkspaceAccountGeneration();
-  const pluginsReadMode: PluginWorkspaceReadMode = pluginsIdentityChangePending
-    || (!pluginsWorkspaceContext && pluginsWorkspaceContextLoading)
-    ? 'pending'
-    : pluginsWorkspaceContext
-      ? 'scoped'
-      : pluginsWorkspaceContextFailure === 'unavailable'
-        ? 'blocked'
-        : 'headerless';
-  const pluginsIdentity = JSON.stringify([
-    pluginsAccountGeneration,
-    workspaceIdentityCacheKey(pluginsWorkspaceContext),
-    pluginsReadMode,
-  ]);
-  const pluginsIdentityRef = useRef(pluginsIdentity);
-  pluginsIdentityRef.current = pluginsIdentity;
-  const pluginsReadModeRef = useRef(pluginsReadMode);
-  pluginsReadModeRef.current = pluginsReadMode;
   const pluginsPageViewFiredRef = useRef(false);
   useEffect(() => {
     if (pluginsPageViewFiredRef.current) return;
@@ -221,7 +187,6 @@ export function PluginsView({
   const [allInstalledPlugins, setAllInstalledPlugins] = useState<InstalledPluginRecord[]>([]);
   const [marketplaces, setMarketplaces] = useState<PluginMarketplace[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
   const pluginCatalogRequestGenerationRef = useRef(0);
   const [activeTab, setActiveTab] = useState<PluginsTab>('installed');
   const [importOpen, setImportOpen] = useState(false);
@@ -248,44 +213,23 @@ export function PluginsView({
 
   async function refresh() {
     const requestGeneration = ++pluginCatalogRequestGenerationRef.current;
-    const issuedIdentity = pluginsIdentityRef.current;
-    const issuedAccountGeneration = currentWorkspaceAccountGeneration();
-    const issuedReadMode = pluginsReadModeRef.current;
-    const isStillCurrent = () =>
-      pluginCatalogRequestGenerationRef.current === requestGeneration
-      && currentWorkspaceAccountGeneration() === issuedAccountGeneration
-      && pluginsIdentityRef.current === issuedIdentity;
-    if (issuedReadMode === 'pending' || issuedReadMode === 'blocked') {
-      if (!isStillCurrent()) return;
-      setPlugins([]);
-      setAllInstalledPlugins([]);
-      setMarketplaces([]);
-      setLoadedIdentity(issuedIdentity);
-      setLoading(issuedReadMode === 'pending');
-      return;
-    }
-    const read = beginWorkspaceScopedRead(pluginsContextRef.current);
     setLoading(true);
     try {
       const [rows, allRows, catalogs] = await Promise.all([
-        listPlugins({ workspaceContext: read.context }),
-        listPlugins({ includeHidden: true, workspaceContext: read.context }),
+        listPlugins(),
+        listPlugins({ includeHidden: true }),
         listPluginMarketplaces(),
       ]);
-      if (!isStillCurrent() || !read.isStillCurrent(pluginsContextRef.current)) return;
+      if (pluginCatalogRequestGenerationRef.current !== requestGeneration) return;
       setPlugins(rows);
       setAllInstalledPlugins(allRows);
       setMarketplaces(catalogs);
-      setLoadedIdentity(issuedIdentity);
       setLoading(false);
     } catch {
-      if (!isStillCurrent() || !read.isStillCurrent(pluginsContextRef.current)) return;
-      // A failed read for a new identity has no authority to keep rendering the
-      // previous identity's installed catalog.
+      if (pluginCatalogRequestGenerationRef.current !== requestGeneration) return;
       setPlugins([]);
       setAllInstalledPlugins([]);
       setMarketplaces([]);
-      setLoadedIdentity(issuedIdentity);
       setLoading(false);
     }
   }
@@ -294,16 +238,13 @@ export function PluginsView({
     void refresh();
     window.addEventListener('open-design:plugins-changed', refresh);
     return () => window.removeEventListener('open-design:plugins-changed', refresh);
-    // Re-run on workspace switch (not just mount) so "installed" reflects the
-    // newly active workspace's binding — see `pluginsWorkspaceContext` above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pluginsIdentity]);
+  }, []);
 
-  const catalogMatchesIdentity = loadedIdentity === pluginsIdentity;
-  const visiblePlugins = catalogMatchesIdentity ? plugins : [];
-  const visibleInstalledPlugins = catalogMatchesIdentity ? allInstalledPlugins : [];
-  const visibleMarketplaces = catalogMatchesIdentity ? marketplaces : [];
-  const visibleLoading = loading || !catalogMatchesIdentity;
+  const visiblePlugins = plugins;
+  const visibleInstalledPlugins = allInstalledPlugins;
+  const visibleMarketplaces = marketplaces;
+  const visibleLoading = loading;
   const userPlugins = useMemo(
     () => visiblePlugins.filter(isPersonalPluginRecord),
     [visiblePlugins],
@@ -341,7 +282,6 @@ export function PluginsView({
     setNotice(null);
     const result = await applyPlugin(record.id, {
       locale,
-      workspaceContext: pluginsContextRef.current,
     });
     setPendingApplyId(null);
     if (!result) {
@@ -365,7 +305,7 @@ export function PluginsView({
     try {
       const result = await duplicatePluginAsProject(record.id, {
         name: localizePluginTitle(locale, record),
-      }, resolvedWorkspaceContextForWrite(pluginsWorkspaceContextState));
+      });
       setDetailsRecord(null);
       navigate({
         kind: 'project',
@@ -421,7 +361,7 @@ export function PluginsView({
     setPendingInstallEntry(plugin.key);
     try {
       const outcome = await finishImport(
-        () => installPluginSource(plugin.installSource ?? plugin.entry.name, pluginsWorkspaceContext),
+        () => installPluginSource(plugin.installSource ?? plugin.entry.name),
         'installed',
       );
       if (outcome.ok) setAvailableDetails(null);
@@ -538,7 +478,6 @@ export function PluginsView({
         {!visibleLoading && activeTab === 'installed' ? (
           <PluginsHomeSection
             plugins={userPlugins}
-            workspaceContext={pluginsWorkspaceContext}
             loading={false}
             activePluginId={activePlugin?.record.id ?? null}
             pendingApplyId={pendingApplyId}
@@ -705,7 +644,6 @@ export function PluginsView({
         {detailsRecord ? (
         <PluginDetailsModal
           record={detailsRecord}
-          workspaceContext={pluginsWorkspaceContext}
             onClose={() => setDetailsRecord(null)}
             onUse={(record, action) => void handleUsePlugin(record, action)}
             onDuplicate={(record) => void handleDuplicatePlugin(record)}
@@ -749,7 +687,7 @@ export function PluginsView({
       {importOpen ? (
         <PluginImportModal
           onClose={() => setImportOpen(false)}
-          onInstallSource={(source) => finishImport(() => installPluginSource(source, pluginsWorkspaceContext))}
+          onInstallSource={(source) => finishImport(() => installPluginSource(source))}
           onUploadZip={(file) => finishImport(() => uploadPluginZip(file))}
           onUploadFolder={(files) => finishImport(() => uploadPluginFolder(files))}
         />
@@ -1105,7 +1043,7 @@ export function ExtensionsMarketplace({
 
   async function handleCreateImportUrl() {
     const url = createUrl.trim();
-    if (!url || createBusy || workspaceContextLoading) return;
+    if (!url || createBusy || (createKind === 'skill' && workspaceContextLoading)) return;
     const startedAt = performance.now();
     const trackingKind = createKind === 'skill' ? 'skill' : 'expert_plugin';
     trackExtension('add', { kind: trackingKind, scope: 'personal' });
@@ -1141,7 +1079,7 @@ export function ExtensionsMarketplace({
     }
     setCreateBusy('import');
     try {
-      const outcome = await installPluginSource(url, workspaceContext);
+      const outcome = await installPluginSource(url);
       if (outcome.ok) {
         await refresh();
         setCreateOpen(false);
@@ -1164,7 +1102,11 @@ export function ExtensionsMarketplace({
   }
 
   async function handleCreateUploadFolder() {
-    if (createFolderFiles.length === 0 || createBusy || workspaceContextLoading) return;
+    if (
+      createFolderFiles.length === 0
+      || createBusy
+      || (createKind === 'skill' && workspaceContextLoading)
+    ) return;
     const startedAt = performance.now();
     const trackingKind = createKind === 'skill' ? 'skill' : 'expert_plugin';
     trackExtension('add', { kind: trackingKind, scope: 'personal' });
@@ -1202,9 +1144,7 @@ export function ExtensionsMarketplace({
         setToast({ message: input.error.message, tone: 'error' });
         return;
       }
-      // Stamp the imported skill with the acting workspace, same as the
-      // plugin upload path just above — see `fetchSkills(workspaceContext)`
-      // in `refresh()` below for the read-side counterpart.
+      // Skills still use the acting Workspace until their catalog is localized.
       const result = await importSkill(input, workspaceContext);
       if ('error' in result) {
         trackResourceResult({
@@ -1232,27 +1172,18 @@ export function ExtensionsMarketplace({
 
   async function refresh() {
     const requestGeneration = ++marketplaceCatalogRequestGenerationRef.current;
-    if (
-      marketplaceReadModeRef.current === 'pending'
-      || marketplaceReadModeRef.current === 'blocked'
-    ) return;
-    const read = beginWorkspaceScopedRead(emContextRef.current);
+    const issuedReadMode = marketplaceReadModeRef.current;
+    const read = issuedReadMode === 'pending' || issuedReadMode === 'blocked'
+      ? null
+      : beginWorkspaceScopedRead(emContextRef.current);
     const accountGeneration = currentWorkspaceAccountGeneration();
-    const issuedIdentity = JSON.stringify([
-      accountGeneration,
-      workspaceIdentityCacheKey(read.context),
-      read.context ? 'scoped' : 'headerless',
-    ]);
+    const issuedIdentity = marketplaceIdentityRef.current;
     setLoading(true);
     const [rows, allRows, catalogs, skillRows] = await Promise.all([
-      listPlugins({ workspaceContext: read.context }),
-      listPlugins({ includeHidden: true, workspaceContext: read.context }),
+      listPlugins(),
+      listPlugins({ includeHidden: true }),
       listPluginMarketplaces(),
-      // Carry the acting workspace so the daemon's `GET /api/skills` applies
-      // its workspace-scoped filter — mirrors `listPlugins`'s
-      // `workspaceContext` in `PluginsView` above (routes/plugins/index.ts's
-      // `GET /api/plugins`).
-      fetchSkills(read.context),
+      read ? fetchSkills(read.context) : Promise.resolve([]),
     ]);
     // Discard an answer for an identity the user has left. `setLoading(false)` is
     // deliberately skipped too: a stale response is not evidence that the CURRENT
@@ -1261,7 +1192,8 @@ export function ExtensionsMarketplace({
     if (
       marketplaceCatalogRequestGenerationRef.current !== requestGeneration
       || currentWorkspaceAccountGeneration() !== accountGeneration
-      || !read.isStillCurrent(emContextRef.current)
+      || marketplaceIdentityRef.current !== issuedIdentity
+      || (read !== null && !read.isStillCurrent(emContextRef.current))
     ) return;
     setPlugins(rows);
     setAllInstalledPlugins(allRows);
@@ -1314,22 +1246,12 @@ export function ExtensionsMarketplace({
   const refreshedIdentityRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isActive) return;
-    if (workspaceContextLoading) return;
     if (
       refreshedIdentityRef.current === marketplaceIdentity
       && !catalogStaleRef.current
     ) return;
     catalogStaleRef.current = false;
     refreshedIdentityRef.current = marketplaceIdentity;
-    if (marketplaceReadMode === 'blocked') {
-      setPlugins([]);
-      setAllInstalledPlugins([]);
-      setMarketplaces([]);
-      setSkills([]);
-      setLoadedMarketplaceIdentity(marketplaceIdentity);
-      setLoading(false);
-      return;
-    }
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, workspaceContextLoading, marketplaceIdentity, marketplaceReadMode]);
@@ -1349,12 +1271,12 @@ export function ExtensionsMarketplace({
   );
 
   async function uninstallResource(kind: MarketMode, id: string, title: string) {
-    if (uninstallingId || workspaceContextLoading) return;
+    if (uninstallingId || (kind === 'skills' && workspaceContextLoading)) return;
     setUninstallingId(id);
     try {
       const ok =
         kind === 'plugins'
-          ? await uninstallPlugin(id, workspaceContext)
+          ? await uninstallPlugin(id)
           : 'ok' in (await uninstallSkill(id, workspaceContext));
       if (!ok) {
         setToast({ message: t('pluginsView.uninstallFailed', { title }), tone: 'error' });
@@ -1372,13 +1294,12 @@ export function ExtensionsMarketplace({
   }
 
   async function installAvailable(plugin: AvailableMarketplacePlugin, title: string) {
-    if (installingKeys.has(plugin.key) || workspaceContextLoading) return;
+    if (installingKeys.has(plugin.key)) return;
     setInstallingKeys((prev) => new Set(prev).add(plugin.key));
     const startedAt = performance.now();
     try {
       const outcome = await installPluginSource(
         plugin.installSource ?? plugin.entry.name,
-        workspaceContext,
       );
       if (outcome.ok) {
         await refresh();
@@ -1758,7 +1679,7 @@ export function ExtensionsMarketplace({
                       <button
                         type="button"
                         className="plugin-marketplace__row-action"
-                        disabled={busy || workspaceContextLoading}
+                        disabled={busy}
                         data-testid={`plugins-card-install-${card.id}`}
                         onClick={(event) => {
                           event.stopPropagation();
@@ -1805,7 +1726,10 @@ export function ExtensionsMarketplace({
                             <button
                               type="button"
                               role="menuitem"
-                              disabled={uninstalling || workspaceContextLoading}
+                              disabled={
+                                uninstalling
+                                || (card.uninstall.kind === 'skills' && workspaceContextLoading)
+                              }
                               onClick={() => {
                                 if (confirmUninstallId !== card.id) {
                                   setConfirmUninstallId(card.id);
@@ -1855,10 +1779,7 @@ export function ExtensionsMarketplace({
         {cardDetail?.kind === 'available' ? (
           <AvailablePluginDetailsModal
             plugin={cardDetail.plugin}
-            pending={
-              workspaceContextLoading
-              || installingKeys.has(cardDetail.plugin.key)
-            }
+            pending={installingKeys.has(cardDetail.plugin.key)}
             onClose={() => {
               if (!installingKeys.has(cardDetail.plugin.key)) setCardDetail(null);
             }}
@@ -1966,7 +1887,7 @@ export function ExtensionsMarketplace({
                       type="button"
                       data-testid="plugin-create-import-url"
                       disabled={
-                        workspaceContextLoading
+                        (createKind === 'skill' && workspaceContextLoading)
                         || createBusy !== null
                         || createUrl.trim().length === 0
                       }
@@ -2017,7 +1938,7 @@ export function ExtensionsMarketplace({
                       type="button"
                       data-testid="plugin-create-upload-folder"
                       disabled={
-                        workspaceContextLoading
+                        (createKind === 'skill' && workspaceContextLoading)
                         || createBusy !== null
                         || createFolderFiles.length === 0
                       }

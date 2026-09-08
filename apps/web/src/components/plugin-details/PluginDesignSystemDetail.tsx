@@ -121,11 +121,11 @@ export function PluginDesignSystemDetail({
     (open: boolean) => {
       if (!open || specBody !== undefined) return;
       setSpecBody(null);
-      void fetchPluginAssetText(record.id, assetPath, workspaceContext).then((body) =>
+      void fetchPluginAssetText(record.id, assetPath).then((body) =>
         setSpecBody(body),
       );
     },
-    [record.id, assetPath, specBody, workspaceContext],
+    [record.id, assetPath, specBody],
   );
 
   // When no upstream design system is referenced we still need a view

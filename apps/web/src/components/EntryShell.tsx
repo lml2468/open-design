@@ -1108,27 +1108,17 @@ export function EntryShell({
                     const name =
                       summarizeProjectNameFromPrompt(prompt) || t('common.untitled');
                     try {
-                      // One resolved authority for BOTH requests: the create
-                      // binds the copied project to this workspace, and the
-                      // seed patch is then authorized against that same
-                      // binding. A headerless create is read by the daemon as a
-                      // legacy caller and leaves the project bound to no
-                      // workspace at all, which is what kept remixed projects
-                      // out of the member's own 草稿 list.
-                      const writeContext =
-                        resolvedWorkspaceContextForWrite(workspaceContextState);
                       const result = await duplicatePluginAsProject(
                         templateId,
                         { name },
-                        writeContext,
                       );
                       const seeded = await patchProject(
                         result.projectId,
                         { pendingPrompt: prompt },
                       );
                       if (!seeded) {
-                        // The project itself exists and is bound — only the
-                        // prompt seed was refused. Keep the user on it
+                        // The project itself exists — only the prompt seed was
+                        // refused. Keep the user on it
                         // (retrying through the catch below would leave the
                         // copy orphaned and create a second, empty project)
                         // and surface the dropped seed instead of discarding

@@ -8041,7 +8041,6 @@ export function ProjectView({
           outcome = await installGeneratedPluginFolder(
             project.id,
             relativePath,
-            pluginWorkflowWorkspaceContext,
           );
         } finally {
           setActivePluginActionPaths((prev) => {

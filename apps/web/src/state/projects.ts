@@ -36,7 +36,6 @@ import {
   workspaceProjectHeaders,
 } from '../collab/workspace-identity';
 import {
-  currentWorkspaceAccountGeneration,
   currentWorkspaceContextRequestToken,
 } from '../collab/useWorkspaceContext';
 import type { WorkspaceResourceReadIdentity } from '../collab/workspace-identity';
@@ -1272,9 +1271,8 @@ export async function persistTabsToDaemonNow(
 //
 // applyPlugin() is the canonical entry point for both the inline rail
 // (NewProjectPanel + ChatComposer) and the marketplace detail page. A caller
-// with a catalogue record supplies its exact local source; id-only callers
-// retain the Workspace-scoped compatibility route. Both return everything the
-// composer needs:
+// with a catalogue record supplies its exact local source; id-only callers use
+// the daemon-local installed record. Both return everything the composer needs:
 //   - query (pre-filled brief)
 //   - contextItems (chip strip)
 //   - inputs (form fields)
@@ -1283,23 +1281,6 @@ export async function persistTabsToDaemonNow(
 
 export interface ListPluginsOptions {
   includeHidden?: boolean;
-  /**
-   * When present, attaches the same workspace identity headers project reads
-   * already carry (`workspaceProjectHeaders`) so the daemon's `GET /api/plugins`
-   * can apply its workspace-scoped filter (routes/plugins/index.ts +
-   * `listInstalledPlugins`'s one-way "unclaimed visible everywhere, claimed
-   * elsewhere hidden" rule). Omit for callers that genuinely need the
-   * headerless compatibility catalogue. The complete Workspace/member
-   * identity is part of the cache key below, so a scoped read can never leak
-   * into that headerless partition or a differently scoped caller.
-   */
-  workspaceContext?: WorkspaceCollabContext | null;
-  /**
-   * Account boundary paired with the complete Workspace identity below. Tests
-   * and callers holding a captured generation may pass it explicitly; normal
-   * UI callers use the current generation.
-   */
-  accountGeneration?: number;
 }
 
 interface CachedVisiblePlugins {
@@ -1307,62 +1288,30 @@ interface CachedVisiblePlugins {
   cachedAt: number;
 }
 
-// The plugin catalogue is filtered by the request's Workspace headers. Keep
-// the warm snapshot that avoids Home's 1-2s remount stall, but partition it by
-// BOTH the signed-in account generation and every identity field carried on
-// the wire. A display cache is never an authorization witness: callers still
-// pass the verified context to mutations independently.
-const cachedVisiblePlugins = new Map<string, CachedVisiblePlugins>();
-// Every request start and explicit invalidation advances the exact partition's
-// generation. Deleting the settled value alone is insufficient: an older
-// `listPlugins()` can resolve after a replacement read and otherwise put its
-// stale snapshot back into this cache. Latest-started-wins also covers ordinary
-// same-key request races that do not pass through invalidation. Generations use
-// the same account + Workspace key as the values, so activity in A cannot
-// suppress a concurrent B (or next-account) response.
-const pluginCatalogCacheGenerations = new Map<string, number>();
+let cachedVisiblePlugins: CachedVisiblePlugins | null = null;
+// Every request start and explicit invalidation advances the generation. An
+// older request cannot overwrite the cache after a newer refresh completes.
+let pluginCatalogCacheGeneration = 0;
 const PLUGINS_CACHE_TTL_MS = 10_000;
-const MAX_PLUGIN_CATALOG_CACHE_ENTRIES = 24;
-
-export function pluginCatalogCacheKey(
-  options: Pick<ListPluginsOptions, 'workspaceContext' | 'accountGeneration'> = {},
-): string {
-  return JSON.stringify([
-    options.accountGeneration ?? currentWorkspaceAccountGeneration(),
-    workspaceIdentityCacheKey(options.workspaceContext ?? null),
-  ]);
-}
 
 function cacheVisiblePlugins(
-  key: string,
   plugins: InstalledPluginRecord[],
 ): void {
-  cachedVisiblePlugins.delete(key);
-  cachedVisiblePlugins.set(key, { plugins, cachedAt: Date.now() });
-  while (cachedVisiblePlugins.size > MAX_PLUGIN_CATALOG_CACHE_ENTRIES) {
-    const oldest = cachedVisiblePlugins.keys().next().value as string | undefined;
-    if (!oldest) break;
-    cachedVisiblePlugins.delete(oldest);
-  }
+  cachedVisiblePlugins = { plugins, cachedAt: Date.now() };
 }
 
 export async function listPlugins(
   options: ListPluginsOptions = {},
 ): Promise<InstalledPluginRecord[]> {
-  const cacheKey = pluginCatalogCacheKey(options);
-  const requestGeneration = (pluginCatalogCacheGenerations.get(cacheKey) ?? 0) + 1;
-  pluginCatalogCacheGenerations.set(cacheKey, requestGeneration);
+  const requestGeneration = ++pluginCatalogCacheGeneration;
   try {
-    const resp = await fetch(
-      '/api/plugins',
-      options.workspaceContext ? { headers: workspaceProjectHeaders(options.workspaceContext) } : undefined,
-    );
+    const resp = await fetch('/api/plugins');
     if (!resp.ok) return [];
     const json = (await resp.json()) as { plugins?: InstalledPluginRecord[] };
     const plugins = json.plugins ?? [];
     const visible = plugins.filter(isVisiblePlugin);
-    if (pluginCatalogCacheGenerations.get(cacheKey) === requestGeneration) {
-      cacheVisiblePlugins(cacheKey, visible);
+    if (pluginCatalogCacheGeneration === requestGeneration) {
+      cacheVisiblePlugins(visible);
     }
     return options.includeHidden ? plugins : visible;
   } catch {
@@ -1375,9 +1324,9 @@ export async function listPlugins(
 // surfaces that mount often (Home) where a slightly stale list is fine and the
 // heavy `/api/plugins` round trip per mount is not.
 export async function listPluginsFresh(
-  options: Pick<ListPluginsOptions, 'workspaceContext' | 'accountGeneration'> = {},
+  options: ListPluginsOptions = {},
 ): Promise<InstalledPluginRecord[]> {
-  const cached = cachedVisiblePlugins.get(pluginCatalogCacheKey(options));
+  const cached = cachedVisiblePlugins;
   if (cached && Date.now() - cached.cachedAt < PLUGINS_CACHE_TTL_MS) {
     return cached.plugins;
   }
@@ -1393,26 +1342,15 @@ export async function listPluginsFresh(
  * actions temporarily unactionable again.
  */
 export function readCachedVisiblePlugins(
-  options: Pick<ListPluginsOptions, 'workspaceContext' | 'accountGeneration'> = {},
+  _options: ListPluginsOptions = {},
 ): InstalledPluginRecord[] | null {
-  return cachedVisiblePlugins.get(pluginCatalogCacheKey(options))?.plugins ?? null;
+  return cachedVisiblePlugins?.plugins ?? null;
 }
 
-/**
- * Evict one authenticated plugin-catalog partition after a thin Workspace
- * invalidation. Both account generation and the complete Workspace/member
- * identity are required so an event for A cannot discard B's warm catalog.
- */
-export function invalidatePluginCatalogCache(options: {
-  workspaceContext: WorkspaceCollabContext | null;
-  accountGeneration: number;
-}): void {
-  const cacheKey = pluginCatalogCacheKey(options);
-  cachedVisiblePlugins.delete(cacheKey);
-  pluginCatalogCacheGenerations.set(
-    cacheKey,
-    (pluginCatalogCacheGenerations.get(cacheKey) ?? 0) + 1,
-  );
+/** Evict the daemon-local plugin catalog after an install, upgrade, or removal. */
+export function invalidatePluginCatalogCache(): void {
+  cachedVisiblePlugins = null;
+  pluginCatalogCacheGeneration += 1;
 }
 
 // Test-only: drop the warm visible-plugins cache so each case starts cold. The
@@ -1421,8 +1359,8 @@ export function invalidatePluginCatalogCache(options: {
 // `/api/plugins` payload would satisfy the next case via `listPluginsFresh`).
 // The web vitest setup calls this in a global `afterEach`.
 export function resetPluginsCache(): void {
-  cachedVisiblePlugins.clear();
-  pluginCatalogCacheGenerations.clear();
+  cachedVisiblePlugins = null;
+  pluginCatalogCacheGeneration = 0;
 }
 
 export function isVisiblePlugin(plugin: InstalledPluginRecord): boolean {
@@ -1433,7 +1371,6 @@ export function isVisiblePlugin(plugin: InstalledPluginRecord): boolean {
 export async function duplicatePluginAsProject(
   pluginId: string,
   input: { name?: string } = {},
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<PluginDuplicateProjectResponse> {
   const resp = await fetch(
     `/api/plugins/${encodeURIComponent(pluginId)}/duplicate-project`,
@@ -1441,7 +1378,6 @@ export async function duplicatePluginAsProject(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     },
@@ -1467,7 +1403,6 @@ interface PluginInstallEvent {
 
 export async function installPluginSource(
   source: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<PluginInstallOutcome> {
   const log: string[] = [];
   try {
@@ -1475,7 +1410,6 @@ export async function installPluginSource(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify({ source }),
     });
@@ -1543,12 +1477,7 @@ export async function uploadPluginFolder(files: File[]): Promise<PluginInstallOu
 export async function installGeneratedPluginFolder(
   projectId: string,
   relativePath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<PluginInstallOutcome> {
-  // Capture the account boundary before the request starts. If sign-in changes
-  // while the install is in flight, the successful response must evict the
-  // catalog that authorized this mutation, never the next account's cache.
-  const accountGeneration = currentWorkspaceAccountGeneration();
   try {
     const request: ProjectPluginFolderInstallRequest = { path: relativePath };
     const resp = await fetch(
@@ -1557,22 +1486,13 @@ export async function installGeneratedPluginFolder(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
         },
         body: JSON.stringify(request),
       },
     );
     const outcome = await readPluginInstallOutcome(resp);
     if (outcome.ok) {
-      // The event refreshes mounted consumers, but it is not durable: Home may
-      // be unmounted or identity-masked while a project installs its generated
-      // plugin. Evict the exact warm partition first so a later mount cannot
-      // reuse the pre-install catalog for the full TTL. Other Workspaces stay
-      // warm and avoid an unrelated refresh/performance regression.
-      invalidatePluginCatalogCache({
-        workspaceContext: workspaceContext ?? null,
-        accountGeneration,
-      });
+      invalidatePluginCatalogCache();
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('open-design:plugins-changed'));
       }
@@ -1932,14 +1852,10 @@ function getUploadRelativePath(file: File): string {
 
 export async function uninstallPlugin(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<boolean> {
   try {
     const resp = await fetch(`/api/plugins/${encodeURIComponent(id)}/uninstall`, {
       method: 'POST',
-      ...(workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : {}),
     });
     return resp.ok;
   } catch {
@@ -2117,7 +2033,6 @@ export async function applyPlugin(
     grantCaps?: string[];
     locale?: string;
     pluginSource?: string;
-    workspaceContext?: WorkspaceCollabContext | null;
   } = {},
 ): Promise<ApplyResult | null> {
   try {
@@ -2135,9 +2050,6 @@ export async function applyPlugin(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(!options.pluginSource && options.workspaceContext
-            ? workspaceProjectHeaders(options.workspaceContext)
-            : {}),
         },
         body: requestBody,
       },

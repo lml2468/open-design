@@ -116,14 +116,14 @@ afterEach(() => {
 });
 
 describe('PluginsSection', () => {
-  it('does not throw or issue a headerless read while Workspace identity is unresolved', () => {
+  it('does not block the daemon-local plugin read while Workspace identity is unresolved', async () => {
     workspaceContextState.current = {
       context: null,
       loading: true,
     };
 
     expect(() => render(<PluginsSection />)).not.toThrow();
-    expect(fetchMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/plugins'));
   });
 
   it('renders only the rail when no plugin is applied', async () => {

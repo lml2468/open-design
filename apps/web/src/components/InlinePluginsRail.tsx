@@ -14,14 +14,7 @@ import type {
 import {
   applyPlugin,
   listPlugins,
-  resolvedWorkspaceContextForWrite,
 } from '../state/projects';
-import { useProjectCollabContext } from '../collab/collab-context';
-import {
-  currentWorkspaceAccountGeneration,
-  useWorkspaceContext,
-  workspaceIdentityCacheKey,
-} from '../collab/useWorkspaceContext';
 import { useI18n } from '../i18n';
 import { localizePluginDescription, localizePluginTitle } from './plugins-home/localization';
 
@@ -56,58 +49,21 @@ interface Props {
 
 export function InlinePluginsRail(props: Props) {
   const { locale } = useI18n();
-  const shellWorkspace = useWorkspaceContext();
-  const projectCollab = useProjectCollabContext();
-  const workspaceContext = props.projectId
-    ? projectCollab.workspaceContext
-    : shellWorkspace.context;
-  const workspaceContextUnavailable = props.projectId
-    ? projectCollab.workspaceContextLoading
-    : shellWorkspace.loading
-      || shellWorkspace.identityChangePending === true
-      || shellWorkspace.failure === 'unavailable';
-  const workspaceIdentity = JSON.stringify([
-    currentWorkspaceAccountGeneration(),
-    workspaceContextUnavailable ? 'workspace-unavailable' : workspaceIdentityCacheKey(workspaceContext),
-  ]);
-  const workspaceIdentityRef = useRef(workspaceIdentity);
-  workspaceIdentityRef.current = workspaceIdentity;
   const pluginCatalogRequestGenerationRef = useRef(0);
-  const [pluginCatalog, setPluginCatalog] = useState<{
-    identity: string | null;
-    items: InstalledPluginRecord[];
-  }>({ identity: null, items: [] });
-  const plugins = pluginCatalog.identity === workspaceIdentity
-    ? pluginCatalog.items
-    : [];
+  const [plugins, setPlugins] = useState<InstalledPluginRecord[]>([]);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setPendingId(null);
-    setError(null);
-  }, [workspaceIdentity]);
-
   const refresh = useCallback(async () => {
-    if (workspaceContextUnavailable) return;
     const requestGeneration = ++pluginCatalogRequestGenerationRef.current;
-    const issuedIdentity = workspaceIdentity;
-    const rows = await listPlugins({ workspaceContext });
-    if (
-      requestGeneration !== pluginCatalogRequestGenerationRef.current
-      || workspaceIdentityRef.current !== issuedIdentity
-    ) return;
-    setPluginCatalog({
-      identity: issuedIdentity,
-      items: filterPlugins(rows, props.filter),
-    });
+    const rows = await listPlugins();
+    if (requestGeneration !== pluginCatalogRequestGenerationRef.current) return;
+    setPlugins(filterPlugins(rows, props.filter));
   }, [
     props.filter?.taskKind,
     props.filter?.mode,
     props.filter?.kinds?.join(','),
     props.filter?.pluginIds?.join(','),
-    workspaceIdentity,
-    workspaceContextUnavailable,
   ]);
 
   useEffect(() => {
@@ -120,35 +76,12 @@ export function InlinePluginsRail(props: Props) {
   }, [refresh]);
 
   const onClick = async (record: InstalledPluginRecord) => {
-    const issuedIdentity = workspaceIdentity;
-    if (
-      workspaceContextUnavailable
-      || pluginCatalog.identity !== issuedIdentity
-    ) {
-      setError(
-        'Workspace context is unavailable. Try again when workspace sync finishes.',
-      );
-      return;
-    }
-    let writeWorkspaceContext;
-    try {
-      writeWorkspaceContext = props.projectId
-        ? projectCollab.workspaceContext
-        : resolvedWorkspaceContextForWrite(shellWorkspace);
-    } catch {
-      setError(
-        'Workspace context is unavailable. Try again when workspace sync finishes.',
-      );
-      return;
-    }
     setPendingId(record.id);
     setError(null);
     const result = await applyPlugin(record.id, {
       ...(props.projectId ? { projectId: props.projectId } : {}),
       locale,
-      workspaceContext: writeWorkspaceContext,
     });
-    if (workspaceIdentityRef.current !== issuedIdentity) return;
     setPendingId(null);
     if (!result) {
       setError(
@@ -180,7 +113,7 @@ export function InlinePluginsRail(props: Props) {
             role="listitem"
             className="inline-plugins-rail__card"
             onClick={() => onClick(p)}
-            disabled={pendingId !== null || workspaceContextUnavailable}
+            disabled={pendingId !== null}
             aria-busy={pendingId === p.id ? 'true' : undefined}
             data-plugin-id={p.id}
             title={description || title}

@@ -895,7 +895,7 @@ describe('routine prepare failure cleanup', () => {
 });
 
 describe('routine resource scope', () => {
-  it('rejects another member Personal plugin before creating a routine snapshot', async () => {
+  it('resolves a daemon-local plugin regardless of historical Workspace ownership', async () => {
     const started = await startServer({ port: 0, returnServer: true }) as {
       url: string;
       server: http.Server;
@@ -955,14 +955,11 @@ describe('routine resource scope', () => {
       const response = await fetch(`${started.url}/api/routines/routine-exact-plugin/run`, {
         method: 'POST',
       });
-      expect(response.status).toBe(500);
-      await expect(response.json()).resolves.toMatchObject({
-        error: expect.stringContaining('not visible to the persisted project owner'),
-      });
-      expect(getProject(db, projectId)?.appliedPluginSnapshotId ?? null).toBeNull();
+      expect(response.status).toBe(202);
+      expect(getProject(db, projectId)?.appliedPluginSnapshotId ?? null).toBeTruthy();
       expect(db.prepare(
         'SELECT COUNT(*) AS count FROM applied_plugin_snapshots WHERE project_id = ?',
-      ).get(projectId)).toEqual({ count: 0 });
+      ).get(projectId)).toEqual({ count: 1 });
     } finally {
       await Promise.resolve(started.shutdown?.());
       await new Promise<void>((resolve) => started.server.close(() => resolve()));

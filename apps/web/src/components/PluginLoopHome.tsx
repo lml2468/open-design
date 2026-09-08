@@ -14,7 +14,6 @@ import {
   duplicatePluginAsProject,
   listPlugins,
   renderPluginBriefTemplate,
-  resolvedWorkspaceContextForWrite,
   resolvePluginQueryFallback,
 } from '../state/projects';
 import { useI18n } from '../i18n';
@@ -145,10 +144,7 @@ export function PluginLoopHome({ onSubmit }: Props) {
   ) {
     setPendingApplyId(record.id);
     setError(null);
-    const result = await applyPlugin(record.id, {
-      locale,
-      workspaceContext: resolvedWorkspaceContextForWrite(workspaceContextState),
-    });
+    const result = await applyPlugin(record.id, { locale });
     setPendingApplyId(null);
     if (!result) {
       setError(`Failed to apply ${record.title}. Make sure the daemon is reachable.`);
@@ -172,7 +168,7 @@ export function PluginLoopHome({ onSubmit }: Props) {
     try {
       const result = await duplicatePluginAsProject(record.id, {
         name: localizePluginTitle(locale, record),
-      }, resolvedWorkspaceContextForWrite(workspaceContextState));
+      });
       setDetailsRecord(null);
       navigate({
         kind: 'project',

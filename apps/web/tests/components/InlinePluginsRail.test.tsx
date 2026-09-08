@@ -96,7 +96,7 @@ afterEach(() => {
 });
 
 describe('InlinePluginsRail', () => {
-  it('does not issue a headerless read while Workspace identity is unresolved', () => {
+  it('issues a daemon-local read while Workspace identity is unresolved', async () => {
     workspaceContextState.current = {
       context: null,
       loading: true,
@@ -105,7 +105,7 @@ describe('InlinePluginsRail', () => {
     expect(() =>
       render(<InlinePluginsRail onApplied={() => undefined} />),
     ).not.toThrow();
-    expect(fetchMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/plugins'));
   });
 
   it('renders a card for each installed plugin and fires onApplied on click', async () => {

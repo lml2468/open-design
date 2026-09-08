@@ -168,7 +168,7 @@ function renderHome() {
   );
 }
 
-describe('HomeView workspace-scoped plugin catalog', () => {
+describe('HomeView daemon-local plugin catalog', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
@@ -181,7 +181,7 @@ describe('HomeView workspace-scoped plugin catalog', () => {
     };
   });
 
-  it('masks the provisional catalog until the first Workspace-scoped read settles', async () => {
+  it('shows the daemon-local catalog while Workspace discovery is pending', async () => {
     const pluginRequests: Headers[] = [];
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, init) => {
       if (String(input) === '/api/plugins') {
@@ -207,7 +207,7 @@ describe('HomeView workspace-scoped plugin catalog', () => {
 
     await waitFor(() => expect(pluginRequests).toHaveLength(1));
     expect(pluginRequests[0]?.has('x-od-workspace-id')).toBe(false);
-    expect(screen.getByTestId('plugin-catalog').textContent).toBe('loading');
+    expect(screen.getByTestId('plugin-catalog').textContent).toBe('provisional-plugin');
 
     workspaceMock.state = {
       context: teamContext('workspace-startup', 'member-startup'),
@@ -224,12 +224,9 @@ describe('HomeView workspace-scoped plugin catalog', () => {
       />,
     );
 
-    await waitFor(() => expect(pluginRequests).toHaveLength(2));
-    expect(pluginRequests[1]?.get('x-od-workspace-id')).toBe('workspace-startup');
-    expect(pluginRequests[1]?.get('x-od-workspace-member-id')).toBe('member-startup');
-    await waitFor(() => {
-      expect(screen.getByTestId('plugin-catalog').textContent).toBe('scoped-plugin');
-    });
+    await act(async () => Promise.resolve());
+    expect(pluginRequests).toHaveLength(1);
+    expect(screen.getByTestId('plugin-catalog').textContent).toBe('provisional-plugin');
   });
 
   it('parks hidden local plugin invalidations and performs one bounded catch-up when Home activates', async () => {
@@ -281,16 +278,14 @@ describe('HomeView workspace-scoped plugin catalog', () => {
     });
   });
 
-  it('masks A immediately, fetches B with exact headers, and ignores A resolving late', async () => {
+  it('does not restart or mask a daemon-local read when Workspace changes', async () => {
     const a = deferred<Response>();
-    const b = deferred<Response>();
     const pluginRequests: Array<{ headers: Headers; resolve: typeof a.resolve }> = [];
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
       if (url === '/api/plugins') {
-        const request = pluginRequests.length === 0 ? a : b;
-        pluginRequests.push({ headers: new Headers(init?.headers), resolve: request.resolve });
-        return request.promise;
+        pluginRequests.push({ headers: new Headers(init?.headers), resolve: a.resolve });
+        return a.promise;
       }
       return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
     }));
@@ -319,26 +314,15 @@ describe('HomeView workspace-scoped plugin catalog', () => {
       />,
     );
 
-    expect(screen.getByTestId('plugin-catalog').textContent).not.toContain('plugin-a');
-    await waitFor(() => expect(pluginRequests).toHaveLength(2));
-    expect(pluginRequests[1]?.headers.get('x-od-workspace-id')).toBe('workspace-b');
-    expect(pluginRequests[1]?.headers.get('x-od-workspace-member-id')).toBe('member-b');
-
-    b.resolve(new Response(JSON.stringify({ plugins: [plugin('plugin-b')] }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }));
-    await waitFor(() => expect(screen.getByTestId('plugin-catalog').textContent).toBe('plugin-b'));
-
+    expect(pluginRequests).toHaveLength(1);
     a.resolve(new Response(JSON.stringify({ plugins: [plugin('plugin-a')] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     }));
-    await Promise.resolve();
-    expect(screen.getByTestId('plugin-catalog').textContent).toBe('plugin-b');
+    await waitFor(() => expect(screen.getByTestId('plugin-catalog').textContent).toBe('plugin-a'));
   });
 
-  it('rebinds same-id staged resources to B without clearing the draft', async () => {
+  it('keeps same-id staged plugins local when Workspace changes', async () => {
     let workspaceB = false;
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => {
       if (String(input) === '/api/plugins') {
@@ -387,13 +371,14 @@ describe('HomeView workspace-scoped plugin catalog', () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByTestId('active-plugin').textContent).toBe('shared-plugin:Plugin B'));
-    expect(screen.getByTestId('plugin-contexts').textContent).toBe('shared-plugin:Plugin B');
+    await act(async () => Promise.resolve());
+    expect(screen.getByTestId('active-plugin').textContent).toBe('shared-plugin:Plugin A');
+    expect(screen.getByTestId('plugin-contexts').textContent).toBe('shared-plugin:Plugin A');
     expect(screen.getByTestId('prompt').textContent).toBe('draft');
     expect(screen.getByTestId('active-design-system').textContent).toBe('shared-ds');
   });
 
-  it('invalidates only staged resources missing from B', async () => {
+  it('keeps staged local plugins while Workspace-owned resources disappear', async () => {
     let workspaceB = false;
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => {
       if (String(input) === '/api/plugins') {
@@ -442,8 +427,9 @@ describe('HomeView workspace-scoped plugin catalog', () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByTestId('active-plugin').textContent).toBe('none'));
-    expect(screen.getByTestId('plugin-contexts').textContent).toBe('none');
+    await act(async () => Promise.resolve());
+    expect(screen.getByTestId('active-plugin').textContent).toBe('workspace-a-plugin:Plugin A');
+    expect(screen.getByTestId('plugin-contexts').textContent).toBe('workspace-a-plugin:Plugin A');
     expect(screen.getByTestId('prompt').textContent).toBe('draft');
     expect(screen.getByTestId('active-design-system').textContent).toBe('none');
   });
@@ -540,14 +526,13 @@ describe('HomeView workspace-scoped plugin catalog', () => {
     expect(requestHeaders.has('x-od-workspace-member-id')).toBe(false);
   });
 
-  it('restarts a cold plugin read after a transient identity mask instead of joining the cancelled request', async () => {
+  it('keeps a cold daemon-local plugin read across transient identity changes', async () => {
     const firstRead = deferred<Response>();
-    const recoveredRead = deferred<Response>();
     let pluginReads = 0;
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => {
       if (String(input) === '/api/plugins') {
         pluginReads += 1;
-        return pluginReads === 1 ? firstRead.promise : recoveredRead.promise;
+        return firstRead.promise;
       }
       return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
     }));
@@ -588,24 +573,17 @@ describe('HomeView workspace-scoped plugin catalog', () => {
       />,
     );
 
-    await waitFor(() => expect(pluginReads).toBe(2));
-    recoveredRead.resolve(new Response(JSON.stringify({ plugins: [plugin('recovered-plugin')] }), {
+    expect(pluginReads).toBe(1);
+    firstRead.resolve(new Response(JSON.stringify({ plugins: [plugin('recovered-plugin')] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     }));
     await waitFor(() => {
       expect(screen.getByTestId('plugin-catalog').textContent).toBe('recovered-plugin');
     });
-
-    firstRead.resolve(new Response(JSON.stringify({ plugins: [plugin('cancelled-plugin')] }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }));
-    await act(async () => Promise.resolve());
-    expect(screen.getByTestId('plugin-catalog').textContent).toBe('recovered-plugin');
   });
 
-  it('does not reuse a warm catalog across accounts with identical workspace fields', async () => {
+  it('reuses a warm daemon-local catalog across account identity changes', async () => {
     let requestCount = 0;
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => {
       if (String(input) === '/api/plugins') {
@@ -638,9 +616,9 @@ describe('HomeView workspace-scoped plugin catalog', () => {
       />,
     );
 
-    expect(screen.getByTestId('plugin-catalog').textContent).not.toContain('account-1');
-    await waitFor(() => expect(screen.getByTestId('plugin-catalog').textContent).toBe('account-2'));
-    expect(requestCount).toBe(2);
+    await act(async () => Promise.resolve());
+    expect(screen.getByTestId('plugin-catalog').textContent).toBe('account-1');
+    expect(requestCount).toBe(1);
   });
 
   it('keeps the event-refreshed catalog when the same-identity mount read resolves late', async () => {

@@ -33,7 +33,6 @@ import type {
 } from '@open-design/contracts';
 import { defaultTrustForRecord, resolveCapabilitiesGranted } from './trust.js';
 import { isInternalBundledStrategyV2 } from './strategy-provenance.js';
-import { getWorkspaceResourceByResourceId } from '../db.js';
 import type Database from 'better-sqlite3';
 
 type SqliteDb = Database.Database;
@@ -232,74 +231,11 @@ export function rowToInstalledPlugin(row: DbRow): InstalledPluginRecord {
   };
 }
 
-/**
- * Is this plugin visible from `scope` (the requesting workspace)?
- *
- * Bundled plugins are app capabilities and remain global. User plugins in an
- * explicit Workspace are stricter: Team bindings are visible to active Team
- * members, while Personal bindings require the exact creator member. An
- * unbound user plugin is quarantined from every explicit Workspace because no
- * caller may adopt legacy bytes merely by viewing them.
- *
- * `scope === undefined` (as opposed to `null` or `''`) is a SEPARATE signal
- * from "no identity": it means the caller — `listInstalledPlugins` called
- * with no second argument at all — never asked for scoping and is the
- * preserved local/CLI compatibility lane. `null`/`''` is the headerless HTTP
- * catalog: it may see unbound local user plugins and bundled plugins, but not
- * anything claimed by a Workspace.
- */
-function pluginVisibleFromWorkspace(
-  db: SqliteDb,
-  plugin: InstalledPluginRecord,
-  scope: string | null | undefined,
-  workspaceMemberId: string | null | undefined,
-): boolean {
-  if (scope !== undefined && plugin.sourceKind === 'bundled') return true;
-  let binding: ReturnType<typeof getWorkspaceResourceByResourceId>;
-  try {
-    binding = getWorkspaceResourceByResourceId(db, 'plugin', plugin.id);
-  } catch (error) {
-    // Narrow plugin-library tests and external embedders may initialize only
-    // the plugin schema. Unscoped/local reads do not require Workspace data;
-    // a scoped read must still fail rather than silently bypass isolation.
-    if (scope === undefined) return true;
-    throw error;
-  }
-  const ownerId = typeof binding?.workspaceId === 'string' ? binding.workspaceId.trim() : '';
-  if (binding?.resourceState === 'deleted') return false;
-  if (binding?.visibility === 'team') return false;
-  if (scope === undefined) return true;
-  const scopeId = scope?.trim();
-  if (!scopeId) return !ownerId;
-  if (!ownerId || ownerId !== scopeId) return false;
-  const creatorId = binding?.createdByWorkspaceMemberId?.trim();
-  const callerId = workspaceMemberId?.trim();
-  return Boolean(creatorId && callerId && creatorId === callerId);
-}
-
-/**
- * `workspaceId` is optional and defaults to the pre-workspace-isolation
- * behavior (every live installed plugin, otherwise unfiltered) so every existing caller —
- * `od plugin list`, inventory stats, the bundled-scenario scan in server.ts —
- * keeps working unchanged, AS LONG AS THEY OMIT THE ARGUMENT ENTIRELY. A
- * reconciled tombstone is terminal even for these unscoped internal callers.
- * `GET /api/plugins` always passes a second argument (`headerValue(...)`,
- * which returns `string | null`, never `undefined`), so it always gets the
- * workspace-scoped view even when the caller has no header — see
- * `pluginVisibleFromWorkspace`'s doc comment for why `undefined` and `null`
- * must NOT collapse to the same "unfiltered" behavior here.
- */
-export function listInstalledPlugins(
-  db: SqliteDb,
-  workspaceId?: string | null,
-  workspaceMemberId?: string | null,
-): InstalledPluginRecord[] {
+/** Return the daemon-local plugin catalog. Plugins are no longer Workspace resources. */
+export function listInstalledPlugins(db: SqliteDb): InstalledPluginRecord[] {
   const rows = db.prepare(`SELECT * FROM installed_plugins ORDER BY title ASC`).all() as DbRow[];
   const records = rows.map(rowToInstalledPlugin);
-  return records.filter((record) =>
-    !isInternalBundledStrategyV2(record)
-    && pluginVisibleFromWorkspace(db, record, workspaceId, workspaceMemberId),
-  );
+  return records.filter((record) => !isInternalBundledStrategyV2(record));
 }
 
 export function getInstalledPlugin(db: SqliteDb, id: string): InstalledPluginRecord | null {

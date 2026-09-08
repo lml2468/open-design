@@ -678,7 +678,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       try {
         const result = await duplicatePluginAsProject(record.id, {
           name: localizePluginTitle(locale, record),
-        }, workspaceContext);
+        });
         setDetailsRecord(null);
         navigate({
           kind: 'project',

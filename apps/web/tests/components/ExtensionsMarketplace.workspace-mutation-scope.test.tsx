@@ -9,7 +9,6 @@ import type {
 
 import { ExtensionsMarketplace } from '../../src/components/PluginsView';
 import { I18nProvider } from '../../src/i18n';
-import { workspaceProjectHeaders } from '../../src/collab/workspace-identity';
 import { workspaceContextFixture } from '../helpers/workspace-context';
 
 vi.mock('../../src/analytics/provider', async (importOriginal) => ({
@@ -143,17 +142,13 @@ function renderMarketplace() {
   );
 }
 
-function expectExactWorkspaceHeaders(
-  actual: Headers,
-  context: WorkspaceCollabContext,
-): void {
-  expect(Object.fromEntries(actual.entries())).toMatchObject(
-    Object.fromEntries(new Headers(workspaceProjectHeaders(context)).entries()),
-  );
+function expectNoWorkspaceHeaders(actual: Headers): void {
+  expect(actual.has('x-od-workspace-id')).toBe(false);
+  expect(actual.has('x-od-workspace-member-id')).toBe(false);
 }
 
-describe('ExtensionsMarketplace Workspace-scoped install/uninstall', () => {
-  it.each(CONTEXTS)('sends exact %s headers when installing', async (_label, context) => {
+describe('ExtensionsMarketplace daemon-local plugin mutations', () => {
+  it.each(CONTEXTS)('does not send %s Workspace headers when installing', async (_label, context) => {
     workspaceContext = context;
     renderMarketplace();
 
@@ -162,10 +157,10 @@ describe('ExtensionsMarketplace Workspace-scoped install/uninstall', () => {
 
     await waitFor(() => expect(mutationRequests).toHaveLength(1));
     expect(mutationRequests[0]?.url).toBe('/api/plugins/install');
-    expectExactWorkspaceHeaders(mutationRequests[0]!.headers, context);
+    expectNoWorkspaceHeaders(mutationRequests[0]!.headers);
   });
 
-  it.each(CONTEXTS)('sends exact %s headers when uninstalling', async (_label, context) => {
+  it.each(CONTEXTS)('does not send %s Workspace headers when uninstalling', async (_label, context) => {
     workspaceContext = context;
     renderMarketplace();
 
@@ -177,10 +172,10 @@ describe('ExtensionsMarketplace Workspace-scoped install/uninstall', () => {
 
     await waitFor(() => expect(mutationRequests).toHaveLength(1));
     expect(mutationRequests[0]?.url).toBe('/api/plugins/user-plugin/uninstall');
-    expectExactWorkspaceHeaders(mutationRequests[0]!.headers, context);
+    expectNoWorkspaceHeaders(mutationRequests[0]!.headers);
   });
 
-  it('keeps visible install and uninstall actions disabled while identity is loading', async () => {
+  it('keeps visible plugin install and uninstall actions enabled while identity is loading', async () => {
     const view = renderMarketplace();
     const install = await screen.findByRole('button', { name: 'Install' }) as HTMLButtonElement;
 
@@ -190,7 +185,7 @@ describe('ExtensionsMarketplace Workspace-scoped install/uninstall', () => {
         <ExtensionsMarketplace onUsePlugin={vi.fn()} />
       </I18nProvider>,
     );
-    expect(install.disabled).toBe(true);
+    expect(install.disabled).toBe(false);
 
     workspaceContextLoading = false;
     view.rerender(
@@ -210,7 +205,7 @@ describe('ExtensionsMarketplace Workspace-scoped install/uninstall', () => {
         <ExtensionsMarketplace onUsePlugin={vi.fn()} />
       </I18nProvider>,
     );
-    expect(uninstall.disabled).toBe(true);
+    expect(uninstall.disabled).toBe(false);
     expect(mutationRequests).toEqual([]);
   });
 });

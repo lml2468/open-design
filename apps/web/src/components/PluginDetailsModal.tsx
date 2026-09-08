@@ -83,7 +83,6 @@ export function PluginDetailsModal({
         onDuplicate={onDuplicate}
         isApplying={isApplying}
         hideUseAction={hideUseAction}
-        workspaceContext={workspaceContext}
         onSharePopoverItemClick={onSharePopoverItemClick}
       />
     );
@@ -109,7 +108,6 @@ export function PluginDetailsModal({
         onDuplicate={onDuplicate}
         isApplying={isApplying}
         hideUseAction={hideUseAction}
-        workspaceContext={workspaceContext}
       />
     );
   }

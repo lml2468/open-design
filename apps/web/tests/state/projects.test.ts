@@ -428,7 +428,7 @@ describe('applyPlugin', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('scopes same-id plugin apply requests to the exact A/B workspace', async () => {
+  it('applies an installed plugin without Workspace authority headers', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -436,31 +436,13 @@ describe('applyPlugin', () => {
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const workspaceA = teamWorkspaceContext({
-      workspaceId: 'ws-a',
-      workspaceMemberId: 'wm-a',
-    });
-    const workspaceB = teamWorkspaceContext({
-      workspaceId: 'ws-b',
-      workspaceMemberId: 'wm-b',
-    });
+    await applyPlugin('shared-plugin-id');
 
-    await Promise.all([
-      applyPlugin('shared-plugin-id', { workspaceContext: workspaceA }),
-      applyPlugin('shared-plugin-id', { workspaceContext: workspaceB }),
-    ]);
-
-    const scopes = fetchMock.mock.calls.map(([, init]) => {
-      const headers = new Headers(init?.headers);
-      return [
-        headers.get('x-od-workspace-id'),
-        headers.get('x-od-workspace-member-id'),
-      ];
-    });
-    expect(scopes).toEqual([
-      ['ws-a', 'wm-a'],
-      ['ws-b', 'wm-b'],
-    ]);
+    const [, init] = fetchMock.mock.calls[0]!;
+    const headers = new Headers(init?.headers);
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.has('x-od-workspace-id')).toBe(false);
+    expect(headers.has('x-od-workspace-member-id')).toBe(false);
   });
 });
 
@@ -994,170 +976,60 @@ describe('listPlugins', () => {
     expect(rows.map((row) => row.id)).toEqual(['od-default', 'od-new-generation']);
   });
 
-  it('keeps a settled signed-out catalog request headerless', async () => {
+  it('keeps the daemon-local catalog request headerless', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({ plugins: [] }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    await listPluginsFresh({ workspaceContext: null, accountGeneration: 3 });
+    await listPluginsFresh();
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/plugins', undefined);
+    expect(fetchMock).toHaveBeenCalledWith('/api/plugins');
   });
 
-  it('partitions the warm visible catalog by account generation and full workspace identity', async () => {
-    const requestedHeaders: Array<Record<string, string>> = [];
-    const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
-      requestedHeaders.push(Object.fromEntries(new Headers(init?.headers).entries()));
-      const workspaceId = new Headers(init?.headers).get('x-od-workspace-id');
-      const memberId = new Headers(init?.headers).get('x-od-workspace-member-id');
-      return new Response(JSON.stringify({
-        plugins: [{ id: `${workspaceId}:${memberId}:${requestedHeaders.length}`, manifest: {} }],
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const firstIdentity = teamWorkspaceContext({
-      workspaceId: 'workspace-shared',
-      workspaceMemberId: 'member-shared',
-    });
-    const secondIdentity = teamWorkspaceContext({
-      workspaceId: 'workspace-b',
-      workspaceMemberId: 'member-b',
-    });
-
-    const first = await listPluginsFresh({
-      workspaceContext: firstIdentity,
-      accountGeneration: 7,
-    });
-    const firstAgain = await listPluginsFresh({
-      workspaceContext: firstIdentity,
-      accountGeneration: 7,
-    });
-    const second = await listPluginsFresh({
-      workspaceContext: secondIdentity,
-      accountGeneration: 7,
-    });
-    const nextAccountSameFields = await listPluginsFresh({
-      workspaceContext: firstIdentity,
-      accountGeneration: 8,
-    });
-
-    expect(firstAgain).toEqual(first);
-    expect(second[0]?.id).toContain('workspace-b:member-b');
-    expect(nextAccountSameFields).not.toEqual(first);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(requestedHeaders).toEqual([
-      expect.objectContaining({
-        'x-od-workspace-id': 'workspace-shared',
-        'x-od-workspace-member-id': 'member-shared',
-      }),
-      expect.objectContaining({
-        'x-od-workspace-id': 'workspace-b',
-        'x-od-workspace-member-id': 'member-b',
-      }),
-      expect.objectContaining({
-        'x-od-workspace-id': 'workspace-shared',
-        'x-od-workspace-member-id': 'member-shared',
-      }),
-    ]);
-  });
-
-  it('evicts only the exact account generation and Workspace plugin catalog', async () => {
+  it('reuses one warm daemon-local catalog until it is invalidated', async () => {
     let fetchSequence = 0;
-    const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
+    const fetchMock = vi.fn<typeof fetch>(async () => {
       fetchSequence += 1;
-      const headers = new Headers(init?.headers);
-      const workspaceId = headers.get('x-od-workspace-id');
-      const memberId = headers.get('x-od-workspace-member-id');
       return new Response(JSON.stringify({
-        plugins: [{
-          id: `${workspaceId}:${memberId}:fetch-${fetchSequence}`,
-          manifest: {},
-        }],
+        plugins: [{ id: `fetch-${fetchSequence}`, manifest: {} }],
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
     vi.stubGlobal('fetch', fetchMock);
-    const workspaceA = teamWorkspaceContext({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    });
-    const workspaceB = teamWorkspaceContext({
-      workspaceId: 'workspace-b',
-      workspaceMemberId: 'member-b',
-    });
 
-    const account7A = await listPluginsFresh({ workspaceContext: workspaceA, accountGeneration: 7 });
-    const account7B = await listPluginsFresh({ workspaceContext: workspaceB, accountGeneration: 7 });
-    const account8A = await listPluginsFresh({ workspaceContext: workspaceA, accountGeneration: 8 });
-    invalidatePluginCatalogCache({ workspaceContext: workspaceA, accountGeneration: 7 });
+    const first = await listPluginsFresh();
+    expect(await listPluginsFresh()).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const refreshed7A = await listPluginsFresh({
-      workspaceContext: workspaceA,
-      accountGeneration: 7,
-    });
-    const cached7B = await listPluginsFresh({
-      workspaceContext: workspaceB,
-      accountGeneration: 7,
-    });
-    const cached8A = await listPluginsFresh({
-      workspaceContext: workspaceA,
-      accountGeneration: 8,
-    });
-
-    expect(refreshed7A).not.toEqual(account7A);
-    expect(cached7B).toEqual(account7B);
-    expect(cached8A).toEqual(account8A);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    invalidatePluginCatalogCache();
+    const refreshed = await listPluginsFresh();
+    expect(refreshed).not.toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('does not let an invalidated in-flight plugin read overwrite the fresh exact-scope cache', async () => {
-    let resolveStaleA7!: (response: Response) => void;
-    let resolveB7!: (response: Response) => void;
-    let resolveA8!: (response: Response) => void;
-    const staleA7 = new Promise<Response>((resolve) => { resolveStaleA7 = resolve; });
-    const pendingB7 = new Promise<Response>((resolve) => { resolveB7 = resolve; });
-    const pendingA8 = new Promise<Response>((resolve) => { resolveA8 = resolve; });
+  it('does not let an invalidated in-flight plugin read overwrite the fresh cache', async () => {
+    let resolveStale!: (response: Response) => void;
+    const stale = new Promise<Response>((resolve) => { resolveStale = resolve; });
     const fetchMock = vi.fn<typeof fetch>();
     fetchMock
-      .mockReturnValueOnce(staleA7)
-      .mockReturnValueOnce(pendingB7)
-      .mockReturnValueOnce(pendingA8)
+      .mockReturnValueOnce(stale)
       .mockResolvedValueOnce(Response.json({
-        plugins: [{ id: 'fresh-a7', manifest: {} }],
+        plugins: [{ id: 'fresh', manifest: {} }],
       }));
     vi.stubGlobal('fetch', fetchMock);
-    const workspaceA = teamWorkspaceContext({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    });
-    const workspaceB = teamWorkspaceContext({
-      workspaceId: 'workspace-b',
-      workspaceMemberId: 'member-b',
-    });
-    const a7Options = { workspaceContext: workspaceA, accountGeneration: 7 };
-    const b7Options = { workspaceContext: workspaceB, accountGeneration: 7 };
-    const a8Options = { workspaceContext: workspaceA, accountGeneration: 8 };
 
-    const oldA7Read = listPlugins(a7Options);
-    const b7Read = listPlugins(b7Options);
-    const a8Read = listPlugins(a8Options);
-    invalidatePluginCatalogCache(a7Options);
-    const freshA7 = await listPluginsFresh(a7Options);
+    const oldRead = listPlugins();
+    invalidatePluginCatalogCache();
+    const fresh = await listPluginsFresh();
+    resolveStale(Response.json({ plugins: [{ id: 'stale', manifest: {} }] }));
+    await oldRead;
 
-    resolveB7(Response.json({ plugins: [{ id: 'workspace-b-account-7', manifest: {} }] }));
-    resolveA8(Response.json({ plugins: [{ id: 'workspace-a-account-8', manifest: {} }] }));
-    resolveStaleA7(Response.json({ plugins: [{ id: 'stale-a7', manifest: {} }] }));
-    await Promise.all([oldA7Read, b7Read, a8Read]);
-
-    expect(await listPluginsFresh(a7Options)).toEqual(freshA7);
-    expect((await listPluginsFresh(b7Options))[0]?.id).toBe('workspace-b-account-7');
-    expect((await listPluginsFresh(a8Options))[0]?.id).toBe('workspace-a-account-8');
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(await listPluginsFresh()).toEqual(fresh);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps the latest-started same-scope plugin read cached when responses finish in reverse order', async () => {
+  it('keeps the latest-started plugin read cached when responses finish in reverse order', async () => {
     let resolveOlder!: (response: Response) => void;
     let resolveNewer!: (response: Response) => void;
     const olderResponse = new Promise<Response>((resolve) => { resolveOlder = resolve; });
@@ -1166,22 +1038,14 @@ describe('listPlugins', () => {
       .mockReturnValueOnce(olderResponse)
       .mockReturnValueOnce(newerResponse);
     vi.stubGlobal('fetch', fetchMock);
-    const options = {
-      workspaceContext: teamWorkspaceContext({
-        workspaceId: 'workspace-latest',
-        workspaceMemberId: 'member-latest',
-      }),
-      accountGeneration: 9,
-    };
-
-    const olderRead = listPlugins(options);
-    const newerRead = listPlugins(options);
+    const olderRead = listPlugins();
+    const newerRead = listPlugins();
     resolveNewer(Response.json({ plugins: [{ id: 'newer-snapshot', manifest: {} }] }));
     const newerRows = await newerRead;
     resolveOlder(Response.json({ plugins: [{ id: 'older-snapshot', manifest: {} }] }));
     await olderRead;
 
-    expect(await listPluginsFresh(options)).toEqual(newerRows);
+    expect(await listPluginsFresh()).toEqual(newerRows);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
@@ -1206,14 +1070,9 @@ describe('installGeneratedPluginFolder', () => {
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    const context = teamWorkspaceContext({
-      workspaceId: 'workspace-install',
-      workspaceMemberId: 'member-install',
-    });
     const outcome = await installGeneratedPluginFolder(
       'project-1',
       'generated-plugin',
-      context,
     );
 
     expect(outcome.ok).toBe(true);
@@ -1221,30 +1080,19 @@ describe('installGeneratedPluginFolder', () => {
       '/api/projects/project-1/plugins/install-folder',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'workspace-install',
-          'x-od-workspace-member-id': 'member-install',
-        }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'generated-plugin' }),
       }),
     );
     expect(dispatchEvent).toHaveBeenCalled();
   });
 
-  it('evicts only the installed plugin Workspace catalog even when no listener is mounted', async () => {
+  it('evicts the daemon-local plugin catalog even when no listener is mounted', async () => {
     const dispatchEvent = vi.fn();
     vi.stubGlobal('window', { dispatchEvent });
-    const workspaceA = teamWorkspaceContext({
-      workspaceId: 'workspace-install-a',
-      workspaceMemberId: 'member-install-a',
-    });
-    const workspaceB = teamWorkspaceContext({
-      workspaceId: 'workspace-install-b',
-      workspaceMemberId: 'member-install-b',
-    });
     let installed = false;
-    const pluginReads: string[] = [];
-    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    let pluginReads = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
       if (url.endsWith('/plugins/install-folder')) {
         installed = true;
@@ -1256,38 +1104,27 @@ describe('installGeneratedPluginFolder', () => {
           log: [],
         });
       }
-      const workspaceId = new Headers(init?.headers).get('x-od-workspace-id') ?? 'unscoped';
-      pluginReads.push(workspaceId);
+      pluginReads += 1;
       return Response.json({
         plugins: [{
-          id: `${workspaceId}:${installed ? 'after-install' : 'before-install'}`,
+          id: installed ? 'after-install' : 'before-install',
           manifest: {},
         }],
       });
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const optionsA = { workspaceContext: workspaceA };
-    const optionsB = { workspaceContext: workspaceB };
-    expect((await listPluginsFresh(optionsA))[0]?.id).toContain('before-install');
-    const cachedB = await listPluginsFresh(optionsB);
+    expect((await listPluginsFresh())[0]?.id).toBe('before-install');
+    expect((await listPluginsFresh())[0]?.id).toBe('before-install');
 
     const outcome = await installGeneratedPluginFolder(
       'project-1',
       'generated-plugin',
-      workspaceA,
     );
 
     expect(outcome.ok).toBe(true);
-    expect((await listPluginsFresh(optionsA))[0]?.id).toBe(
-      'workspace-install-a:after-install',
-    );
-    expect(await listPluginsFresh(optionsB)).toEqual(cachedB);
-    expect(pluginReads).toEqual([
-      'workspace-install-a',
-      'workspace-install-b',
-      'workspace-install-a',
-    ]);
+    expect((await listPluginsFresh())[0]?.id).toBe('after-install');
+    expect(pluginReads).toBe(2);
     expect(dispatchEvent).toHaveBeenCalledTimes(1);
   });
 
@@ -1661,7 +1498,7 @@ describe('duplicatePluginAsProject', () => {
     vi.unstubAllGlobals();
   });
 
-  it('sends the exact workspace/member authority with Plugin Remix', async () => {
+  it('duplicates from the daemon-local plugin without Workspace authority', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({
         ok: true,
@@ -1676,17 +1513,13 @@ describe('duplicatePluginAsProject', () => {
     await duplicatePluginAsProject(
       'plugin-a',
       { name: 'Plugin A' },
-      teamWorkspaceContext({
-        workspaceId: 'workspace-plugin',
-        workspaceMemberId: 'member-plugin',
-      }),
     );
 
     const [, init] = fetchMock.mock.calls[0]!;
-    expect(init?.headers).toMatchObject({
-      'x-od-workspace-id': 'workspace-plugin',
-      'x-od-workspace-member-id': 'member-plugin',
-    });
+    const headers = new Headers(init?.headers);
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.has('x-od-workspace-id')).toBe(false);
+    expect(headers.has('x-od-workspace-member-id')).toBe(false);
   });
 });
 

@@ -422,7 +422,7 @@ describe('ExtensionsMarketplace import', () => {
     });
   });
 
-  it('#132 — a successful plugin URL import keeps workspace authority and reveals the result', async () => {
+  it('#132 — a successful plugin URL import is daemon-local and reveals the result', async () => {
     workspaceContext = TEAM_CONTEXT;
     const { container } = renderMarketplace();
     await waitFor(() => {
@@ -458,11 +458,10 @@ describe('ExtensionsMarketplace import', () => {
         && JSON.parse(String(init?.body ?? '{}')).source === IMPORT_URL,
     );
     expect(installCall).toBeTruthy();
-    expect(installCall?.[1]?.headers).toMatchObject({
-      'x-od-workspace-id': TEAM_CONTEXT.workspaceId,
-      'x-od-workspace-member-id': TEAM_CONTEXT.workspaceMemberId,
-      'x-od-workspace-type': TEAM_CONTEXT.workspaceType,
-    });
+    const headers = new Headers(installCall?.[1]?.headers);
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.has('x-od-workspace-id')).toBe(false);
+    expect(headers.has('x-od-workspace-member-id')).toBe(false);
   });
 
   it('imports a skill URL through the daemon instead of showing the unsupported placeholder', async () => {
