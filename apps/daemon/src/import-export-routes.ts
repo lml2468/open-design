@@ -35,15 +35,8 @@ import { readProjectFileVersion } from './project-file-versions.js';
 import { authorizeReasoningEgress, sendReasoningEgressDenial } from './reasoning-egress.js';
 import { sandboxImportedProjectRootUnavailableReason } from './sandbox-mode.js';
 import { parseOrchestratorWorkspace } from './workspace-contract.js';
-import {
-  authorizeCreatedProjectWorkspace,
-  bindCreatedProjectToWorkspace,
-  sendCreatedProjectWorkspaceError,
-} from './collab/created-project-workspace.js';
-import type { WorkspaceDirectoryFetchResult } from './collab/vela-workspace-context.js';
 
 export interface RegisterImportRoutesDeps extends RouteDeps<'db' | 'http' | 'uploads' | 'node' | 'ids' | 'paths' | 'imports' | 'auth' | 'projectStore' | 'conversations' | 'projectFiles' | 'validation'> {
-  fetchProjectCreationWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
 }
 
 export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps) {
@@ -87,7 +80,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
     getProject,
     insertProject,
     updateProject,
-    ensureWorkspaceProject,
   } = ctx.projectStore;
   const { insertConversation } = ctx.conversations;
   const { setTabs } = ctx.projectFiles;
@@ -103,14 +95,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       try {
         if (!req.file)
           return res.status(400).json({ error: 'zip file required' });
-        const createWorkspace = await authorizeCreatedProjectWorkspace(
-          req,
-          ctx.fetchProjectCreationWorkspaceDirectory,
-        );
-        if (!createWorkspace.ok) {
-          fs.promises.unlink(req.file.path).catch(() => {});
-          return sendCreatedProjectWorkspaceError(res, createWorkspace);
-        }
         const originalName =
           req.file.originalname || 'Claude Design export.zip';
         if (!/\.zip$/i.test(originalName)) {
@@ -153,12 +137,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
             updatedAt: now,
           });
           setTabs(db, id, [imported.entryFile], imported.entryFile);
-          bindCreatedProjectToWorkspace(
-            (input) => ensureWorkspaceProject(db, input),
-            createWorkspace.context,
-            id,
-            now,
-          );
           return createdProject;
         })();
         res.json({
@@ -318,13 +296,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
 
   app.post('/api/import/folder', async (req, res) => {
     try {
-      const createWorkspace = await authorizeCreatedProjectWorkspace(
-        req,
-        ctx.fetchProjectCreationWorkspaceDirectory,
-      );
-      if (!createWorkspace.ok) {
-        return sendCreatedProjectWorkspaceError(res, createWorkspace);
-      }
       const { baseDir, name, skillId, designSystemId, orchestratorWorkspace } = req.body || {};
       if (typeof baseDir !== 'string' || !baseDir.trim()) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'baseDir required');
@@ -439,7 +410,7 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       const entryFile = await detectEntryFile(normalizedPath);
       const designSystemValidation = await validateProjectDesignSystemId(
         designSystemId,
-        { workspaceId: createWorkspace.context?.workspaceId ?? null },
+        { workspaceId: null },
       );
       if (!designSystemValidation.ok) {
         return sendApiError(
@@ -451,7 +422,7 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       }
       const skillValidation = await validateProjectSkillId(
         skillId,
-        { workspaceId: createWorkspace.context?.workspaceId ?? null },
+        { workspaceId: null },
       );
       if (!skillValidation.ok) {
         return sendApiError(
@@ -493,12 +464,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
         // the imported folder's artifacts. Persist an empty saved tab state so
         // ProjectView does not auto-open the detected primary file on hydration.
         setTabs(db, id, [], null);
-        bindCreatedProjectToWorkspace(
-          (input) => ensureWorkspaceProject(db, input),
-          createWorkspace.context,
-          id,
-          now,
-        );
         return createdProject;
       })();
       /** @type {import('@open-design/contracts').ImportFolderResponse} */

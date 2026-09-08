@@ -528,42 +528,6 @@ describe('agent-driven brand extraction engine', () => {
     expect(systems).toHaveLength(0);
   });
 
-  it('rolls back the scoped draft when the project Workspace binding fails', async () => {
-    const db = openDatabase(tempDir, { dataDir: tempDir });
-    const deleteDraftDesignSystem = vi.fn(deleteUserDesignSystem);
-    const bindCreatedProject = vi.fn(() => {
-      throw new Error('workspace project binding failed');
-    });
-    const options = {
-      url: 'acme.com',
-      brandsRoot,
-      projectsRoot,
-      userDesignSystemsRoot,
-      skillsRoot: SKILLS_ROOT,
-      db,
-      logoFallback: NO_LOGO_FALLBACK,
-      deleteUserDesignSystem: deleteDraftDesignSystem,
-      bindCreatedProject,
-    } as Parameters<typeof startBrandExtraction>[0] & {
-      bindCreatedProject: (projectId: string) => void;
-    };
-
-    await expect(startOfflineBrandExtraction(options))
-      .rejects.toThrow('workspace project binding failed');
-
-    expect(bindCreatedProject).toHaveBeenCalledTimes(1);
-    expect(deleteDraftDesignSystem).toHaveBeenCalledTimes(1);
-    expect(listProjects(db)).toHaveLength(0);
-    expect(readdirSync(projectsRoot)).toEqual([]);
-    expect(readdirSync(brandsRoot)).toEqual([]);
-    await expect(listDesignSystems(userDesignSystemsRoot, {
-      idPrefix: 'user:',
-      source: 'user',
-      isEditable: true,
-      defaultStatus: 'draft',
-    })).resolves.toHaveLength(0);
-  });
-
   it('rolls back brand startup state when design-md staging fails before draft reservation', async () => {
     const db = openDatabase(tempDir, { dataDir: tempDir });
     const mkdirSyncOriginal = fs.mkdirSync.bind(fs);

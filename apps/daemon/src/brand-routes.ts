@@ -16,7 +16,6 @@ import path from 'node:path';
 import type { Application, Request, Response } from 'express';
 
 import {
-  ensureWorkspaceProject,
   getProject,
   listFirstConversationRunStatuses,
   listConversationsAwaitingInput,
@@ -26,8 +25,6 @@ import {
   listProjectsAwaitingInput,
   type insertProject,
 } from './db.js';
-import type { CreatedProjectWorkspaceResolver } from './collab/created-project-workspace.js';
-import type { WorkspaceResourceContext } from './collab/workspace-resource-mutation.js';
 import type { DesignSystemSummary, UserDesignSystemInput } from './design-systems/index.js';
 import { resolveProjectDir } from './projects.js';
 import {
@@ -61,7 +58,7 @@ export interface BrandRoutesDeps {
   createWorkspaceOwnedDesignSystem?: (
     root: string,
     input: UserDesignSystemInput,
-    context: WorkspaceResourceContext | null,
+    req: Request,
   ) => Promise<DesignSystemSummary>;
   /** Roll back both the filesystem record and its generic envelope. */
   deleteWorkspaceOwnedDesignSystem?: (
@@ -86,13 +83,6 @@ export interface BrandRoutesDeps {
   ) => Promise<boolean>;
   /** `<dataDir>/projects` — backing brand-extraction projects. */
   projectsRoot: string;
-  /**
-   * Where a brand-extraction project belongs. Verifies an asserted workspace
-   * identity, then degrades to the daemon's own signed-in workspace rather than
-   * refusing — see `createdProjectWorkspaceHome` in
-   * `collab/created-project-workspace.ts`.
-   */
-  resolveCreatedProjectHome?: CreatedProjectWorkspaceResolver;
   /** Skills root — the agent-driven kit page is rendered from the bundled
    *  `brand-extract` template under here. */
   skillsRoot: string;
@@ -157,54 +147,6 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
     });
     return true;
   };
-
-  /**
-   * Bind a freshly started brand-extraction project into the SAME workspace
-   * the request that created it is acting in — mirroring `POST /api/projects`
-   * (`routes/project/index.ts`'s `workspaceIdForCreate` handling) and
-   * `bindDuplicateIntoRequestWorkspace` (the same file's duplicate/design-
-   * system-copy routes).
-   *
-   * `startBrandExtraction` (`brands/index.ts`) inserts its backing project row
-   * directly and has never called `ensureWorkspaceProject`: the function takes
-   * a plain options object, not an Express `Request`, so it has no workspace
-   * headers to bind against, and nothing downstream filled the gap. A project
-   * with no `workspace_projects` row is not a harmless default — as of the
-   * POST /api/runs and POST /api/chat workspace-identity gate
-   * (`enforceWorkspaceResourceMutation`, resourceType 'project'), an unbound
-   * project is UNCONDITIONALLY denied a run whenever the caller's client
-   * carries any workspace headers at all (`row === null` short-circuits to
-   * `canMutate: false` regardless of who created it), not merely "ungated
-   * either way" as pre-existing call sites assumed. A team member who just
-   * asked the composer to extract a brand/design system could never get the
-   * agent to write anything into it — including the very `assets/` write
-   * spec 04 §9.3's asset sync depends on — because their own first chat turn
-   * 403s before the agent ever runs.
-   *
-   * Scoped to an ACTIVE member only, matching `POST /api/projects`. A
-   * headerless legacy request remains unbound. An asserted but invalid or
-   * unavailable identity fails before extraction creates any local state.
-   */
-  function bindBrandProjectIntoRequestWorkspace(
-    ctx: Awaited<ReturnType<CreatedProjectWorkspaceResolver>>,
-    projectId: string,
-    now: number,
-  ): void {
-    if (!ctx || ctx.memberStatus !== 'active') return;
-    ensureWorkspaceProject(db, {
-      projectId,
-      workspaceId: ctx.workspaceId,
-      visibility: 'personal',
-      resourceState: 'active',
-      createdByWorkspaceMemberId: ctx.workspaceMemberId,
-      updatedByWorkspaceMemberId: ctx.workspaceMemberId,
-      syncState: 'local_only',
-      resourceHubResourceId: null,
-      cloudTombstonedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
 
   function trackProgrammaticBrandExtraction(
     brandId: string,
@@ -334,11 +276,6 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
       return;
     }
     try {
-      // Resolve before startBrandExtraction reserves a brand/project. An
-      // explicitly scoped request must never degrade to an unbound artifact.
-      const createHome = deps.resolveCreatedProjectHome
-        ? await deps.resolveCreatedProjectHome(req)
-        : null;
       const programmaticAbortController = new AbortController();
       const backgroundExtractionRef: { current: Promise<unknown> | null } = { current: null };
       const startOptions: Parameters<typeof startBrandExtraction>[0] = {
@@ -360,13 +297,11 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
       };
       if (deps.createWorkspaceOwnedDesignSystem) {
         startOptions.createUserDesignSystem = (root, input) =>
-          deps.createWorkspaceOwnedDesignSystem!(root, input, createHome);
+          deps.createWorkspaceOwnedDesignSystem!(root, input, req);
       }
       if (deps.deleteWorkspaceOwnedDesignSystem) {
         startOptions.deleteUserDesignSystem = deps.deleteWorkspaceOwnedDesignSystem;
       }
-      startOptions.bindCreatedProject = (projectId) =>
-        bindBrandProjectIntoRequestWorkspace(createHome, projectId, Date.now());
       if (url.trim()) startOptions.url = url;
       if (description.trim()) startOptions.description = description;
       if (designMd.trim()) startOptions.designMd = designMd;

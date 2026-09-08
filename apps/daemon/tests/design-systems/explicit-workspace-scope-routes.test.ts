@@ -298,10 +298,9 @@ describe('design-system explicit Workspace request scope', () => {
       skillsRoot: routePaths.SKILLS_DIR,
       dataDir: routePaths.RUNTIME_DATA_DIR,
       db,
-      resolveCreatedProjectHome: async (req) => requestResourceContext(req),
       resolveDesignSystemWorkspaceId: async (req) => requestContext(req).workspaceId,
-      createWorkspaceOwnedDesignSystem: (root, input, context) =>
-        createWorkspaceOwnedDesignSystem(root, input, context, {
+      createWorkspaceOwnedDesignSystem: (root, input, req) =>
+        createWorkspaceOwnedDesignSystem(root, input, requestResourceContext(req), {
           ensureWorkspaceResource: (resourceType, workspaceId, resourceId, envelope) =>
             ensureWorkspaceResource(db, resourceType, workspaceId, resourceId, envelope),
         }),

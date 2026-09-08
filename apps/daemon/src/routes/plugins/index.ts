@@ -16,12 +16,6 @@ import {
   resolveOptionalLocalWorkspaceRequestAuthority,
   type VerifyWorkspaceRequestAuthority,
 } from '../../collab/workspace-resource-mutation.js';
-import {
-  authorizeCreatedProjectWorkspace,
-  bindCreatedProjectToWorkspace,
-  sendCreatedProjectWorkspaceError,
-} from '../../collab/created-project-workspace.js';
-import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-context.js';
 import type { PluginShareAction } from '../../services/plugin-share-tasks.js';
 import {
   classifyPluginInstallError,
@@ -181,11 +175,9 @@ export interface RegisterPluginRoutesDeps {
   projectStore: {
     insertProject(db: SqliteDbLike, project: unknown): Project | null;
     getProject(db: SqliteDbLike, id: string): Project | null;
-    ensureWorkspaceProject(db: SqliteDbLike, input: unknown): unknown;
     dbDeleteProject(db: SqliteDbLike, id: string): unknown;
     removeProjectDir(projectsRoot: string, projectId: string): Promise<unknown>;
   };
-  fetchProjectCreationWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
   /** Settled, TTL-bounded authority for the pure Plugin catalog read. */
   verifyWorkspaceReadAuthority?: VerifyWorkspaceRequestAuthority;
   /** Fresh authority for mutations and non-catalog reads. */
@@ -597,13 +589,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       if (typeof plugin.id !== 'string' || typeof plugin.fsPath !== 'string') {
         return res.status(422).json({ error: { code: 'plugin-not-duplicable', message: 'plugin record is missing a filesystem source' } });
       }
-      const createWorkspace = await authorizeCreatedProjectWorkspace(
-        req,
-        deps.fetchProjectCreationWorkspaceDirectory,
-      );
-      if (!createWorkspace.ok) {
-        return sendCreatedProjectWorkspaceError(res, createWorkspace);
-      }
       const body = req.body && typeof req.body === 'object'
         ? req.body as PluginDuplicateProjectRequest
         : {};
@@ -653,12 +638,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
           createdAt: now,
           updatedAt: now,
         });
-        bindCreatedProjectToWorkspace(
-          (input) => projectStore.ensureWorkspaceProject(db, input),
-          createWorkspace.context,
-          projectId,
-          now,
-        );
         return createdProject;
       })();
       const loadedProject = projectStore.getProject(db, projectId) ?? project;

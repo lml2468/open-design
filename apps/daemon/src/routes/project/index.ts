@@ -115,13 +115,6 @@ import {
   type VerifyWorkspaceRequestAuthority,
   type WorkspaceResourceContext,
 } from '../../collab/workspace-resource-mutation.js';
-import {
-  bindCreatedProjectToWorkspace,
-  createCreatedProjectWorkspaceResolver,
-  CreatedProjectWorkspaceResolutionError,
-  localProjectWorkspaceAttribution,
-  type CreatedProjectWorkspaceResolver,
-} from '../../collab/created-project-workspace.js';
 import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-context.js';
 import { cancelRunsOwnedBy } from './cancel-owned-runs.js';
 
@@ -241,8 +234,6 @@ export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | '
   fetchWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
   /** Current settings-backed AMR environment for synthesized project contexts. */
   configuredEnv?: () => Record<string, string>;
-  /** @deprecated Creation is local; retained for compatible route composition. */
-  fetchProjectCreationWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
   /**
    * Persist a design system and its Workspace ownership envelope from the
    * request's complete local attribution. Production injects the shared
@@ -252,7 +243,7 @@ export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | '
   createWorkspaceOwnedDesignSystem?: (
     root: string,
     input: UserDesignSystemInput,
-    context: WorkspaceResourceContext | null,
+    req: Request,
   ) => Promise<DesignSystemSummary>;
   /**
    * What the daemon has learned about each workspace's type, used to refuse a
@@ -1818,7 +1809,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     dbDeleteProject,
     removeProjectDir,
     stageProjectDirsForDelete,
-    ensureWorkspaceProject,
     getWorkspaceProjectByProjectId,
   } = ctx.projectStore;
   const { writeProjectFile, readProjectFile, ensureProject, listFiles, listTabs, setTabs, resolveProjectDir } = ctx.projectFiles;
@@ -1829,60 +1819,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
   const { randomId } = ctx.ids;
   const { validateProjectDesignSystemId, validateProjectSkillId } = ctx.validation;
   const { workspaceTypes } = ctx;
-  const learnAssertedWorkspaceType = (context: WorkspaceResourceContext | null) => {
-    if (!context?.workspaceTypeAsserted) return;
-    workspaceTypes?.learn({
-      workspaceId: context.workspaceId,
-      workspaceType: context.workspaceTypeAsserted,
-    });
-  };
-  // Duplicate/import paths use the same optional local attribution as ordinary
-  // project creation. Cloud authority is checked only when a later operation
-  // actually shares, syncs, or publishes the project.
-  const resolveCreatedProjectHomeWithLocalAttribution = createCreatedProjectWorkspaceResolver({
-    ...(ctx.fetchProjectCreationWorkspaceDirectory
-      ? { fetchWorkspaceDirectory: ctx.fetchProjectCreationWorkspaceDirectory }
-      : {}),
-    ...(ctx.configuredEnv ? { configuredEnv: ctx.configuredEnv } : {}),
-  });
-  const resolveCreatedProjectHome: CreatedProjectWorkspaceResolver = async (req) => {
-    const home = await resolveCreatedProjectHomeWithLocalAttribution(req);
-    learnAssertedWorkspaceType(home);
-    return home;
-  };
-  /**
-   * Bind a freshly duplicated / design-system-copied project into the SAME
-   * workspace the request that made it is acting in.
-   *
-   * `POST /api/projects` and duplicate/design-system-copy historically record
-   * the same local attribution row. Keeping that behavior during migration
-   * prevents old project-specific Workspace checks from disagreeing about the
-   * newly created copy before those checks are removed.
-   *
-   * A request with no identity remains a true legacy/unbound copy. Modern web
-   * callers lock and send the source project's persisted exact scope.
-   */
-  function bindDuplicateIntoRequestWorkspace(
-    ctx: WorkspaceResourceContext | null,
-    targetProjectId: string,
-    now: number,
-  ) {
-    if (ctx === null) return;
-    learnAssertedWorkspaceType(ctx);
-    ensureWorkspaceProject(db, {
-      projectId: targetProjectId,
-      workspaceId: ctx.workspaceId,
-      visibility: 'personal',
-      resourceState: 'active',
-      createdByWorkspaceMemberId: ctx.workspaceMemberId,
-      updatedByWorkspaceMemberId: ctx.workspaceMemberId,
-      syncState: 'local_only',
-      resourceHubResourceId: null,
-      cloudTombstonedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
   async function loadPluginRegistryView(options: {
     workspaceId?: string | null;
     workspaceMemberId?: string | null;
@@ -2076,10 +2012,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
 
   app.post('/api/project-locations/scan', async (req, res) => {
     try {
-      // Resolve once before scanning or inserting anything. An explicitly
-      // scoped request whose membership is removed/unavailable must not leave
-      // partially imported unbound projects behind.
-      const createHome = await resolveCreatedProjectHome(req);
       const locations = (await configuredProjectLocations()).filter((loc: any) => !loc.builtIn);
       const imported = [];
       const existing: string[] = [];
@@ -2125,18 +2057,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
               createdAt: now,
               updatedAt: now,
             });
-            // A project this scan adopts off disk is as much a created project
-            // as one typed into the composer, and needs the same home
-            // workspace. Without this the imported project is an orphan the
-            // moment it appears: account-scoped local runs remain possible,
-            // but Workspace mutations and Workspace-pinned billing would have
-            // no durable home.
-            bindCreatedProjectToWorkspace(
-              (input) => ensureWorkspaceProject(db, input),
-              createHome,
-              manifest.id,
-              now,
-            );
             if (project) imported.push(project);
           } catch (err: any) {
             skipped.push({ path: entry.dir, reason: String(err?.message ?? err) });
@@ -2147,15 +2067,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       const body = { scanned, imported, existing, skipped };
       res.json(body);
     } catch (err: any) {
-      if (err instanceof CreatedProjectWorkspaceResolutionError) {
-        return sendApiError(
-          res,
-          err.status,
-          err.code,
-          err.message,
-          err.retryable ? { retryable: true } : {},
-        );
-      }
       sendApiError(res, 400, 'BAD_REQUEST', String(err));
     }
   });
@@ -2254,13 +2165,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
 
   app.post('/api/projects', async (req, res) => {
     try {
-      // Ordinary project creation is local. Capture any complete identity that
-      // the Web already has for local attribution, but do not turn Workspace
-      // directory availability into a Send dependency.
-      const createWorkspace = {
-        context: localProjectWorkspaceAttribution(req),
-      };
-      learnAssertedWorkspaceType(createWorkspace.context);
       const { id, name, projectLocationId, skillId, designSystemId, pendingPrompt, metadata, customInstructions, skipDiscoveryBrief } =
         req.body || {};
       if (typeof id !== 'string' || !isSafeId(id)) {
@@ -2320,10 +2224,13 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       if (skipDiscoveryBrief !== undefined && typeof skipDiscoveryBrief !== 'boolean') {
         return sendApiError(res, 400, 'BAD_REQUEST', 'skipDiscoveryBrief must be a boolean');
       }
-      const creationWorkspaceScope = {
-        workspaceId: createWorkspace.context?.workspaceId ?? null,
-        workspaceMemberId: createWorkspace.context?.workspaceMemberId ?? null,
-      };
+      const requestWorkspaceContext = workspaceProjectContextFromRequest(req);
+      const creationWorkspaceScope = requestWorkspaceContext && requestWorkspaceContext !== 'missing'
+        ? {
+            workspaceId: requestWorkspaceContext.workspaceId,
+            workspaceMemberId: requestWorkspaceContext.workspaceMemberId,
+          }
+        : { workspaceId: null, workspaceMemberId: null };
       const designSystemValidation = await validateProjectDesignSystemId(
         designSystemId,
         creationWorkspaceScope,
@@ -2649,8 +2556,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
             createdAt: now,
             updatedAt: now,
           });
-          // Project, seed conversation, and workspace membership form one
-          // ownership record. A binding failure must leave none of them behind.
           insertConversation(db, {
             id: cid,
             projectId: id,
@@ -2659,12 +2564,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
             createdAt: now,
             updatedAt: now,
           });
-          bindCreatedProjectToWorkspace(
-            (input) => ensureWorkspaceProject(db, input),
-            createWorkspace.context,
-            id,
-            now,
-          );
           if (resolveBody && registry) {
             const resolved = resolvePluginSnapshot({
               db,
@@ -2762,14 +2661,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         ? getProject(db, id) ?? project
         : project;
       const body = {
-        // The binding above is part of the same transaction as the project and
-        // seed conversation. Return that authority immediately so the Web can
-        // scope its very first conversation/file reads without waiting for a
-        // later list/detail round trip. Headerless legacy creates remain
-        // explicitly unbound and therefore keep the original payload shape.
-        project: createWorkspace.context
-          ? { ...createdProject, workspaceId: createWorkspace.context.workspaceId }
-          : createdProject,
+        project: createdProject,
         conversationId: cid,
         ...(pluginResolutionState.snapshot
           ? { appliedPluginSnapshotId: pluginResolutionState.snapshot.snapshotId }
@@ -2979,7 +2871,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       if (!sourceProject || !projectVisibleForLocations(sourceProject, locations)) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
       }
-      const createHome = await resolveCreatedProjectHome(req);
       if (isDesignSystemLikeProject(sourceProject)) {
         return sendApiError(
           res,
@@ -3034,7 +2925,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           updatedAt: now,
         });
         insertedProject = true;
-        bindDuplicateIntoRequestWorkspace(createHome, targetProjectId, now);
         const conversationId = randomId();
         insertConversation(db, {
           id: conversationId,
@@ -3053,9 +2943,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         }
         /** @type {import('@open-design/contracts').DuplicateProjectResponse} */
         const body = {
-          project: createHome
-            ? { ...project, workspaceId: createHome.workspaceId }
-            : project,
+          project,
           conversationId,
           copiedFiles,
         };
@@ -3066,15 +2954,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         throw err;
       }
     } catch (err: any) {
-      if (err instanceof CreatedProjectWorkspaceResolutionError) {
-        return sendApiError(
-          res,
-          err.status,
-          err.code,
-          err.message,
-          err.retryable ? { retryable: true } : {},
-        );
-      }
       sendApiError(res, 400, 'BAD_REQUEST', String(err));
     }
   });
@@ -3086,7 +2965,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       if (!sourceProject || !projectVisibleForLocations(sourceProject, locations)) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
       }
-      const createHome = await resolveCreatedProjectHome(req);
       if (isDesignSystemLikeProject(sourceProject)) {
         return sendApiError(
           res,
@@ -3104,11 +2982,8 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       let insertedProject = false;
       try {
         const createDesignSystem = ctx.createWorkspaceOwnedDesignSystem
-          ?? ((root: string, input: UserDesignSystemInput, context: WorkspaceResourceContext | null) =>
-            createUserDesignSystem(root, {
-              ...input,
-              ...(context ? { workspaceId: context.workspaceId } : {}),
-            }));
+          ?? ((root: string, input: UserDesignSystemInput) =>
+            createUserDesignSystem(root, input));
         const designSystem = await createDesignSystem(USER_DESIGN_SYSTEMS_DIR, {
           title: targetName,
           summary: sourceNotes,
@@ -3121,7 +2996,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
             notes: sourceNotes,
             sourceNotes,
           },
-        }, createHome);
+        }, req);
         createdDesignSystemId = designSystem.id;
 
         const metadata = {
@@ -3180,7 +3055,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           updatedAt: now,
         });
         insertedProject = true;
-        bindDuplicateIntoRequestWorkspace(createHome, targetProjectId, now);
         const conversationId = randomId();
         insertConversation(db, {
           id: conversationId,
@@ -3211,9 +3085,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         await linkUserDesignSystemProject(USER_DESIGN_SYSTEMS_DIR, designSystem.id, targetProjectId);
         /** @type {import('@open-design/contracts').CreateDesignSystemProjectFromProjectResponse} */
         const body = {
-          project: createHome
-            ? { ...project, workspaceId: createHome.workspaceId }
-            : project,
+          project,
           conversationId,
           designSystemId: designSystem.id,
           copiedFiles,
@@ -3228,15 +3100,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         throw err;
       }
     } catch (err: any) {
-      if (err instanceof CreatedProjectWorkspaceResolutionError) {
-        return sendApiError(
-          res,
-          err.status,
-          err.code,
-          err.message,
-          err.retryable ? { retryable: true } : {},
-        );
-      }
       sendApiError(res, 400, 'BAD_REQUEST', String(err));
     }
   });

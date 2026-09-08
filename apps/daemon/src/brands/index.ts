@@ -123,8 +123,6 @@ export interface StartBrandExtractionOptions {
   createUserDesignSystem?: typeof createUserDesignSystem;
   /** Matching rollback for a workspace-aware draft creator. */
   deleteUserDesignSystem?: typeof deleteUserDesignSystem;
-  /** Final synchronous creation fence; throws to roll back the whole startup. */
-  bindCreatedProject?: (projectId: string) => void;
   /** Workspace to claim the extracted design system for (#145). Design systems
    *  share one directory, so the claim is what keeps a brand extracted in one
    *  workspace out of the next workspace's library. Omitted (signed out /
@@ -460,12 +458,6 @@ export async function startBrandExtraction(
         ? { browserTabs: [{ id: BRAND_BROWSER_TAB_ID, label: 'Browser', url, title: host }] }
         : {}),
     });
-
-    // Keep the project row and its Workspace envelope in the same startup
-    // rollback boundary as the draft design system. A route-level bind after
-    // this function returns cannot compensate the already-created brand,
-    // project directory, transcript, and design-system envelope on failure.
-    opts.bindCreatedProject?.(projectId);
 
     // Programmatic-first runs immediately, but never blocks the start response.
     // The caller should land in the project with a real user/assistant transcript

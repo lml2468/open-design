@@ -34,7 +34,7 @@ function buildDeps(input: {
   loadRegistry?: ReturnType<typeof vi.fn>;
   insertProject?: ReturnType<typeof vi.fn>;
   insertConversation?: ReturnType<typeof vi.fn>;
-  fetchProjectCreationWorkspaceDirectory?: ReturnType<typeof vi.fn>;
+  ensureWorkspaceProject?: ReturnType<typeof vi.fn>;
 } = {}) {
   const binding = {
     projectId: PROJECT_ID,
@@ -81,6 +81,7 @@ function buildDeps(input: {
       }),
       getWorkspaceProject: () => binding,
       getWorkspaceProjectByProjectId: () => binding,
+      ensureWorkspaceProject: input.ensureWorkspaceProject ?? vi.fn(),
       updateProject: vi.fn(),
       listProjects: () => [],
     }),
@@ -119,19 +120,6 @@ function buildDeps(input: {
         lifecycleState: 'active',
       }),
     }),
-    fetchProjectCreationWorkspaceDirectory:
-      input.fetchProjectCreationWorkspaceDirectory ?? vi.fn(async () => ({
-        ok: true,
-        items: [{
-          workspaceId: WORKSPACE_ID,
-          workspaceName: 'Project scope workspace',
-          workspaceType: 'personal',
-          workspaceMemberId: MEMBER_ID,
-          role: 'owner',
-          memberStatus: 'active',
-          lifecycleState: 'active',
-        }],
-      })),
     pluginScope: {
       loadRegistry: input.loadRegistry ?? vi.fn(async () => ({
         skills: [],
@@ -200,14 +188,11 @@ describe('project resource selection uses the persisted exact member', () => {
     );
   });
 
-  it('creates a local-only project without fetching Workspace authority', async () => {
-    const fetchProjectCreationWorkspaceDirectory = vi.fn(async () => ({
-      ok: false,
-      items: [],
-    }));
+  it('creates a local-only project without writing a legacy Workspace binding', async () => {
+    const ensureWorkspaceProject = vi.fn();
     const insertProject = vi.fn((_: unknown, input: Record<string, unknown>) => input);
     const baseUrl = await start(buildDeps({
-      fetchProjectCreationWorkspaceDirectory,
+      ensureWorkspaceProject,
       insertProject,
     }));
 
@@ -221,7 +206,7 @@ describe('project resource selection uses the persisted exact member', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(fetchProjectCreationWorkspaceDirectory).not.toHaveBeenCalled();
+    expect(ensureWorkspaceProject).not.toHaveBeenCalled();
     expect(insertProject).toHaveBeenCalledOnce();
   });
 

@@ -136,7 +136,7 @@ describe('GET /api/projects/:id resolvedDir', () => {
     expect(path.isAbsolute(detail.resolvedDir)).toBe(true);
   });
 
-  it('lists every local project even when a legacy Workspace binding exists', async () => {
+  it('does not bind a newly created local project from legacy Workspace headers', async () => {
     const projectId = `proj-local-catalog-${Date.now()}`;
     const createResp = await fetch(`${baseUrl}/api/projects`, {
       method: 'POST',
@@ -155,9 +155,11 @@ describe('GET /api/projects/:id resolvedDir', () => {
       }),
     });
     expect(createResp.status).toBe(200);
-    await expect(createResp.json()).resolves.toMatchObject({
-      project: { id: projectId, workspaceId: 'legacy-workspace' },
-    });
+    const created = (await createResp.json()) as {
+      project: { id: string; workspaceId?: string | null };
+    };
+    expect(created.project.id).toBe(projectId);
+    expect(created.project).not.toHaveProperty('workspaceId');
 
     const listResp = await fetch(`${baseUrl}/api/projects`);
     expect(listResp.status).toBe(200);

@@ -860,18 +860,13 @@ export async function enforceVerifiedWorkspaceResourceRead(
  * `apps/daemon/src/cli.ts` attaches `x-od-workspace-*` outside `od workspace …`,
  * and `AGENTS.md` makes the CLI the embeddability contract that external agents
  * drive OpenDesign through. This branch used to answer 401 for ANY bound
- * resource, which was survivable only while headerless creates left projects
- * unbound. Once every created project got a workspace home (#6201), the two
- * rules combined into a project its own creator could not touch:
- * `od project create` then `od project duplicate` -> 401.
+ * resource, which became a problem for historical projects that had already
+ * acquired a Workspace binding: a headerless `od project duplicate` could be
+ * rejected even though the daemon's signed-in identity owned that binding.
  *
  * Resolving to the daemon's ambient identity — rather than to the request's
- * claim, of which there is none — is the same fallback the create path already
- * applies ("nothing asserted -> ambient"), so the gate and the creation paths
- * now agree about what a headerless caller is. It does NOT weaken the two
- * adjacent contract: `authorizeCreatedProjectWorkspace` still refuses to let
- * ambient stand in for a pair someone explicitly CLAIMED. That governs a case
- * where something was asserted; this is the third case.
+ * claim, of which there is none — remains a compatibility rule for historical
+ * bound resources. New local Projects no longer acquire Workspace bindings.
  *
  * What stays refused, because the original branch protected something real
  * (recvqbeDjAsejl / recvqbklNGDqYY, spec 04 §10):

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { registerBrandRoutes, type BrandRoutesDeps } from '../src/brand-routes.js';
-import { createCreatedProjectWorkspaceResolver } from '../src/collab/created-project-workspace.js';
+import { workspaceResourceContextFromRequest } from '../src/collab/workspace-resource-mutation.js';
 import {
   closeDatabase,
   deleteWorkspaceResourceByResourceId,
@@ -639,19 +639,7 @@ describe('brand routes', () => {
     }
   });
 
-  it('binds a freshly extracted brand project into the caller\'s ACTIVE team workspace', async () => {
-    // Red-spec for the gap `d7f3546d8`'s commit message already named but did
-    // not close: `startBrandExtraction` (brands/index.ts) inserts its backing
-    // project row directly and never calls `ensureWorkspaceProject`. Before
-    // this fix, that left the project with NO `workspace_projects` row even
-    // when the request that created it plainly named a team workspace member —
-    // and POST /api/runs + POST /api/chat's workspace mutation gate
-    // (`enforceWorkspaceResourceMutation`) unconditionally denies a run against
-    // ANY unbound project once the caller's client sends workspace headers at
-    // all (`row === null` short-circuits `canMutate` to false regardless of
-    // who created it). A team member's own just-created design system could
-    // never get its first agent turn to run, so the agent could never write
-    // the `assets/logo.svg` spec 04 §9.3's sync depends on.
+  it('does not attach legacy Workspace ownership to a freshly extracted brand project', async () => {
     const server = await startBrandServer({
       logoFallback: NO_LOGO_FALLBACK,
       imageryFallback: NO_IMAGERY_FALLBACK,
@@ -670,13 +658,7 @@ describe('brand routes', () => {
       });
       expect(started.status).toBe(200);
 
-      const binding = getWorkspaceProjectByProjectId(db, started.body.projectId);
-      expect(binding).toMatchObject({
-        workspaceId: 'ws-team-1',
-        visibility: 'personal',
-        resourceState: 'active',
-        createdByWorkspaceMemberId: 'member-owner',
-      });
+      expect(getWorkspaceProjectByProjectId(db, started.body.projectId)).toBeUndefined();
     } finally {
       await server.close();
     }
@@ -686,11 +668,15 @@ describe('brand routes', () => {
     const createScopedDesignSystem = vi.fn(async (
       root: string,
       input: Parameters<typeof createWorkspaceOwnedDesignSystem>[1],
-      context: Parameters<typeof createWorkspaceOwnedDesignSystem>[2],
-    ) => createWorkspaceOwnedDesignSystem(root, input, context, {
-      ensureWorkspaceResource: (resourceType, workspaceId, resourceId, envelope) =>
-        ensureWorkspaceResource(db, resourceType, workspaceId, resourceId, envelope),
-    }));
+      req: express.Request,
+    ) => {
+      const context = workspaceResourceContextFromRequest(req);
+      if (!context || context === 'missing') throw new Error('workspace context required');
+      return createWorkspaceOwnedDesignSystem(root, input, context, {
+        ensureWorkspaceResource: (resourceType, workspaceId, resourceId, envelope) =>
+          ensureWorkspaceResource(db, resourceType, workspaceId, resourceId, envelope),
+      });
+    });
     const scopedDeps = {
       createWorkspaceOwnedDesignSystem: createScopedDesignSystem,
       deleteWorkspaceOwnedDesignSystem: (root: string, designSystemId: string) =>
@@ -798,7 +784,7 @@ describe('brand routes', () => {
     }
   });
 
-  it('leaves a signed-out / single-player brand extraction unbound, exactly as before this fix', async () => {
+  it('leaves a signed-out brand extraction unbound', async () => {
     const server = await startBrandServer({
       logoFallback: NO_LOGO_FALLBACK,
       imageryFallback: NO_IMAGERY_FALLBACK,
@@ -1638,13 +1624,6 @@ describe('brand routes', () => {
       skillsRoot,
       dataDir,
       db,
-      // The same production seam `server.ts` builds. Constructed with no
-      // membership-directory fetcher, which is
-      // `authorizeCreatedProjectWorkspace`'s documented local/dev
-      // compatibility configuration — so a verified header identity still
-      // binds here, while the resolver's verify-then-degrade contract is
-      // covered directly in `tests/collab/created-project-workspace.test.ts`.
-      resolveCreatedProjectHome: createCreatedProjectWorkspaceResolver({}),
       ...extraDeps,
     });
     const server = http.createServer(app);

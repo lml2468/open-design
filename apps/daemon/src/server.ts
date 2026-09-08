@@ -334,12 +334,6 @@ import { createDesignSystemServerServices } from './design-systems/server-servic
 import { prepareDesignTokenContractRebuild } from './design-systems/token-contract-rebuild.js';
 import { registerBrandRoutes } from './brand-routes.js';
 import {
-  authorizeCreatedProjectWorkspace,
-  bindCreatedProjectToWorkspace,
-  createCreatedProjectWorkspaceResolver,
-  sendCreatedProjectWorkspaceError,
-} from './collab/created-project-workspace.js';
-import {
   applyDiffReviewDecisionToCwd,
   applyPlugin,
   buildConnectorProbe,
@@ -3100,14 +3094,6 @@ export async function startServer({
           configuredEnv: configuredAmrEnv(),
         })
       : undefined;
-  // Project-creation writes must be authorized by AMR in production, while
-  // local/dev and explicitly anonymous clients keep their legacy behavior.
-  // Keep this separate from read-side directory fetches so an unconfigured
-  // daemon never turns ordinary local creation into a network-dependent path.
-  const fetchProjectCreationWorkspaceDirectory =
-    process.env.OD_WORKSPACE_CONTEXT_SOURCE?.trim() === 'vela'
-      ? fetchFreshMutationWorkspaceDirectory
-      : undefined;
   const listWorkspaceDirectory = async () => {
     const result = await fetchWorkspaceDirectory();
     return result.items;
@@ -3258,18 +3244,6 @@ export async function startServer({
     refreshWorkspaceAccountIdentity();
     return verifyWorkspaceReadAuthority(req);
   };
-  /**
-   * Where a created project belongs for the surfaces with no authorization gate
-   * of their own. An explicit pair is verified through the same fresh directory
-   * authority as `POST /api/projects`; a headerless legacy/local request remains
-   * unbound. No active/current/last-known Workspace is consulted.
-   */
-  const resolveCreatedProjectHome = createCreatedProjectWorkspaceResolver({
-    ...(fetchProjectCreationWorkspaceDirectory
-      ? { fetchWorkspaceDirectory: fetchProjectCreationWorkspaceDirectory }
-      : {}),
-    configuredEnv: configuredAmrEnv,
-  });
   // Spec 9.2 one-time backfill: claim every pre-existing user design system
   // whose metadata.json already names a workspace into the generic
   // `workspace_resources` table too. Idempotent (see
@@ -4032,7 +4006,6 @@ export async function startServer({
     projectFiles: projectFileDeps,
     conversations: conversationDeps,
     auth: authDeps,
-    fetchProjectCreationWorkspaceDirectory,
   });
   app.post('/api/projects/:id/figma/import', (req, res) => {
     figmaUpload.single('file')(req, res, async (err) => {
@@ -4089,8 +4062,7 @@ export async function startServer({
     verifyPersonalProjectDeleteLeaseAuthority,
     fetchWorkspaceDirectory,
     configuredEnv: configuredAmrEnv,
-    fetchProjectCreationWorkspaceDirectory,
-    createWorkspaceOwnedDesignSystem: createWorkspaceOwnedDesignSystemForContext,
+    createWorkspaceOwnedDesignSystem,
     pluginScope: {
       loadRegistry: loadPluginRegistryView,
       getPlugin: (id, options) => getWorkspacePluginForRequest(
@@ -4166,7 +4138,6 @@ export async function startServer({
     conversations: conversationDeps,
     projectFiles: projectFileDeps,
     validation: validationDeps,
-    fetchProjectCreationWorkspaceDirectory,
   });
 
   // Resource catalog
@@ -4230,7 +4201,6 @@ export async function startServer({
     generationJobs: designSystemGenerationJobs,
   });
   registerBrandRoutes(app, {
-    resolveCreatedProjectHome,
     brandsRoot: BRANDS_DIR,
     userDesignSystemsRoot: USER_DESIGN_SYSTEMS_DIR,
     resolveDesignSystemWorkspaceId: resolveDesignSystemWorkspaceScope,
@@ -4238,7 +4208,7 @@ export async function startServer({
     deleteDesignSystemForRequest: designSystemRouteServices.deleteDesignSystemForRequest,
     isDesignSystemWorkspaceBound: (designSystemId) =>
       Boolean(getWorkspaceResourceByResourceId(db, 'design_system', designSystemId)),
-    createWorkspaceOwnedDesignSystem: createWorkspaceOwnedDesignSystemForContext,
+    createWorkspaceOwnedDesignSystem,
     deleteWorkspaceOwnedDesignSystem: (root, designSystemId) =>
       removeWorkspaceOwnedDesignSystem(root, designSystemId, {
         deleteUserDesignSystem,
@@ -4494,37 +4464,13 @@ export async function startServer({
         const body = req.body && typeof req.body === 'object' ? req.body : {};
         const action = normalizePluginShareAction(body.action);
         if (!action) return sendApiError(res, 400, 'BAD_REQUEST', 'action must be publish-github or contribute-open-design');
-        const createWorkspace = await authorizeCreatedProjectWorkspace(
-          req,
-          fetchProjectCreationWorkspaceDirectory,
-        );
-        if (!createWorkspace.ok) {
-          return sendCreatedProjectWorkspaceError(res, createWorkspace);
-        }
         const actionPluginId = PLUGIN_SHARE_ACTION_PLUGIN_IDS[action];
         const actionPlugin = getInstalledPlugin(db, actionPluginId);
         if (!actionPlugin) return res.status(409).json({ ok: false, code: 'share-action-plugin-missing', message: `The bundled action plugin "${actionPluginId}" is not installed. Restart the daemon so bundled plugins are registered.` });
         const now = Date.now(); const id = randomId(); const cid = randomId(); const sourceSlug = githubRepoNameFromPluginName(sourcePlugin.id); const stagedPath = `plugin-source/${sourceSlug}`; const prompt = renderPluginSharePrompt({ action, sourcePlugin, stagedPath }); const metadata = { kind: 'prototype' }; const projectRoot = await ensureProject(PROJECTS_DIR, id, metadata); await copyPluginFolderForProjectContext(sourcePlugin.fsPath, path.join(projectRoot, 'plugin-source', sourceSlug));
         insertProject(db, { id, name: `${PLUGIN_SHARE_ACTION_LABELS[action]}: ${sourcePlugin.title || sourcePlugin.id}`, skillId: null, designSystemId: null, pendingPrompt: prompt, metadata, createdAt: now, updatedAt: now });
         insertConversation(db, { id: cid, projectId: id, title: null, createdAt: now, updatedAt: now });
-        // The share task IS a chat project — it opens with a seeded prompt the
-        // user immediately runs. `createPluginShareProject` (apps/web) mints no
-        // workspace headers at all, so this was permanently unbound, not merely
-        // racy: the very first turn 403s on the workspace gate.
-        bindCreatedProjectToWorkspace(
-          (input) => ensureWorkspaceProject(db, input),
-          createWorkspace.context,
-          id,
-          now,
-        );
-        const registry = await loadPluginRegistryView(
-          createWorkspace.context
-            ? {
-                workspaceId: createWorkspace.context.workspaceId,
-                workspaceMemberId: createWorkspace.context.workspaceMemberId,
-              }
-            : {},
-        );
+        const registry = await loadPluginRegistryView();
         const connectorProbe = buildConnectorProbe(connectorService);
         const resolved = resolvePluginSnapshot({ db, body: { pluginId: actionPluginId, pluginInputs: { source_plugin_id: sourcePlugin.id, source_plugin_title: sourcePlugin.title || sourcePlugin.id, source_plugin_version: sourcePlugin.version, source_plugin_path: sourcePlugin.fsPath, plugin_context_path: stagedPath }, locale: typeof body.locale === 'string' ? body.locale : undefined }, projectId: id, conversationId: cid, registry, connectorProbe });
         if (resolved && !resolved.ok) return res.status(resolved.status).json(resolved.body);
@@ -4683,7 +4629,6 @@ export async function startServer({
     ids: idDeps,
     projectStore: projectStoreDeps,
     conversations: conversationDeps,
-    fetchProjectCreationWorkspaceDirectory,
     verifyWorkspaceReadAuthority,
     verifyWorkspaceRequestAuthority,
     workspaceResources: {
