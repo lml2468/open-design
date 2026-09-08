@@ -499,19 +499,8 @@ function RunHistory({
 export function RoutinesSection({ onClose }: RoutinesSectionProps) {
   const t = useT();
   const analytics = useAnalytics();
-  // Attaches the same workspace identity headers project reads already carry,
-  // so the daemon's `GET /api/workspaces/:id/projects` returns the caller's
-  // team projects instead of falling back to the no-scope `GET /api/projects`
-  // catalog (spec 04 §10), which now only lists never-claimed projects.
-  // `useWorkspaceContext` is a coalesced read shared across the nav shell, so
-  // calling it again here does not fan out an extra fetch.
-  //
-  // `workspaceView: 'all'` below matters: this picker needs every project the
-  // caller can attach an automation to (own drafts AND team-shared), not just
-  // the `'drafts'` fallback `listProjects` otherwise defaults to when the view
-  // is omitted (that default is right for the Home "Drafts" tab, wrong here —
-  // see `workspaceProjectListViewForRoute` in App.tsx for the same per-surface
-  // view choice made project-browsing routes).
+  // Workspace context still scopes automation mutations during the transition,
+  // while `listProjects` itself always reads the complete local catalog.
   const { context: routinesWorkspaceContext } = useWorkspaceContext();
   const fireAutomation = (element: 'new_automation' | 'create' | 'save' | 'cancel' | 'run_now' | 'edit' | 'pause' | 'resume' | 'delete' | 'history') => {
     trackAutomationsClick(analytics.track, { page_name: 'automations', area: 'automations', element });

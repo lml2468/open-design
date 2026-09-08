@@ -135,6 +135,40 @@ describe('GET /api/projects/:id resolvedDir', () => {
     expect(path.isAbsolute(detail.resolvedDir)).toBe(true);
   });
 
+  it('lists every local project even when a legacy Workspace binding exists', async () => {
+    const projectId = `proj-local-catalog-${Date.now()}`;
+    const createResp = await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-od-workspace-id': 'legacy-workspace',
+        'x-od-workspace-member-id': 'legacy-member',
+        'x-od-workspace-type': 'team',
+        'x-od-workspace-role': 'owner',
+      },
+      body: JSON.stringify({
+        id: projectId,
+        name: 'Locally authoritative project',
+        skillId: null,
+        designSystemId: null,
+      }),
+    });
+    expect(createResp.status).toBe(200);
+    await expect(createResp.json()).resolves.toMatchObject({
+      project: { id: projectId, workspaceId: 'legacy-workspace' },
+    });
+
+    const listResp = await fetch(`${baseUrl}/api/projects`);
+    expect(listResp.status).toBe(200);
+    const body = (await listResp.json()) as {
+      projects: Array<{ id: string; workspaceId?: string | null }>;
+    };
+    expect(body.projects.find((project) => project.id === projectId)).toMatchObject({
+      id: projectId,
+      workspaceId: null,
+    });
+  });
+
   it('fails GET /api/projects/:id?ensureDir=1 when a managed folder cannot be materialized', async () => {
     const projectId = `proj-ensure-fails-${Date.now()}`;
     const createResp = await fetch(`${baseUrl}/api/projects`, {

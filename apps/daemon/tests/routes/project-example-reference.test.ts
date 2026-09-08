@@ -102,7 +102,6 @@ function buildDeps(input: {
       listLatestProjectRunStatuses: () => new Map(),
       listProjectsAwaitingInput: () => new Set(),
       listProjects: () => [],
-      listUnboundProjects: () => [],
     }),
     events: functionProxy({ activeProjectEventSinks: new Map() }),
     ids: { randomId: () => 'conversation-id' },

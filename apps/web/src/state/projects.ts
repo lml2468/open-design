@@ -30,8 +30,6 @@ import type {
   ProjectScenarioTaskProfile,
   TerminalSession,
   WorkspaceCollabContext,
-  WorkspaceProjectSummary,
-  WorkspaceProjectsResponse,
 } from '@open-design/contracts';
 import { randomUUID } from '../utils/uuid';
 import { markProjectDisplaySnapshotsDirty } from './project-display-cache';
@@ -62,32 +60,12 @@ export { workspaceProjectHeaders } from '../collab/workspace-identity';
 
 export type WorkspaceProjectListView = 'all' | 'recent' | 'drafts' | 'team';
 
-const WORKSPACE_PROJECT_LIST_VIEWS: readonly WorkspaceProjectListView[] = [
-  'all',
-  'recent',
-  'drafts',
-  'team',
-];
-
-function workspaceProjectListCacheKey(
-  context: WorkspaceCollabContext,
-  workspaceView: WorkspaceProjectListView,
-): string {
-  return [
-    'workspace-projects',
-    workspaceIdentityCacheKey(context),
-    workspaceView,
-  ].join(':');
-}
-
-export function invalidateWorkspaceProjectLists(
-  context: WorkspaceCollabContext,
+export function invalidateProjectList(
+  context?: WorkspaceCollabContext | null,
   accountGeneration?: number,
 ): void {
-  for (const workspaceView of WORKSPACE_PROJECT_LIST_VIEWS) {
-    evictCoalescedGet(workspaceProjectListCacheKey(context, workspaceView));
-  }
-  markProjectDisplaySnapshotsDirty({ context, accountGeneration });
+  evictCoalescedGet('local-projects');
+  if (context) markProjectDisplaySnapshotsDirty({ context, accountGeneration });
 }
 
 export type WorkspaceContextForWrite = {
@@ -187,41 +165,9 @@ export async function listProjects(options?: {
   workspaceContext?: WorkspaceCollabContext | null;
   workspaceView?: WorkspaceProjectListView;
 }): Promise<Project[]> {
-  const context = options?.workspaceContext ?? null;
-  if (context) {
-    const summaries = await listWorkspaceProjectSummaries({
-      context,
-      workspaceView: options?.workspaceView,
-      throwOnError: options?.throwOnError,
-    });
-    const seenProjectIds = new Set<string>();
-    return summaries.flatMap((summary) => {
-      // Workspace list responses carry the authoritative scope on the summary
-      // wrapper. Remote catalog projects can omit it from the nested project,
-      // and a stale nested value must not leak another Workspace into a card.
-      const project: Project = {
-        ...summary.project,
-        workspaceId: summary.workspaceId,
-        workspaceVisibility: summary.visibility,
-      };
-      // Workspace summaries have resource-level identities, so the same
-      // logical project can legitimately appear more than once when local and
-      // remote catalog records overlap. Project cards are opened by project.id;
-      // keep the first (the daemon orders local summaries before remote ones)
-      // instead of rendering duplicate cards with duplicate React keys.
-      if (seenProjectIds.has(project.id)) return [];
-      seenProjectIds.add(project.id);
-      return [project];
-    });
-  }
-  // No resolved workspace identity at all — either the context has not landed
-  // yet or this daemon has no workspace plane. The key is a constant on
-  // purpose: it caches the ONE unscoped `/api/projects` answer, and it is
-  // unreachable once a context exists (the workspace branch above returns
-  // first), so it can never serve one workspace's rows to another. The
-  // workspace-scoped read's own key is built in
-  // `listWorkspaceProjectSummaries` below and carries the full wire identity
-  // plus the requested view.
+  // Project discovery is local-only in v1. Keep the legacy options temporarily
+  // so callers can be migrated independently, but neither Workspace identity
+  // nor its old catalog view may change the endpoint or hide local projects.
   try {
     return await coalescedGet('local-projects', async () => {
       const resp = await fetch('/api/projects');
@@ -233,30 +179,6 @@ export async function listProjects(options?: {
     });
   } catch (err) {
     if (options?.throwOnError) throw err;
-    return [];
-  }
-}
-
-export async function listWorkspaceProjectSummaries(options: {
-  context: WorkspaceCollabContext;
-  throwOnError?: boolean;
-  workspaceView?: WorkspaceProjectListView;
-}): Promise<WorkspaceProjectSummary[]> {
-  const { context } = options;
-  const workspaceView = options.workspaceView ?? 'drafts';
-  const key = workspaceProjectListCacheKey(context, workspaceView);
-  try {
-    return await coalescedGet(key, async () => {
-      const resp = await fetch(
-        `/api/workspaces/${encodeURIComponent(context.workspaceId)}/projects?view=${encodeURIComponent(workspaceView)}`,
-        { headers: workspaceProjectHeaders(context) },
-      );
-      if (!resp.ok) throw new Error(`projects ${resp.status}`);
-      const json = (await resp.json()) as WorkspaceProjectsResponse;
-      return json.projects ?? [];
-    });
-  } catch (err) {
-    if (options.throwOnError) throw err;
     return [];
   }
 }
@@ -814,14 +736,10 @@ export async function patchProject(
     // lists (name, metadata, updatedAt, bindings displayed on cards). A list
     // read started immediately after this write must not reuse the settled
     // pre-write value from coalescedGet's one-second burst window.
-    if (workspaceContext) {
-      invalidateWorkspaceProjectLists(
-        workspaceContext,
-        currentWorkspaceAccountGeneration(),
-      );
-    } else {
-      evictCoalescedGet('local-projects');
-    }
+    invalidateProjectList(
+      workspaceContext,
+      currentWorkspaceAccountGeneration(),
+    );
     return json.project;
   } catch {
     return null;

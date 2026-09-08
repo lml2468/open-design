@@ -691,7 +691,6 @@ import {
   listPreviewComments,
   listProjectPreviewComments,
   listProjects,
-  listUnboundProjects,
   listWorkspaceProjects,
   listWorkspaceResources,
   listRoutines,
@@ -3987,7 +3986,6 @@ export async function startServer({
     normalizeProjectDisplayStatus,
     composeProjectDisplayStatus,
     listProjects,
-    listUnboundProjects,
   };
   const projectEventDeps = { subscribeFileEvents, activeProjectEventSinks };
   const importDeps = { importClaudeDesignZip, projectDir, detectEntryFile };

@@ -1002,35 +1002,6 @@ export function listProjects(db: SqliteDb) {
   return rows.map(normalizeProject);
 }
 
-/**
- * Every project with NO `workspace_projects` binding row at all — the "no
- * scope" catalog `GET /api/projects` must actually serve (spec 04 §10.2#1).
- * `listProjects` above stays the unfiltered form other internal callers
- * (library-sync's inventory scan, `listProjectIds` for the design-run
- * cross-reference) legitimately still want; this is the ONE new consumer that
- * needs the join. A project bound to ANY workspace — personal or team — is
- * someone's claimed resource and must not leak into a headerless read.
- */
-export function listUnboundProjects(db: SqliteDb) {
-  const rows = db
-    .prepare(
-      `SELECT p.id, p.name, p.skill_id AS skillId,
-              p.design_system_id AS designSystemId,
-              p.pending_prompt AS pendingPrompt,
-              p.metadata_json AS metadataJson,
-              p.applied_plugin_snapshot_id AS appliedPluginSnapshotId,
-              p.custom_instructions AS customInstructions,
-              p.created_at AS createdAt,
-              p.updated_at AS updatedAt
-         FROM projects p
-         LEFT JOIN workspace_projects wp ON wp.project_id = p.id
-        WHERE wp.project_id IS NULL
-        ORDER BY p.updated_at DESC`,
-    )
-    .all() as DbRow[];
-  return rows.map(normalizeProject);
-}
-
 export function getWorkspaceProject(db: SqliteDb, workspaceId: string, projectId: string) {
   return db
     .prepare(

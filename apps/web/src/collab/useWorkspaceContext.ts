@@ -86,9 +86,9 @@ export function workspaceResourceReadContext(
  * put that identity in its key or the previous identity's answer is served to the
  * next one.
  *
- * This is `listWorkspaceProjectSummaries`' key tuple — workspace, member, role,
- * member status, lifecycle — plus workspace type and the two permission bits, so
- * it digests EXACTLY the eight fields `workspaceProjectHeaders` puts on the wire.
+ * This is the shared resource-read key tuple — workspace, member, role, member
+ * status, lifecycle — plus workspace type and the two permission bits, so it
+ * digests EXACTLY the eight fields `workspaceProjectHeaders` puts on the wire.
  * A key coarser than the request it caches is the bug this helper exists to
  * prevent; a key that changes for a field the request does not carry would only
  * cost a redundant fetch.

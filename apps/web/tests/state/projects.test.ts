@@ -16,7 +16,7 @@ import {
   importClaudeDesignZip,
   importFolderProject,
   deleteTemplate,
-  invalidateWorkspaceProjectLists,
+  invalidateProjectList,
   listTemplates,
   installGeneratedPluginFolder,
   installPluginSource,
@@ -25,7 +25,6 @@ import {
   listMessages,
   invalidatePluginCatalogCache,
   listProjects,
-  listWorkspaceProjectSummaries,
   loadTabs,
   patchProject,
   pickLocalFolderPath,
@@ -515,108 +514,14 @@ describe('listProjects', () => {
     expect(c).toBe(a);
   });
 
-  it('returns raw workspace summaries with the captured member scope', async () => {
-    const summary = { id: 'p1', project: { id: 'p1' } };
+  it('uses one local catalog even when legacy callers still pass Workspace options', async () => {
+    const projects = [{ id: 'p1', name: 'Local project' }];
     const fetchMock = vi.fn<typeof fetch>(async () =>
-      new Response(JSON.stringify({ projects: [summary] }), {
+      new Response(JSON.stringify({ projects }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
     );
-    vi.stubGlobal('fetch', fetchMock);
-    const context = teamWorkspaceContext();
-
-    await expect(listWorkspaceProjectSummaries({
-      context,
-      workspaceView: 'team',
-      throwOnError: true,
-    })).resolves.toEqual([summary]);
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/workspaces/ws-team/projects?view=team',
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-team',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
-      }),
-    );
-  });
-
-  it('returns one card model when workspace summaries repeat a logical project', async () => {
-    const localProject = {
-      id: 'shared-project',
-      name: 'Local project',
-      createdAt: 1,
-      updatedAt: 3,
-    };
-    const remoteProject = {
-      id: 'shared-project',
-      name: 'Remote catalog copy',
-      createdAt: 1,
-      updatedAt: 2,
-    };
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      new Response(JSON.stringify({
-        projects: [
-          { id: 'local-summary', project: localProject },
-          { id: 'remote-resource-summary', project: remoteProject },
-        ],
-      }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(listProjects({
-      workspaceContext: teamWorkspaceContext(),
-      workspaceView: 'recent',
-      throwOnError: true,
-    })).resolves.toEqual([localProject]);
-  });
-
-  it('restores the exact wrapper Workspace and visibility onto project card models', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async (input) => {
-      const requestedWorkspaceId = new URL(String(input), 'http://localhost').pathname.split('/')[3]!;
-      return Response.json({
-        projects: [
-          {
-            id: 'summary-first',
-            workspaceId: requestedWorkspaceId,
-            visibility: 'team',
-            project: {
-              id: 'project-shared',
-              name: `First catalog row in ${requestedWorkspaceId}`,
-              createdAt: 1,
-              updatedAt: 3,
-            },
-          },
-          {
-            id: 'summary-duplicate',
-            workspaceId: requestedWorkspaceId,
-            visibility: 'personal',
-            project: {
-              id: 'project-shared',
-              name: 'Duplicate catalog row',
-              createdAt: 1,
-              updatedAt: 2,
-            },
-          },
-          {
-            id: 'summary-second',
-            workspaceId: requestedWorkspaceId,
-            visibility: 'personal',
-            project: {
-              id: 'project-second',
-              name: 'Second project',
-              createdAt: 1,
-              updatedAt: 1,
-            },
-          },
-        ],
-      });
-    });
     vi.stubGlobal('fetch', fetchMock);
     const workspaceA = teamWorkspaceContext({
       workspaceId: 'workspace-wrapper-a',
@@ -627,114 +532,15 @@ describe('listProjects', () => {
       workspaceMemberId: 'member-b',
     });
 
-    const workspaceAProjects = await listProjects({
-      workspaceContext: workspaceA,
-      workspaceView: 'recent',
-      throwOnError: true,
-    });
-    const workspaceBProjects = await listProjects({
-      workspaceContext: workspaceB,
-      workspaceView: 'recent',
-      throwOnError: true,
-    });
-
-    expect(workspaceAProjects).toEqual([
-      expect.objectContaining({
-        id: 'project-shared',
-        name: 'First catalog row in workspace-wrapper-a',
-        workspaceId: 'workspace-wrapper-a',
-        workspaceVisibility: 'team',
-      }),
-      expect.objectContaining({
-        id: 'project-second',
-        name: 'Second project',
-        workspaceId: 'workspace-wrapper-a',
-        workspaceVisibility: 'personal',
-      }),
+    const [fromA, fromB] = await Promise.all([
+      listProjects({ workspaceContext: workspaceA, workspaceView: 'recent', throwOnError: true }),
+      listProjects({ workspaceContext: workspaceB, workspaceView: 'team', throwOnError: true }),
     ]);
-    expect(workspaceBProjects).toEqual([
-      expect.objectContaining({
-        id: 'project-shared',
-        name: 'First catalog row in workspace-wrapper-b',
-        workspaceId: 'workspace-wrapper-b',
-        workspaceVisibility: 'team',
-      }),
-      expect.objectContaining({
-        id: 'project-second',
-        name: 'Second project',
-        workspaceId: 'workspace-wrapper-b',
-        workspaceVisibility: 'personal',
-      }),
-    ]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
 
-  it('does not coalesce workspace snapshots across different members', async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const fetchMock = vi.fn<typeof fetch>(async () => {
-      await gate;
-      return new Response(JSON.stringify({ projects: [] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const first = listWorkspaceProjectSummaries({
-      context: teamWorkspaceContext({ workspaceMemberId: 'wm-1' }),
-      workspaceView: 'team',
-    });
-    const second = listWorkspaceProjectSummaries({
-      context: teamWorkspaceContext({ workspaceMemberId: 'wm-2' }),
-      workspaceView: 'team',
-    });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    release();
-    await Promise.all([first, second]);
-  });
-
-  it('does not coalesce the same member across a permission transition', async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const fetchMock = vi.fn<typeof fetch>(async () => {
-      await gate;
-      return Response.json({ projects: [] });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const before = teamWorkspaceContext({
-      workspaceId: 'ws-permission-transition',
-      workspaceMemberId: 'wm-same',
-      permissions: {
-        ...teamWorkspaceContext().permissions,
-        canShareProjects: false,
-        canWriteSyncedFiles: false,
-      },
-    });
-    const after = {
-      ...before,
-      permissions: {
-        ...before.permissions,
-        canShareProjects: true,
-      },
-    };
-    const first = listWorkspaceProjectSummaries({
-      context: before,
-      workspaceView: 'team',
-    });
-    const second = listWorkspaceProjectSummaries({
-      context: after,
-      workspaceView: 'team',
-    });
-
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    release();
-    await Promise.all([first, second]);
+    expect(fromA).toEqual(projects);
+    expect(fromB).toBe(fromA);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/projects');
   });
 });
 
@@ -2092,51 +1898,36 @@ describe('pickLocalFolderPath', () => {
   });
 });
 
-describe('workspace project list cache invalidation', () => {
+describe('project list cache invalidation', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     resetProjectDisplaySnapshots();
   });
 
-  it('invalidates every cached Workspace project view after a successful patch', async () => {
+  it('invalidates the local catalog after a scoped project patch', async () => {
     const context = teamWorkspaceContext({
       workspaceId: 'ws-patch-cache-invalidation',
       workspaceMemberId: 'wm-patch-cache-invalidation',
     });
-    const reads = new Map<string, number>();
-    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
-      const url = new URL(String(input), 'http://d.local');
+    let listReads = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
       if (init?.method === 'PATCH') {
         return Response.json({ project: { id: 'p1', name: 'After rename' } });
       }
-      const view = url.searchParams.get('view') ?? 'unknown';
-      const read = (reads.get(view) ?? 0) + 1;
-      reads.set(view, read);
+      listReads += 1;
       return Response.json({
-        projects: [{
-          id: 'p1',
-          project: { id: 'p1', name: read === 1 ? 'Before rename' : 'After rename' },
-        }],
+        projects: [{ id: 'p1', name: listReads === 1 ? 'Before rename' : 'After rename' }],
       });
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    for (const view of ['all', 'recent', 'drafts', 'team'] as const) {
-      await listWorkspaceProjectSummaries({ context, workspaceView: view });
-    }
+    await expect(listProjects({ workspaceContext: context, workspaceView: 'recent' }))
+      .resolves.toMatchObject([{ name: 'Before rename' }]);
     await expect(patchProject('p1', { name: 'After rename' }, context))
       .resolves.toMatchObject({ id: 'p1', name: 'After rename' });
-    for (const view of ['all', 'recent', 'drafts', 'team'] as const) {
-      await expect(listWorkspaceProjectSummaries({ context, workspaceView: view }))
-        .resolves.toMatchObject([{ project: { id: 'p1', name: 'After rename' } }]);
-    }
-
-    expect(reads).toEqual(new Map([
-      ['all', 2],
-      ['recent', 2],
-      ['drafts', 2],
-      ['team', 2],
-    ]));
+    await expect(listProjects({ workspaceContext: context, workspaceView: 'all' }))
+      .resolves.toMatchObject([{ name: 'After rename' }]);
+    expect(listReads).toBe(2);
   });
 
   it('invalidates the unscoped project list after a successful patch', async () => {
@@ -2168,7 +1959,7 @@ describe('workspace project list cache invalidation', () => {
     writeProjectDisplaySnapshot(currentScope, []);
     writeProjectDisplaySnapshot(previousAccountScope, []);
 
-    invalidateWorkspaceProjectLists(context, 7);
+    invalidateProjectList(context, 7);
 
     expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey(currentScope))?.dirty)
       .toBe(true);

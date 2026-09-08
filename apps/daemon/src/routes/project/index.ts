@@ -2000,7 +2000,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
   const { writeProjectFile, readProjectFile, ensureProject, listFiles, listTabs, setTabs, resolveProjectDir } = ctx.projectFiles;
   const { insertConversation } = ctx.conversations;
   const { getTemplate, listTemplates, deleteTemplate, insertTemplate, findTemplateByNameAndProject, updateTemplate } = ctx.templates;
-  const { listLatestProjectRunStatuses, listProjectsAwaitingInput, normalizeProjectDisplayStatus, composeProjectDisplayStatus, listProjects, listUnboundProjects } = ctx.status;
+  const { listLatestProjectRunStatuses, listProjectsAwaitingInput, normalizeProjectDisplayStatus, composeProjectDisplayStatus, listProjects } = ctx.status;
   const { subscribeFileEvents, activeProjectEventSinks } = ctx.events;
   const { randomId } = ctx.ids;
   const { validateProjectDesignSystemId, validateProjectSkillId } = ctx.validation;
@@ -2662,21 +2662,14 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           }
         }
       }
-      // This is the NO-SCOPE catalog: no `x-od-workspace-*` headers are read
-      // here at all, so every unbound (never-claimed) project must be visible
-      // (pre-workspace-isolation compatibility) while every project some
-      // workspace HAS claimed must not leak to a caller with no identity to
-      // check it against — a signed-out client, a removed member, or a plain
-      // `curl` (spec 04 §10: "no scope" must not mean "trust everything").
-      // `listUnboundProjects` is the join that enforces this; a workspace-
-      // scoped caller uses `GET /api/workspaces/:id/projects` instead, which
-      // has its own ctx-gated membership check. Every row here is, by
-      // construction, unbound — so `workspaceId` is always `null`; no binding
-      // lookup needed (a `listWorkspaceProjectBindings` scan here would only
-      // ever resolve to misses).
+      // Local disk is the v1 writable source of truth. Historical
+      // `workspace_projects` rows are migration metadata only and must not
+      // hide a local project or make the catalog depend on Vela membership.
+      // Collaboration visibility comes from explicit Project bindings and
+      // immutable published Versions, not from this local catalog.
       /** @type {import('@open-design/contracts').ProjectsResponse} */
       const body = {
-        projects: listUnboundProjects(db)
+        projects: listProjects(db)
           .filter((project: any) => projectVisibleForLocations(project, locations))
           .map((project: any) => ({
             ...project,
