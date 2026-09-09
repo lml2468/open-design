@@ -217,7 +217,7 @@ describe('BrandsTab refresh reconciliation', () => {
     expect(onDesignSystemsRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it('never uses a provisional read identity for brand extraction mutations', async () => {
+  it('keeps brand extraction daemon-local when only a provisional read identity exists', async () => {
     const provisional = {
       workspaceId: 'workspace-provisional',
       workspaceType: 'team',
@@ -249,9 +249,7 @@ describe('BrandsTab refresh reconciliation', () => {
     fireEvent.click(await screen.findByTestId('mock-brand-reference'));
 
     await waitFor(() => {
-      expect(runExtractMock).toHaveBeenCalledWith('acme.example', {
-        workspaceContext: null,
-      });
+      expect(runExtractMock).toHaveBeenCalledWith('acme.example');
     });
   });
 });

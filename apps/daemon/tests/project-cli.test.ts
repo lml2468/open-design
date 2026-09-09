@@ -74,7 +74,7 @@ async function startProjectStubServer(): Promise<StubServer> {
       if (captured.method === 'GET' && captured.url === '/api/projects/project-1') {
         res.statusCode = 200;
         res.end(JSON.stringify({
-          project: { id: 'project-1', name: 'Project One', workspaceId: 'ws-1' },
+          project: { id: 'project-1', name: 'Project One' },
           resolvedDir: '/tmp/projects/project-1',
         }));
         return;

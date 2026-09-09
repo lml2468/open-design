@@ -352,7 +352,6 @@ vi.mock('../../src/components/ProjectView', () => ({
   }) => (
     <main data-testid="project-view">
       <span data-testid="project-title">{project.name}</span>
-      <span data-testid="project-workspace-id">{project.workspaceId ?? 'unbound'}</span>
       <span data-testid="project-route-workspace-context">
         {workspaceContextOverride
           ? `${workspaceContextOverride.workspaceId}:${workspaceContextOverride.workspaceMemberId}`
@@ -427,17 +426,17 @@ vi.mock('../../src/components/ProjectView', () => ({
 
 vi.mock('../../src/components/WorkspaceTabsBar', () => ({
   WorkspaceTabsBar: ({
-    activeProjectWorkspaceId,
+    activeProjectResolved,
     projects,
   }: {
-    activeProjectWorkspaceId?: string | null;
+    activeProjectResolved?: boolean;
     projects: Project[];
   }) => (
     <>
-      <span data-testid="workspace-tabs-active-project-workspace">
-        {activeProjectWorkspaceId === undefined
+      <span data-testid="workspace-tabs-active-project-resolution">
+        {activeProjectResolved === undefined
           ? 'unresolved'
-          : activeProjectWorkspaceId ?? 'personal'}
+          : activeProjectResolved ? 'resolved' : 'missing'}
       </span>
       {projects.map((project) => (
         <span key={project.id} data-testid={`workspace-tab-name-${project.id}`}>
@@ -1270,7 +1269,7 @@ describe('App project creation routing', () => {
   });
 
   it('duplicates a local project without Workspace authority', async () => {
-    const sourceProject = { ...existingProject, workspaceId: 'ws-source' };
+    const sourceProject = { ...existingProject };
     window.history.replaceState(null, '', `/projects/${sourceProject.id}`);
     mockedListProjects.mockResolvedValue([sourceProject]);
     vi.stubGlobal(
@@ -1305,7 +1304,7 @@ describe('App project creation routing', () => {
   });
 
   it('creates a design-system copy without Workspace authority', async () => {
-    const sourceProject = { ...existingProject, workspaceId: 'ws-source' };
+    const sourceProject = { ...existingProject };
     window.history.replaceState(null, '', `/projects/${sourceProject.id}`);
     mockedListProjects.mockResolvedValue([sourceProject]);
     vi.stubGlobal(
@@ -1736,7 +1735,6 @@ describe('App project creation routing', () => {
       name: 'Workspace project',
       skillId: null,
       designSystemId: null,
-      workspaceId: 'ws-1',
       createdAt: 20,
       updatedAt: 20,
     };
@@ -1795,7 +1793,6 @@ describe('App project creation routing', () => {
       name: 'Workspace B current title',
       skillId: null,
       designSystemId: null,
-      workspaceId: 'ws-b',
       createdAt: 30,
       updatedAt: 30,
     }]);
@@ -1811,7 +1808,6 @@ describe('App project creation routing', () => {
       expect(screen.getByTestId('project-title').textContent).toBe(
         'Workspace B current title',
       );
-      expect(screen.getByTestId('project-workspace-id').textContent).toBe('ws-b');
     });
     expect(mockedGetProject).not.toHaveBeenCalled();
   });
@@ -1823,7 +1819,6 @@ describe('App project creation routing', () => {
       name: 'Workspace A local',
       skillId: null,
       designSystemId: null,
-      workspaceId: 'ws-a',
       createdAt: 20,
       updatedAt: 20,
     };
@@ -1856,18 +1851,15 @@ describe('App project creation routing', () => {
         } as Response);
       }),
     );
-    mockedListProjects.mockResolvedValue([{
-      ...existingProject,
-      workspaceId: 'ws-1',
-    }]);
+    mockedListProjects.mockResolvedValue([existingProject]);
 
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
 
     await screen.findByTestId('project-view');
     expect(mockedGetProject).not.toHaveBeenCalled();
-    expect(screen.getByTestId('workspace-tabs-active-project-workspace').textContent).toBe(
-      'ws-1',
+    expect(screen.getByTestId('workspace-tabs-active-project-resolution').textContent).toBe(
+      'resolved',
     );
 
     await act(async () => {
@@ -1881,8 +1873,8 @@ describe('App project creation routing', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('workspace-tabs-active-project-workspace').textContent).toBe(
-        'ws-1',
+      expect(screen.getByTestId('workspace-tabs-active-project-resolution').textContent).toBe(
+        'resolved',
       );
     });
     expect(mockedGetProject).not.toHaveBeenCalled();
@@ -1908,7 +1900,6 @@ describe('App project creation routing', () => {
 
     await screen.findByTestId('project-view');
     expect(mockedGetProject).not.toHaveBeenCalled();
-    expect(screen.getByTestId('project-workspace-id').textContent).toBe('unbound');
   });
 
   it('does not cancel a local Project open when the selected Workspace changes', async () => {
@@ -1924,10 +1915,7 @@ describe('App project creation routing', () => {
         } as Response);
       }),
     );
-    mockedListProjects.mockResolvedValue([{
-      ...existingProject,
-      workspaceId: 'ws-a',
-    }]);
+    mockedListProjects.mockResolvedValue([existingProject]);
 
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
@@ -2003,7 +1991,6 @@ describe('App project creation routing', () => {
       name: 'Workspace A stale',
       skillId: null,
       designSystemId: null,
-      workspaceId: 'ws-a',
       createdAt: 20,
       updatedAt: 20,
     });
@@ -2074,7 +2061,6 @@ describe('App project creation routing', () => {
       name: 'Workspace A stale result',
       skillId: null,
       designSystemId: null,
-      workspaceId: 'ws-a',
       createdAt: 20,
       updatedAt: 20,
     };
@@ -2237,13 +2223,11 @@ describe('App project creation routing', () => {
         ...existingProject,
         id: 'project-a',
         name: 'Workspace A project',
-        workspaceId: workspaceA.workspaceId,
       };
       const projectB: Project = {
         ...existingProject,
         id: 'project-b',
         name: 'Workspace B project',
-        workspaceId: workspaceB.workspaceId,
       };
       const patch = deferred<Project | null>();
       let workspaceAAuthority = projectA;
@@ -2284,19 +2268,14 @@ describe('App project creation routing', () => {
         ...existingProject,
         id: 'project-old-a',
         name: 'Untitled A',
-        workspaceId: context.workspaceId,
       },
       {
         ...existingProject,
         id: 'project-old-b',
         name: 'Untitled B',
-        workspaceId: context.workspaceId,
       },
     ];
-    const createdProject: Project = {
-      ...freshProject,
-      workspaceId: context.workspaceId,
-    };
+    const createdProject: Project = { ...freshProject };
     mockedListProjects.mockResolvedValue(olderProjects);
     mockedCreateProject.mockResolvedValue({
       project: createdProject,
@@ -2324,15 +2303,11 @@ describe('App project creation routing', () => {
   it('preserves a pending local Project when the selected Workspace changes', async () => {
     const workspaceA = workspaceContext('ws-a', 'wm-a');
     const workspaceB = workspaceContext('ws-b', 'wm-b');
-    const workspaceAProject: Project = {
-      ...freshProject,
-      workspaceId: workspaceA.workspaceId,
-    };
+    const workspaceAProject: Project = { ...freshProject };
     const workspaceBProject: Project = {
       ...existingProject,
       id: 'project-workspace-b',
       name: 'Workspace B project',
-      workspaceId: workspaceB.workspaceId,
     };
     mockedCreateProject.mockResolvedValue({
       project: workspaceAProject,
@@ -2356,10 +2331,7 @@ describe('App project creation routing', () => {
 
   it('preserves a pending local project across an account generation boundary', async () => {
     const context = workspaceContext('ws-1', 'wm-1');
-    const createdProject: Project = {
-      ...freshProject,
-      workspaceId: context.workspaceId,
-    };
+    const createdProject: Project = { ...freshProject };
     mockedListProjects.mockResolvedValue([]);
     mockedCreateProject.mockResolvedValue({
       project: createdProject,
@@ -2381,19 +2353,16 @@ describe('App project creation routing', () => {
     expect(await screen.findByTestId('entry-project-project-new')).not.toBeNull();
   });
 
-  it('passes the active project persisted Workspace to the tab switch guard', async () => {
+  it('passes active local project resolution to the tab switch guard', async () => {
     stubWorkspaceContext('ws-1', 'wm-1');
-    mockedListProjects.mockResolvedValue([{
-      ...existingProject,
-      workspaceId: 'ws-1',
-    }]);
+    mockedListProjects.mockResolvedValue([existingProject]);
 
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('workspace-tabs-active-project-workspace').textContent).toBe(
-        'ws-1',
+      expect(screen.getByTestId('workspace-tabs-active-project-resolution').textContent).toBe(
+        'resolved',
       );
     });
   });
@@ -2405,10 +2374,7 @@ describe('App project creation routing', () => {
       '/projects/project-existing/conversations/conv-exact/files/nested%2Fartifact.html',
     );
     stubWorkspaceContext('ws-1', 'wm-1');
-    mockedListProjects.mockResolvedValue([{
-      ...existingProject,
-      workspaceId: 'ws-1',
-    }]);
+    mockedListProjects.mockResolvedValue([existingProject]);
 
     render(<App />);
     await screen.findByTestId('project-view');
@@ -2448,10 +2414,7 @@ describe('App project creation routing', () => {
       '',
       '/projects/project-existing/conversations/conv-exact',
     );
-    mockedListProjects.mockResolvedValue([{
-      ...existingProject,
-      workspaceId: 'ws-1',
-    }]);
+    mockedListProjects.mockResolvedValue([existingProject]);
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {

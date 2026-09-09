@@ -140,7 +140,6 @@ const project: Project = {
   customInstructions: '',
   createdAt: 1,
   updatedAt: 1,
-  workspaceId: null,
 };
 
 const CONVERSATION_PATH = '/projects/project-1/conversations/conversation-1';

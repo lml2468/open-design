@@ -120,10 +120,7 @@ describe('ProjectReferenceModal', () => {
   });
 
   it('reads a formerly bound reference project from the local Project store', async () => {
-    const boundProject: Project = {
-      ...project,
-      workspaceId: 'workspace-ref',
-    };
+    const boundProject: Project = { ...project };
     renderModal({ projects: [boundProject] });
     vi.mocked(getProjectDetail).mockResolvedValue({
       project: boundProject,

@@ -136,12 +136,9 @@ describe('POST /api/import/folder', () => {
       { headers: headersA },
     );
     expect(detail.status).toBe(200);
-    await expect(detail.json()).resolves.toMatchObject({
-      project: {
-        id: body.project.id,
-        workspaceId: null,
-      },
-    });
+    const detailBody = (await detail.json()) as { project: Record<string, unknown> };
+    expect(detailBody.project).toMatchObject({ id: body.project.id });
+    expect(detailBody.project).not.toHaveProperty('workspaceId');
 
     const catalog = await fetch(`${baseUrl}/api/projects`);
     expect(catalog.status).toBe(200);
@@ -195,12 +192,9 @@ describe('POST /api/import/folder', () => {
       { headers },
     );
     expect(detail.status).toBe(200);
-    await expect(detail.json()).resolves.toMatchObject({
-      project: {
-        id: body.project.id,
-        workspaceId: null,
-      },
-    });
+    const detailBody = (await detail.json()) as { project: Record<string, unknown> };
+    expect(detailBody.project).toMatchObject({ id: body.project.id });
+    expect(detailBody.project).not.toHaveProperty('workspaceId');
   });
 
   it('rejects folder imports in sandbox mode', async () => {

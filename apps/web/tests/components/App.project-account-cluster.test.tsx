@@ -156,7 +156,6 @@ const project: Project = {
   customInstructions: '',
   createdAt: 1,
   updatedAt: 1,
-  workspaceId: 'ws-project',
 };
 
 function stubFetchByUrl() {

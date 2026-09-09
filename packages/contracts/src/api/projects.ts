@@ -5,7 +5,6 @@ import type {
   ProjectContextMcpServerRef,
   ProjectContextPluginRef,
 } from './context.js';
-import type { WorkspaceCollabContext } from './collab.js';
 
 export type ProjectKind =
   | 'prototype'
@@ -321,28 +320,6 @@ export interface Project {
   // pick a plugin they already selected.
   appliedPluginSnapshotId?: string;
   customInstructions?: string;
-  /**
-   * The daemon-authoritative visibility from this project's
-   * `workspace_projects` row.
-   *
-   * This is a read projection, not project storage. It lets clients classify a
-   * local project even when that resource is synchronized through a non-project
-   * hub (for example, a Design System backing project). Absent means the reader
-   * did not carry workspace visibility and must be treated as "no opinion".
-   */
-  workspaceVisibility?: ProjectVisibility;
-  /**
-   * The workspace this project belongs to — exactly one, per the 2026-07-21
-   * ruling that 草稿 and shared projects are both bound to a workspace.
-   *
-   * A read model, not storage: the daemon resolves it from the project's single
-   * `workspace_projects` row. Absent means the daemon has not bound the project
-   * to a workspace yet (a pre-workspace project awaiting adoption on the next
-   * personal-workspace read), NOT "belongs to no workspace" — so a client must
-   * treat absence as "no opinion" and never hide a project on the strength of a
-   * missing value.
-   */
-  workspaceId?: string | null;
 }
 
 export interface ProjectTemplate {
@@ -511,17 +488,6 @@ export interface ProjectDetailResponse extends ProjectResponse {
   resolvedDir: string;
 }
 
-export type ProjectVisibility = 'personal' | 'team';
-
-/**
- * Daemon-authoritative workspace and billing scope for one persisted project.
- *
- * `visibility` answers whether the project itself is a private draft or shared
- * with the team. It is deliberately independent from `kind`: a private draft
- * may still belong to a team workspace and therefore use that workspace's
- * wallet. The tagged union prevents clients from treating every non-null
- * workspace id as a team-billing scope.
- */
 export interface CreateProjectResponse extends ProjectResponse {
   conversationId?: string;
   appliedPluginSnapshotId?: string;

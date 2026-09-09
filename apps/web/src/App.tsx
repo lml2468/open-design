@@ -3258,9 +3258,9 @@ function AppInner() {
               ? [...projects, activeProject]
               : projects
           }
-          activeProjectWorkspaceId={
+          activeProjectResolved={
             route.kind === 'project' && activeProject
-              ? activeProject.workspaceId ?? null
+              ? true
               : undefined
           }
           onboardingCompleted={config.onboardingCompleted === true}

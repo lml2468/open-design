@@ -2018,7 +2018,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           .filter((project: any) => projectVisibleForLocations(project, locations))
           .map((project: any) => ({
             ...project,
-            workspaceId: null,
             status: brandAwareProjectStatus(
               project,
               composeProjectDisplayStatus(
@@ -3021,10 +3020,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     const resolvedDir = projectDetailResolvedDir(PROJECTS_DIR, project, resolveProjectDir);
     /** @type {import('@open-design/contracts').ProjectResponse} */
     const body = {
-      project: {
-        ...project,
-        workspaceId: null,
-      },
+      project,
       resolvedDir,
     };
     res.json(body);

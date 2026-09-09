@@ -167,10 +167,9 @@ describe('GET /api/projects/:id resolvedDir', () => {
     const body = (await listResp.json()) as {
       projects: Array<{ id: string; workspaceId?: string | null }>;
     };
-    expect(body.projects.find((project) => project.id === projectId)).toMatchObject({
-      id: projectId,
-      workspaceId: null,
-    });
+    const listed = body.projects.find((project) => project.id === projectId);
+    expect(listed).toMatchObject({ id: projectId });
+    expect(listed).not.toHaveProperty('workspaceId');
   });
 
   it('keeps a historically bound local project readable and writable without Workspace headers', async () => {

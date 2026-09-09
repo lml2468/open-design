@@ -36,7 +36,6 @@ export interface BrandsTabProps {
 export function BrandsTab({ onApplyDesignSystem, onOpenProject, onDesignSystemsRefresh }: BrandsTabProps = {}) {
   const t = useT();
   const workspaceState = useWorkspaceContext();
-  const mutationWorkspaceContext = workspaceState.context;
   const resourceReadIdentity = resolveWorkspaceResourceReadIdentity(workspaceState);
   const workspaceContext = resourceReadIdentity?.context ?? null;
   const workspaceReadGeneration = workspaceResourceReadIdentityKey(resourceReadIdentity);
@@ -157,12 +156,10 @@ export function BrandsTab({ onApplyDesignSystem, onOpenProject, onDesignSystemsR
   // the same post-create flow as the modal (auto-send + navigate into project).
   const handlePickReference = useCallback(
     async (brand: BrandReference) => {
-      const result = await runExtract(brand.domain, {
-        workspaceContext: mutationWorkspaceContext,
-      });
+      const result = await runExtract(brand.domain);
       if (result) handleCreated(result.id, result.projectId, result.conversationId);
     },
-    [runExtract, handleCreated, mutationWorkspaceContext],
+    [runExtract, handleCreated],
   );
 
   const isEmpty = brands !== null && (brands ?? []).length === 0;

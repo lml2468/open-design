@@ -1135,12 +1135,12 @@ describe('WorkspaceTabsBar identity-scope tab reset', () => {
     expect(navigate).toHaveBeenLastCalledWith(homeRoute);
   });
 
-  it('keeps the active unbound local project open when anonymous auth resolves to a signed-in account', async () => {
+  it('keeps the active resolved local project open when anonymous auth resolves to a signed-in account', async () => {
     const { rerender } = render(
       <WorkspaceTabsBar
         route={{ ...projectRoute }}
         projects={[project]}
-        activeProjectWorkspaceId={null}
+        activeProjectResolved
         identityScopeKey="anon::ws-personal-1"
       />,
     );
@@ -1154,7 +1154,7 @@ describe('WorkspaceTabsBar identity-scope tab reset', () => {
       <WorkspaceTabsBar
         route={{ ...projectRoute }}
         projects={[project]}
-        activeProjectWorkspaceId={null}
+        activeProjectResolved
         identityScopeKey="user-1::ws-personal-1"
       />,
     );
@@ -1166,12 +1166,12 @@ describe('WorkspaceTabsBar identity-scope tab reset', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('keeps a Workspace-bound project when anonymous auth resolves with the same Workspace', async () => {
+  it('keeps a resolved local project when anonymous auth resolves in a Team Workspace', async () => {
     const { rerender } = render(
       <WorkspaceTabsBar
         route={{ ...projectRoute }}
-        projects={[{ ...project, workspaceId: 'ws-team-a' }]}
-        activeProjectWorkspaceId="ws-team-a"
+        projects={[project]}
+        activeProjectResolved
         identityScopeKey="anon::none"
       />,
     );
@@ -1183,8 +1183,8 @@ describe('WorkspaceTabsBar identity-scope tab reset', () => {
     rerender(
       <WorkspaceTabsBar
         route={{ ...projectRoute }}
-        projects={[{ ...project, workspaceId: 'ws-team-a' }]}
-        activeProjectWorkspaceId="ws-team-a"
+        projects={[project]}
+        activeProjectResolved
         identityScopeKey="user-1::ws-team-a"
       />,
     );
@@ -1201,7 +1201,7 @@ describe('WorkspaceTabsBar identity-scope tab reset', () => {
       <WorkspaceTabsBar
         route={{ ...projectRoute }}
         projects={[project]}
-        activeProjectWorkspaceId={null}
+        activeProjectResolved
         identityScopeKey="anon::none"
       />,
     );
@@ -1217,7 +1217,7 @@ describe('WorkspaceTabsBar identity-scope tab reset', () => {
       <WorkspaceTabsBar
         route={{ kind: 'home', view: 'settings' }}
         projects={[project]}
-        activeProjectWorkspaceId={undefined}
+        activeProjectResolved={undefined}
         identityScopeKey="anon::none"
       />,
     );
@@ -1229,7 +1229,7 @@ describe('WorkspaceTabsBar identity-scope tab reset', () => {
       <WorkspaceTabsBar
         route={{ kind: 'home', view: 'settings' }}
         projects={[project]}
-        activeProjectWorkspaceId={undefined}
+        activeProjectResolved={undefined}
         identityScopeKey="user-1::ws-personal-1"
       />,
     );
@@ -1240,12 +1240,12 @@ describe('WorkspaceTabsBar identity-scope tab reset', () => {
     expect(navigate).not.toHaveBeenCalledWith(homeRoute);
   });
 
-  it('still closes a Workspace-bound project when the signed-in witness names another Workspace', async () => {
+  it('keeps a resolved local project when sign-in selects a different Workspace', async () => {
     const { rerender } = render(
       <WorkspaceTabsBar
         route={{ ...projectRoute }}
-        projects={[{ ...project, workspaceId: 'ws-team-a' }]}
-        activeProjectWorkspaceId="ws-team-a"
+        projects={[project]}
+        activeProjectResolved
         identityScopeKey="anon::none"
       />,
     );
@@ -1257,17 +1257,17 @@ describe('WorkspaceTabsBar identity-scope tab reset', () => {
     rerender(
       <WorkspaceTabsBar
         route={{ ...projectRoute }}
-        projects={[{ ...project, workspaceId: 'ws-team-a' }]}
-        activeProjectWorkspaceId="ws-team-a"
+        projects={[project]}
+        activeProjectResolved
         identityScopeKey="user-1::ws-team-b"
       />,
     );
 
     await waitFor(() => {
-      expect(screen.getAllByRole('tab')).toHaveLength(1);
-      expect(screen.getByTestId('workspace-home-rail-toggle')).toBeTruthy();
+      expect(screen.getAllByRole('tab')).toHaveLength(2);
+      expect(screen.getByRole('tab', { name: /Project Alpha/ }).getAttribute('aria-selected')).toBe('true');
     });
-    expect(navigate).toHaveBeenLastCalledWith(homeRoute);
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('closes every open tab on a workspace switch, even for the same account', async () => {

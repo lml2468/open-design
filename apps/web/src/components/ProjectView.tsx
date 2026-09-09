@@ -7603,7 +7603,6 @@ export function ProjectView({
       agentsById,
       onTouchProject,
       project.id,
-      project.workspaceId,
       projectDesignSystemId,
       runtimeDesignSystemId,
       project.name,

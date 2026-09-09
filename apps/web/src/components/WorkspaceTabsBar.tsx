@@ -92,11 +92,11 @@ interface Props {
   route: Route;
   projects: Project[];
   /**
-   * Persisted Workspace binding for the project currently named by `route`.
-   * `null` is an authoritative unbound/local project; `undefined` means the
-   * current route is not a resolved project and must not relax scope resets.
+   * Whether the local project currently named by `route` resolved successfully.
+   * `undefined` means the current route is not a resolved project and must not
+   * relax account-boundary resets.
    */
-  activeProjectWorkspaceId?: string | null;
+  activeProjectResolved?: boolean;
   // Once onboarding is finished, the permanent entry
   // tab must never linger on the 'onboarding' (Welcome) view — some completion
   // paths navigate straight to a new project/design-system and leave the entry
@@ -616,34 +616,22 @@ function accountBucketForScope(scopeKey: string): string {
   return scopeKey.split('::', 1)[0] ?? scopeKey;
 }
 
-function workspaceBucketForScope(scopeKey: string): string | null {
-  const separator = scopeKey.indexOf('::');
-  return separator < 0 ? null : scopeKey.slice(separator + 2);
-}
-
-function shouldRehomeAuthorizedProjectAfterSignIn({
+function shouldRehomeResolvedProjectAfterSignIn({
   previousScopeKey,
   nextScopeKey,
   route,
-  activeProjectWorkspaceId,
+  activeProjectResolved,
 }: {
   previousScopeKey: string;
   nextScopeKey: string;
   route: Route;
-  activeProjectWorkspaceId: string | null | undefined;
+  activeProjectResolved: boolean | undefined;
 }): boolean {
-  const activeProjectMatchesIncomingScope =
-    activeProjectWorkspaceId === null
-    || (
-      typeof activeProjectWorkspaceId === 'string'
-      && activeProjectWorkspaceId === workspaceBucketForScope(nextScopeKey)
-    );
   return (
     accountBucketForScope(previousScopeKey) === 'anon'
     && accountBucketForScope(nextScopeKey) !== 'anon'
     && route.kind === 'project'
-    && activeProjectWorkspaceId !== undefined
-    && activeProjectMatchesIncomingScope
+    && activeProjectResolved === true
   );
 }
 
@@ -661,7 +649,7 @@ function ChromeHomeGlyph() {
 export function WorkspaceTabsBar({
   route,
   projects,
-  activeProjectWorkspaceId,
+  activeProjectResolved,
   onboardingCompleted = false,
   identityScopeKey,
 }: Props) {
@@ -1054,14 +1042,14 @@ export function WorkspaceTabsBar({
     // Inline "Authorize & retry" must finish the same run in place. Re-home
     // only the live route tab (plus a fresh Home tab) when anonymous login
     // resolves either an unbound local project or an exact witness for the
-    // project's persisted Workspace. Unresolved projects, Workspace
-    // mismatches, sign-out, authenticated account A→B, and Team/Personal
-    // workspace switches all retain the fail-closed reset below.
-    if (shouldRehomeAuthorizedProjectAfterSignIn({
+    // resolved local project. Unresolved projects, sign-out, authenticated
+    // account A→B, and Team/Personal workspace switches all retain the
+    // fail-closed reset below.
+    if (shouldRehomeResolvedProjectAfterSignIn({
       previousScopeKey: previous,
       nextScopeKey: identityScopeKey,
       route,
-      activeProjectWorkspaceId,
+      activeProjectResolved,
     })) {
       const rehomed = syncStateToRoute(freshHomeTabsState(), route);
       persistedTabsStore.scopes[identityScopeKey] = {
@@ -1094,7 +1082,7 @@ export function WorkspaceTabsBar({
       : { scopeKey: identityScopeKey, path: nextPath };
     navigate(nextRoute);
   }, [
-    activeProjectWorkspaceId,
+    activeProjectResolved,
     identityScopeKey,
     onboardingActive,
     persistedTabsStore,
