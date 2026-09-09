@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import type { SkillSummary, WorkspaceCollabContext } from '@open-design/contracts';
+import type { SkillSummary } from '@open-design/contracts';
 import { useI18n, useT } from '../i18n';
 import { LIBRARY_UI_VISIBLE } from '../features/libraryUi';
 import { resolveFlyoutSide } from './composer-flyout-placement';
@@ -145,7 +145,6 @@ function getFlyoutPlacement(
 }
 
 export interface ComposerPlusMenuProps {
-  workspaceContext?: WorkspaceCollabContext | null;
   /**
    * Accepted for API compatibility but no longer rendered as a "+" submenu:
    * skills are picked through the composer's `@` mention popover on both the
@@ -243,7 +242,6 @@ export interface ComposerPlusMenuProps {
  * data lists and pick/add handlers.
  */
 export function ComposerPlusMenu({
-  workspaceContext = null,
   onAttachFiles,
   attachLoading,
   onReferenceProject,

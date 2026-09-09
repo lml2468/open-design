@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   FileViewer,
-  fileViewerSourceAuthorizationScopeKey,
   markdownImageSourceUrl,
 } from '../../src/components/FileViewer';
 import type { ProjectFile } from '../../src/types';
@@ -179,26 +178,6 @@ describe('FileViewer markdown code block copy', () => {
         '/api/projects/project-1/raw/relative.png',
       );
     });
-  });
-
-  it('uses one local Project source snapshot scope', () => {
-    const initial = fileViewerSourceAuthorizationScopeKey(false, teamWorkspaceContext());
-
-    expect(fileViewerSourceAuthorizationScopeKey(false, teamWorkspaceContext({
-      role: 'admin',
-    }))).toBe(initial);
-    expect(fileViewerSourceAuthorizationScopeKey(false, teamWorkspaceContext({
-      memberStatus: 'removed',
-    }))).toBe(initial);
-    expect(fileViewerSourceAuthorizationScopeKey(false, teamWorkspaceContext({
-      permissions: {
-        ...teamWorkspaceContext().permissions,
-        canShareProjects: true,
-        canWriteSyncedFiles: false,
-      },
-    }))).toBe(initial);
-    expect(fileViewerSourceAuthorizationScopeKey(true, teamWorkspaceContext())).toBeNull();
-    expect(fileViewerSourceAuthorizationScopeKey(false, null)).toBe('local');
   });
 
   it('restores focus when the Clipboard API fails and the execCommand fallback succeeds', async () => {

@@ -3023,7 +3023,7 @@ describe('FileWorkspace launcher tab creation', () => {
     });
   });
 
-  it('keeps design-system source reads on the local Project identity', async () => {
+  it('keeps design-system source reads independent from Workspace identity', async () => {
     const workspaceA = teamContext('workspace-a', 'member-a');
     const workspaceB = teamContext('workspace-b', 'member-b');
     const props = {
@@ -3055,7 +3055,20 @@ describe('FileWorkspace launcher tab creation', () => {
         'DESIGN.md',
         { cache: 'no-store' },
       );
+      expect(mockedFetchProjectFileText).toHaveBeenCalledWith(
+        'project-1',
+        'fonts/manifest.json',
+        { cache: 'no-store' },
+      );
+      expect(mockedFetchProjectFileText).toHaveBeenCalledWith(
+        'project-1',
+        'brand.json',
+        { cache: 'no-store', cacheBustKey: 0 },
+      );
     });
+    for (const call of mockedFetchProjectFileText.mock.calls) {
+      expect(call[2]).not.toHaveProperty('workspaceContext');
+    }
 
     mockedFetchProjectFileText.mockClear();
     rerender(
@@ -3067,19 +3080,7 @@ describe('FileWorkspace launcher tab creation', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(mockedFetchProjectFileText).toHaveBeenCalledWith(
-      'project-1',
-      'fonts/manifest.json',
-      { cache: 'no-store' },
-    );
-    expect(mockedFetchProjectFileText).toHaveBeenCalledWith(
-      'project-1',
-      'brand.json',
-      { cache: 'no-store', cacheBustKey: 0 },
-    );
-    for (const call of mockedFetchProjectFileText.mock.calls) {
-      expect(call[2]).not.toHaveProperty('workspaceContext');
-    }
+    expect(mockedFetchProjectFileText).not.toHaveBeenCalled();
   });
 
   it('focuses an already-open file tab without adding a duplicate tab', async () => {

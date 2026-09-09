@@ -57,7 +57,6 @@ import type {
   PluginSourceKind,
   ResearchOptions,
   RunContextSelection,
-  WorkspaceCollabContext,
   WorkspaceContextItem,
 } from '@open-design/contracts';
 import { buildVisualAnnotationAttachment, commentTargetDisplayName } from '../comments';
@@ -96,7 +95,6 @@ import {
   type InlineMentionEntity,
 } from '../utils/inlineMentions';
 import { workspaceContextLinkedDir, workspaceContextLinkedDirs } from './workspace-context';
-import { useProjectCollabContext } from '../collab/collab-context';
 import {
   LexicalComposerInput,
   type LexicalComposerInputHandle,
@@ -492,7 +490,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
   ) {
     const { locale, t } = useI18n();
     const analytics = useAnalytics();
-    const { workspaceContext } = useProjectCollabContext();
     const activeFileContext =
       projectMetadata?.importedFrom === 'folder' && activeProjectFileName
         ? activeProjectFileName
@@ -2859,7 +2856,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               onMouseLeave={scheduleComposerPanelClose}
             >
               <DesignToolboxPanel
-                workspaceContext={workspaceContext}
                 actions={DESIGN_TOOLBOX_ACTIONS}
                 skills={skills}
                 plugins={pluginsForComposer}
@@ -2919,7 +2915,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               onMouseLeave={scheduleComposerPanelClose}
             >
               <StandalonePluginsPane
-                workspaceContext={workspaceContext}
                 plugins={pluginsForComposer}
                 onPick={(record) => {
                   trackComposerBar({
@@ -3155,7 +3150,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               }}
             />
             <ComposerPlusMenu
-              workspaceContext={workspaceContext}
               triggerTestId="chat-plus-trigger"
               placementPreference="up"
               openRequest={plusMenuOpenRequest}
@@ -3767,7 +3761,6 @@ function StagedRunContexts({
   onSkillDetails?: (id: string) => void;
   t: TranslateFn;
 }) {
-  const { workspaceContext } = useProjectCollabContext();
   // Attachment thumbnails preview in a portal modal; keep that state here so the
   // file chips can live in the same wrap row as the design-system picker and
   // other run-context chips (so files flow to the picker's right, wrapping to a
@@ -4061,12 +4054,10 @@ function StandalonePluginsPane({
   plugins,
   onPick,
   onAdd,
-  workspaceContext,
 }: {
   plugins: InstalledPluginRecord[];
   onPick: (record: InstalledPluginRecord) => void;
   onAdd?: () => void;
-  workspaceContext: WorkspaceCollabContext | null;
 }) {
   const { locale, t } = useI18n();
   const [query, setQuery] = useState('');
@@ -4393,7 +4384,6 @@ function DesignToolboxPanel({
   onPickSkill,
   onPickResource,
   onOpened,
-  workspaceContext,
 }: {
   actions: DesignToolboxAction[];
   skills: SkillSummary[];
@@ -4411,7 +4401,6 @@ function DesignToolboxPanel({
   onPickSkill: (skill: SkillSummary) => void;
   onPickResource: (resource: DesignToolboxResource) => void;
   onOpened?: () => void;
-  workspaceContext: WorkspaceCollabContext | null;
 }) {
   const { locale, t } = useI18n();
   const [query, setQuery] = useState('');

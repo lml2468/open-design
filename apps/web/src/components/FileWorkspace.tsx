@@ -105,10 +105,8 @@ import {
   type ChatSessionMode,
   type InstalledPluginRecord,
   type LocalizedText,
-  type WorkspaceCollabContext,
   type WorkspaceContextItem,
 } from '@open-design/contracts';
-import { useProjectCollabContext } from '../collab/collab-context';
 import { createTerminal, killTerminal, listPlugins } from '../state/projects';
 import { DesignFilesPanel, type DesignFilesNavState } from './DesignFilesPanel';
 import {
@@ -1341,7 +1339,6 @@ export function FileWorkspace({
     await onRefreshFiles();
   }, [onRefreshFiles]);
   const { locale, t } = useI18n();
-  const { workspaceContext } = useProjectCollabContext();
   const iframeKeepAlivePool = useIframeKeepAlivePool();
   const analytics = useAnalytics();
   // P1 page_view page_name=file_manager — once per project the user lands
@@ -1683,7 +1680,7 @@ export function FileWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [projectId, workspaceContext]);
+  }, [projectId]);
 
   // True when the Design Files tab has nothing to attach: no files, no live
   // artifacts, no folders. Mirrors DesignFilesPanel's own empty-state gate so
@@ -4259,7 +4256,6 @@ export function FileWorkspace({
             config={chatConfig}
             agentsById={chatAgentsById}
             locale={chatLocale ?? 'en'}
-            workspaceContext={workspaceContext}
             projectFiles={visibleFiles}
             projectFileNames={sideChatFileNames}
             projectResolvedDir={resolvedDir}
@@ -4484,8 +4480,6 @@ function DesignSystemProjectPanel({
 }) {
   const t = useT();
   const analytics = useAnalytics();
-  const { workspaceContext } = useProjectCollabContext();
-  const workspaceIdentity = 'local';
   const [reviewDecisions, setReviewDecisions] = useState<Record<string, DesignSystemReviewDecision>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [feedbackSection, setFeedbackSection] = useState<string | null>(null);
@@ -4531,7 +4525,7 @@ function DesignSystemProjectPanel({
     initialDesignMdRef.current = null;
     initialBrandJsonRef.current = null;
     initialBrandJsonLoadedRef.current = false;
-  }, [projectId, workspaceIdentity]);
+  }, [projectId]);
   function emitDesignSystemProjectEditClick(
     element: DesignSystemEditClickProps['element'],
     module: DesignSystemEditClickProps['module'],
@@ -4579,7 +4573,7 @@ function DesignSystemProjectPanel({
     return () => {
       cancelled = true;
     };
-  }, [projectId, kitReloadKey, workspaceIdentity]);
+  }, [projectId, kitReloadKey]);
   const kitHost = system.provenance?.sourceUrls?.[0]
     ? hostnameOf(system.provenance.sourceUrls[0])
     : undefined;
@@ -4608,7 +4602,6 @@ function DesignSystemProjectPanel({
     editable,
     host: kitHost,
     reloadKey: kitReloadKey,
-    workspaceContext,
   });
   async function persistDesignMd(nextBody: string) {
     const updated = await updateDesignSystemDraft(
@@ -5372,7 +5365,6 @@ function DesignSystemProjectPanel({
       {kit ? (
         <DesignKitView
           kit={kit}
-          workspaceContext={workspaceContext}
           actionsSlot={actionsSlot}
           headerMenuActions={headerMenuActions}
           topSlot={topSlot}
@@ -7252,7 +7244,6 @@ function DesignSystemInlinePreview({
   projectId: string;
   file: ProjectFile;
 }) {
-  const { workspaceContext } = useProjectCollabContext();
   const url = projectFileUrl(projectId, file.name);
   const [srcDoc, setSrcDoc] = useState<string | null>(null);
   const [srcDocReady, setSrcDocReady] = useState(false);
@@ -7275,7 +7266,6 @@ function DesignSystemInlinePreview({
         html,
         projectId,
         file.name,
-        workspaceContext,
       );
       if (cancelled) return;
       setSrcDoc(buildSrcdoc(inlinedHtml, {
@@ -7289,7 +7279,7 @@ function DesignSystemInlinePreview({
     return () => {
       cancelled = true;
     };
-  }, [file.kind, file.mtime, file.name, projectId, workspaceContext]);
+  }, [file.kind, file.mtime, file.name, projectId]);
 
   if (file.kind === 'html') {
     return (
@@ -7308,7 +7298,6 @@ async function inlineDesignSystemPreviewRelativeAssets(
   html: string,
   projectId: string,
   ownerFileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string> {
   const replacements: Array<Promise<{ from: string; to: string } | null>> = [];
   const links = html.match(/<link\b[^>]*>/gi) ?? [];
@@ -7326,7 +7315,6 @@ async function inlineDesignSystemPreviewRelativeAssets(
         css,
         projectId,
         stylesheetPath,
-        workspaceContext,
       )
         .replace(/<\/style/gi, '<\\/style');
       return {
@@ -7348,7 +7336,6 @@ async function inlineDesignSystemPreviewRelativeAssets(
       projectId,
       ownerFileName,
       src,
-      workspaceContext,
     ).then((js) => {
       if (js == null) return null;
       const open = tag.match(/^<script\b[^>]*>/i)?.[0] ?? '<script>';
@@ -7378,13 +7365,11 @@ async function inlineDesignSystemPreviewRelativeAssets(
     withInlineAssets,
     projectId,
     ownerFileName,
-    workspaceContext,
   );
   return rewriteDesignSystemPreviewHtmlAssetUrls(
     withInlineCssAssets,
     projectId,
     ownerFileName,
-    workspaceContext,
   );
 }
 
@@ -7392,7 +7377,6 @@ async function fetchDesignSystemPreviewRelativeText(
   projectId: string,
   ownerFileName: string,
   assetRef: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string | null> {
   const filePath = resolveDesignSystemPreviewRelativePath(ownerFileName, assetRef);
   if (!filePath) return null;
@@ -7438,7 +7422,6 @@ function isDesignSystemPreviewAppRootRef(ref: string): boolean {
 function designSystemPreviewAssetUrl(
   projectId: string,
   assetPath: DesignSystemPreviewAssetPath,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
   const baseUrl = projectRawUrl(projectId, assetPath.filePath);
   const hashIndex = assetPath.suffix.indexOf('#');
@@ -7452,14 +7435,13 @@ function rewriteDesignSystemPreviewCssUrls(
   css: string,
   projectId: string,
   stylesheetFileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
   return css.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (match, _quote: string, rawRef: string) => {
     const ref = rawRef.trim();
     const assetPath = resolveDesignSystemPreviewAssetPath(stylesheetFileName, ref);
     if (!assetPath) return match;
     return `url("${escapeDesignSystemPreviewCssUrl(
-      designSystemPreviewAssetUrl(projectId, assetPath, workspaceContext),
+      designSystemPreviewAssetUrl(projectId, assetPath),
     )}")`;
   });
 }
@@ -7468,7 +7450,6 @@ function rewriteDesignSystemPreviewHtmlAssetUrls(
   html: string,
   projectId: string,
   ownerFileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
   const directAssetTags = new RegExp(
     '(<(?:img|source|video|audio|track|embed|object|image|use)\\b[^>]*?\\s' +
@@ -7480,7 +7461,6 @@ function rewriteDesignSystemPreviewHtmlAssetUrls(
       rawRef,
       projectId,
       ownerFileName,
-      workspaceContext,
     );
     if (rewritten === rawRef) return match;
     return `${prefix}${quote}${escapeDesignSystemPreviewAttr(rewritten)}${quote}`;
@@ -7494,7 +7474,6 @@ function rewriteDesignSystemPreviewHtmlAssetUrls(
       rawSrcset,
       projectId,
       ownerFileName,
-      workspaceContext,
     );
     if (rewritten === rawSrcset) return match;
     return `${prefix}${quote}${escapeDesignSystemPreviewAttr(rewritten)}${quote}`;
@@ -7505,14 +7484,13 @@ function rewriteDesignSystemPreviewInlineCssAssetUrls(
   html: string,
   projectId: string,
   ownerFileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
   const withStyleBlocks = html.replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, (
     match,
     attrs: string,
     css: string,
   ) => {
-    const rewritten = rewriteDesignSystemPreviewCssUrls(css, projectId, ownerFileName, workspaceContext);
+    const rewritten = rewriteDesignSystemPreviewCssUrls(css, projectId, ownerFileName);
     if (rewritten === css) return match;
     return `<style${attrs}>${rewritten}</style>`;
   });
@@ -7522,7 +7500,7 @@ function rewriteDesignSystemPreviewInlineCssAssetUrls(
     quote: string,
     css: string,
   ) => {
-    const rewritten = rewriteDesignSystemPreviewCssUrls(css, projectId, ownerFileName, workspaceContext);
+    const rewritten = rewriteDesignSystemPreviewCssUrls(css, projectId, ownerFileName);
     if (rewritten === css) return match;
     return `${prefix}${quote}${escapeDesignSystemPreviewAttr(rewritten)}${quote}`;
   });
@@ -7532,17 +7510,15 @@ function rewriteDesignSystemPreviewHtmlAssetRef(
   ref: string,
   projectId: string,
   ownerFileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
   const assetPath = resolveDesignSystemPreviewAssetPath(ownerFileName, ref.trim());
-  return assetPath ? designSystemPreviewAssetUrl(projectId, assetPath, workspaceContext) : ref;
+  return assetPath ? designSystemPreviewAssetUrl(projectId, assetPath) : ref;
 }
 
 function rewriteDesignSystemPreviewSrcset(
   srcset: string,
   projectId: string,
   ownerFileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
   if (/\bdata:/i.test(srcset)) return srcset;
   return srcset
@@ -7554,7 +7530,6 @@ function rewriteDesignSystemPreviewSrcset(
         match[1] ?? '',
         projectId,
         ownerFileName,
-        workspaceContext,
       );
       return `${rewritten}${match[2] ?? ''}`;
     })

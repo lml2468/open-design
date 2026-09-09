@@ -666,7 +666,7 @@ describe('FileViewer preview scale', () => {
     );
   });
 
-  it('loads the local raw source without legacy Workspace headers once authority resolves', async () => {
+  it('loads the local raw source without Workspace authority', async () => {
     const file = baseFile({
       name: 'first-open.html',
       path: 'first-open.html',
@@ -694,41 +694,12 @@ describe('FileViewer preview scale', () => {
       return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
     }));
 
-    const pendingContext = {
-      ...projectWorkspaceCollabValue(null),
-      workspaceContextLoading: true,
-      projectResourceAuthority: 'pending' as const,
-    };
-    const { rerender } = render(
-      <CollabProvider value={pendingContext}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={file}
-        />
-      </CollabProvider>,
-    );
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(rawReads).toEqual([]);
-    expect(document.querySelector('.viewer-loading')).not.toBeNull();
-    expect(screen.queryByTestId('artifact-preview-frame')).toBeNull();
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(teamWorkspaceContext()),
-        workspaceContextLoading: true,
-        projectResourceAuthority: 'workspace',
-      }}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={file}
-        />
-      </CollabProvider>,
+    render(
+      <FileViewer
+        projectId="project-1"
+        projectKind="prototype"
+        file={file}
+      />,
     );
 
     await waitFor(() => {
@@ -741,68 +712,6 @@ describe('FileViewer preview scale', () => {
     const headers = new Headers(rawReads[0]?.init?.headers);
     expect(headers.has('x-od-workspace-id')).toBe(false);
     expect(headers.has('x-od-workspace-member-id')).toBe(false);
-  });
-
-  it('recovers the same preview mount when pending authority settles as local', async () => {
-    const file = baseFile({
-      name: 'local-first-open.html',
-      path: 'local-first-open.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Local first open',
-        entry: 'local-first-open.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    const rawReads: Array<{ init?: RequestInit; url: string }> = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/raw/local-first-open.html')) {
-        rawReads.push({ init, url });
-        return new Response('<html><body>Local materialized</body></html>', { status: 200 });
-      }
-      if (url.endsWith('/files')) {
-        return new Response(JSON.stringify({ files: [file] }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }));
-
-    const { rerender } = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(teamWorkspaceContext()),
-        workspaceContextLoading: true,
-        projectResourceAuthority: 'pending',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-
-    expect(document.querySelector('.viewer-loading')).not.toBeNull();
-    expect(screen.queryByTestId('artifact-preview-frame')).toBeNull();
-    expect(rawReads).toEqual([]);
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        workspaceContextLoading: false,
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-
-    await waitFor(() => {
-      expect(rawReads).toHaveLength(1);
-      expect(document.querySelector('.viewer-loading')).toBeNull();
-      expect(screen.getByTestId('artifact-preview-frame')).toBeTruthy();
-    });
-    expect(rawReads[0]?.url).not.toContain('workspaceId=');
-    expect(rawReads[0]?.url).not.toContain('workspaceMemberId=');
-    expect(rawReads[0]?.init?.headers).toBeUndefined();
   });
 
   it('warms a newly retained inactive HTML viewer without forcing a GPU layer on activation', async () => {
@@ -872,108 +781,6 @@ describe('FileViewer preview scale', () => {
     expect(retainedFrame.style.transform).toBe('');
     expect(retainedFrame.style.willChange).toBe('');
     expect(rawReads).toHaveLength(1);
-  });
-
-  it('never downgrades denied project resources to local reads', async () => {
-    const file = baseFile({
-      name: 'authority.html',
-      path: 'authority.html',
-      mime: 'text/html',
-      kind: 'html',
-    });
-    const rawReads: Array<{ init?: RequestInit; url: string }> = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/raw/authority.html')) {
-        rawReads.push({ init, url });
-        return new Response('<html><body>Authorized</body></html>', { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }));
-
-    const denied = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'denied',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(rawReads).toEqual([]);
-    expect(document.querySelector('.viewer-loading')).toBeNull();
-    expect(screen.getByText(/Preview unavailable/)).toBeTruthy();
-    denied.unmount();
-
-    const local = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    await waitFor(() => expect(rawReads).toHaveLength(1));
-    expect(rawReads[0]?.url).not.toContain('workspaceId=');
-    expect(new Headers(rawReads[0]?.init?.headers).get('x-od-workspace-id')).toBeNull();
-
-    local.rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'denied',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    await waitFor(() => expect(screen.getByText(/Preview unavailable/)).toBeTruthy());
-    expect(rawReads).toHaveLength(1);
-  });
-
-  it('gates non-HTML resource URLs for pending and denied projects', () => {
-    const file = baseFile({
-      name: 'private.png',
-      path: 'private.png',
-      mime: 'image/png',
-      kind: 'image',
-    });
-    const { rerender } = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        workspaceContextLoading: true,
-        projectResourceAuthority: 'pending',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    expect(document.querySelector('.viewer-loading')).not.toBeNull();
-    expect(screen.queryByRole('img')).toBeNull();
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'denied',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    expect(document.querySelector('.viewer-loading')).toBeNull();
-    expect(screen.getByText(/Preview unavailable/)).toBeTruthy();
-    expect(screen.queryByRole('img')).toBeNull();
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    expect(screen.getByRole('img').getAttribute('src')).toContain(
-      '/api/projects/project-1/raw/private.png',
-    );
   });
 
   it('keeps the preview viewport trigger flat by default', () => {

@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { ProjectDisplayStatus, WorkspaceCollabContext } from '@open-design/contracts';
+import type { ProjectDisplayStatus } from '@open-design/contracts';
 
 import { useT } from '../../i18n';
 import { RemixIcon } from '../RemixIcon';
@@ -157,14 +157,12 @@ function ChatMark() {
 
 export function RailRecentRow({
   project,
-  workspaceContext,
   runStatus,
   onOpen,
   onRename,
   onDelete,
 }: {
   project: Project;
-  workspaceContext?: WorkspaceCollabContext | null;
   /** This project's live run status, when it has one (per product: 如果有项目在
    *  进行，这个 icon 换成状态). Drives the leading glyph and nothing else. */
   runStatus?: ProjectDisplayStatus;
@@ -242,7 +240,7 @@ export function RailRecentRow({
       // Leave it unresolved: a failed read is not an authoritative "no cover",
       // and the next hover should be allowed to try again.
     }
-  }, [project.id, project.metadata?.entryFile, snapshotKey, workspaceContext]);
+  }, [project.id, project.metadata?.entryFile, snapshotKey]);
 
   // Close the menu on an outside click, the way every other rail popover does.
   useEffect(() => {
@@ -288,7 +286,7 @@ export function RailRecentRow({
   }
 
   const coverSrc = cover
-    ? projectCoverUrl(project.id, cover.name, cover.mtime, workspaceContext)
+    ? projectCoverUrl(project.id, cover.name, cover.mtime)
     : null;
   // `html` covers are documents, not pictures: the grid mounts a sandboxed frame
   // for those. A floating rail preview is not worth a second iframe per hover,

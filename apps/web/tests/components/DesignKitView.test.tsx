@@ -7,7 +7,6 @@ import { DesignKitView, useBrandFonts } from '../../src/components/DesignKitView
 import { PreviewModal } from '../../src/components/PreviewModal';
 import { I18nProvider } from '../../src/i18n';
 import type { DesignKit } from '../../src/runtime/design-kit';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 function previewKit(): DesignKit {
   return {
@@ -41,19 +40,7 @@ afterEach(() => {
 });
 
 describe('DesignKitView iframe sandboxing', () => {
-  it('keeps local Project font requests free of legacy Workspace authority', async () => {
-    const context = {
-      workspaceId: 'workspace-team',
-      workspaceType: 'team',
-      workspaceMemberId: 'member-1',
-      role: 'member',
-      memberStatus: 'active',
-      lifecycleState: 'active',
-      permissions: {
-        canShareProjects: false,
-        canWriteSyncedFiles: false,
-      },
-    } as WorkspaceCollabContext;
+  it('loads local Project fonts without Workspace authority', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       Response.json({
         files: [{
@@ -66,7 +53,7 @@ describe('DesignKitView iframe sandboxing', () => {
       }),
     );
 
-    const { unmount } = renderHook(() => useBrandFonts('project-team', [], context));
+    const { unmount } = renderHook(() => useBrandFonts('project-team', []));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(

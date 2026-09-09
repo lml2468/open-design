@@ -20,7 +20,6 @@ import {
   type ProjectFileVersion,
   type SocialShareRequest,
   type SocialShareResponse,
-  type WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { PREVIEW_OBSERVABILITY_HOST_STATE_MESSAGE_TYPE } from '@open-design/contracts/runtime/preview-observability';
 import { PREVIEW_URL_GUARD_MAX_HTML_BYTES } from '@open-design/contracts/runtime/preview-guards';
@@ -235,10 +234,7 @@ import {
   type AnchorWriteBack,
   type PreviewCommentSnapshot,
 } from '../comments';
-import {
-  useProjectCollabContext,
-  type ProjectResourceAuthority,
-} from '../collab/collab-context';
+import { useProjectCollabContext } from '../collab/collab-context';
 import { applyPodMemberRemoval } from '../lib/pod-members';
 import { AnnotationHoverPopover, BoardComposerPopover } from './BoardComposerPopover';
 import {
@@ -271,7 +267,6 @@ import {
   getHtmlSourceSnapshot,
   htmlSourceSnapshotRefreshKey,
   invalidateHtmlSourceSnapshotFile,
-  invalidateHtmlSourceSnapshotProject,
   setHtmlSourceSnapshot,
 } from './html-source-snapshot-cache';
 
@@ -825,14 +820,12 @@ function rewriteMarkdownImageSources(
   html: string,
   projectId: string,
   markdownPath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
   return html.replace(/<img\b([^>]*?)\bsrc="([^"]*)"([^>]*)>/g, (match, before: string, src: string, after: string) => {
     const resolved = markdownImageSourceUrl(
       projectId,
       markdownPath,
       decodeHtmlAttribute(src),
-      workspaceContext,
     );
     if (!resolved) return match;
     const attrs = `${before}${after}`;
@@ -845,7 +838,6 @@ export function markdownImageSourceUrl(
   projectId: string,
   markdownPath: string,
   src: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string | null {
   const trimmed = src.trim();
   if (!trimmed) return null;
@@ -1772,18 +1764,6 @@ export const FileViewer = memo(function FileViewer({
   manualEditEntryAllowed = true,
 }: Props) {
   const t = useT();
-  const projectCollabContext = useProjectCollabContext();
-  const projectResourceAuthority = projectCollabContext.projectResourceAuthority
-    ?? (projectCollabContext.workspaceContextLoading
-      ? 'pending'
-      : projectCollabContext.workspaceContext
-        ? 'workspace'
-        : 'local');
-  const projectResourceReadAllowed = projectResourceAuthority === 'local'
-    || (
-      projectResourceAuthority === 'workspace'
-      && projectCollabContext.workspaceContext !== null
-    );
   const rendererMatch = artifactRendererRegistry.resolve({
     file,
     isDeckHint: Boolean(isDeck),
@@ -1804,24 +1784,6 @@ export const FileViewer = memo(function FileViewer({
       page_name: 'artifact',
     });
   }, [projectId, projectKind, file.name, file.kind, rendererMatch?.renderer.id, analytics.track, workspaceActive]);
-  useEffect(() => {
-    if (projectResourceReadAllowed) return;
-    invalidateHtmlSourceSnapshotProject(projectId);
-  }, [projectId, projectResourceReadAllowed]);
-
-  if (!projectResourceReadAllowed) {
-    if (projectResourceAuthority === 'denied') {
-      return (
-        <div className="viewer">
-          <div className="viewer-body">
-            <div className="viewer-empty">{t('fileViewer.previewUnavailable')}</div>
-          </div>
-        </div>
-      );
-    }
-    return <FileViewerLoadingSkeleton />;
-  }
-
   if (rendererMatch?.renderer.id === 'html' || rendererMatch?.renderer.id === 'deck-html') {
     return (
       <HtmlViewer
@@ -1935,7 +1897,6 @@ export function LiveArtifactViewer({
   onRefreshArtifacts?: () => Promise<void> | void;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const tabs = useMemo(() => liveArtifactViewerTabs(t), [t]);
   const [mode, setMode] = useState<LiveArtifactViewerTab>('preview');
   const [detail, setDetail] = useState<LiveArtifact | null>(null);
@@ -2089,7 +2050,7 @@ export function LiveArtifactViewer({
     ).then(setRefreshHistory);
     setReloadKey((n) => n + 1);
     }
-  }, [liveArtifactEvents, liveArtifact.artifactId, projectId, t, workspaceContext]);
+  }, [liveArtifactEvents, liveArtifact.artifactId, projectId, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2109,14 +2070,14 @@ export function LiveArtifactViewer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, liveArtifact.artifactId, liveArtifact.updatedAt, workspaceContext]);
+  }, [projectId, liveArtifact.artifactId, liveArtifact.updatedAt]);
 
   const previewUrl = useMemo(
     () => appendResourceQuery(
       liveArtifactPreviewUrl(projectId, liveArtifact.artifactId, 'rendered'),
       `v=${reloadKey}`,
     ),
-    [projectId, liveArtifact.artifactId, reloadKey, workspaceContext],
+    [projectId, liveArtifact.artifactId, reloadKey],
   );
   const previewScale = zoom / 100;
 
@@ -2520,7 +2481,6 @@ function LiveArtifactCodePanel({
   reloadKey: number;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const [variant, setVariant] = useState<LiveArtifactCodeVariant>('template');
   const [code, setCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2540,7 +2500,7 @@ function LiveArtifactCodePanel({
     return () => {
       cancelled = true;
     };
-  }, [artifactId, projectId, reloadKey, variant, workspaceContext]);
+  }, [artifactId, projectId, reloadKey, variant]);
 
   return (
     <div className="live-artifact-code-panel">
@@ -3221,7 +3181,6 @@ export function fileVersionPreviewOptions(
   projectId: string,
   fileName: string,
   source: string | null | undefined,
-  workspaceContext?: WorkspaceCollabContext | null,
 ) {
   return {
     deck: sourceLooksLikeDeckPreview(source),
@@ -3233,10 +3192,9 @@ function fileVersionPreviewSrcDoc(
   projectId: string,
   fileName: string,
   source: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ) {
   return buildSrcdoc(source, {
-    ...fileVersionPreviewOptions(projectId, fileName, source, workspaceContext),
+    ...fileVersionPreviewOptions(projectId, fileName, source),
     previewFocusGuard: true,
   });
 }
@@ -3321,7 +3279,6 @@ function FileVersionManagerModal({
 }) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
-  const { workspaceContext } = useProjectCollabContext();
   const tRef = useRef(t);
   const [versions, setVersions] = useState<ProjectFileVersion[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -3481,7 +3438,7 @@ function FileVersionManagerModal({
       });
     inFlightRef.current.set(versionId, request);
     return request;
-  }, [file.name, projectId, workspaceContext]);
+  }, [file.name, projectId]);
 
   const loadVersions = useCallback(async (preferredId?: string | null) => {
     setLoading(true);
@@ -3507,7 +3464,7 @@ function FileVersionManagerModal({
       null;
     setSelectedId(nextSelected?.id ?? null);
     setLoading(false);
-  }, [currentSource, file.name, projectId, workspaceContext]);
+  }, [currentSource, file.name, projectId]);
 
   useEffect(() => {
     void loadVersions();
@@ -6317,7 +6274,6 @@ function ReactComponentViewer({
 }) {
   const t = useT();
   const analytics = useAnalytics();
-  const { workspaceContext } = useProjectCollabContext();
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
   const [source, setSource] = useState<string | null>(null);
   const [srcDoc, setSrcDoc] = useState('');
@@ -6340,7 +6296,7 @@ function ReactComponentViewer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, file.name, file.mtime, reloadKey, workspaceContext]);
+  }, [projectId, file.name, file.mtime, reloadKey]);
 
   // Detect whether this .jsx/.tsx is a module loaded by a sibling HTML entry.
   // Runs before any srcdoc is built so a module never flashes the raw
@@ -6370,7 +6326,7 @@ function ReactComponentViewer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, file.name, file.mtime, reloadKey, workspaceContext]);
+  }, [projectId, file.name, file.mtime, reloadKey]);
 
   useEffect(() => {
     if (!shareMenuOpen) return;
@@ -6615,7 +6571,6 @@ function DocumentPreviewViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const [preview, setPreview] = useState<ProjectFilePreview | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -6632,7 +6587,7 @@ function DocumentPreviewViewer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, file.name, file.mtime, workspaceContext]);
+  }, [projectId, file.name, file.mtime]);
 
   return (
     <div className="viewer document-viewer">
@@ -6665,20 +6620,6 @@ function DocumentPreviewViewer({
       </div>
     </div>
   );
-}
-
-export function fileViewerSourceAuthorizationScopeKey(
-  workspaceContextLoading: boolean,
-  workspaceContext: WorkspaceCollabContext | null,
-  projectResourceAuthority?: ProjectResourceAuthority,
-): string | null {
-  const authority = projectResourceAuthority
-    ?? (workspaceContextLoading ? 'pending' : workspaceContext ? 'workspace' : 'local');
-  if (authority === 'local') return 'local';
-  if (authority === 'workspace' && workspaceContext) {
-    return 'local';
-  }
-  return null;
 }
 
 /**
@@ -6782,18 +6723,8 @@ function HtmlViewer({
   // the live metadata here is what lets an agent edit finish loading before
   // the user switches back; activation itself must not promote a stale
   // snapshot and start a visible navigation.
-  const {
-    workspaceContext,
-    workspaceContextLoading,
-    projectResourceAuthority,
-  } = useProjectCollabContext();
-  const sourceAuthorizationScopeKey = fileViewerSourceAuthorizationScopeKey(
-    workspaceContextLoading,
-    workspaceContext,
-    projectResourceAuthority,
-  );
-  const projectResourceReadBlocked =
-    sourceAuthorizationScopeKey === null;
+  const sourceAuthorizationScopeKey = 'local';
+  const projectResourceReadBlocked = false;
   // File-watch pulses are debounced by the URL refresh effect below. Consume
   // them while retained so the hidden document is already current when its tab
   // becomes visible.
@@ -17321,7 +17252,6 @@ function ImageViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const url = appendResourceQuery(
     projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}`,
@@ -17369,7 +17299,6 @@ function SketchViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   return (
     <div className="viewer image-viewer sketch-viewer">
       <div className="viewer-toolbar">
@@ -17399,7 +17328,6 @@ function VideoViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const url = appendResourceQuery(
     projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}`,
@@ -17429,7 +17357,6 @@ function AudioViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const url = appendResourceQuery(
     projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}`,
@@ -17471,7 +17398,6 @@ export function SvgViewer({
   initialSource,
 }: SvgViewerProps) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const [mode, setMode] = useState<SvgViewerMode>(initialMode);
   const [source, setSource] = useState<string | null>(initialSource ?? null);
   const [loadingSource, setLoadingSource] = useState(false);
@@ -17511,7 +17437,6 @@ export function SvgViewer({
     initialSource,
     mode,
     reloadKey,
-    workspaceContext,
   ]);
 
   return (
@@ -17599,7 +17524,6 @@ function TextViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const [text, setText] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -17612,7 +17536,7 @@ function TextViewer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, file.name, file.mtime, reloadKey, workspaceContext]);
+  }, [projectId, file.name, file.mtime, reloadKey]);
 
   async function copy() {
     if (text == null) return;
@@ -17826,7 +17750,6 @@ function MarkdownViewer({
   viewerOnly?: boolean;
 }) {
   const { t, locale } = useI18n();
-  const { workspaceContext } = useProjectCollabContext();
   const [text, setText] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
@@ -18151,9 +18074,8 @@ function MarkdownViewer({
       decorateMarkdownCodeBlocks(renderPartial(text)),
       projectId,
       file.name,
-      workspaceContext,
     );
-  }, [file.name, projectId, text, workspaceContext]);
+  }, [file.name, projectId, text]);
   const html = highlightedHtml?.source === baseHtml && highlightedHtml.themeRevision === highlightThemeRevision
     ? highlightedHtml.html
     : baseHtml;
