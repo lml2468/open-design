@@ -431,8 +431,8 @@
 }
 /* ---------- Rail account skeleton (RailAccountSyncTip) ----------
    Stand-in for the account row (`.entry-nav-rail__account-trigger` below)
-   while the just-signed-in `GET /api/workspace/context` re-read is still in
-   flight. This is a normal flex child of `.entry-nav-rail__footer` — the same
+   while account state is being refreshed. This is a normal flex child of
+   `.entry-nav-rail__footer` — the same
    flow `.entry-rail-actions` already uses (`width: calc(100% - 18px); margin:
    0 auto;`). That lands its bottom edge
    close to the panel's bottom padding the same way the real account-trigger

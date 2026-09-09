@@ -1058,13 +1058,8 @@ function AppInner() {
       // its loader once both registries respond — neither tab would have
       // a complete picture if we cleared the flag on the first reply.
       //
-      // Only the TEMPLATE half is read here. Functional skills are
-      // workspace-scoped on the daemon and must carry the caller's identity
-      // headers, which do not exist until `/api/workspace/context` settles —
-      // so that read belongs to the workspace-keyed effect below, which owns
-      // the `functional` half of this gate. Reading it here as well would
-      // spend a second `/api/skills` request per launch, and the first one
-      // would be the headerless (fail-closed) answer.
+      // Only the template half is read here. Functional skills are loaded by
+      // the dedicated refresh effect below, which owns that half of the gate.
       void fetchDesignTemplates().then((list) => {
         if (cancelled) return;
         setDesignTemplates(list);

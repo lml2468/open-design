@@ -1625,15 +1625,8 @@ describe('App project creation routing', () => {
     // working dir flips. Asserting the call order locks the ordering in.
     mockedListProjects.mockResolvedValue([]);
     mockedReplaceProjectWorkingDir.mockResolvedValue(undefined as never);
-    stubWorkspaceContext('ws-create', 'wm-create');
 
     render(<App />);
-    await waitFor(() => {
-      expect(
-        vi.mocked(fetch).mock.calls.some(([input]) =>
-          String(input).includes('/api/workspace/context')),
-      ).toBe(true);
-    });
 
     fireEvent.click(
       await screen.findByRole('button', { name: 'Create project with working dir' }),

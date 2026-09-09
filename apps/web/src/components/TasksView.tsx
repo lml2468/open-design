@@ -503,25 +503,16 @@ export function TasksView({ skills = [], designTemplates = [], connectors = [], 
       setLoading(false);
     }
     return { proposalRefreshFailed };
-    // Re-run (and re-effect below, via the `refresh` identity change) on
-    // workspace switch, not just mount — same as PluginsView/RoutinesSection —
-    // so the project picker reflects the newly active workspace's projects.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    // `tasksWorkspaceIdentity` partitions this callback on every authority
-    // field. The captured context belongs to that exact identity.
+    // Keep the callback partitioned by the transitional identity key until the
+    // remaining Workspace-shaped request parameters are removed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routineHeaders, tasksWorkspaceIdentity]);
 
   useEffect(() => {
     // Hidden views do not fetch. This one is mounted from the first paint of
     // Home, and `refresh` pulls four endpoints — the automation catalog, pending
-    // proposals, routines and the project picker. It also runs twice per launch,
-    // because `refresh` is keyed on `tasksWorkspaceIdentity` and that changes
-    // when `/api/workspace/context` resolves.
-    //
-    // Re-running on activation is what keeps this a delay rather than a
-    // suppression: an identity change while hidden re-enters this effect,
-    // returns early, and the fetch happens when the user opens the tab.
+    // proposals, routines and the project picker. Re-running on activation is
+    // what keeps this a delay rather than a suppression.
     if (!isActive) return;
     void refresh();
   }, [isActive, refresh]);
