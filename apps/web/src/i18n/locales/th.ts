@@ -2474,8 +2474,6 @@ export const th: Dict = {
   'workspace.fileSyncDownloading': 'กำลังดาวน์โหลดจากทีม…',
   'workspace.fileSyncUploading': 'กำลังซิงค์กับทีม…',
   'workspace.deleteFileConfirm': 'ลบ "{name}" ทิ้งไปเลยหรือไม่?',
-  'workspace.readonlyNotice': 'นี่คือโปรเจกต์ที่แชร์ — คุณสามารถดูและแสดงความคิดเห็นได้ แต่ไม่สามารถแก้ไขอาร์ติแฟกต์ผ่าน Chat หรือเครื่องมือแก้ไข',
-  'workspace.readonlyNoticeBy': 'นี่คือโปรเจกต์ที่แชร์ซึ่งสร้างโดย {owner} — คุณสามารถดูและแสดงความคิดเห็นได้ แต่ไม่สามารถแก้ไขอาร์ติแฟกต์ผ่าน Chat หรือเครื่องมือแก้ไข',
   'workspace.deleteSelectedFilesConfirm': 'ลบไฟล์ {n} รายการที่เลือกออกจากโปรเจกต์?',
   'workspace.deleteSelectedFilesPartial': 'ลบ {n} รายการไม่ผ่าน',
   'workspace.openFromDesignFiles': 'เปิดไฟล์จาก',
@@ -2907,7 +2905,6 @@ export const th: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'คัดลอกลิงก์แชร์',
   'fileViewer.openSharePage': 'เปิดหน้าแชร์',
   'fileViewer.shareLinkRequiresDeploy': 'เผยแพร่ออนไลน์ก่อนเพื่อรับลิงก์',

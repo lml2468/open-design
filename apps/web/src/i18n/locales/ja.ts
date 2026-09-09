@@ -2576,8 +2576,6 @@ export const ja: Dict = {
   'workspace.fileSyncDownloading': 'チームからダウンロード中…',
   'workspace.fileSyncUploading': 'チームに同期中…',
   'workspace.deleteFileConfirm': 'プロジェクトフォルダーから "{name}" を削除しますか？',
-  'workspace.readonlyNotice': 'これは共有プロジェクトです。閲覧とコメントはできますが、Chat や編集ツールで Artifact を変更することはできません。',
-  'workspace.readonlyNoticeBy': 'これは {owner} が作成した共有プロジェクトです。閲覧とコメントはできますが、Chat や編集ツールで Artifact を変更することはできません。',
   'workspace.deleteSelectedFilesConfirm': 'プロジェクトフォルダーから選択した {n} 個のファイルを削除しますか？',
   'workspace.deleteSelectedFilesPartial': '{n} 個のファイルの削除に失敗しました。',
   'workspace.openFromDesignFiles': 'ファイルを開く: ',
@@ -3009,7 +3007,6 @@ export const ja: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': '共有リンクをコピー',
   'fileViewer.openSharePage': '共有ページを開く',
   'fileViewer.shareLinkRequiresDeploy': 'リンクを取得するには先にオンライン公開してください',

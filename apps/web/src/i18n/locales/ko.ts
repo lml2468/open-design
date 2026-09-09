@@ -2474,8 +2474,6 @@ export const ko: Dict = {
   'workspace.fileSyncDownloading': '팀에서 다운로드 중…',
   'workspace.fileSyncUploading': '팀과 동기화 중…',
   'workspace.deleteFileConfirm': '프로젝트 폴더에서 "{name}" 파일을 삭제하시겠습니까?',
-  'workspace.readonlyNotice': '공유 프로젝트입니다. 보기와 댓글은 가능하지만 Chat이나 편집 도구로 Artifact를 수정할 수 없습니다.',
-  'workspace.readonlyNoticeBy': '{owner}님이 만든 공유 프로젝트입니다. 보기와 댓글은 가능하지만 Chat이나 편집 도구로 Artifact를 수정할 수 없습니다.',
   'workspace.deleteSelectedFilesConfirm': '프로젝트 폴더에서 선택한 {n}개 파일을 삭제하시겠습니까?',
   'workspace.deleteSelectedFilesPartial': '{n}개 파일을 삭제하지 못했습니다.',
   'workspace.openFromDesignFiles': '디자인 파일 열기',
@@ -2907,7 +2905,6 @@ export const ko: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': '공유 링크 복사',
   'fileViewer.openSharePage': '공유 페이지 열기',
   'fileViewer.shareLinkRequiresDeploy': '링크를 받으려면 먼저 온라인에 게시하세요',

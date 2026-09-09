@@ -2474,8 +2474,6 @@ export const ar: Dict = {
   'workspace.fileSyncDownloading': 'جارٍ التنزيل من الفريق…',
   'workspace.fileSyncUploading': 'جارٍ المزامنة مع الفريق…',
   'workspace.deleteFileConfirm': 'حذف "{name}" من مجلد المشروع؟',
-  'workspace.readonlyNotice': 'هذا مشروع مشترك — يمكنك عرضه والتعليق عليه، لكن لا يمكنك تعديل العناصر عبر الدردشة أو أدوات التحرير.',
-  'workspace.readonlyNoticeBy': 'هذا مشروع مشترك أنشأه {owner} — يمكنك عرضه والتعليق عليه، لكن لا يمكنك تعديل العناصر عبر الدردشة أو أدوات التحرير.',
   'workspace.deleteSelectedFilesConfirm': 'حذف {n} ملف(ات) محددة من مجلد المشروع؟',
   'workspace.deleteSelectedFilesPartial': 'فشل حذف {n} ملف(ات).',
   'workspace.openFromDesignFiles': 'فتح ملف من',
@@ -2907,7 +2905,6 @@ export const ar: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'نسخ رابط المشاركة',
   'fileViewer.openSharePage': 'فتح صفحة المشاركة',
   'fileViewer.shareLinkRequiresDeploy': 'انشر على الإنترنت أولاً للحصول على رابط',

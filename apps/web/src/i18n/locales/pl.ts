@@ -2474,8 +2474,6 @@ export const pl: Dict = {
   'workspace.fileSyncDownloading': 'Pobieranie od zespołu…',
   'workspace.fileSyncUploading': 'Synchronizowanie z zespołem…',
   'workspace.deleteFileConfirm': 'Usunąć „{name}” z folderu projektu?',
-  'workspace.readonlyNotice': 'To projekt udostępniony — możesz go przeglądać i komentować, ale nie możesz zmieniać artefaktów przez Chat ani narzędzia edycji.',
-  'workspace.readonlyNoticeBy': 'To projekt udostępniony utworzony przez {owner} — możesz go przeglądać i komentować, ale nie możesz zmieniać artefaktów przez Chat ani narzędzia edycji.',
   'workspace.deleteSelectedFilesConfirm': 'Usunąć {n} wybranych plików z folderu projektu?',
   'workspace.deleteSelectedFilesPartial': 'Nie udało się usunąć {n} plików.',
   'workspace.openFromDesignFiles': 'Otwórz plik z',
@@ -2907,7 +2905,6 @@ export const pl: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'Kopiuj link udostępniania',
   'fileViewer.openSharePage': 'Otwórz stronę udostępniania',
   'fileViewer.shareLinkRequiresDeploy': 'Najpierw opublikuj online, aby uzyskać link',

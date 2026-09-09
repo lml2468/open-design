@@ -2474,8 +2474,6 @@ export const ru: Dict = {
   'workspace.fileSyncDownloading': 'Загрузка от команды…',
   'workspace.fileSyncUploading': 'Синхронизация с командой…',
   'workspace.deleteFileConfirm': 'Удалить «{name}» из папки проекта?',
-  'workspace.readonlyNotice': 'Это общий проект — вы можете просматривать и комментировать, но не можете изменять артефакты через Чат или инструменты редактирования.',
-  'workspace.readonlyNoticeBy': 'Это общий проект, созданный {owner} — вы можете просматривать и комментировать, но не можете изменять артефакты через Чат или инструменты редактирования.',
   'workspace.deleteSelectedFilesConfirm': 'Удалить {n} выбранных файла(ов) из папки проекта?',
   'workspace.deleteSelectedFilesPartial': 'Не удалось удалить {n} файл(ов).',
   'workspace.openFromDesignFiles': 'Открыть файл из',
@@ -2907,7 +2905,6 @@ export const ru: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'Скопировать ссылку для доступа',
   'fileViewer.openSharePage': 'Открыть страницу доступа',
   'fileViewer.shareLinkRequiresDeploy': 'Сначала опубликуйте онлайн, чтобы получить ссылку',

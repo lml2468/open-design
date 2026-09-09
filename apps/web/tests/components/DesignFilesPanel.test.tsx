@@ -198,48 +198,6 @@ describe("DesignFilesPanel sections", () => {
     expect(onUpload).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps empty-state actions visible but disables mutations for read-only shared viewers", () => {
-    const onNewSketch = vi.fn();
-    const onOpenBrowser = vi.fn();
-    const onCreateDesignSystem = vi.fn();
-    const onPaste = vi.fn();
-    const onUpload = vi.fn();
-
-    renderPanel([], {
-      viewerOnly: true,
-      onNewSketch,
-      onOpenBrowser,
-      onCreateDesignSystem,
-      onPaste,
-      onUpload,
-    });
-
-    const mutationButtons = [
-      screen.getByTestId("design-files-empty-new-sketch"),
-      screen.getByTestId("design-files-empty-new-document"),
-      screen.getByTestId("design-files-upload-trigger"),
-      screen.getByTestId("design-files-empty-create-design-system"),
-    ];
-    for (const button of mutationButtons) {
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute(
-        "title",
-        "Shared project is read-only: you can comment, but cannot edit or export.",
-      );
-      fireEvent.click(button);
-    }
-
-    expect(onNewSketch).not.toHaveBeenCalled();
-    expect(onCreateDesignSystem).not.toHaveBeenCalled();
-    expect(onPaste).not.toHaveBeenCalled();
-    expect(onUpload).not.toHaveBeenCalled();
-
-    const openBrowser = screen.getByTestId("design-files-empty-open-browser");
-    expect(openBrowser).not.toBeDisabled();
-    fireEvent.click(openBrowser);
-    expect(onOpenBrowser).toHaveBeenCalledTimes(1);
-  });
-
   it("groups files into category tabs and shows one group at a time", () => {
     renderPanel([
       file({ name: "page.html", kind: "html", mime: "text/html" }),
@@ -524,9 +482,7 @@ describe("DesignFilesPanel selection", () => {
     expect(container.querySelector(".df-preview")).toBeNull();
   });
 
-  // The card's name button is the inline-rename entry point for editors, and
-  // stays a plain open target for read-only viewers (who have no rename path).
-  it("starts an inline rename from the card name for editors", () => {
+  it("starts an inline rename from the card name", () => {
     const files = generateFiles(1);
     const { container, onOpenFile } = renderPanel(files);
 
@@ -535,14 +491,6 @@ describe("DesignFilesPanel selection", () => {
     expect(onOpenFile).not.toHaveBeenCalled();
   });
 
-  it("opens instead of renaming from the card name for read-only viewers", () => {
-    const files = generateFiles(1);
-    const { container, onOpenFile } = renderPanel(files, { viewerOnly: true });
-
-    fireEvent.click(container.querySelector(".df-card-name-btn")!);
-    expect(container.querySelector(".df-rename-input")).toBeNull();
-    expect(onOpenFile).toHaveBeenCalledWith("file-1.html");
-  });
 });
 
 describe("DesignFilesPanel page thumbnails", () => {
@@ -647,7 +595,6 @@ describe("DesignFilesPanel page thumbnails", () => {
       mtime: 1700000000000,
     });
     setHtmlSourceSnapshot({
-      authorizationScopeKey: "local",
       projectId: "test-project",
       fileName: currentFile.name,
       refreshKey: `${currentFile.mtime}:${currentFile.size}:7`,
@@ -673,7 +620,6 @@ describe("DesignFilesPanel page thumbnails", () => {
       mtime: 1700000000001,
     });
     setHtmlSourceSnapshot({
-      authorizationScopeKey: "local",
       projectId: "test-project",
       fileName: cachedFile.name,
       refreshKey: `${cachedFile.mtime}:${cachedFile.size}:8`,

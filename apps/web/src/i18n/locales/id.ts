@@ -2474,8 +2474,6 @@ export const id: Dict = {
   'workspace.fileSyncDownloading': 'Mengunduh dari tim…',
   'workspace.fileSyncUploading': 'Menyinkronkan ke tim…',
   'workspace.deleteFileConfirm': 'Hapus "{name}" dari folder proyek?',
-  'workspace.readonlyNotice': 'Ini proyek bersama — Anda dapat melihat dan mengomentari, tetapi tidak dapat mengubah artefak melalui Chat atau alat pengeditan.',
-  'workspace.readonlyNoticeBy': 'Ini proyek bersama yang dibuat oleh {owner} — Anda dapat melihat dan mengomentari, tetapi tidak dapat mengubah artefak melalui Chat atau alat pengeditan.',
   'workspace.deleteSelectedFilesConfirm': 'Hapus {n} file terpilih dari folder proyek?',
   'workspace.deleteSelectedFilesPartial': 'Gagal menghapus {n} file.',
   'workspace.openFromDesignFiles': 'Buka file dari',
@@ -2907,7 +2905,6 @@ export const id: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'Salin tautan berbagi',
   'fileViewer.openSharePage': 'Buka halaman berbagi',
   'fileViewer.shareLinkRequiresDeploy': 'Publikasikan online terlebih dahulu untuk mendapatkan tautan',

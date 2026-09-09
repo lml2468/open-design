@@ -2488,8 +2488,6 @@ export const en: Dict = {
   'workspace.fileSyncDownloading': 'Downloading from the team…',
   'workspace.fileSyncUploading': 'Syncing to the team…',
   'workspace.deleteFileConfirm': 'Delete "{name}" from the project folder?',
-  'workspace.readonlyNotice': 'This is a shared project — you can view and comment, but not change artifacts through Chat or the editing tools.',
-  'workspace.readonlyNoticeBy': 'This is a shared project created by {owner} — you can view and comment, but not change artifacts through Chat or the editing tools.',
   'workspace.deleteSelectedFilesConfirm': 'Delete {n} selected file(s) from the project folder?',
   'workspace.deleteSelectedFilesPartial': 'Failed to delete {n} file(s).',
   'workspace.openFromDesignFiles': 'Open a file from',
@@ -2921,7 +2919,6 @@ export const en: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'Copy share link',
   'fileViewer.openSharePage': 'Open share page',
   'fileViewer.shareLinkRequiresDeploy': 'Publish online first to get a link',

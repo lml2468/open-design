@@ -261,10 +261,9 @@ describe('ProjectView preview keep-alive invalidation', () => {
     });
   });
 
-  it('keeps HTML snapshots across project-internal child remounts but clears them when authorization scope remounts ProjectView', () => {
+  it('keeps HTML snapshots across project-internal child remounts but clears them when ProjectView unmounts', () => {
     const view = renderProjectView();
     setHtmlSourceSnapshot({
-      authorizationScopeKey: 'local',
       projectId: project.id,
       fileName: 'preview.html',
       refreshKey: '1:1:0',
@@ -295,12 +294,12 @@ describe('ProjectView preview keep-alive invalidation', () => {
         onProjectsRefresh={vi.fn()}
       />,
     );
-    expect(getHtmlSourceSnapshot('local', project.id, 'preview.html', '1:1:0')?.source)
+    expect(getHtmlSourceSnapshot(project.id, 'preview.html', '1:1:0')?.source)
       .toBe('<html>authorized</html>');
 
     view.rerender(
       <ProjectView
-        key="workspace-b:member-b:project-1"
+        key="project-view-remount"
         project={project}
         routeFileName={null}
         config={config}
@@ -321,16 +320,15 @@ describe('ProjectView preview keep-alive invalidation', () => {
         onProjectsRefresh={vi.fn()}
       />,
     );
-    expect(getHtmlSourceSnapshot('local', project.id, 'preview.html', '1:1:0')).toBeNull();
+    expect(getHtmlSourceSnapshot(project.id, 'preview.html', '1:1:0')).toBeNull();
 
     setHtmlSourceSnapshot({
-      authorizationScopeKey: 'local',
       projectId: project.id,
       fileName: 'preview.html',
       refreshKey: '1:1:0',
       source: '<html>reauthorized</html>',
     });
     view.unmount();
-    expect(getHtmlSourceSnapshot('local', project.id, 'preview.html', '1:1:0')).toBeNull();
+    expect(getHtmlSourceSnapshot(project.id, 'preview.html', '1:1:0')).toBeNull();
   });
 });

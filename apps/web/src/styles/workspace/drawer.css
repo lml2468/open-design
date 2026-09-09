@@ -2538,23 +2538,6 @@
   border-color: #000;
 }
 
-.workspace-readonly-notice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 7px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  background: color-mix(in srgb, var(--bg-subtle) 74%, var(--bg-panel));
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.35;
-}
-.workspace-readonly-notice svg {
-  flex: 0 0 auto;
-  color: var(--text-soft);
-}
-
 .ws-body {
   flex: 1;
   min-height: 0;

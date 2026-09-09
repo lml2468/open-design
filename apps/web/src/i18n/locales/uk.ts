@@ -2474,8 +2474,6 @@ export const uk: Dict = {
   'workspace.fileSyncDownloading': 'Завантаження від команди…',
   'workspace.fileSyncUploading': 'Синхронізація з командою…',
   'workspace.deleteFileConfirm': 'Видалити "{name}" з папки проекту?',
-  'workspace.readonlyNotice': 'Це спільний проєкт — ви можете переглядати й коментувати, але не можете змінювати артефакти через Чат або інструменти редагування.',
-  'workspace.readonlyNoticeBy': 'Це спільний проєкт, створений {owner} — ви можете переглядати й коментувати, але не можете змінювати артефакти через Чат або інструменти редагування.',
   'workspace.deleteSelectedFilesConfirm': 'Видалити {n} вибраних файлів з папки проекту?',
   'workspace.deleteSelectedFilesPartial': 'Не вдалося видалити {n} файл(ів).',
   'workspace.openFromDesignFiles': 'Відкрити файл з',
@@ -2907,7 +2905,6 @@ export const uk: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'Скопіювати посилання для доступу',
   'fileViewer.openSharePage': 'Відкрити сторінку доступу',
   'fileViewer.shareLinkRequiresDeploy': 'Спочатку опублікуйте онлайн, щоб отримати посилання',

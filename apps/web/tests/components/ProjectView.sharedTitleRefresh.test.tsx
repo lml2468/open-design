@@ -228,7 +228,6 @@ const conversation: Conversation = {
 function projectViewElement(
   projectOverride: Project = project,
   options: {
-    projectAuthorizationKey?: string;
     onProjectChange?: (next: Project) => void;
     onProjectRenameStarted?: (next: Project) => ProjectRenameFenceToken | null;
     onProjectRenameSettled?: (
@@ -241,7 +240,6 @@ function projectViewElement(
   return (
     <ProjectView
       project={projectOverride}
-      projectAuthorizationKey={options.projectAuthorizationKey ?? 'ws-1:wm-1:project-1'}
       routeFileName={null}
       config={config}
       agents={[] as AgentInfo[]}
@@ -267,9 +265,7 @@ function projectViewElement(
 
 function renderProjectView(
   projectOverride: Project = project,
-  options: {
-    projectAuthorizationKey?: string;
-  } = {},
+  options: Record<string, never> = {},
 ) {
   return render(projectViewElement(projectOverride, options));
 }
@@ -335,22 +331,17 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     );
   });
 
-  // recvqhwv6RPU1j: a member's first open of a team-shared project registers a
-  // "共享项目" placeholder record; the background pull later swaps in the real
-  // name in the daemon DB only. The daemon signals that swap with the existing
-  // `project-metadata-changed` thin event — the open project view must react
-  // by re-fetching the project record and propagating it up through
-  // `onProjectChange`, or App.tsx's `projects` state (sidebar + tab title)
-  // keeps the placeholder until a manual page reload.
-  it('re-fetches the project and propagates the real name up when project-metadata-changed fires', async () => {
-    const pulled: Project = {
+  // Project metadata can change through another local surface. The thin event
+  // makes the open Project refetch and propagate the canonical local row.
+  it('re-fetches and propagates local project metadata changes', async () => {
+    const refreshed: Project = {
       ...project,
       name: 'Q3 Marketing Site',
       skillId: 'deck-builder',
       designSystemId: 'ds-emerald',
       updatedAt: 456,
     };
-    mockedGetProject.mockResolvedValue(pulled);
+    mockedGetProject.mockResolvedValue(refreshed);
 
     renderProjectView();
     dispatchProjectEvent({ type: 'project-metadata-changed', projectId: project.id });

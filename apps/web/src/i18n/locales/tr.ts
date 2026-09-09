@@ -2474,8 +2474,6 @@ export const tr: Dict = {
   'workspace.fileSyncDownloading': 'Ekipten indiriliyor…',
   'workspace.fileSyncUploading': 'Ekiple senkronize ediliyor…',
   'workspace.deleteFileConfirm': '"{name}"ı proje klasöründen sil?',
-  'workspace.readonlyNotice': 'Bu paylaşılan bir proje — görüntüleyip yorum yapabilirsiniz, ancak Chat veya düzenleme araçlarıyla yapıtları değiştiremezsiniz.',
-  'workspace.readonlyNoticeBy': 'Bu, {owner} tarafından oluşturulan paylaşılan bir proje — görüntüleyip yorum yapabilirsiniz, ancak Chat veya düzenleme araçlarıyla yapıtları değiştiremezsiniz.',
   'workspace.deleteSelectedFilesConfirm': 'Seçili {n} dosya proje klasöründen silinsin mi?',
   'workspace.deleteSelectedFilesPartial': '{n} dosya silinemedi.',
   'workspace.openFromDesignFiles': 'bir dosya aç',
@@ -2907,7 +2905,6 @@ export const tr: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'Paylaşım bağlantısını kopyala',
   'fileViewer.openSharePage': 'Paylaşım sayfasını aç',
   'fileViewer.shareLinkRequiresDeploy': 'Bağlantı almak için önce çevrimiçi yayınla',

@@ -703,9 +703,8 @@ function SeedingPlugin({
 }
 
 // Reactively mirror the host `inputDisabled` flag onto the editor's editable
-// state. `initialConfig.editable` only seeds the first paint, so a later
-// viewerOnly flip (or an initially read-only mount) is applied here via
-// `editor.setEditable`.
+// state. `initialConfig.editable` only seeds the first paint, so later host
+// state changes are applied here via `editor.setEditable`.
 function EditablePlugin({ editable }: { editable: boolean }) {
   const [editor] = useLexicalComposerContext();
   useEffect(() => {

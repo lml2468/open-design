@@ -3296,8 +3296,6 @@ export interface Dict extends CollaborationSettingsDict {
   'workspace.showChat': string;
   'workspace.closeTab': string;
   'workspace.deleteFileConfirm': string;
-  'workspace.readonlyNotice': string;
-  'workspace.readonlyNoticeBy': string;
   'workspace.fileSyncDownloading': string;
   'workspace.fileSyncUploading': string;
   'workspace.deleteSelectedFilesConfirm': string;
@@ -3730,7 +3728,6 @@ export interface Dict extends CollaborationSettingsDict {
   'fileViewer.unifiedSendTab': string;
   'fileViewer.openFileForHistory': string;
   'fileViewer.openFileRequired': string;
-  'fileViewer.readonlySharedNoExport': string;
   'fileViewer.copyShareLink': string;
   'fileViewer.openSharePage': string;
   'fileViewer.shareLinkRequiresDeploy': string;

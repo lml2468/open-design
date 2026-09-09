@@ -1,5 +1,4 @@
 type HtmlThumbnailSourceIdentity = Readonly<{
-  authorizationScopeKey: string;
   projectId: string;
   fileName: string;
   refreshKey: string;
@@ -20,7 +19,6 @@ let resetGeneration = 0;
 
 function cacheKey(identity: HtmlThumbnailSourceIdentity): string {
   return [
-    identity.authorizationScopeKey,
     identity.projectId,
     identity.fileName,
     identity.refreshKey,

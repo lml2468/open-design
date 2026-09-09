@@ -531,8 +531,6 @@ function ensureConversationPresent(
 interface Props {
   project: Project;
   initialProjectDetail?: ProjectDetailSeed | null;
-  /** Project lifetime for async title reads. */
-  projectAuthorizationKey?: string;
   routeFileName: string | null;
   /**
    * Routed conversation id. When set (the URL is
@@ -1623,7 +1621,6 @@ export function reconcileProjectDetail(
 export function ProjectView({
   project,
   initialProjectDetail,
-  projectAuthorizationKey = project.id,
   routeFileName,
   routeConversationId = null,
   config,
@@ -1660,15 +1657,15 @@ export function ProjectView({
   onRunActivityChange,
 }: Props) {
   const { locale, t } = useI18n();
-  const activeAuthorizationLifetimeRef = useRef<string | null>(projectAuthorizationKey);
+  const activeProjectLifetimeRef = useRef<string | null>(project.id);
   useEffect(() => {
-    activeAuthorizationLifetimeRef.current = projectAuthorizationKey;
+    activeProjectLifetimeRef.current = project.id;
     return () => {
-      if (activeAuthorizationLifetimeRef.current === projectAuthorizationKey) {
-        activeAuthorizationLifetimeRef.current = null;
+      if (activeProjectLifetimeRef.current === project.id) {
+        activeProjectLifetimeRef.current = null;
       }
     };
-  }, [projectAuthorizationKey]);
+  }, [project.id]);
   const analytics = useAnalytics();
   // Onboarding first-generation funnel (spec §11.1). Consume the pending entry
   // (set by the Home recommendation) exactly once on mount; the refs guard the
@@ -1702,19 +1699,17 @@ export function ProjectView({
   // mount-local guard would let the funnel events re-fire on a later
   // conversation/run of the same project.
   const iframeKeepAlivePool = useIframeKeepAlivePool();
-  // ProjectView is the authorization lifetime for project-owned file content.
+  // ProjectView is the lifetime for project-owned file content.
   // FileViewer may unmount while switching to a root tab such as Design Files,
   // but ProjectView remains mounted in that flow so revisit snapshots survive.
   // Leaving the project (or changing project identity) crosses the boundary:
   // drop every source snapshot before a later mount can seed content that the
-  // next project/workspace context has not reauthorized.
+  // next Project has not loaded for itself.
   useEffect(() => () => {
     invalidateHtmlSourceSnapshotProject(project.id);
   }, [project.id]);
-  // A ProjectView always renders the owner's local, writable source tree.
-  // Reviewer snapshots are isolated in the Collaboration review surface and
-  // never enter this mutation path.
-  const projectMutationReadOnly = false;
+  // ProjectView always renders the owner's local, writable source tree.
+  // Reviewer snapshots are isolated in the Collaboration review surface.
   const projectDetail = useProjectDetail(
     project.id,
     initialProjectDetail,
@@ -2284,13 +2279,11 @@ export function ProjectView({
     currentConversationHasActiveRun
     && !currentConversationStreaming
     && !currentConversationHasProgrammaticBrandExtractionRun;
-  const currentConversationSendDisabled = projectMutationReadOnly
-    || currentConversationLoading
+  const currentConversationSendDisabled = currentConversationLoading
     || failedMessagesConversationId === activeConversationId
     || currentConversationAwaitingActiveRunAttach;
   const currentConversationActionDisabled = currentConversationBusy || currentConversationSendDisabled;
-  const currentConversationQueueDisabled = projectMutationReadOnly
-    || currentConversationLoading
+  const currentConversationQueueDisabled = currentConversationLoading
     || failedMessagesConversationId === activeConversationId;
 
   const currentConversationQueuedItems = activeConversationId
@@ -2307,7 +2300,7 @@ export function ProjectView({
           return { ...queuedItem, meta: item.meta };
         })
     : [];
-  const newConversationDisabled = creatingConversation || projectMutationReadOnly;
+  const newConversationDisabled = creatingConversation;
   const activeCompletionNotificationRunsRef = useRef<Set<string>>(new Set());
   const completedNotificationRunsRef = useRef<Set<string>>(new Set());
 
@@ -3232,7 +3225,7 @@ export function ProjectView({
   // maxWait cap stops a sustained edit storm from starving the UI.
   const refreshFilesAndDesignMd = useCallback(() => {
     // A chokidar event is an authoritative invalidation, not merely a visual
-    // refresh hint. Fence the exact project/Workspace file-list authority
+    // refresh hint. Fence the exact Project file-list snapshot
     // before publishing the React refresh key: otherwise fetchProjectFiles
     // can return its short-lived settled cache (or an already-joined response
     // that was captured before this event) and leave the restored project on
@@ -3303,10 +3296,9 @@ export function ProjectView({
         // Thin-event model: re-fetch the local row and propagate only when a
         // rendered field actually changed.
         const capturedProjectId = project.id;
-        const capturedAuthorizationKey = projectAuthorizationKey;
         void getProject(capturedProjectId).then((fresh) => {
           if (!fresh) return;
-          if (activeAuthorizationLifetimeRef.current !== capturedAuthorizationKey) return;
+          if (activeProjectLifetimeRef.current !== capturedProjectId) return;
           // User switched projects while the fetch was in flight.
           if (projectIdRef.current !== capturedProjectId) return;
           const current = projectRef.current;
@@ -3378,7 +3370,6 @@ export function ProjectView({
     onProjectsRefresh,
     refreshLiveArtifacts,
     project.id,
-    projectAuthorizationKey,
   ]);
   // Project events are emitted by the local daemon and authorized by the local
   // daemon session. Remote Collaboration Server state is reconciled separately.
@@ -5923,7 +5914,6 @@ export function ProjectView({
       meta?: ProjectChatSendMeta,
       baseMessages?: ChatMessage[],
     ) => {
-      if (projectMutationReadOnly) return false;
       if (!activeConversationId) return false;
       if (messagesConversationIdRef.current !== activeConversationId) return false;
       const clientRequestId = meta?.clientRequestId ?? randomUUID();
@@ -7574,7 +7564,6 @@ export function ProjectView({
       byokImageModelOptionsPV,
       byokVideoModelOptionsPV,
       byokSpeechModelOptionsPV,
-      projectMutationReadOnly,
     ],
   );
 
@@ -8361,7 +8350,6 @@ export function ProjectView({
   ]);
 
   const handleNewConversation = useCallback(async () => {
-    if (projectMutationReadOnly) return;
     if (creatingConversationRef.current) return;
     // Only block if we're sure the current conversation is empty:
     // messages must be loaded AND match the active conversation.
@@ -8421,7 +8409,6 @@ export function ProjectView({
     messages.length,
     navigate,
     openTabsState.active,
-    projectMutationReadOnly,
   ]);
 
   const handleSelectConversation = useCallback((id: string) => {
@@ -8481,7 +8468,6 @@ export function ProjectView({
 
   const handleDeleteConversation = useCallback(
     async (id: string) => {
-      if (projectMutationReadOnly) return;
       const ok = await deleteConversationApi(project.id, id);
       if (!ok) return;
       // The deleted conversation may have owned an unanswered
@@ -8512,13 +8498,11 @@ export function ProjectView({
       project.id,
       activeConversationId,
       onProjectsRefresh,
-      projectMutationReadOnly,
     ],
   );
 
   const handleRenameConversation = useCallback(
     async (id: string, title: string) => {
-      if (projectMutationReadOnly) return;
       const trimmed = title.trim() || null;
       setConversations((curr) =>
         curr.map((c) => (c.id === id ? { ...c, title: trimmed } : c)),
@@ -8529,12 +8513,11 @@ export function ProjectView({
         { title: trimmed },
       );
     },
-    [project.id, projectMutationReadOnly],
+    [project.id],
   );
 
   const handleConversationSessionModeChange = useCallback(
     async (id: string, sessionMode: ChatSessionMode) => {
-      if (projectMutationReadOnly) return;
       setConversations((curr) =>
         curr.map((conversation) =>
           conversation.id === id ? { ...conversation, sessionMode } : conversation,
@@ -8553,7 +8536,7 @@ export function ProjectView({
         );
       }
     },
-    [project.id, projectMutationReadOnly],
+    [project.id],
   );
 
   const handleActiveConversationSessionModeChange = useCallback(
@@ -8566,7 +8549,7 @@ export function ProjectView({
 
   const handleForkFromMessage = useCallback(
     async (assistantMessage: ChatMessage) => {
-      if (!activeConversationId || forkingMessageId || projectMutationReadOnly) return;
+      if (!activeConversationId || forkingMessageId) return;
       const requestId = analytics.newRequestId();
       const startedAt = Date.now();
       const forkIndex = messages.findIndex((message) => message.id === assistantMessage.id);
@@ -8678,7 +8661,6 @@ export function ProjectView({
       openTabsState.active,
       project.id,
       project.metadata,
-      projectMutationReadOnly,
       t,
     ],
   );
@@ -8692,7 +8674,6 @@ export function ProjectView({
   }>>(new Map());
   const handleProjectRename = useCallback(
     (newName: string) => {
-      if (projectMutationReadOnly) return;
       const trimmed = newName.trim();
       if (!trimmed || trimmed === project.name) return;
       const previousName = project.name;
@@ -8793,7 +8774,6 @@ export function ProjectView({
       onProjectRenameStarted,
       onProjectsRefresh,
       project,
-      projectMutationReadOnly,
     ],
   );
 
@@ -8844,7 +8824,6 @@ export function ProjectView({
 
   const handleChangeDesignSystemId = useCallback(
     (nextId: string | null) => {
-      if (projectMutationReadOnly) return;
       if ((projectDesignSystemId ?? null) === nextId) return;
       // `design_system_apply_result` studio variant. The existing
       // NewProjectPanel picker fires the same event under
@@ -8924,7 +8903,6 @@ export function ProjectView({
       onProjectChange,
       designSystems,
       analytics.track,
-      projectMutationReadOnly,
     ],
   );
 
@@ -10255,10 +10233,7 @@ export function ProjectView({
               streaming={currentConversationControlStreaming}
               liveToolInput={liveToolInput}
               loading={currentConversationLoading}
-              // A read-only viewer of a team-shared project cannot drive artifact
-              // changes through chat (comments go through the separate overlay).
-              sendDisabled={currentConversationSendDisabled || projectMutationReadOnly}
-              viewerOnly={projectMutationReadOnly}
+              sendDisabled={currentConversationSendDisabled}
               queuedItems={currentConversationQueuedItems}
               error={conversationLoadError ?? error}
               errorSourceAssistantId={
@@ -10366,9 +10341,7 @@ export function ProjectView({
               onAssistantFeedback={handleAssistantFeedback}
               onArtifactShare={handleArtifactShare}
               onArtifactDownload={handleArtifactDownload}
-              onForkFromMessage={
-                projectMutationReadOnly ? undefined : handleForkFromMessage
-              }
+              onForkFromMessage={handleForkFromMessage}
               forkingMessageId={forkingMessageId}
               onNewConversation={handleNewConversation}
               newConversationDisabled={newConversationDisabled}
@@ -10461,15 +10434,14 @@ export function ProjectView({
               projectHeader={(
                 <span className="chat-project-title-line">
                   <span
-                    className={`title${projectMutationReadOnly ? ' readonly' : ' editable'}`}
+                    className="title editable"
                     data-testid="project-title"
                     title={projectTitleTooltip}
-                    tabIndex={projectMutationReadOnly ? -1 : 0}
-                    role={projectMutationReadOnly ? undefined : 'textbox'}
+                    tabIndex={0}
+                    role="textbox"
                     suppressContentEditableWarning
-                    contentEditable={!projectMutationReadOnly}
+                    contentEditable
                     onBlur={(e) => {
-                      if (projectMutationReadOnly) return;
                       handleProjectRename(e.currentTarget.textContent ?? '');
                     }}
                     onKeyDown={(e) => {
@@ -10487,7 +10459,6 @@ export function ProjectView({
                   <ProjectCollaborationPublish
                     projectId={project.id}
                     conversationId={activeConversationId}
-                    disabled={projectMutationReadOnly}
                     onOpenSettings={() => onOpenSettings('collaboration')}
                     onAttachReviewComments={attachCollaborationReviewComments}
                   />
@@ -10498,7 +10469,6 @@ export function ProjectView({
                   variant="icon"
                   designSystems={designSystems}
                   selectedId={projectDesignSystemId ?? null}
-                  disabled={projectMutationReadOnly}
                   onChange={handleChangeDesignSystemId}
                 />
               )}
@@ -10541,7 +10511,6 @@ export function ProjectView({
         <FileWorkspace
           projectId={project.id}
           projectName={currentProject.name}
-          viewerOnly={projectMutationReadOnly}
           projectKind={projectKindFromMetadataToTrackingOrLegacyDefault(currentProject.metadata)}
           rootDirName={(() => {
             const baseDir = currentProject.metadata?.baseDir;

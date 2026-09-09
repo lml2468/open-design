@@ -576,14 +576,14 @@ function AppInner() {
   // audio templates) — sourced from /api/design-templates and shown in the
   // EntryView Templates tab. See specs/current/skills-and-design-templates.md.
   const [designTemplates, setDesignTemplates] = useState<SkillSummary[]>([]);
-  const [workspaceDesignSystems, setWorkspaceDesignSystems] = useState<{
+  const [designSystemCatalog, setDesignSystemCatalog] = useState<{
     identity: string;
     items: DesignSystemSummary[];
   }>(() => ({
     identity: DESIGN_SYSTEM_CATALOG_IDENTITY,
     items: [],
   }));
-  const designSystems = workspaceDesignSystems.items;
+  const designSystems = designSystemCatalog.items;
   const skillsRequestGenerationRef = useRef(0);
   const designSystemsRequestGenerationRef = useRef(0);
   const [pendingDesignSystemRevisionJobs, setPendingDesignSystemRevisionJobs] = useState<
@@ -1025,7 +1025,7 @@ function AppInner() {
       const designSystemsRequestGeneration = ++designSystemsRequestGenerationRef.current;
       void fetchDesignSystems().then((list) => {
         if (cancelled || designSystemsRequestGenerationRef.current !== designSystemsRequestGeneration) return;
-        setWorkspaceDesignSystems({
+        setDesignSystemCatalog({
           identity: DESIGN_SYSTEM_CATALOG_IDENTITY,
           items: list,
         });
@@ -1258,7 +1258,7 @@ function AppInner() {
     const requestGeneration = ++designSystemsRequestGenerationRef.current;
     const list = await fetchDesignSystems();
     if (designSystemsRequestGenerationRef.current !== requestGeneration) return;
-    setWorkspaceDesignSystems({ identity: DESIGN_SYSTEM_CATALOG_IDENTITY, items: list });
+    setDesignSystemCatalog({ identity: DESIGN_SYSTEM_CATALOG_IDENTITY, items: list });
     setDsLoading(false);
   }, []);
 
@@ -1605,7 +1605,7 @@ function AppInner() {
       // Honor an explicit `null` design system — the create panel defaults
       // to "None" for every kind now, and the user expects that to land
       // as a no-design-system project rather than silently inheriting the
-      // workspace default.
+      // catalog default.
       const derivedPendingPrompt =
       input.pendingPrompt ??
       (input.metadata?.promptTemplate?.prompt?.trim() || undefined);
@@ -2533,11 +2533,6 @@ function AppInner() {
   // Never mount ProjectView around a synthetic placeholder. Project-owned
   // reads start only after the real local row or route bootstrap has landed.
   const activeProject = loadedActiveProject;
-  const activeProjectAuthorizationKey =
-    route.kind === 'project'
-      ? route.projectId
-      : null;
-
   // Resolve a project route that is absent from the current local list. The
   // scoped bootstrap remains authoritative; the retired Team catalog and its
   // blocking pull/retry fallback must not revive remote-mirror semantics.
@@ -3081,9 +3076,6 @@ function AppInner() {
                   resolvedDir: routeProjectSnapshotRef.current.resolvedDir,
                 }
               : undefined
-          }
-          projectAuthorizationKey={
-            activeProjectAuthorizationKey ?? activeProject.id
           }
           routeFileName={route.fileName}
           routeConversationId={route.conversationId ?? null}

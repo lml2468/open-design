@@ -2474,8 +2474,6 @@ export const hu: Dict = {
   'workspace.fileSyncDownloading': 'Letöltés a csapattól…',
   'workspace.fileSyncUploading': 'Szinkronizálás a csapattal…',
   'workspace.deleteFileConfirm': 'Törlöd a(z) „{name}" fájlt a projektmappából?',
-  'workspace.readonlyNotice': 'Ez egy megosztott projekt — megtekintheted és kommentálhatod, de a műtermékeket nem módosíthatod Chaten vagy a szerkesztőeszközökön keresztül.',
-  'workspace.readonlyNoticeBy': 'Ez egy {owner} által létrehozott megosztott projekt — megtekintheted és kommentálhatod, de a műtermékeket nem módosíthatod Chaten vagy a szerkesztőeszközökön keresztül.',
   'workspace.deleteSelectedFilesConfirm': 'Törlöd a(z) {n} kijelölt fájlt a projektmappából?',
   'workspace.deleteSelectedFilesPartial': '{n} fájl törlése sikertelen.',
   'workspace.openFromDesignFiles': 'Nyiss meg egy fájlt innen:',
@@ -2907,7 +2905,6 @@ export const hu: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'Megosztási link másolása',
   'fileViewer.openSharePage': 'Megosztási oldal megnyitása',
   'fileViewer.shareLinkRequiresDeploy': 'Előbb tedd közzé online, hogy linket kapj',

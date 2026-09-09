@@ -330,15 +330,6 @@ interface Props {
   // portal that targets the same actions container.
   fileActionsBefore?: ReactNode;
   headerActions?: ReactNode;
-  /**
-   * Read-only view of a team-shared project. A member who received a project
-   * shared to the team sees it single-writer/read-only (they can view and
-   * comment but not edit files or drive artifact changes through chat). When
-   * true, edit affordances are withheld and a notice explains why.
-   */
-  viewerOnly?: boolean;
-  /** Optional override for the read-only notice text. */
-  readonlyNotice?: string;
 }
 
 interface SketchState {
@@ -1332,8 +1323,6 @@ export function FileWorkspace({
   conversationId,
   fileActionsBefore,
   headerActions,
-  viewerOnly = false,
-  readonlyNotice,
 }: Props) {
   const refreshFilesWithoutResult = useCallback(async () => {
     await onRefreshFiles();
@@ -2465,7 +2454,6 @@ export function FileWorkspace({
   }, [quickSwitcherOpen]);
 
   async function handleDelete(name: string) {
-    if (viewerOnly) return; // read-only viewer of a team-shared project
     if (!confirm(t('workspace.deleteFileConfirm', { name }))) return;
     const ok = await deleteProjectFile(projectId, name);
     if (ok) {
@@ -2497,7 +2485,6 @@ export function FileWorkspace({
   }
 
   async function handleDeleteMany(names: string[]) {
-    if (viewerOnly) return; // read-only viewer of a team-shared project
     if (names.length === 0) return;
     if (!confirm(t('workspace.deleteSelectedFilesConfirm', { n: names.length }))) return;
     const deleted: string[] = [];
@@ -2536,7 +2523,6 @@ export function FileWorkspace({
   }
 
   async function handleRename(oldName: string, nextName: string): Promise<ProjectFile | null> {
-    if (viewerOnly) return null; // read-only viewer of a team-shared project
     const hasPendingSketchConflict = Object.entries(sketches).some(
       ([name, sketch]) => !sketch.persisted && sameFileName(name, nextName),
     );
@@ -3294,16 +3280,15 @@ export function FileWorkspace({
       commentPortalId={workspaceActive ? commentPortalId : undefined}
       onCommentModeChange={workspaceActive ? onCommentModeChange : undefined}
       shareRequest={
-        viewerOnly || activeFileShareRequest?.name !== file.name
+        activeFileShareRequest?.name !== file.name
           ? null
           : activeFileShareRequest.request
       }
       downloadRequest={
-        viewerOnly || activeFileDownloadRequest?.name !== file.name
+        activeFileDownloadRequest?.name !== file.name
           ? null
           : activeFileDownloadRequest.request
       }
-      viewerOnly={viewerOnly}
       slideNavRequest={
         activeFileSlideNavRequest.name === file.name
           ? activeFileSlideNavRequest.request
@@ -3725,8 +3710,7 @@ export function FileWorkspace({
       return term.id;
     },
   };
-  // A read-only viewer gets no launcher edit actions (new file, import, etc.).
-  const launcherActions = viewerOnly ? [] : buildLauncherActions(launcherContext);
+  const launcherActions = buildLauncherActions(launcherContext);
   return (
     <div
       className={[
@@ -3989,12 +3973,6 @@ export function FileWorkspace({
           />
         </div>
       ) : null}
-      {viewerOnly ? (
-        <div className="workspace-readonly-notice" role="status">
-          <Icon name="lock" size={14} />
-          <span>{readonlyNotice ?? t('workspace.readonlyNotice')}</span>
-        </div>
-      ) : null}
       <div className="ws-body">
         {/* Banner moved into DesignFilesPanel for the Design Files tab so
             single-click preview (which keeps activeTab on DESIGN_FILES_TAB)
@@ -4084,7 +4062,6 @@ export function FileWorkspace({
             projectId={projectId}
             projectKind={projectKind}
             filesRefreshKey={filesRefreshKey}
-            viewerOnly={viewerOnly}
             rootDirName={rootDirName}
             reloading={reloading}
             running={Boolean(streaming)}

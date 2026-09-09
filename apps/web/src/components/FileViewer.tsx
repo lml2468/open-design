@@ -1664,9 +1664,6 @@ interface Props {
   // Bumped nonce asking a deck preview to flip to `slideIndex` (a queued chat
   // send for this file just started processing).
   slideNavRequest?: { slideIndex: number; nonce: number } | null;
-  // Read-only reviewer snapshot: the viewer can comment but not
-  // edit, export, share, download, or send changes to Chat.
-  viewerOnly?: boolean;
   projectName?: string;
   projectDir?: string | null;
   agents?: AgentInfo[];
@@ -1750,7 +1747,6 @@ export const FileViewer = memo(function FileViewer({
   shareRequest,
   downloadRequest,
   slideNavRequest,
-  viewerOnly = false,
   projectName,
   projectDir,
   agents,
@@ -1809,7 +1805,6 @@ export const FileViewer = memo(function FileViewer({
         shareRequest={shareRequest}
         downloadRequest={downloadRequest}
         slideNavRequest={slideNavRequest}
-        viewerOnly={viewerOnly}
         projectName={projectName}
         projectDir={projectDir}
         agents={agents}
@@ -1838,7 +1833,6 @@ export const FileViewer = memo(function FileViewer({
         artifactKind={artifactKind}
         metricsConsent={metricsConsent}
         installationId={installationId}
-        viewerOnly={viewerOnly}
         workspaceActive={workspaceActive}
       />
     );
@@ -1849,7 +1843,6 @@ export const FileViewer = memo(function FileViewer({
         projectId={projectId}
         file={file}
         onFileSaved={onFileSaved}
-        viewerOnly={viewerOnly}
       />
     );
   }
@@ -3259,7 +3252,6 @@ function FileVersionManagerModal({
   onExportToastDismiss,
   onClose,
   onRestored,
-  viewerOnly = false,
 }: {
   projectId: string;
   projectKind: TrackingProjectKind;
@@ -3274,8 +3266,6 @@ function FileVersionManagerModal({
   onExportToastDismiss?: () => void;
   onClose: () => void;
   onRestored: (content: string, version: ProjectFileVersion) => Promise<void> | void;
-  // Read-only reviewer snapshots can browse versions but not restore them.
-  viewerOnly?: boolean;
 }) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
@@ -3407,7 +3397,7 @@ function FileVersionManagerModal({
   const visibleExportToast = versionExportToast ?? exportToast ?? null;
   const selectedContentMatchesVersion = Boolean(selectedId && selectedContentVersionId === selectedId && selectedContent);
   const restoreDisabled =
-    viewerOnly || !selectedVersion || selectedVersion.current || restoring || loadingContent || !selectedContentMatchesVersion;
+    !selectedVersion || selectedVersion.current || restoring || loadingContent || !selectedContentMatchesVersion;
   const srcDoc = useMemo(() => {
     if (!selectedContent) return '';
     return fileVersionPreviewSrcDoc(projectId, file.name, selectedContent);
@@ -4008,7 +3998,6 @@ function FileVersionManagerModal({
             type="button"
             className={`artifact-version-panel__restore${confirmRestore ? ' active' : ''}`}
             disabled={restoreDisabled}
-            title={viewerOnly ? t('fileViewer.readonlySharedNoExport') : undefined}
             aria-haspopup="dialog"
             aria-expanded={confirmRestore}
             aria-controls={confirmRestore ? restorePopoverId : undefined}
@@ -6255,7 +6244,6 @@ function ReactComponentViewer({
   artifactKind: handoffArtifactKind,
   metricsConsent = false,
   installationId,
-  viewerOnly = false,
   workspaceActive = true,
 }: {
   projectId: string;
@@ -6269,7 +6257,6 @@ function ReactComponentViewer({
   artifactKind?: TrackingArtifactKind;
   metricsConsent?: boolean;
   installationId?: string | null;
-  viewerOnly?: boolean;
   workspaceActive?: boolean;
 }) {
   const t = useT();
@@ -6285,7 +6272,6 @@ function ReactComponentViewer({
   // multi-file React prototype, which has no standalone preview. Issue #2744.
   const [moduleEntries, setModuleEntries] = useState<string[] | null>(null);
   const isModule = (moduleEntries?.length ?? 0) > 0;
-  const viewerOnlyDisabledTitle = t('fileViewer.readonlySharedNoExport');
 
   useEffect(() => {
     setSource(null);
@@ -6344,11 +6330,6 @@ function ReactComponentViewer({
       document.removeEventListener('keydown', onKey);
     };
   }, [shareMenuOpen]);
-
-  useEffect(() => {
-    if (!viewerOnly) return;
-    setShareMenuOpen(false);
-  }, [viewerOnly]);
 
   const exportTitle = file.name.replace(/\.(jsx|tsx)$/i, '') || file.name;
   const sourceExtension = file.name.toLowerCase().endsWith('.tsx') ? '.tsx' : '.jsx';
@@ -6427,9 +6408,7 @@ function ReactComponentViewer({
                   className="viewer-action primary viewer-action-export od-tooltip"
                   aria-haspopup="menu"
                   aria-expanded={shareMenuOpen}
-                  disabled={viewerOnly}
-                  title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
-                  data-tooltip={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.unifiedExportTab')}
+                  data-tooltip={t('fileViewer.unifiedExportTab')}
                   data-tooltip-placement="bottom"
                   onClick={() => setShareMenuOpen((open) => !open)}
                 >
@@ -6444,10 +6423,7 @@ function ReactComponentViewer({
                           type="button"
                           className="share-menu-item"
                           role="menuitem"
-                          disabled={viewerOnly}
-                          title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                           onClick={() => {
-                            if (viewerOnly) return;
                             setShareMenuOpen(false);
                             exportAsJsx(source, exportTitle, sourceExtension);
                           }}
@@ -6459,10 +6435,7 @@ function ReactComponentViewer({
                           type="button"
                           className="share-menu-item"
                           role="menuitem"
-                          disabled={viewerOnly}
-                          title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                           onClick={() => {
-                            if (viewerOnly) return;
                             setShareMenuOpen(false);
                             exportReactComponentAsHtml(source, exportTitle);
                           }}
@@ -6475,10 +6448,7 @@ function ReactComponentViewer({
                           type="button"
                           className="share-menu-item"
                           role="menuitem"
-                          disabled={viewerOnly}
-                          title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                           onClick={() => {
-                            if (viewerOnly) return;
                             setShareMenuOpen(false);
                             exportReactComponentAsZip(source, exportTitle, sourceExtension);
                           }}
@@ -6490,8 +6460,7 @@ function ReactComponentViewer({
                   </div>
                 ) : null}
               </div>
-              {viewerOnly ? null : (
-                <HandoffButton
+              <HandoffButton
                   projectId={projectId}
                   projectKind={projectKind}
                   projectName={projectName}
@@ -6501,8 +6470,7 @@ function ReactComponentViewer({
                   artifactKind={handoffArtifactKind}
                   metricsConsent={metricsConsent}
                   installationId={installationId}
-                />
-              )}
+              />
             </>
           ) : null}
         </div>
@@ -6665,7 +6633,6 @@ function HtmlViewer({
   shareRequest,
   downloadRequest,
   slideNavRequest,
-  viewerOnly = false,
   projectName,
   projectDir,
   agents,
@@ -6700,8 +6667,6 @@ function HtmlViewer({
   shareRequest?: { nonce: number } | null;
   downloadRequest?: { nonce: number } | null;
   slideNavRequest?: { slideIndex: number; nonce: number } | null;
-  // Read-only reviewer snapshot: comment-only, no edit/export.
-  viewerOnly?: boolean;
   projectName?: string;
   projectDir?: string | null;
   agents?: AgentInfo[];
@@ -6723,8 +6688,6 @@ function HtmlViewer({
   // the live metadata here is what lets an agent edit finish loading before
   // the user switches back; activation itself must not promote a stale
   // snapshot and start a visible navigation.
-  const sourceAuthorizationScopeKey = 'local';
-  const projectResourceReadBlocked = false;
   // File-watch pulses are debounced by the URL refresh effect below. Consume
   // them while retained so the hidden document is already current when its tab
   // becomes visible.
@@ -7077,9 +7040,8 @@ function HtmlViewer({
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
   const sourceSnapshotRefreshKey = htmlSourceSnapshotRefreshKey(file, filesRefreshKey);
   const [initialSourceSnapshot] = useState(() => (
-    liveHtml === undefined && sourceAuthorizationScopeKey
+    liveHtml === undefined
       ? getHtmlSourceSnapshot(
-          sourceAuthorizationScopeKey,
           projectId,
           file.name,
           sourceSnapshotRefreshKey,
@@ -7090,7 +7052,7 @@ function HtmlViewer({
   const [source, setSource] = useState<string | null>(initialSource);
   const [routingSource, setRoutingSource] = useState<string | null>(initialSource);
   const srcDocPreviewBaseIdentity =
-    `${sourceAuthorizationScopeKey ?? 'pending'}\0${projectId}\0${file.name}`;
+    `${projectId}\0${file.name}`;
   const currentSourceIdentity =
     `${srcDocPreviewBaseIdentity}\0${liveHtml === undefined ? 'raw' : 'live'}`;
   const [routingSourceIdentity, setRoutingSourceIdentity] = useState<string | null>(
@@ -7107,11 +7069,11 @@ function HtmlViewer({
   const [serverPoweredPreviewRequired, setServerPoweredPreviewRequired] = useState(false);
   const [inlinedSource, setInlinedSource] = useState<string | null>(null);
   const fileViewportKey = previewViewportStateKey(projectId, file);
-  // Content width is valid only for this exact file revision/authorization
-  // snapshot. Viewport and manual zoom preferences intentionally persist
+  // Content width is valid only for this exact file revision. Viewport and
+  // manual zoom preferences intentionally persist
   // across revisions, but an intrinsic-width witness must not.
   const previewContentWidthCacheBaseKey =
-    `${fileViewportKey}:${sourceSnapshotRefreshKey}:${sourceAuthorizationScopeKey ?? ''}`;
+    `${fileViewportKey}:${sourceSnapshotRefreshKey}`;
   // Lazily seed from the cache (not a hardcoded 100/'auto') so a remount that
   // lands back on a file the user already zoomed doesn't flash the wrong
   // value for a frame before the reset effect below corrects it.
@@ -7217,7 +7179,7 @@ function HtmlViewer({
   // revisit skips the loading skeleton entirely — the fetch still runs, but
   // the pane doesn't flash a skeleton for content the user has already seen.
   const sourceLoadedFileKey =
-    `${sourceAuthorizationScopeKey ?? 'pending'}\u0000${projectId}\u0000${file.name}`;
+    `${projectId}\u0000${file.name}`;
   const sourceLoadedKeysRef = useRef<Set<string>>(
     new Set(source !== null ? [sourceLoadedFileKey] : []),
   );
@@ -7942,37 +7904,6 @@ function HtmlViewer({
       sourceLoadMode: HtmlSourceLoadMode;
     }>;
   } | null>(null);
-  const renderedSourceAuthorizationScopeKeyRef = useRef(sourceAuthorizationScopeKey);
-  if (renderedSourceAuthorizationScopeKeyRef.current !== sourceAuthorizationScopeKey) {
-    renderedSourceAuthorizationScopeKeyRef.current = sourceAuthorizationScopeKey;
-    // A real Workspace/member authority change is not a passive refresh. Fail
-    // closed before this render commits so no frame can briefly expose source,
-    // publication, deployment, or edit state proven under the prior scope.
-    setSource(null);
-    setRoutingSource(null);
-    setRoutingSourceIdentity(null);
-    setServerPoweredPreviewRequired(false);
-    sourceRef.current = null;
-    sourceFileKeyRef.current = null;
-    sourceEverLoadedRef.current = false;
-    lastGoodSourceForRoutingRef.current = null;
-    prevSourceBeforeReloadRef.current = null;
-    setDeployment(null);
-    setDeploymentsByProvider({});
-    setDeployResult(null);
-    setDeployError(null);
-    setCopiedDeployLink(null);
-    setDeployPhase('idle');
-    setManualEditModeRaw(false);
-    manualEditLiveStylesRef.current.clear();
-    manualEditPendingStyleRef.current = null;
-    manualEditTextSessionIdRef.current = null;
-    manualEditTextSessionStartSequenceRef.current = null;
-    manualEditTextFinishRef.current = null;
-    manualEditTextCommitInFlightRef.current = null;
-    manualEditTextFailedSessionIdsRef.current.clear();
-    manualEditTextLatestCommitRef.current = null;
-  }
   const templateNameId = useId();
   const templateDescriptionId = useId();
   const imageExportTitleId = useId();
@@ -8453,11 +8384,7 @@ function HtmlViewer({
     // Open HTML tabs stay mounted at the real viewport size. Keep refreshing
     // retained source snapshots in the background so activation is only a
     // visibility swap, including after an agent edits an inactive file.
-    // Never turn a pending or denied bound-project authority into a legal
-    // local/headerless read. The authorization key changes when an exact
-    // Workspace witness resolves, which reruns this effect with scoped URL and
-    // headers. Only an explicit daemon `unbound` result receives the local key.
-    if (projectResourceReadBlocked) return;
+    // Local Project identity plus the file revision is the cache boundary.
     const sourceFileKey = currentSourceIdentity;
     if (liveHtml !== undefined) {
       sourceFileKeyRef.current = sourceFileKey;
@@ -8472,14 +8399,11 @@ function HtmlViewer({
     }
     const fileChanged = sourceFileKeyRef.current !== sourceFileKey;
     sourceFileKeyRef.current = sourceFileKey;
-    const cachedSnapshot = sourceAuthorizationScopeKey
-      ? getHtmlSourceSnapshot(
-          sourceAuthorizationScopeKey,
-          projectId,
-          file.name,
-          sourceSnapshotRefreshKey,
-        )
-      : null;
+    const cachedSnapshot = getHtmlSourceSnapshot(
+      projectId,
+      file.name,
+      sourceSnapshotRefreshKey,
+    );
     if (fileChanged) {
       const cachedSource = cachedSnapshot?.source ?? null;
       setSource(cachedSource);
@@ -8499,9 +8423,9 @@ function HtmlViewer({
       // switches but before the effect has run.
     }
     let cancelled = false;
-    // A snapshot with the exact authorization and content-version identity is
+    // A snapshot with the exact Project, file, and content-version identity is
     // authoritative until the file event path invalidates it or the file
-    // metadata / Workspace identity changes. Re-reading the same bytes on
+    // metadata changes. Re-reading the same bytes on
     // every ordinary viewer remount made Design Files ↔ preview round-trips
     // perform one uncached raw request apiece.
     if (cachedSnapshot !== null) {
@@ -8531,7 +8455,6 @@ function HtmlViewer({
     // url-load iframe takes over with its own ?v=mtime cache-bust.
     const cacheBustKey = `${file.mtime}-${reloadKey}-${filesRefreshKey}`;
     const sourceLoadKey = [
-      sourceAuthorizationScopeKey ?? 'pending',
       projectId,
       file.name,
       cacheBustKey,
@@ -8635,15 +8558,12 @@ function HtmlViewer({
       if (sourceLoadMode === 'routing-preview') {
         sourceRef.current = null;
       } else {
-        if (sourceAuthorizationScopeKey) {
-          setHtmlSourceSnapshot({
-            authorizationScopeKey: sourceAuthorizationScopeKey,
-            projectId,
-            fileName: file.name,
-            refreshKey: sourceSnapshotRefreshKey,
-            source: text,
-          });
-        }
+        setHtmlSourceSnapshot({
+          projectId,
+          fileName: file.name,
+          refreshKey: sourceSnapshotRefreshKey,
+          source: text,
+        });
         setSource(text);
         sourceRef.current = text;
       }
@@ -8659,10 +8579,8 @@ function HtmlViewer({
     reloadKey,
     filesRefreshKey,
     sourceSnapshotRefreshKey,
-    sourceAuthorizationScopeKey,
     currentSourceIdentity,
     shouldDeferPassivePreviewSource,
-    projectResourceReadBlocked,
   ]);
 
   useEffect(() => {
@@ -9141,7 +9059,6 @@ function HtmlViewer({
       !workspaceActive
       || mode !== 'preview'
       || !renewableScope
-      || projectResourceReadBlocked
     ) return;
     const identity = urlPreviewBaseIdentity;
     let cancelled = false;
@@ -9189,7 +9106,6 @@ function HtmlViewer({
     mode,
     postPreviewBaseUpdate,
     projectId,
-    projectResourceReadBlocked,
     useUrlLoadPreview,
     urlPreviewBaseIdentity,
     workspaceActive,
@@ -10090,7 +10006,6 @@ function HtmlViewer({
   // (or vice-versa) would leave a stale sandbox attribute on a live iframe.
   const urlPreviewKeepAliveKey =
     `${previewIframeKeepAliveKey(projectId, file.name)}`
-    + `:scope:${encodeURIComponent(sourceAuthorizationScopeKey ?? 'pending')}`
     + (usePoweredPreview ? ':powered' : '');
   const previousUrlPreviewKeepAliveKeyRef = useRef(urlPreviewKeepAliveKey);
   useEffect(() => {
@@ -10440,9 +10355,7 @@ function HtmlViewer({
   // Keep that one browsing context warm so Code -> Preview is a visibility
   // swap, just like returning to an already-open file tab.
   const keepUrlTransportWarmInSourceMode = mode === 'source' && urlLoadPreviewSupported;
-  const urlTransportSrc = projectResourceReadBlocked
-    ? 'about:blank'
-    : useUrlLoadPreview
+  const urlTransportSrc = useUrlLoadPreview
         || srcDocForcedOnlyByDraw
         || keepUrlTransportWarmInSourceMode
         || keepUrlTransportWarmForManualEdit
@@ -13308,13 +13221,7 @@ function HtmlViewer({
       setManualEditSrcDocActive(false);
       manualEditPersistedDocumentRef.current = null;
     }
-    if (sourceAuthorizationScopeKey) {
-      invalidateHtmlSourceSnapshotFile(
-        sourceAuthorizationScopeKey,
-        projectId,
-        file.name,
-      );
-    }
+    invalidateHtmlSourceSnapshotFile(projectId, file.name);
     void capturePreviewScrollPosition();
     imageExportSnapshotDataUrlRef.current = null;
     setInlinedSource(null);
@@ -13392,8 +13299,6 @@ function HtmlViewer({
   }
 
   function selectMode(nextMode: 'preview' | 'source') {
-    // Read-only reviewer snapshot can preview but not inspect source.
-    if (viewerOnly && nextMode === 'source') return;
     if (nextMode === 'source') setDrawOverlayOpen(false);
     setMode(nextMode);
   }
@@ -13441,7 +13346,6 @@ function HtmlViewer({
   }
 
   function activateDrawTool() {
-    if (viewerOnly) return; // read-only viewer: mark (annotate) is an edit action
     fireArtifactToolbarClick('mark');
     const next = !drawOverlayOpen;
     if (!next) {
@@ -13546,7 +13450,7 @@ function HtmlViewer({
   }
 
   function activateManualEditTool() {
-    if (viewerOnly || (!manualEditMode && !manualEditEntryAllowed)) return;
+    if (!manualEditMode && !manualEditEntryAllowed) return;
     fireArtifactToolbarClick('edit');
     void capturePreviewScrollPosition();
     if (!manualEditMode) {
@@ -13772,14 +13676,8 @@ function HtmlViewer({
     isDeckArtifact ||
     artifactKind === 'html' ||
     rendererId === 'html';
-  // "raw" = the artifact is share/download-eligible IGNORING viewerOnly, so the
-  // unified chrome action still renders (disabled) for read-only members instead
-  // of vanishing. `canShare`/`canDownload` keep the `&& !viewerOnly` gate that
-  // guards the actual export/publish handlers.
-  const rawCanShare = source !== null && isShareableArtifact;
-  const rawCanDownload = source !== null && (isShareableArtifact || isMarkdownArtifact);
-  const canShare = rawCanShare && !viewerOnly;
-  const canDownload = rawCanDownload && !viewerOnly;
+  const canShare = source !== null && isShareableArtifact;
+  const canDownload = source !== null && (isShareableArtifact || isMarkdownArtifact);
   // PPTX export is slide-based, so show it only for explicit decks plus
   // structured deck runtimes. Do not key this off plain `.slide`: ordinary
   // parallax/long pages may use that class but must remain page-mode exports.
@@ -13793,24 +13691,8 @@ function HtmlViewer({
   // not upgraded. Only an explicit `false` hides it.
   const showPptxExport = canShare && deckExportSignal && slideRendererAvailable !== false;
   const canPptx = showPptxExport && !streaming;
-  const showMarkdownExport = source !== null && isMarkdownArtifact && !viewerOnly;
+  const showMarkdownExport = source !== null && isMarkdownArtifact;
   const showImageExport = canShare;
-  // Read-only reviewer snapshot: comment-only copy for the
-  // disabled edit/export controls and the comment composer's send-to-chat path.
-  const viewerOnlyDisabledTitle = t('fileViewer.readonlySharedNoExport');
-
-  // If viewerOnly flips on while an edit surface / export menu is open, close it
-  // so the read-only viewer never lands in an editing mode it can't act on.
-  useEffect(() => {
-    if (!viewerOnly) return;
-    setDrawOverlayOpen(false);
-    setInspectMode(false);
-    setVersionModalOpen(false);
-    if (mode === 'source') setMode('preview');
-    if (manualEditMode) {
-      void exitManualEditModeAfterFlush();
-    }
-  }, [viewerOnly, mode, manualEditMode]);
 
   const deckExportSignalForContext = useCallback((context?: HtmlVersionExportContext | null): boolean => {
     if (!context?.versionId) return deckExportSignal;
@@ -13954,7 +13836,7 @@ function HtmlViewer({
     setExportReadyNudge(false);
     markExportReadyNudgeSeen(projectId, file.name);
     setDeployMenuOpen((v) => {
-      const nextTab = tab === 'share' && !rawCanShare ? 'export' : tab;
+      const nextTab = tab === 'share' && !canShare ? 'export' : tab;
       setUnifiedActionTab(nextTab);
       return !(v && unifiedActionTab === nextTab);
     });
@@ -14801,9 +14683,7 @@ function HtmlViewer({
       } : undefined}
       sending={sendingBoardBatch}
       queueOnSend={commentQueueOnSend}
-      sendDisabled={commentSendDisabled || viewerOnly}
-      sendDisabledReason={viewerOnly ? viewerOnlyDisabledTitle : undefined}
-      allowSendToChat={!viewerOnly}
+      sendDisabled={commentSendDisabled}
       t={t}
       scale={overlayPreviewScale}
       offset={
@@ -14968,9 +14848,7 @@ function HtmlViewer({
       canSendComment={canSendCommentToAgent}
       sending={sendingBoardBatch}
       queueOnSend={commentQueueOnSend}
-      sendDisabled={commentSendDisabled || viewerOnly}
-      sendDisabledReason={viewerOnly ? viewerOnlyDisabledTitle : undefined}
-      allowSendToChat={!viewerOnly}
+      sendDisabled={commentSendDisabled}
       renderCreateForm={!commentPortalHost}
       t={t}
       composer={null}
@@ -15039,7 +14917,7 @@ function HtmlViewer({
   ) : null;
 
   return (
-    <div ref={viewerRootRef} className={`viewer html-viewer${inTabPresent ? ' is-tab-present' : ''}${viewerOnly ? ' html-viewer--viewer-only' : ''}`}>
+    <div ref={viewerRootRef} className={`viewer html-viewer${inTabPresent ? ' is-tab-present' : ''}`}>
       <div className="viewer-toolbar" style={workspaceActive ? undefined : { visibility: 'hidden' }}>
         <div className="viewer-toolbar-left">
           {showDeckThumbnailRail ? (
@@ -15089,8 +14967,6 @@ function HtmlViewer({
                 role="tab"
                 className={`viewer-tab ${mode === id ? 'active' : ''}`}
                 aria-selected={mode === id}
-                disabled={viewerOnly && id === 'source'}
-                title={viewerOnly && id === 'source' ? viewerOnlyDisabledTitle : undefined}
                 onClick={() => {
                   fireArtifactToolbarClick(id);
                   selectMode(id);
@@ -15159,11 +15035,10 @@ function HtmlViewer({
                   type="button"
                   className="viewer-action viewer-action-icon od-tooltip"
                   data-testid="edit-screenshot-to-chat-button"
-                  data-tooltip={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.editScreenshotToChat')}
+                  data-tooltip={t('fileViewer.editScreenshotToChat')}
                   data-tooltip-placement="bottom"
-                  title={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.editScreenshotToChat')}
+                  title={t('fileViewer.editScreenshotToChat')}
                   aria-label={t('fileViewer.editScreenshotToChat')}
-                  disabled={viewerOnly}
                   onClick={() => void handleScreenshotToChat()}
                 >
                   <RemixIcon name="camera-line" size={15} />
@@ -15188,10 +15063,9 @@ function HtmlViewer({
                 className={`viewer-action viewer-action-icon od-tooltip${drawOverlayOpen ? ' active' : ''}`}
                 type="button"
                 data-testid="draw-overlay-toggle"
-                data-tooltip={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.mark')}
+                data-tooltip={t('fileViewer.mark')}
                 data-tooltip-placement="bottom"
-                disabled={viewerOnly}
-                title={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.mark')}
+                title={t('fileViewer.mark')}
                 aria-label={t('fileViewer.mark')}
                 aria-pressed={drawOverlayOpen}
                 onClick={activateDrawTool}
@@ -15203,10 +15077,10 @@ function HtmlViewer({
                 className={`viewer-action viewer-action-icon od-tooltip${manualEditMode ? ' active' : ''}`}
                 type="button"
                 data-testid="manual-edit-mode-toggle"
-                data-tooltip={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.edit')}
+                data-tooltip={t('fileViewer.edit')}
                 data-tooltip-placement="bottom"
-                disabled={viewerOnly || (!manualEditMode && !manualEditEntryAllowed)}
-                title={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.edit')}
+                disabled={!manualEditMode && !manualEditEntryAllowed}
+                title={t('fileViewer.edit')}
                 aria-label={t('fileViewer.edit')}
                 aria-pressed={manualEditMode}
                 onClick={activateManualEditTool}
@@ -15389,7 +15263,7 @@ function HtmlViewer({
                       type="button"
                       className={`viewer-toolbar-more-item${manualEditMode ? ' active' : ''}`}
                       role="menuitem"
-                      disabled={viewerOnly || (!manualEditMode && !manualEditEntryAllowed)}
+                      disabled={!manualEditMode && !manualEditEntryAllowed}
                       onClick={() => {
                         activateManualEditTool();
                         setToolbarMoreOpen(false);
@@ -15493,25 +15367,17 @@ function HtmlViewer({
               ) : null}
             </div>
           ) : null}
-          {versioningAvailable && (rawCanShare || rawCanDownload) ? (
+          {versioningAvailable && (canShare || canDownload) ? (
             <button
               type="button"
               data-od-version-entry="true"
               className={`chrome-action chrome-action-secondary chrome-action-icon od-tooltip${versionModalOpen ? ' is-active' : ''}`}
-              // Same disabled contract as the Share button directly below:
-              // `viewerOnly` + `viewerOnlyDisabledTitle`. A readonly shared
-              // project has no history to show a member in the first place —
-              // `.file-versions` is excluded from member mirrors, so the
-              // owner's real history never arrives — so an openable entry only
-              // ever led to an empty panel. This supersedes recvq56vFjQKfT,
-              // which had un-gated the entry on the reasoning that browsing
-              // history is a read action.
-              disabled={source === null || viewerOnly}
+              disabled={source === null}
               aria-label={t('fileViewer.versions.entry')}
               aria-expanded={Boolean(versionModalOpen)}
-              data-tooltip={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.versions.entryFull')}
+              data-tooltip={t('fileViewer.versions.entryFull')}
               data-tooltip-placement="bottom"
-              title={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.versions.entryFull')}
+              title={t('fileViewer.versions.entryFull')}
               onClick={() => {
                 // The version history is a floating panel now, not a modal, so
                 // the toolbar icon is a toggle: a second click dismisses it.
@@ -15526,7 +15392,7 @@ function HtmlViewer({
               <RemixIcon name="history-line" size={15} />
             </button>
           ) : null}
-          {rawCanShare || rawCanDownload ? (
+          {canShare || canDownload ? (
             <div className="chrome-file-action-menus">
               {/* Outside-click dismissal is scoped to the Share/Export pair —
                   the handoff split button next door must count as "outside" so
@@ -15540,7 +15406,7 @@ function HtmlViewer({
                     Export leads and carries the dark (primary) treatment —
                     it is the far more used of the two (30-day: ~14k users
                     exported successfully vs ~0.6k who attempted a deploy). */}
-                {rawCanDownload ? (
+                {canDownload ? (
                   <button
                     type="button"
                     className={
@@ -15550,32 +15416,28 @@ function HtmlViewer({
                     aria-haspopup="menu"
                     aria-expanded={deployMenuOpen && unifiedActionTab === 'export'}
                     aria-label={t('fileViewer.unifiedExportTab')}
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={openDownloadMenu}
                   >
                     <RemixIcon name="download-line" size={15} />
                     <span>{t('fileViewer.unifiedExportTab')}</span>
                   </button>
                 ) : null}
-                {rawCanShare ? (
+                {canShare ? (
                   <button
                     type="button"
                     className="chrome-action chrome-action-secondary chrome-action-with-label chrome-action-text-only chrome-action-unified"
                     aria-haspopup="menu"
                     aria-expanded={deployMenuOpen && unifiedActionTab === 'share'}
                     aria-label={shareMenuLabel}
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={openShareMenu}
                   >
                     <RemixIcon name="share-forward-line" size={15} />
                     <span>{shareMenuLabel}</span>
                   </button>
                 ) : null}
-                {deployMenuOpen && (rawCanShare || rawCanDownload) ? (
+                {deployMenuOpen && (canShare || canDownload) ? (
                   <div className="share-menu-popover chrome-unified-popover" role="menu">
-                    {unifiedActionTab === 'share' && rawCanShare ? (
+                    {unifiedActionTab === 'share' && canShare ? (
                       <div className="chrome-unified-panel chrome-unified-panel--share">
                       {activeProjectSocialShare && shareableDeploymentUrl ? (
                         <>
@@ -15595,14 +15457,8 @@ function HtmlViewer({
                           type="button"
                           className="share-menu-item"
                           role="menuitem"
-                          disabled={streaming || viewerOnly}
-                          title={
-                            viewerOnly
-                              ? viewerOnlyDisabledTitle
-                              : streaming
-                                ? t('fileViewer.shareAfterGenerationComplete')
-                                : undefined
-                          }
+                          disabled={streaming}
+                          title={streaming ? t('fileViewer.shareAfterGenerationComplete') : undefined}
                           onClick={() => {
                             void openDeployModal(option.id);
                           }}
@@ -15617,14 +15473,8 @@ function HtmlViewer({
                             type="button"
                             className="share-menu-item"
                             role="menuitem"
-                            disabled={!canCopyShareLink || viewerOnly}
-                            title={
-                              viewerOnly
-                                ? viewerOnlyDisabledTitle
-                                : canCopyShareLink
-                                  ? undefined
-                                  : shareUnavailableHint
-                            }
+                            disabled={!canCopyShareLink}
+                            title={canCopyShareLink ? undefined : shareUnavailableHint}
                             onClick={() => {
                               void copyShareLink(sharePageUrl);
                             }}
@@ -15636,14 +15486,8 @@ function HtmlViewer({
                             type="button"
                             className="share-menu-item"
                             role="menuitem"
-                            disabled={!canOpenSharePage || viewerOnly}
-                            title={
-                              viewerOnly
-                                ? viewerOnlyDisabledTitle
-                                : canOpenSharePage
-                                  ? undefined
-                                  : shareLinkStatusHint || shareUnavailableHint
-                            }
+                            disabled={!canOpenSharePage}
+                            title={canOpenSharePage ? undefined : shareLinkStatusHint || shareUnavailableHint}
                             onClick={() => {
                               if (!canOpenSharePage) return;
                               window.open(sharePageUrl, '_blank', 'noopener');
@@ -15667,8 +15511,7 @@ function HtmlViewer({
                         type="button"
                         className="share-menu-item"
                         role="menuitem"
-                        disabled={savingTemplate || viewerOnly}
-                        title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
+                        disabled={savingTemplate}
                         onClick={() => {
                           openSaveAsTemplateModal();
                         }}
@@ -15684,14 +15527,12 @@ function HtmlViewer({
                       </button>
                       </div>
                     ) : null}
-                    {unifiedActionTab === 'export' && rawCanDownload ? (
+                    {unifiedActionTab === 'export' && canDownload ? (
                       <div className="chrome-unified-panel">
                   <button
                     type="button"
                     className="share-menu-item"
                     role="menuitem"
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={() => {
                       setDeployMenuOpen(false);
                       // Pixel-perfect screenshot PDF (matches the preview, same
@@ -15778,8 +15619,6 @@ function HtmlViewer({
                     type="button"
                     className="share-menu-item"
                     role="menuitem"
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={() => {
                       setDeployMenuOpen(false);
                       fireShareExport('zip', () => exportProjectAsZip({
@@ -15797,8 +15636,6 @@ function HtmlViewer({
                     type="button"
                     className="share-menu-item"
                     role="menuitem"
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={() => {
                       setDeployMenuOpen(false);
                       fireShareExport('html', () => exportProjectAsHtml({
@@ -15830,8 +15667,7 @@ function HtmlViewer({
                   </div>
                 ) : null}
               </div>
-              {viewerOnly ? null : (
-                <HandoffButton
+              <HandoffButton
                   projectId={projectId}
                   projectKind={projectKind}
                   projectName={projectName}
@@ -15841,8 +15677,7 @@ function HtmlViewer({
                   artifactKind={handoffArtifactKind}
                   metricsConsent={metricsConsent}
                   installationId={installationId}
-                />
-              )}
+              />
             </div>
           ) : null}
       </>)}
@@ -16442,10 +16277,6 @@ function HtmlViewer({
         </div>,
         document.body,
       ) : null}
-      {/* No `!viewerOnly` here: the modal already fails closed on the one
-          write action it hosts — `restoreDisabled` includes `viewerOnly` —
-          so re-blocking the whole panel only stopped a read-only viewer from
-          BROWSING versions (recvq56vFjQKfT). */}
       {workspaceActive && versionModalOpen && versioningAvailable && typeof document !== 'undefined' ? (
         <FileVersionManagerModal
           projectId={projectId}
@@ -16461,7 +16292,6 @@ function HtmlViewer({
           onExportToastDismiss={() => setExportToast(null)}
           onClose={() => setVersionModalOpen(false)}
           onRestored={handleVersionRestored}
-          viewerOnly={viewerOnly}
         />
       ) : null}
       {workspaceActive && pptxExportModalOpen && typeof document !== 'undefined' ? createPortal(
@@ -17742,12 +17572,10 @@ function MarkdownViewer({
   projectId,
   file,
   onFileSaved,
-  viewerOnly = false,
 }: {
   projectId: string;
   file: ProjectFile;
   onFileSaved?: () => Promise<void> | void;
-  viewerOnly?: boolean;
 }) {
   const { t, locale } = useI18n();
   const [text, setText] = useState<string | null>(null);
@@ -17755,7 +17583,7 @@ function MarkdownViewer({
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const downloadMenuRef = useRef<HTMLDivElement | null>(null);
   useDismissOnOutsideInteraction(downloadMenuOpen, downloadMenuRef, () => setDownloadMenuOpen(false));
-  const [mode, setMode] = useState<MarkdownViewerMode>(viewerOnly ? 'preview' : 'split');
+  const [mode, setMode] = useState<MarkdownViewerMode>('split');
   const [saveState, setSaveState] = useState<MarkdownSaveState>('idle');
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [highlightedHtml, setHighlightedHtml] = useState<{ source: string; html: string; themeRevision: number } | null>(null);
@@ -17773,7 +17601,7 @@ function MarkdownViewer({
   const programmaticScrollRef = useRef<{ pane: MarkdownScrollPane; top: number } | null>(null);
   const activeMarkdownScrollPaneRef = useRef<MarkdownScrollPane>('editor');
   const editorBlockOffsetsRef = useRef<{ width: number; offsets: number[] } | null>(null);
-  const previousModeRef = useRef<MarkdownViewerMode>(viewerOnly ? 'preview' : 'split');
+  const previousModeRef = useRef<MarkdownViewerMode>('split');
   const saveInFlightRef = useRef(false);
   const pendingSaveAfterFlightRef = useRef<MarkdownSaveOptions | null>(null);
   const textRef = useRef('');
@@ -17784,13 +17612,6 @@ function MarkdownViewer({
   const isStreaming = status === 'streaming';
   const isError = status === 'error';
   const exportTitle = file.name.replace(/\.mdx?$/i, '') || file.name;
-  const viewerOnlyDisabledTitle = t('fileViewer.readonlySharedNoExport');
-
-  useEffect(() => {
-    if (!viewerOnly) return;
-    setMode('preview');
-    setDownloadMenuOpen(false);
-  }, [viewerOnly]);
 
   useEffect(() => {
     const sameLoadedFile = loadedFileKeyRef.current === markdownFileKey;
@@ -17866,7 +17687,6 @@ function MarkdownViewer({
 
   const saveMarkdownText = useCallback(
     (value: string, options: MarkdownSaveOptions = {}) => {
-      if (viewerOnly) return;
       const run = async (nextValue: string, saveOptions: MarkdownSaveOptions): Promise<void> => {
         if (lastSavedTextRef.current === nextValue) {
           const showSaving = saveOptions.showSaving !== false;
@@ -17917,11 +17737,10 @@ function MarkdownViewer({
       };
       void run(value, options);
     },
-    [file.name, onFileSaved, projectId, viewerOnly],
+    [file.name, onFileSaved, projectId],
   );
 
   const flushPendingMarkdownSave = useCallback(() => {
-    if (viewerOnly) return;
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
@@ -17930,7 +17749,7 @@ function MarkdownViewer({
     if (lastSavedTextRef.current !== null && latest !== lastSavedTextRef.current) {
       saveMarkdownText(latest, { refreshFiles: false, showSaving: false });
     }
-  }, [saveMarkdownText, viewerOnly]);
+  }, [saveMarkdownText]);
 
   useEffect(() => {
     return () => {
@@ -17941,7 +17760,6 @@ function MarkdownViewer({
   useEffect(() => {
     if (text === null) return undefined;
     textRef.current = text;
-    if (viewerOnly) return undefined;
     if (text === lastSavedTextRef.current) return undefined;
     setSaveState((current) => current === 'saved' ? 'idle' : current);
     if (saveTimerRef.current) {
@@ -17957,7 +17775,7 @@ function MarkdownViewer({
         saveTimerRef.current = null;
       }
     };
-  }, [saveMarkdownText, text, viewerOnly]);
+  }, [saveMarkdownText, text]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -17983,7 +17801,6 @@ function MarkdownViewer({
 
   const insertTextAtSelection = useCallback((insert: string) => {
     setText((current) => {
-      if (viewerOnly) return current;
       if (current === null) return current;
       const editor = editorRef.current;
       if (!editor) return `${current}${insert}`;
@@ -17997,11 +17814,10 @@ function MarkdownViewer({
       });
       return next;
     });
-  }, [viewerOnly]);
+  }, []);
 
   const insertImageFiles = useCallback(
     async (files: File[]): Promise<boolean> => {
-      if (viewerOnly) return false;
       const images = files.filter((item) => isMarkdownImageFile(item));
       if (images.length === 0) return false;
       const targetDir = markdownDirectory(file.name);
@@ -18019,11 +17835,10 @@ function MarkdownViewer({
       }
       return true;
     },
-    [file.name, insertTextAtSelection, onFileSaved, projectId, viewerOnly],
+    [file.name, insertTextAtSelection, onFileSaved, projectId],
   );
 
   function handleEditorPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
-    if (viewerOnly) return;
     const files = Array.from(event.clipboardData.files ?? []);
     if (!files.some(isMarkdownImageFile)) return;
     event.preventDefault();
@@ -18031,7 +17846,6 @@ function MarkdownViewer({
   }
 
   function handleEditorDrop(event: ReactDragEvent<HTMLTextAreaElement>) {
-    if (viewerOnly) return;
     const files = Array.from(event.dataTransfer.files ?? []);
     if (!files.some(isMarkdownImageFile)) return;
     event.preventDefault();
@@ -18291,8 +18105,6 @@ function MarkdownViewer({
                 role="tab"
                 aria-selected={mode === item}
                 className={`viewer-tab ${mode === item ? 'active' : ''}`}
-                disabled={viewerOnly && item !== 'preview'}
-                title={viewerOnly && item !== 'preview' ? viewerOnlyDisabledTitle : undefined}
                 onClick={() => setMode(item)}
               >
                 {item === 'edit'
@@ -18305,11 +18117,7 @@ function MarkdownViewer({
           </div>
         </div>
         <div className="viewer-toolbar-actions">
-          {viewerOnly ? (
-            <span className="viewer-meta markdown-autosave markdown-autosave-idle">
-              {viewerOnlyDisabledTitle}
-            </span>
-          ) : autoSaveStatus === 'error' ? (
+          {autoSaveStatus === 'error' ? (
             <button
               type="button"
               className="viewer-action markdown-autosave markdown-autosave-error"
@@ -18349,8 +18157,6 @@ function MarkdownViewer({
                 className="viewer-action"
                 aria-haspopup="menu"
                 aria-expanded={downloadMenuOpen}
-                disabled={viewerOnly}
-                title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                 onClick={() => setDownloadMenuOpen((v) => !v)}
               >
                 <Icon name="download" size={13} />
@@ -18362,10 +18168,7 @@ function MarkdownViewer({
                     type="button"
                     className="share-menu-item"
                     role="menuitem"
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={() => {
-                      if (viewerOnly) return;
                       setDownloadMenuOpen(false);
                       exportAsMd(text, exportTitle);
                     }}

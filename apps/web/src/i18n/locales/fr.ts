@@ -2474,8 +2474,6 @@ export const fr: Dict = {
   'workspace.fileSyncDownloading': 'Téléchargement depuis l\'équipe…',
   'workspace.fileSyncUploading': 'Synchronisation avec l\'équipe…',
   'workspace.deleteFileConfirm': 'Supprimer « {name} » du dossier du projet ?',
-  'workspace.readonlyNotice': 'Ceci est un projet partagé — vous pouvez le consulter et le commenter, mais pas modifier les artefacts via Chat ou les outils d\'édition.',
-  'workspace.readonlyNoticeBy': 'Ce projet partagé a été créé par {owner} — vous pouvez le consulter et le commenter, mais pas modifier les artefacts via Chat ou les outils d\'édition.',
   'workspace.deleteSelectedFilesConfirm': 'Supprimer les {n} fichier(s) sélectionné(s) du dossier du projet ?',
   'workspace.deleteSelectedFilesPartial': 'Échec de la suppression de {n} fichier(s).',
   'workspace.openFromDesignFiles': 'Ouvrir un fichier depuis',
@@ -2907,7 +2905,6 @@ export const fr: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'Copier le lien de partage',
   'fileViewer.openSharePage': 'Ouvrir la page de partage',
   'fileViewer.shareLinkRequiresDeploy': 'Publiez d’abord en ligne pour obtenir un lien',

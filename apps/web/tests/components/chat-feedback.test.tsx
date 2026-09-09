@@ -101,7 +101,6 @@ function renderChatPane({
   onAssistantFeedback = vi.fn(),
   hasActiveDesignSystem = false,
   onForkFromMessage,
-  viewerOnly = false,
 }: {
   messages: ChatMessage[];
   streaming?: boolean;
@@ -111,7 +110,6 @@ function renderChatPane({
   ) => void;
   hasActiveDesignSystem?: boolean;
   onForkFromMessage?: (message: ChatMessage) => void;
-  viewerOnly?: boolean;
 }) {
   return {
     onAssistantFeedback,
@@ -133,7 +131,6 @@ function renderChatPane({
         onDeleteConversation={() => {}}
         onAssistantFeedback={onAssistantFeedback}
         onForkFromMessage={onForkFromMessage}
-        viewerOnly={viewerOnly}
       />,
     ),
   };
@@ -157,16 +154,6 @@ describe('chat assistant feedback', () => {
     });
 
     expect(screen.getByRole('group', { name: 'Feedback' })).toBeTruthy();
-  });
-
-  it('hides conversation fork actions from read-only project viewers', () => {
-    renderChatPane({
-      messages: [completedAssistant()],
-      onForkFromMessage: vi.fn(),
-      viewerOnly: true,
-    });
-
-    expect(screen.queryByRole('button', { name: 'Fork from here' })).toBeNull();
   });
 
   it('collects positive and negative feedback on completed artifact results', () => {

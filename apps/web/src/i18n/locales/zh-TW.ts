@@ -2682,8 +2682,6 @@ export const zhTW: Dict = {
   "workspace.fileSyncDownloading": "正在從團隊下載…",
   "workspace.fileSyncUploading": "正在同步到團隊…",
   "workspace.deleteFileConfirm": "從專案資料夾中刪除「{name}」？",
-  "workspace.readonlyNotice": "這是共享專案，你可以檢視和評論，但不能透過 Chat 或編輯工具修改 Artifact。",
-  "workspace.readonlyNoticeBy": "這是 {owner} 建立的共享專案，你可以檢視和評論，但不能透過 Chat 或編輯工具修改 Artifact。",
   "workspace.deleteSelectedFilesConfirm":
     "從專案資料夾中刪除選中的 {n} 個檔案？",
   "workspace.deleteSelectedFilesPartial": "有 {n} 個檔案刪除失敗。",
@@ -3082,7 +3080,6 @@ export const zhTW: Dict = {
   "fileViewer.openFileForHistory": "打开文件后查看历史版本",
   "fileViewer.openFileRequired": "打开文件后可用。",
 
-  "fileViewer.readonlySharedNoExport": "共享專案唯讀：可以評論，不能編輯或匯出",
   "fileViewer.copyShareLink": "複製分享連結",
   "fileViewer.openSharePage": "開啟分享頁面",
   "fileViewer.shareLinkRequiresDeploy": "先發布到線上以取得連結",

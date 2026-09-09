@@ -1,5 +1,4 @@
 type HtmlSourceSnapshot = Readonly<{
-  authorizationScopeKey: string;
   projectId: string;
   fileName: string;
   refreshKey: string;
@@ -19,11 +18,10 @@ const DEFAULT_MAX_ENTRIES = 16;
 const DEFAULT_MAX_UTF16_BYTES = 32 * 1024 * 1024;
 
 function identityKey(
-  authorizationScopeKey: string,
   projectId: string,
   fileName: string,
 ): string {
-  return `${authorizationScopeKey}\0${projectId}\0${fileName}`;
+  return `${projectId}\0${fileName}`;
 }
 
 function sourceUtf16Bytes(source: string): number {
@@ -63,12 +61,11 @@ export class HtmlSourceSnapshotCache {
   }
 
   get(
-    authorizationScopeKey: string,
     projectId: string,
     fileName: string,
     refreshKey: string,
   ): HtmlSourceSnapshot | null {
-    const key = identityKey(authorizationScopeKey, projectId, fileName);
+    const key = identityKey(projectId, fileName);
     const entry = this.#entries.get(key);
     if (!entry) return null;
     if (entry.refreshKey !== refreshKey) {
@@ -82,7 +79,6 @@ export class HtmlSourceSnapshotCache {
 
   set(snapshot: HtmlSourceSnapshot): void {
     const key = identityKey(
-      snapshot.authorizationScopeKey,
       snapshot.projectId,
       snapshot.fileName,
     );
@@ -96,11 +92,10 @@ export class HtmlSourceSnapshotCache {
   }
 
   invalidateFile(
-    authorizationScopeKey: string,
     projectId: string,
     fileName: string,
   ): void {
-    this.#delete(identityKey(authorizationScopeKey, projectId, fileName));
+    this.#delete(identityKey(projectId, fileName));
   }
 
   invalidateProject(projectId: string): void {
@@ -139,13 +134,11 @@ const htmlSourceSnapshotCache = new HtmlSourceSnapshotCache({
 });
 
 export function getHtmlSourceSnapshot(
-  authorizationScopeKey: string,
   projectId: string,
   fileName: string,
   refreshKey: string,
 ): HtmlSourceSnapshot | null {
   return htmlSourceSnapshotCache.get(
-    authorizationScopeKey,
     projectId,
     fileName,
     refreshKey,
@@ -157,12 +150,10 @@ export function setHtmlSourceSnapshot(snapshot: HtmlSourceSnapshot): void {
 }
 
 export function invalidateHtmlSourceSnapshotFile(
-  authorizationScopeKey: string,
   projectId: string,
   fileName: string,
 ): void {
   htmlSourceSnapshotCache.invalidateFile(
-    authorizationScopeKey,
     projectId,
     fileName,
   );

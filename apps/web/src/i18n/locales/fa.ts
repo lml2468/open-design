@@ -2474,8 +2474,6 @@ export const fa: Dict = {
   'workspace.fileSyncDownloading': 'در حال دانلود از تیم…',
   'workspace.fileSyncUploading': 'در حال همگام‌سازی با تیم…',
   'workspace.deleteFileConfirm': 'آیا «{name}» از پوشه پروژه حذف شود؟',
-  'workspace.readonlyNotice': 'این یک پروژه‌ی اشتراکی است — می‌توانید مشاهده و نظر بدهید، اما نمی‌توانید Artifact را از طریق چت یا ابزارهای ویرایش تغییر دهید.',
-  'workspace.readonlyNoticeBy': 'این پروژه‌ی اشتراکی را {owner} ایجاد کرده — می‌توانید مشاهده و نظر بدهید، اما نمی‌توانید Artifact را از طریق چت یا ابزارهای ویرایش تغییر دهید.',
   'workspace.deleteSelectedFilesConfirm': 'آیا {n} فایل انتخاب‌شده از پوشه پروژه حذف شوند؟',
   'workspace.deleteSelectedFilesPartial': 'حذف {n} فایل ناموفق بود.',
   'workspace.openFromDesignFiles': 'باز کردن یک فایل از',
@@ -2907,7 +2905,6 @@ export const fa: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'کپی لینک اشتراک‌گذاری',
   'fileViewer.openSharePage': 'باز کردن صفحه اشتراک‌گذاری',
   'fileViewer.shareLinkRequiresDeploy': 'ابتدا آنلاین منتشر کنید تا لینک دریافت شود',

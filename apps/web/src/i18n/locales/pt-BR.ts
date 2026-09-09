@@ -2474,8 +2474,6 @@ export const ptBR: Dict = {
   'workspace.fileSyncDownloading': 'Baixando da equipe…',
   'workspace.fileSyncUploading': 'Sincronizando com a equipe…',
   'workspace.deleteFileConfirm': 'Excluir "{name}" da pasta do projeto?',
-  'workspace.readonlyNotice': 'Este é um projeto compartilhado — você pode visualizar e comentar, mas não alterar artefatos pelo Chat ou pelas ferramentas de edição.',
-  'workspace.readonlyNoticeBy': 'Este é um projeto compartilhado criado por {owner} — você pode visualizar e comentar, mas não alterar artefatos pelo Chat ou pelas ferramentas de edição.',
   'workspace.deleteSelectedFilesConfirm': 'Excluir {n} arquivo(s) selecionado(s) da pasta do projeto?',
   'workspace.deleteSelectedFilesPartial': 'Falha ao excluir {n} arquivo(s).',
   'workspace.openFromDesignFiles': 'Abra um arquivo em',
@@ -2907,7 +2905,6 @@ export const ptBR: Dict = {
   'fileViewer.openFileForHistory': 'Open a file to view version history',
   'fileViewer.openFileRequired': 'Open a file to use this.',
 
-  'fileViewer.readonlySharedNoExport': 'Shared project is read-only: you can comment, but cannot edit or export.',
   'fileViewer.copyShareLink': 'Copiar link de compartilhamento',
   'fileViewer.openSharePage': 'Abrir página compartilhada',
   'fileViewer.shareLinkRequiresDeploy': 'Publique online primeiro para obter um link',
