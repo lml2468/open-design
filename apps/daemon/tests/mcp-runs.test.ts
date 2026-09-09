@@ -581,6 +581,27 @@ describe('public MCP discovery + generation tools', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('does not retry create_project through retired Workspace authority semantics', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({
+        error: {
+          code: 'WORKSPACE_FORBIDDEN',
+          message: 'retired authority response',
+        },
+      }),
+      { status: 503 },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await handleMcpToolCall('http://127.0.0.1:17456', 'create_project', {
+      name: 'Local Project',
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    expect(firstText(result)).toContain('WORKSPACE_FORBIDDEN');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   const PROJECT_UUID = '11111111-1111-1111-1111-111111111111';
 
   it('get_project includes a browser-openable previewUrl from metadata.entryFile', async () => {

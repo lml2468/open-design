@@ -1010,7 +1010,6 @@ export interface Dict extends CollaborationSettingsDict {
   'entry.loadingWorkspace': string;
   'entry.useEverywhereTitle': string;
   'entry.useEverywhereAria': string;
-  'entry.workspaceTeamsLabel': string;
   'workspaceSwitcher.createTeam': string;
   'workspaceSwitcher.draftsTooltip': string;
   'workspaceSwitcher.allProjectsTooltip': string;
@@ -1038,8 +1037,6 @@ export interface Dict extends CollaborationSettingsDict {
   'entry.blankAllProjectsTitle': string;
   'entry.blankAllProjectsDescription': string;
   'entry.blankCreate': string;
-  'entry.workspaceTeamsTitle': string;
-  'entry.workspaceTeamsAria': string;
   // Left nav rail (icon-only) — surface labels also serve as tooltips
   'entry.navExpand': string;
   'entry.navCollapse': string;

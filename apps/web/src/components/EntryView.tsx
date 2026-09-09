@@ -34,6 +34,7 @@ import type {
 import { EntryShell } from './EntryShell';
 import type { IntegrationTab } from './IntegrationsView';
 import type { CreateInput, ImportClaudeDesignOutcome } from './NewProjectPanel';
+import type { SettingsSection } from './SettingsDialog';
 import {
   CONNECTOR_CALLBACK_MESSAGE_TYPE,
   listenForConnectorsChanged,
@@ -134,7 +135,7 @@ interface Props {
   onOpenDesignSystem?: (id: string) => void;
   onDesignSystemsRefresh?: () => Promise<void> | void;
   onPersistComposioKey: (composio: AppConfig['composio']) => Promise<void> | void;
-  onOpenSettings: (section?: 'execution' | 'media' | 'composio' | 'orbit' | 'integrations' | 'mcpClient' | 'language' | 'appearance' | 'notifications' | 'pet' | 'projectLocations' | 'library' | 'about' | 'memory' | 'designSystems') => void;
+  onOpenSettings: (section?: SettingsSection) => void;
   onCompleteOnboarding: () => void;
   artifactUpgradeSlot?: ReactNode;
 }

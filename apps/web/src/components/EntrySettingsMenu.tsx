@@ -27,7 +27,6 @@ import type { AppConfig } from '../types';
 import { formatDiscordPresenceCount, useDiscordPresence } from './useDiscordPresence';
 import { Icon } from './Icon';
 import { SocialShareGrid } from './SocialShareGrid';
-import { enterpriseUrl } from './enterpriseUrl';
 
 const DISCORD_URL = 'https://discord.gg/mHAjSMV6gz';
 const X_URL = 'https://x.com/OpenDesignHQ';
@@ -56,6 +55,7 @@ export type EntrySettingsSection =
   | 'library'
   | 'about'
   | 'memory'
+  | 'collaboration'
   | 'designSystems';
 
 interface Props {
@@ -297,27 +297,25 @@ export function EntrySettingsMenu({
 
           <div className="entry-settings-menu__divider" aria-hidden />
 
-          <a
+          <button
+            type="button"
             className="entry-settings-menu__item"
-            href={enterpriseUrl(locale)}
-            target="_blank"
-            rel="noreferrer noopener"
             role="menuitem"
             onClick={() => {
               trackSettingsPopoverClick(analytics.track, {
                 page_name: pageName,
                 area: 'settings_popover',
-                element: 'workspace_teams',
+                element: 'collaboration_settings',
               });
               setOpen(false);
+              onOpenSettings('collaboration');
             }}
           >
             <span className="entry-settings-menu__item-icon" aria-hidden>
               <Icon name="sparkles" size={14} />
             </span>
-            <span>{t('entry.workspaceTeamsLabel')}</span>
-            <Icon name="external-link" size={12} className="entry-settings-menu__item-end" />
-          </a>
+            <span>{t('settings.collaboration')}</span>
+          </button>
           <a
             className="entry-settings-menu__item"
             href={DISCORD_URL}

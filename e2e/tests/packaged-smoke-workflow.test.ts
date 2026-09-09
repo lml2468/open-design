@@ -49,6 +49,18 @@ const contributorMaintainerCheckWorkflowPath = join(
 const prAuthorInactivityWorkflowPath = join(workspaceRoot, ".github", "workflows", "pr-author-inactivity.yml");
 const rerunWorkflowPath = join(workspaceRoot, ".github", "workflows", "rerun.atom.yml");
 const rerunInfraCancelScriptPath = join(workspaceRoot, ".github", "scripts", "rerun_infra_cancel.py");
+const agentPrExploreWorkflowPath = join(
+  workspaceRoot,
+  ".github",
+  "workflows",
+  "agent-pr-explore-sandbox.yml",
+);
+const agentPrExploreSandboxScriptPath = join(
+  workspaceRoot,
+  ".github",
+  "scripts",
+  "agent-pr-explore-sandbox.sh",
+);
 const bakePluginPreviewsWorkflowPath = join(workspaceRoot, ".github", "workflows", "bake-plugin-previews.yml");
 const bakePluginPreviewsPrWorkflowPath = join(workspaceRoot, ".github", "workflows", "bake-plugin-previews-pr.yml");
 const dockerImageWorkflowPath = join(workspaceRoot, ".github", "workflows", "docker-image.yml");
@@ -391,6 +403,55 @@ async function renderFeishuBuildCard(env: Record<string, string>): Promise<Recor
 }
 
 describe("packaged smoke workflow", () => {
+  it("[P1] keeps PR exploration on a current provider-neutral Agent path", async () => {
+    const [workflow, sandboxScript] = await Promise.all([
+      readFile(agentPrExploreWorkflowPath, "utf8"),
+      readFile(agentPrExploreSandboxScriptPath, "utf8"),
+    ]);
+
+    expect(workflow).toContain("run: .github/scripts/agent-pr-explore-sandbox.sh");
+    expect(sandboxScript).toContain('expect_agent="${OD_EXPECT_AGENT-codex}"');
+    expect(sandboxScript).toContain("process.env.OPENCODE_BIN");
+    expect(sandboxScript).toContain("fake OpenCode fixture");
+
+    for (const retiredRuntimeMarker of [
+      "VELA_BIN",
+      "VELA_RUNTIME_KEY",
+      "AMR_USER",
+      "AMR_PASS",
+      "fake-vela",
+      "AMR runtime picker",
+    ]) {
+      expect(sandboxScript).not.toContain(retiredRuntimeMarker);
+    }
+  });
+
+  it("[P1] keeps retired Vela and AMR branding out of shipped guidance and examples", async () => {
+    const activeProductFiles = [
+      join(workspaceRoot, "AGENTS.md"),
+      join(workspaceRoot, "CONTEXT.md"),
+      join(workspaceRoot, "design-templates", "open-design-landing", "styles.css"),
+      join(workspaceRoot, "design-templates", "open-design-landing", "example.html"),
+      join(workspaceRoot, "plugins", "_official", "examples", "open-design-homepage", "example.html"),
+      join(
+        workspaceRoot,
+        "plugins",
+        "_official",
+        "examples",
+        "open-design-homepage",
+        "assets",
+        "_next",
+        "static",
+        "chunks",
+        "d59f7a97fb1c563f.js",
+      ),
+    ];
+
+    for (const filePath of activeProductFiles) {
+      expect(await readFile(filePath, "utf8")).not.toMatch(/\b(?:amr|vela)\b/i);
+    }
+  });
+
   it("[P2] keeps packaged smoke outside the main CI gate", async () => {
     const workflow = await readFile(ciWorkflowPath, "utf8");
     expect(workflow).not.toContain("packaged_smoke_");

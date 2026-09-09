@@ -2129,7 +2129,7 @@ async function handleMcpToolCall(
       case 'delete_project':
         return await deleteProject(baseUrl, args, headers);
       case 'create_project':
-        return await createProject(baseUrl, args, headers);
+        return await createProject(baseUrl, args);
       case 'list_skills':
         return ok(await getJson<SkillsPayload>(`${baseUrl}/api/skills`));
       case 'list_plugins':
@@ -2282,7 +2282,6 @@ async function postJson<T>(
 async function createProject(
   baseUrl: string,
   args: McpArgs,
-  headers?: Record<string, string>,
 ) {
   requireString(args.name, 'name');
   const id =
@@ -2296,17 +2295,7 @@ async function createProject(
   if (typeof args.skill === 'string' && args.skill.length > 0) {
     body.skillId = args.skill;
   }
-  // Send the workspace pair so the daemon binds the project to the
-  // workspace immediately. If workspace authority fails (e.g. the cached
-  // membership went stale between refreshes), retry headerless once — a
-  // headerless create is always legal and the project is lazy-adopted on
-  // the next workspace list.
-  try {
-    return ok(await postJson<JsonObject>(`${baseUrl}/api/projects`, body, headers ?? {}));
-  } catch (err) {
-    if (!headers || !String(err).includes('WORKSPACE_')) throw err;
-    return ok(await postJson<JsonObject>(`${baseUrl}/api/projects`, body));
-  }
+  return ok(await postJson<JsonObject>(`${baseUrl}/api/projects`, body));
 }
 
 // Flatten daemon's plugin record into the few fields an external agent

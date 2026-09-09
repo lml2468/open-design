@@ -36,12 +36,12 @@ function baseConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   } as AppConfig;
 }
 
-function renderMenu() {
+function renderMenu(onOpenSettings = vi.fn()) {
   return render(
     <I18nProvider initial="en">
       <EntrySettingsMenu
         config={baseConfig()}
-        onOpenSettings={vi.fn()}
+        onOpenSettings={onOpenSettings}
       />
     </I18nProvider>,
   );
@@ -58,6 +58,16 @@ afterEach(() => {
 });
 
 describe('EntrySettingsMenu language picker a11y', () => {
+  it('opens self-hosted collaboration inside Desktop', () => {
+    const onOpenSettings = vi.fn();
+    renderMenu(onOpenSettings);
+
+    fireEvent.click(screen.getByTestId('entry-settings-menu-trigger'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Team collaboration' }));
+
+    expect(onOpenSettings).toHaveBeenCalledWith('collaboration');
+  });
+
   it('keeps one consistent menu model and hides the collapsed locale list from a11y/focus', () => {
     const { container } = renderMenu();
     fireEvent.click(screen.getByTestId('entry-settings-menu-trigger'));
