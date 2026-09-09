@@ -105,17 +105,6 @@ import {
 import { auditDesignSystemPackage } from '../../tools-connectors-cli.js';
 import { parseOrchestratorWorkspace } from '../../workspace-contract.js';
 import { registerProjectConversationRoutes } from './conversations.js';
-import {
-  refuseTeamShareScope,
-  type TeamShareScopeRefusal,
-  type WorkspaceTypeRegistry,
-} from '../../collab/team-share-scope.js';
-import {
-  workspaceResourceContextFromRequest as workspaceProjectContextFromRequest,
-  type VerifyWorkspaceRequestAuthority,
-  type WorkspaceResourceContext,
-} from '../../collab/workspace-resource-mutation.js';
-import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-context.js';
 import { cancelRunsOwnedBy } from './cancel-owned-runs.js';
 
 export function rewriteOutsideExecutableHtmlRanges(
@@ -209,70 +198,18 @@ export function rewriteOutsideExecutableHtmlRanges(
 
 export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'projectStore' | 'projectFiles' | 'conversations' | 'templates' | 'status' | 'events' | 'ids' | 'telemetry' | 'appConfig' | 'agents' | 'validation'> {
   pluginScope?: {
-    loadRegistry: (options: {
-      workspaceId?: string | null;
-      workspaceMemberId?: string | null;
-    }) => Promise<Parameters<typeof resolvePluginSnapshot>[0]['registry']>;
-    getPlugin: (
-      id: string,
-      options: { workspaceId: string | null; workspaceMemberId: string | null },
-    ) => Promise<unknown | null>;
+    loadRegistry: () => Promise<Parameters<typeof resolvePluginSnapshot>[0]['registry']>;
+    getPlugin: (id: string) => Promise<unknown | null>;
     getLocalPluginBySource?: (
       id: string,
       source: string,
     ) => Promise<Parameters<typeof resolvePluginSnapshot>[0]['plugin'] | null>;
   };
-  /** Authoritative verifier for every Workspace-bound project mutation. */
-  verifyWorkspaceRequestAuthority?: VerifyWorkspaceRequestAuthority;
-  /**
-   * Cached-only authority verifier for deleting a personal, local-only
-   * project. It must never start network I/O; all other mutations continue
-   * through `verifyWorkspaceRequestAuthority`.
-   */
-  verifyPersonalProjectDeleteLeaseAuthority?: VerifyWorkspaceRequestAuthority;
-  /** Membership directory used by Workspace account and cloud boundaries. */
-  fetchWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
-  /** Current settings-backed AMR environment for synthesized project contexts. */
-  configuredEnv?: () => Record<string, string>;
   /** Persist a design system in the daemon-local catalog. */
   createUserDesignSystem?: (
     root: string,
     input: UserDesignSystemInput,
   ) => Promise<DesignSystemSummary>;
-  /**
-   * What the daemon has learned about each workspace's type, used to refuse a
-   * team share aimed at a personal workspace even when the caller's headers say
-   * otherwise. See `collab/team-share-scope.ts`.
-   */
-  workspaceTypes?: Pick<WorkspaceTypeRegistry, 'isKnownPersonal' | 'learn' | 'typeOf'>;
-}
-
-// The request-context helper used to be defined here, hard-coded to
-// "project". It now lives in `collab/workspace-resource-mutation.ts` so the
-// remaining Workspace-scoped resource callers share one parser.
-type WorkspaceProjectContext = WorkspaceResourceContext;
-
-/**
- * Can a team share be RECORDED in the workspace this request is acting in?
- *
- * A team share must live in a team workspace — see `collab/team-share-scope.ts`
- * for why a `visibility: 'team'` row pinned to a personal workspace is a
- * permanently-broken address rather than a scope. Two independent witnesses can
- * refuse it, and either alone is enough: the caller's own `x-od-workspace-type`
- * claim (a client that says "personal" and asks for a team share has stated the
- * contradiction itself), and the workspace directory the daemon has already read
- * (which catches a caller whose headers are simply wrong). With neither, the
- * request is allowed — this guard fires on positive evidence only, so it can
- * never block a legitimate share in a workspace it has not learned about.
- */
-function teamShareRefusalFor(
-  ctx: WorkspaceProjectContext,
-  workspaceTypes?: Pick<WorkspaceTypeRegistry, 'isKnownPersonal'> | null,
-): TeamShareScopeRefusal | null {
-  return refuseTeamShareScope(ctx.workspaceId, {
-    assertedType: ctx.workspaceTypeAsserted,
-    ...(workspaceTypes ? { registry: workspaceTypes } : {}),
-  });
 }
 
 function projectDetailResolvedDir(
@@ -1803,7 +1740,6 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     dbDeleteProject,
     removeProjectDir,
     stageProjectDirsForDelete,
-    getWorkspaceProjectByProjectId,
   } = ctx.projectStore;
   const { writeProjectFile, readProjectFile, ensureProject, listFiles, listTabs, setTabs, resolveProjectDir } = ctx.projectFiles;
   const { insertConversation } = ctx.conversations;
@@ -1812,12 +1748,8 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
   const { subscribeFileEvents, activeProjectEventSinks } = ctx.events;
   const { randomId } = ctx.ids;
   const { validateProjectDesignSystemId, validateProjectSkillId } = ctx.validation;
-  const { workspaceTypes } = ctx;
-  async function loadPluginRegistryView(options: {
-    workspaceId?: string | null;
-    workspaceMemberId?: string | null;
-  } = {}) {
-    if (ctx.pluginScope) return ctx.pluginScope.loadRegistry(options);
+  async function loadPluginRegistryView() {
+    if (ctx.pluginScope) return ctx.pluginScope.loadRegistry();
     const [skills, designSystems] = await Promise.all([
       listSkills(SKILLS_DIR),
       listDesignSystems(DESIGN_SYSTEMS_DIR),
@@ -2209,17 +2141,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       if (skipDiscoveryBrief !== undefined && typeof skipDiscoveryBrief !== 'boolean') {
         return sendApiError(res, 400, 'BAD_REQUEST', 'skipDiscoveryBrief must be a boolean');
       }
-      const requestWorkspaceContext = workspaceProjectContextFromRequest(req);
-      const creationWorkspaceScope = requestWorkspaceContext && requestWorkspaceContext !== 'missing'
-        ? {
-            workspaceId: requestWorkspaceContext.workspaceId,
-            workspaceMemberId: requestWorkspaceContext.workspaceMemberId,
-          }
-        : { workspaceId: null, workspaceMemberId: null };
-      const designSystemValidation = await validateProjectDesignSystemId(
-        designSystemId,
-        creationWorkspaceScope,
-      );
+      const designSystemValidation = await validateProjectDesignSystemId(designSystemId);
       if (!designSystemValidation.ok) {
         return sendApiError(
           res,
@@ -2229,10 +2151,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         );
       }
       const normalizedDesignSystemId = designSystemValidation.id;
-      const skillValidation = await validateProjectSkillId(
-        skillId,
-        creationWorkspaceScope,
-      );
+      const skillValidation = await validateProjectSkillId(skillId);
       if (!skillValidation.ok) {
         return sendApiError(res, 400, skillValidation.code, skillValidation.message);
       }
@@ -2262,7 +2181,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         const visiblePlugin = requestedPluginSource
           ? selectedLocalPlugin
           : ctx.pluginScope
-            ? await ctx.pluginScope.getPlugin(requestedPluginId, creationWorkspaceScope)
+            ? await ctx.pluginScope.getPlugin(requestedPluginId)
             : getInstalledPlugin(db, requestedPluginId);
         if (!visiblePlugin) {
           return sendApiError(res, 404, 'PLUGIN_NOT_FOUND', 'plugin not found');
@@ -2506,7 +2425,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           });
         }
         const registry = resolveBody
-          ? await loadPluginRegistryView(creationWorkspaceScope)
+          ? await loadPluginRegistryView()
           : null;
         let pluginForSnapshot = selectedLocalPlugin;
         if (requestedPluginId && requestedPluginSource) {
@@ -2782,15 +2701,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       return res.json(body);
     }
 
-    const workspaceProject = getWorkspaceProjectByProjectId(db, project.id);
-    const registry = await ctx.pluginScope?.loadRegistry({
-      workspaceId: workspaceProject?.workspaceId == null
-        ? null
-        : String(workspaceProject.workspaceId),
-      workspaceMemberId: typeof workspaceProject?.createdByWorkspaceMemberId === 'string'
-        ? workspaceProject.createdByWorkspaceMemberId
-        : null,
-    });
+    const registry = await ctx.pluginScope?.loadRegistry();
     if (!registry) {
       return sendApiError(res, 503, 'PLUGIN_REGISTRY_UNAVAILABLE', 'plugin registry unavailable');
     }
@@ -3322,14 +3233,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         return sendApiError(res, 400, 'BAD_REQUEST', 'customInstructions exceeds 5 000 character limit');
       }
       if (Object.prototype.hasOwnProperty.call(patch, 'designSystemId')) {
-        const projectBinding = getWorkspaceProjectByProjectId(db, req.params.id);
-        const designSystemValidation = await validateProjectDesignSystemId(
-          patch.designSystemId,
-          {
-            workspaceId: projectBinding?.workspaceId ?? null,
-            workspaceMemberId: projectBinding?.createdByWorkspaceMemberId ?? null,
-          },
-        );
+        const designSystemValidation = await validateProjectDesignSystemId(patch.designSystemId);
         if (!designSystemValidation.ok) {
           return sendApiError(
             res,
@@ -3341,14 +3245,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
         patch.designSystemId = designSystemValidation.id;
       }
       if (Object.prototype.hasOwnProperty.call(patch, 'skillId')) {
-        const projectBinding = getWorkspaceProjectByProjectId(db, req.params.id);
-        const skillValidation = await validateProjectSkillId(
-          patch.skillId,
-          {
-            workspaceId: projectBinding?.workspaceId ?? null,
-            workspaceMemberId: projectBinding?.createdByWorkspaceMemberId ?? null,
-          },
-        );
+        const skillValidation = await validateProjectSkillId(patch.skillId);
         if (!skillValidation.ok) {
           return sendApiError(res, 400, skillValidation.code, skillValidation.message);
         }
@@ -3366,12 +3263,8 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           // patch shallowly over the row), so a PATCH that also rebinds
           // or detaches the design system only ever renames the system
           // the project remains bound to after this request.
-          const projectBinding = getWorkspaceProjectByProjectId(db, req.params.id);
           const propagation = await propagateWorkspaceProjectRename(
-            resolveWorkspaceProjectDesignSystemRoot(
-              USER_DESIGN_SYSTEMS_DIR,
-              projectBinding,
-            ),
+            resolveWorkspaceProjectDesignSystemRoot(USER_DESIGN_SYSTEMS_DIR),
             { ...existing, ...patch },
             patch.name,
           );

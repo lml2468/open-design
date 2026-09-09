@@ -55,14 +55,7 @@ describe('workspaceRenameDesignSystemId', () => {
 describe('resolveWorkspaceProjectDesignSystemRoot', () => {
   it('always selects the canonical local design-system root', () => {
     const canonicalRoot = '/runtime/design-systems';
-    expect(resolveWorkspaceProjectDesignSystemRoot(canonicalRoot, {
-      workspaceId: 'team-a',
-      visibility: 'team',
-    })).toBe(canonicalRoot);
-    expect(resolveWorkspaceProjectDesignSystemRoot(canonicalRoot, {
-      workspaceId: 'personal-a',
-      visibility: 'personal',
-    })).toBe(canonicalRoot);
+    expect(resolveWorkspaceProjectDesignSystemRoot(canonicalRoot)).toBe(canonicalRoot);
   });
 });
 

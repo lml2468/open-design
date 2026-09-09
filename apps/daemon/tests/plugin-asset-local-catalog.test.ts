@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { closeDatabase, ensureWorkspaceResource, openDatabase } from '../src/db.js';
+import { closeDatabase, openDatabase } from '../src/db.js';
+import { seedLegacyWorkspaceResource } from './helpers/legacy-workspace-resources.js';
 import { upsertInstalledPlugin } from '../src/plugins/registry.js';
 import { registerPluginAssetRoutes } from '../src/routes/plugins/assets.js';
 
@@ -54,7 +55,10 @@ async function fixture() {
     installedAt: now,
     updatedAt: now,
   });
-  ensureWorkspaceResource(db, 'plugin', 'legacy-workspace', 'same-plugin', {
+  seedLegacyWorkspaceResource(db, {
+    resourceType: 'plugin',
+    resourceId: 'same-plugin',
+    workspaceId: 'legacy-workspace',
     visibility: 'personal',
     resourceState: 'deleted',
     createdByWorkspaceMemberId: 'legacy-owner',

@@ -640,7 +640,6 @@ import {
   deleteConversation,
   deletePreviewComment,
   deleteProject as dbDeleteProject,
-  deleteWorkspaceResourceByResourceId,
   deleteTemplate,
   getConversation,
   getDeployment,
@@ -655,8 +654,6 @@ import {
   listWorkspaceProjectBindings,
   getTemplate,
   ensureWorkspaceProject,
-  ensureWorkspaceResource,
-  getWorkspaceResourceByResourceId,
   insertConversation,
   insertProject,
   insertRoutine,
@@ -674,7 +671,6 @@ import {
   listMessages,
   listPreviewComments,
   listProjects,
-  listWorkspaceResources,
   listRoutines,
   listRoutineRuns,
   listTabs,
@@ -692,7 +688,6 @@ import {
   updatePreviewCommentStatus,
   updateProject,
   updateWorkspaceProject,
-  updateWorkspaceResource,
   rebindWorkspaceProject,
   updateRoutine,
   updateRoutineRun,
@@ -772,12 +767,6 @@ import { registerCollabContextRoutes } from './routes/collab-context.js';
 import {
   createActiveWorkspaceSelectionStore,
 } from './collab/active-workspace-selection.js';
-import {
-  headerValue,
-  resolveOptionalLocalWorkspaceRequestAuthority,
-  workspaceResourceContext,
-  workspaceResourceContextFromRequest,
-} from './collab/workspace-resource-mutation.js';
 import { withLastKnownWorkspaceContext } from './collab/workspace-context.js';
 import {
   createWorkspaceTypeRegistry,
@@ -790,7 +779,10 @@ import {
   velaWorkspaceDirectoryIdentity,
   workspaceContextFromDirectoryItem,
 } from './collab/vela-workspace-context.js';
-import { verifyWorkspaceRequestContext } from './collab/request-workspace-context.js';
+import {
+  verifyWorkspaceRequestContext,
+  workspaceRequestContextFromRequest,
+} from './collab/request-workspace-context.js';
 import { readVelaControlApiContext } from './integrations/vela.js';
 import { registerTelemetryRoutes } from './routes/telemetry.js';
 import {
@@ -3002,7 +2994,7 @@ export async function startServer({
     // Local/dev has no signed membership directory. Its explicit request
     // headers are the complete, static authority; still never consult the
     // daemon's mutable active-workspace context.
-    const claimed = workspaceResourceContextFromRequest(input.req);
+    const claimed = workspaceRequestContextFromRequest(input.req);
     if (claimed === null) {
       return {
         ok: false as const,
@@ -3046,18 +3038,6 @@ export async function startServer({
   };
   const verifyWorkspaceReadAuthority = (req: unknown) =>
     verifyExplicitWorkspaceRequestContext({ req }, { fresh: false });
-  const verifyWorkspaceRequestAuthority = (req: unknown) =>
-    verifyExplicitWorkspaceRequestContext({ req });
-  const verifyPersonalProjectDeleteLeaseAuthority =
-    process.env.OD_WORKSPACE_CONTEXT_SOURCE?.trim() === 'vela'
-      ? (req: unknown) => verifyWorkspaceRequestContext({
-          req,
-          // A miss is intentionally returned as unavailable. The project gate
-          // then falls through to the existing fresh authority verifier.
-          fetchWorkspaceDirectory: workspaceDirectoryAuthority.cached,
-          configuredEnv: configuredAmrEnv(),
-        })
-      : undefined;
   const listWorkspaceDirectory = async () => {
     const result = await fetchWorkspaceDirectory();
     return result.items;
@@ -3927,11 +3907,6 @@ export async function startServer({
     conversations: conversationDeps,
     templates: templateDeps,
     status: projectStatusDeps,
-    verifyWorkspaceReadAuthority,
-    verifyWorkspaceRequestAuthority,
-    verifyPersonalProjectDeleteLeaseAuthority,
-    fetchWorkspaceDirectory,
-    configuredEnv: configuredAmrEnv,
     createUserDesignSystem,
     pluginScope: {
       loadRegistry: loadPluginRegistryView,
@@ -3971,10 +3946,6 @@ export async function startServer({
     appConfig: appConfigDeps,
     agents: agentDeps,
     validation: validationDeps,
-    // Second witness for the team-share invariant: refuse a team share aimed at
-    // a workspace the directory says is personal, even if the caller's headers
-    // claim otherwise. See collab/team-share-scope.ts.
-    workspaceTypes,
   });
   registerTerminalRoutes(app, {
     db,
@@ -4375,20 +4346,10 @@ export async function startServer({
   // plugin context against the live registry. Skills + design systems are
   // walked from disk; craft is empty in v1; atoms come from the
   // first-party catalog. Project-scoped overrides arrive in Phase 4.
-  async function loadPluginRegistryView(options: {
-    workspaceId?: string | null;
-    workspaceMemberId?: string | null;
-  } = {}) {
+  async function loadPluginRegistryView() {
     const [skills, designSystems] = await Promise.all([
       listAllSkills(),
-      listAllDesignSystems(
-        options.workspaceId !== undefined
-          ? {
-              workspaceId: options.workspaceId,
-              workspaceMemberId: options.workspaceMemberId ?? null,
-            }
-          : {},
-      ),
+      listAllDesignSystems(),
     ]);
     // Spec §23.3.3: surface the bundled scenario plugins so apply()
     // can fall back to the matching scenario's pipeline when the
@@ -11129,22 +11090,11 @@ export async function startServer({
     const primaryPluginId = routineContext.pluginIds?.[0] ?? null;
     const resolveRoutinePluginSnapshot = async () => {
       if (!primaryPluginId || resolvedRoutineSnapshot) return;
-      const routineProjectBinding = getWorkspaceProjectByProjectId(db, projectId);
       const routinePlugin = getInstalledPlugin(db, primaryPluginId);
       if (!routinePlugin) {
         throw new Error(`Automation plugin ${primaryPluginId} is not installed`);
       }
-      const registry = await loadPluginRegistryView(
-        routineProjectBinding?.workspaceId
-          ? {
-              workspaceId: String(routineProjectBinding.workspaceId),
-              workspaceMemberId:
-                typeof routineProjectBinding.createdByWorkspaceMemberId === 'string'
-                  ? routineProjectBinding.createdByWorkspaceMemberId
-                  : null,
-            }
-          : undefined,
-      );
+      const registry = await loadPluginRegistryView();
       const projectSnapshotBefore = routine.target.mode === 'reuse'
         ? getProject(db, routine.target.projectId)?.appliedPluginSnapshotId ?? null
         : null;
@@ -11154,7 +11104,7 @@ export async function startServer({
         && !registry.designSystems.some((system) => system.id === persistedDesignSystemId)
       ) {
         throw new Error(
-          `Automation design system ${persistedDesignSystemId} is not visible to the persisted project owner`,
+          `Automation design system ${persistedDesignSystemId} is not available in the local catalog`,
         );
       }
       let resolved;

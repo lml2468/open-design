@@ -5,9 +5,9 @@ import path from 'node:path';
 
 import {
   closeDatabase,
-  ensureWorkspaceResource,
   openDatabase,
 } from '../src/db.js';
+import { seedLegacyWorkspaceResource } from './helpers/legacy-workspace-resources.js';
 import {
   listInstalledPlugins,
   upsertInstalledPlugin,
@@ -57,15 +57,24 @@ describe('listInstalledPlugins local catalog', () => {
     ]) {
       upsertInstalledPlugin(db, plugin);
     }
-    ensureWorkspaceResource(db, 'plugin', 'legacy-workspace', 'plugin-personal', {
+    seedLegacyWorkspaceResource(db, {
+      resourceType: 'plugin',
+      resourceId: 'plugin-personal',
+      workspaceId: 'legacy-workspace',
       visibility: 'personal',
       createdByWorkspaceMemberId: 'legacy-owner',
     });
-    ensureWorkspaceResource(db, 'plugin', 'legacy-workspace', 'plugin-team', {
+    seedLegacyWorkspaceResource(db, {
+      resourceType: 'plugin',
+      resourceId: 'plugin-team',
+      workspaceId: 'legacy-workspace',
       visibility: 'team',
       createdByWorkspaceMemberId: 'legacy-owner',
     });
-    ensureWorkspaceResource(db, 'plugin', 'legacy-workspace', 'plugin-tombstoned', {
+    seedLegacyWorkspaceResource(db, {
+      resourceType: 'plugin',
+      resourceId: 'plugin-tombstoned',
+      workspaceId: 'legacy-workspace',
       visibility: 'personal',
       resourceState: 'deleted',
       createdByWorkspaceMemberId: 'legacy-owner',

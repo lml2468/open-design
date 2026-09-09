@@ -6,46 +6,24 @@ import {
   createMcpDaemonTarget,
   OPEN_DESIGN_BRIEF_APP_RESOURCE,
 } from '../src/mcp.js';
-import { _resetMcpWorkspaceContextCacheForTests } from '../src/mcp-workspace-context.js';
 
 const originalFetch = globalThis.fetch;
 const BASE = 'http://127.0.0.1:19001';
-
-const DIRECTORY = {
-  items: [
-    {
-      workspaceId: 'ws-personal',
-      workspaceName: 'Personal',
-      workspaceType: 'personal',
-      workspaceMemberId: 'mem-1',
-      role: 'owner',
-      memberStatus: 'active',
-      lifecycleState: 'active',
-    },
-  ],
-  activeWorkspaceId: null,
-};
-
-function directoryResponse(): Response {
-  return new Response(JSON.stringify(DIRECTORY), { status: 200 });
-}
 
 function target() {
   return createMcpDaemonTarget({ daemonUrl: BASE });
 }
 
 afterEach(() => {
-  _resetMcpWorkspaceContextCacheForTests();
   vi.unstubAllGlobals();
   globalThis.fetch = originalFetch;
 });
 
 describe('MCP resource catalog scope', () => {
-  it('keeps Skills daemon-local while scoping Design Systems to the active Workspace', async () => {
+  it('keeps Skills and Design Systems daemon-local', async () => {
     const calls: Array<{ url: string; init?: RequestInit | undefined }> = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
-      if (url.endsWith('/api/workspace/directory')) return directoryResponse();
       if (url.endsWith('/api/skills')) {
         return new Response(
           JSON.stringify({ skills: [{ id: 'deck', name: 'Deck', description: 'Build a deck.' }] }),
@@ -72,16 +50,13 @@ describe('MCP resource catalog scope', () => {
 
     const result = await _listMcpResources(target());
 
-    // directory bootstrap
-    expect(calls.some((c) => c.url.endsWith('/api/workspace/directory'))).toBe(true);
-    // both listing calls were made
+    expect(calls.some((c) => c.url.endsWith('/api/workspace/directory'))).toBe(false);
     const skillCall = calls.find((c) => c.url.endsWith('/api/skills'));
     const dsCall = calls.find((c) => c.url.endsWith('/api/design-systems'));
     expect(skillCall).toBeTruthy();
     expect(dsCall).toBeTruthy();
     expect(skillCall?.init?.headers).toBeUndefined();
-    expect((dsCall?.init?.headers as Record<string, string>)['x-od-workspace-id']).toBe('ws-personal');
-    expect((dsCall?.init?.headers as Record<string, string>)['x-od-workspace-member-id']).toBe('mem-1');
+    expect(dsCall?.init?.headers).toBeUndefined();
 
     // the personal design system actually shows up
     const uris = result.resources.map((r) => r.uri);
@@ -89,14 +64,10 @@ describe('MCP resource catalog scope', () => {
     expect(uris).toContain('od://design-systems/brand-1/DESIGN.md');
   });
 
-  it('list_resources falls back to headerless behavior when no workspace context resolves', async () => {
+  it('list_resources does not consult Workspace context', async () => {
     const calls: Array<{ url: string; init?: RequestInit | undefined }> = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
-      if (url.endsWith('/api/workspace/directory')) {
-        // No active membership — non-vela fallback.
-        return new Response(JSON.stringify({ items: [], activeWorkspaceId: null }), { status: 200 });
-      }
       if (url.endsWith('/api/skills')) {
         return new Response(JSON.stringify({ skills: [] }), { status: 200 });
       }
@@ -111,6 +82,7 @@ describe('MCP resource catalog scope', () => {
 
     const skillCall = calls.find((c) => c.url.endsWith('/api/skills'));
     const dsCall = calls.find((c) => c.url.endsWith('/api/design-systems'));
+    expect(calls.some((c) => c.url.endsWith('/api/workspace/directory'))).toBe(false);
     expect(skillCall?.init?.headers).toBeUndefined();
     expect(dsCall?.init?.headers).toBeUndefined();
     // Built-in resources still listed.
@@ -118,11 +90,10 @@ describe('MCP resource catalog scope', () => {
     expect(result.resources.some((r) => r.uri === 'od://focus/active')).toBe(true);
   });
 
-  it('read_resource forwards workspace headers when reading a Personal design system', async () => {
+  it('read_resource reads Design Systems without Workspace headers', async () => {
     const calls: Array<{ url: string; init?: RequestInit | undefined }> = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
-      if (url.endsWith('/api/workspace/directory')) return directoryResponse();
       if (url.match(/\/api\/design-systems\/[^/]+$/u)) {
         return new Response(
           JSON.stringify({
@@ -142,10 +113,8 @@ describe('MCP resource catalog scope', () => {
 
     const read = calls.find((c) => c.url.endsWith('/api/design-systems/brand-1'));
     expect(read).toBeTruthy();
-    // Without this header, the daemon returns `404 design system not found`
-    // for a Personal design system the workspace actually owns (#6770).
-    expect((read?.init?.headers as Record<string, string>)['x-od-workspace-id']).toBe('ws-personal');
-    expect((read?.init?.headers as Record<string, string>)['x-od-workspace-member-id']).toBe('mem-1');
+    expect(read?.init?.headers).toBeUndefined();
+    expect(calls.some((c) => c.url.endsWith('/api/workspace/directory'))).toBe(false);
 
     expect(result.contents[0]?.mimeType).toBe('text/markdown');
     expect(result.contents[0]?.text).toContain('palette: indigo/violet');

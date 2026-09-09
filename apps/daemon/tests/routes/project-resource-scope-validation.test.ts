@@ -2,7 +2,6 @@ import type http from 'node:http';
 import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerProjectRoutes } from '../../src/routes/project/index.js';
-import { workspaceContextFromDirectoryItem } from '../../src/collab/vela-workspace-context.js';
 
 const WORKSPACE_ID = 'workspace-project-scope';
 const MEMBER_ID = 'member-project-scope';
@@ -108,18 +107,6 @@ function buildDeps(input: {
       validateProjectSkillId: input.validateSkill
         ?? vi.fn(async (id) => ({ ok: true, id })),
     },
-    verifyWorkspaceRequestAuthority: async () => ({
-      ok: true,
-      context: workspaceContextFromDirectoryItem({
-        workspaceId: WORKSPACE_ID,
-        workspaceName: 'Project scope workspace',
-        workspaceType: 'personal',
-        workspaceMemberId: MEMBER_ID,
-        role: 'owner',
-        memberStatus: 'active',
-        lifecycleState: 'active',
-      }),
-    }),
     pluginScope: {
       loadRegistry: input.loadRegistry ?? vi.fn(async () => ({
         skills: [],
@@ -156,7 +143,7 @@ function headers() {
   };
 }
 
-describe('project resource selection uses the persisted exact member', () => {
+describe('project resource selection uses daemon-local catalogs', () => {
   it('updates a local project without a Workspace authority dependency', async () => {
     const updateProject = vi.fn((_db, projectId, patch) => ({
       id: projectId,
@@ -210,7 +197,7 @@ describe('project resource selection uses the persisted exact member', () => {
     expect(insertProject).toHaveBeenCalledOnce();
   });
 
-  it('passes exact member scope to both create validators', async () => {
+  it('validates create-time Design System and Skill ids without Workspace scope', async () => {
     const validateDesignSystem = vi.fn(async (id) => ({ ok: true, id }));
     const validateSkill = vi.fn(async () => ({
       ok: false,
@@ -231,17 +218,11 @@ describe('project resource selection uses the persisted exact member', () => {
     });
 
     expect(response.status).toBe(400);
-    expect(validateDesignSystem).toHaveBeenCalledWith('user:private-brand', {
-      workspaceId: WORKSPACE_ID,
-      workspaceMemberId: MEMBER_ID,
-    });
-    expect(validateSkill).toHaveBeenCalledWith('private-skill', {
-      workspaceId: WORKSPACE_ID,
-      workspaceMemberId: MEMBER_ID,
-    });
+    expect(validateDesignSystem).toHaveBeenCalledWith('user:private-brand');
+    expect(validateSkill).toHaveBeenCalledWith('private-skill');
   });
 
-  it('passes the persisted project creator to both patch validators', async () => {
+  it('validates patched Design System and Skill ids without persisted Workspace scope', async () => {
     const validateDesignSystem = vi.fn(async (id) => ({ ok: true, id }));
     const validateSkill = vi.fn(async () => ({
       ok: false,
@@ -260,14 +241,8 @@ describe('project resource selection uses the persisted exact member', () => {
     });
 
     expect(response.status).toBe(400);
-    expect(validateDesignSystem).toHaveBeenCalledWith('user:private-brand', {
-      workspaceId: WORKSPACE_ID,
-      workspaceMemberId: MEMBER_ID,
-    });
-    expect(validateSkill).toHaveBeenCalledWith('private-skill', {
-      workspaceId: WORKSPACE_ID,
-      workspaceMemberId: MEMBER_ID,
-    });
+    expect(validateDesignSystem).toHaveBeenCalledWith('user:private-brand');
+    expect(validateSkill).toHaveBeenCalledWith('private-skill');
   });
 
   it('rejects a foreign direct plugin before project, conversation, or registry writes', async () => {
@@ -296,10 +271,7 @@ describe('project resource selection uses the persisted exact member', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { code: 'PLUGIN_NOT_FOUND' },
     });
-    expect(getPlugin).toHaveBeenCalledWith('other-member-private-plugin', {
-      workspaceId: WORKSPACE_ID,
-      workspaceMemberId: MEMBER_ID,
-    });
+    expect(getPlugin).toHaveBeenCalledWith('other-member-private-plugin');
     expect(insertProject).not.toHaveBeenCalled();
     expect(insertConversation).not.toHaveBeenCalled();
     expect(loadRegistry).not.toHaveBeenCalled();

@@ -10,7 +10,6 @@ import type { InstalledPluginRecord, PluginManifest } from '@open-design/contrac
 import {
   closeDatabase,
   ensureWorkspaceProject,
-  ensureWorkspaceResource,
   getProject,
   insertRoutine,
   insertRoutineRun,
@@ -18,6 +17,7 @@ import {
   insertProject,
   openDatabase,
 } from '../src/db.js';
+import { seedLegacyWorkspaceResource } from './helpers/legacy-workspace-resources.js';
 import { startServer } from '../src/server.js';
 import { writeAppConfig } from '../src/app-config.js';
 import { upsertInstalledPlugin } from '../src/plugins/registry.js';
@@ -922,7 +922,10 @@ describe('routine resource scope', () => {
       createdByWorkspaceMemberId: 'routine-member-a',
       updatedByWorkspaceMemberId: 'routine-member-a',
     });
-    ensureWorkspaceResource(db, 'plugin', 'routine-workspace', plugin.id, {
+    seedLegacyWorkspaceResource(db, {
+      resourceType: 'plugin',
+      resourceId: plugin.id,
+      workspaceId: 'routine-workspace',
       visibility: 'personal',
       resourceState: 'active',
       createdByWorkspaceMemberId: 'routine-member-b',

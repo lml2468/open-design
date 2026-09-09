@@ -2,7 +2,8 @@ import type http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { InstalledPluginRecord } from '@open-design/contracts';
 import { startServer } from '../src/server.js';
-import { ensureWorkspaceResource, openDatabase } from '../src/db.js';
+import { openDatabase } from '../src/db.js';
+import { seedLegacyWorkspaceResource } from './helpers/legacy-workspace-resources.js';
 import { upsertInstalledPlugin } from '../src/plugins/registry.js';
 import {
   __resetPluginEventBufferForTests,
@@ -50,7 +51,10 @@ beforeAll(async () => {
     fakePlugin('event-historically-bound'),
   ]) upsertInstalledPlugin(db, plugin);
 
-  ensureWorkspaceResource(db, 'plugin', 'legacy-workspace', 'event-historically-bound', {
+  seedLegacyWorkspaceResource(db, {
+    resourceType: 'plugin',
+    resourceId: 'event-historically-bound',
+    workspaceId: 'legacy-workspace',
     visibility: 'team',
     resourceState: 'deleted',
     createdByWorkspaceMemberId: 'legacy-owner',

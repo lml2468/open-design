@@ -4,11 +4,11 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer } from '../src/server.js';
+import { openDatabase } from '../src/db.js';
 import {
-  ensureWorkspaceResource,
-  getWorkspaceResourceByResourceId,
-  openDatabase,
-} from '../src/db.js';
+  hasLegacyWorkspaceResource,
+  seedLegacyWorkspaceResource,
+} from './helpers/legacy-workspace-resources.js';
 
 let server: http.Server;
 let baseUrl: string;
@@ -63,7 +63,10 @@ describe('Skills daemon-local catalog', () => {
     const skillId = `local-catalog-${Date.now()}`;
     await seedSkillFolder(skillId);
     const db = openDatabase(process.cwd(), { dataDir: process.env.OD_DATA_DIR! });
-    ensureWorkspaceResource(db, 'skill', 'legacy-workspace', skillId, {
+    seedLegacyWorkspaceResource(db, {
+      resourceType: 'skill',
+      resourceId: skillId,
+      workspaceId: 'legacy-workspace',
       visibility: 'personal',
       resourceState: 'active',
       createdByWorkspaceMemberId: 'legacy-owner',
@@ -107,7 +110,7 @@ describe('Skills daemon-local catalog', () => {
 
     expect(response.status).toBe(201);
     const db = openDatabase(process.cwd(), { dataDir: process.env.OD_DATA_DIR! });
-    expect(getWorkspaceResourceByResourceId(db, 'skill', skillId)).toBeUndefined();
+    expect(hasLegacyWorkspaceResource(db, 'skill', skillId)).toBe(false);
     expect(await listSkillIds(workspaceHeaders('other-workspace', 'other-member')))
       .toContain(skillId);
   });
@@ -116,7 +119,10 @@ describe('Skills daemon-local catalog', () => {
     const skillId = `local-mutation-${Date.now()}`;
     const folder = await seedSkillFolder(skillId);
     const db = openDatabase(process.cwd(), { dataDir: process.env.OD_DATA_DIR! });
-    ensureWorkspaceResource(db, 'skill', 'legacy-workspace', skillId, {
+    seedLegacyWorkspaceResource(db, {
+      resourceType: 'skill',
+      resourceId: skillId,
+      workspaceId: 'legacy-workspace',
       visibility: 'personal',
       resourceState: 'active',
       createdByWorkspaceMemberId: 'legacy-owner',

@@ -1313,7 +1313,6 @@ export type WorkspaceRenamePropagation = 'not-applicable' | 'propagated' | 'fail
 
 export function resolveWorkspaceProjectDesignSystemRoot(
   canonicalRoot: string,
-  _binding: { workspaceId?: unknown; visibility?: unknown } | null | undefined,
 ): string {
   return canonicalRoot;
 }

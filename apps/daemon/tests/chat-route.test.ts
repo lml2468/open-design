@@ -31,10 +31,10 @@ import { readAppConfig, writeAppConfig } from '../src/app-config.js';
 import { readMemoryConfig, writeMemoryConfig } from '../src/memory.js';
 import {
   ensureWorkspaceProject,
-  ensureWorkspaceResource,
   getProject,
   upsertMessage,
 } from '../src/db.js';
+import { seedLegacyWorkspaceResource } from './helpers/legacy-workspace-resources.js';
 
 
 async function withFakeAgent<T>(
@@ -3352,18 +3352,15 @@ process.stdin.on('end', () => {
 
     const sqlite = new Database(resolve(process.env.OD_DATA_DIR, 'app.sqlite'));
     try {
-      ensureWorkspaceResource(
-        sqlite as never,
-        'design_system',
+      seedLegacyWorkspaceResource(sqlite, {
+        resourceType: 'design_system',
+        resourceId: designSystemId,
         workspaceId,
-        designSystemId,
-        {
-          visibility: 'personal',
-          resourceState: 'deleted',
-          createdByWorkspaceMemberId: foreignMemberId,
-          updatedByWorkspaceMemberId: foreignMemberId,
-        },
-      );
+        visibility: 'personal',
+        resourceState: 'deleted',
+        createdByWorkspaceMemberId: foreignMemberId,
+        updatedByWorkspaceMemberId: foreignMemberId,
+      });
       sqlite.prepare('UPDATE projects SET design_system_id = ? WHERE id = ?')
         .run(designSystemId, workspaceFixture.projectId);
     } finally {
@@ -3442,18 +3439,15 @@ process.stdin.on('end', () => {
 
     const sqlite = new Database(resolve(process.env.OD_DATA_DIR, 'app.sqlite'));
     try {
-      ensureWorkspaceResource(
-        sqlite as never,
-        'design_system',
+      seedLegacyWorkspaceResource(sqlite, {
+        resourceType: 'design_system',
+        resourceId: designSystemId,
         workspaceId,
-        designSystemId,
-        {
-          visibility: 'personal',
-          resourceState: 'active',
-          createdByWorkspaceMemberId: workspaceMemberId,
-          updatedByWorkspaceMemberId: workspaceMemberId,
-        },
-      );
+        visibility: 'personal',
+        resourceState: 'active',
+        createdByWorkspaceMemberId: workspaceMemberId,
+        updatedByWorkspaceMemberId: workspaceMemberId,
+      });
       sqlite.prepare('UPDATE projects SET design_system_id = ? WHERE id = ?')
         .run(designSystemId, workspaceFixture.projectId);
     } finally {

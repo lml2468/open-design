@@ -1,9 +1,90 @@
 import type { WorkspaceCollabContext } from '@open-design/contracts';
-import { workspaceResourceContextFromRequest } from './workspace-resource-mutation.js';
 import {
   workspaceContextFromDirectoryItem,
   type WorkspaceDirectoryFetchResult,
 } from './vela-workspace-context.js';
+
+export type WorkspaceRequestContext = {
+  workspaceId: string;
+  workspaceType: 'personal' | 'team';
+  /** The caller's raw workspace-type claim; null means it was omitted. */
+  workspaceTypeAsserted: 'personal' | 'team' | null;
+  appUserId: string;
+  workspaceMemberId: string;
+  role: 'owner' | 'admin' | 'member';
+  memberStatus: 'active' | 'removed';
+  lifecycleState: 'active' | 'billing_past_due' | 'locked' | 'deleting' | 'deleted';
+  canShareProjects: boolean;
+  canWriteSyncedFiles: boolean;
+};
+
+function headerValue(req: any, name: string): string | null {
+  const value = req?.get?.(name);
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function headerBool(req: any, name: string, fallback: boolean): boolean {
+  const value = headerValue(req, name);
+  if (value === 'false') return false;
+  if (value === 'true') return true;
+  return fallback;
+}
+
+function workspaceRequestContext(
+  req: any,
+  workspaceId: string,
+): WorkspaceRequestContext | null {
+  const workspaceMemberId = headerValue(req, 'x-od-workspace-member-id');
+  if (!workspaceMemberId) return null;
+  const workspaceTypeHeader = headerValue(req, 'x-od-workspace-type');
+  const lifecycleState = headerValue(req, 'x-od-workspace-lifecycle-state') ?? 'active';
+  const role = headerValue(req, 'x-od-workspace-role') ?? 'member';
+  const legacyWriteEnabled = headerBool(req, 'x-od-workspace-write-enabled', true);
+  const canWriteSyncedFiles = headerBool(
+    req,
+    'x-od-workspace-can-write-synced-files',
+    legacyWriteEnabled,
+  );
+  return {
+    workspaceId,
+    workspaceType: workspaceTypeHeader === 'team' ? 'team' : 'personal',
+    workspaceTypeAsserted:
+      workspaceTypeHeader === 'team' || workspaceTypeHeader === 'personal'
+        ? workspaceTypeHeader
+        : null,
+    appUserId: headerValue(req, 'x-od-app-user-id') ?? 'local-user',
+    workspaceMemberId,
+    role: role === 'owner' || role === 'admin' ? role : 'member',
+    memberStatus:
+      headerValue(req, 'x-od-workspace-member-status') === 'removed'
+        ? 'removed'
+        : 'active',
+    lifecycleState:
+      lifecycleState === 'billing_past_due'
+      || lifecycleState === 'locked'
+      || lifecycleState === 'deleting'
+      || lifecycleState === 'deleted'
+        ? lifecycleState
+        : 'active',
+    canShareProjects: headerBool(
+      req,
+      'x-od-workspace-can-share-projects',
+      canWriteSyncedFiles,
+    ),
+    canWriteSyncedFiles,
+  };
+}
+
+/** Parse the explicit Workspace/member pair carried by a request. */
+export function workspaceRequestContextFromRequest(
+  req: any,
+): WorkspaceRequestContext | 'missing' | null {
+  const workspaceId = headerValue(req, 'x-od-workspace-id');
+  const workspaceMemberId = headerValue(req, 'x-od-workspace-member-id');
+  if (!workspaceId && !workspaceMemberId) return null;
+  if (!workspaceId || !workspaceMemberId) return 'missing';
+  return workspaceRequestContext(req, workspaceId) ?? 'missing';
+}
 
 export type VerifiedWorkspaceRequestContextResult =
   | { ok: true; context: WorkspaceCollabContext }
@@ -34,7 +115,7 @@ export async function verifyWorkspaceRequestContext(input: {
   configuredEnv?: Record<string, string>;
   requireTeam?: boolean;
 }): Promise<VerifiedWorkspaceRequestContextResult> {
-  const claimed = workspaceResourceContextFromRequest(input.req);
+  const claimed = workspaceRequestContextFromRequest(input.req);
   if (claimed === null) {
     return {
       ok: false,

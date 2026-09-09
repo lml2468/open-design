@@ -9,7 +9,8 @@ import {
   resolvePluginFolder,
   upsertInstalledPlugin,
 } from '../src/plugins/registry.js';
-import { ensureWorkspaceResource, openDatabase } from '../src/db.js';
+import { openDatabase } from '../src/db.js';
+import { seedLegacyWorkspaceResource } from './helpers/legacy-workspace-resources.js';
 
 let server: http.Server;
 let baseUrl: string;
@@ -56,7 +57,10 @@ describe('POST /api/plugins/:id/uninstall local ownership', () => {
     const pluginId = `local-uninstall-bound-${Date.now()}`;
     const folder = await seedPluginFolder(pluginId);
     const db = openDatabase(process.cwd(), { dataDir: process.env.OD_DATA_DIR! });
-    ensureWorkspaceResource(db, 'plugin', 'legacy-workspace', pluginId, {
+    seedLegacyWorkspaceResource(db, {
+      resourceType: 'plugin',
+      resourceId: pluginId,
+      workspaceId: 'legacy-workspace',
       visibility: 'personal',
       resourceState: 'deleted',
       createdByWorkspaceMemberId: 'legacy-owner',

@@ -103,7 +103,7 @@ async function runCli(args: string[]) {
   }
 }
 
-describe('od design-systems exact workspace transport', () => {
+describe('od design-systems daemon-local transport', () => {
   it.each([
     ['list', ['list', '--json']],
     ['show', ['show', 'user:brand', '--json']],
@@ -113,7 +113,7 @@ describe('od design-systems exact workspace transport', () => {
     ['import-shadcn', ['import-shadcn', 'shadcn/ui/theme-zinc', '--json']],
     ['rebuild-token-contract', ['rebuild-token-contract', 'user:brand', '--json']],
     ['rename', ['rename', 'user:brand', '--title', 'Renamed Brand', '--json']],
-  ])('sends exact workspace headers for %s', async (_label, subcommand) => {
+  ])('uses the daemon-local catalog without Workspace headers for %s', async (_label, subcommand) => {
     await startStub();
     const resolvedSubcommand =
       _label === 'download'
@@ -122,10 +122,6 @@ describe('od design-systems exact workspace transport', () => {
     const result = await runCli([
       'design-systems',
       ...resolvedSubcommand,
-      '--workspace',
-      'workspace-a',
-      '--workspace-member',
-      'member-a',
       '--daemon-url',
       baseUrl,
     ]);
@@ -133,13 +129,11 @@ describe('od design-systems exact workspace transport', () => {
     expect(result.code).toBe(0);
     expect(result.stderr).toBe('');
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.headers).toMatchObject({
-      'x-od-workspace-id': 'workspace-a',
-      'x-od-workspace-member-id': 'member-a',
-    });
+    expect(requests[0]!.headers['x-od-workspace-id']).toBeUndefined();
+    expect(requests[0]!.headers['x-od-workspace-member-id']).toBeUndefined();
   });
 
-  it('rejects an incomplete workspace pair before making a request', async () => {
+  it('rejects the retired Workspace flags before making a request', async () => {
     await startStub();
     const result = await runCli([
       'design-systems',
@@ -152,11 +146,11 @@ describe('od design-systems exact workspace transport', () => {
     ]);
 
     expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain('--workspace-member');
+    expect(result.stderr).toContain('unknown flag: --workspace');
     expect(requests).toHaveLength(0);
   });
 
-  it('keeps headerless legacy calls available when both flags are absent', async () => {
+  it('keeps ordinary headerless calls available', async () => {
     await startStub();
     const result = await runCli([
       'design-systems',

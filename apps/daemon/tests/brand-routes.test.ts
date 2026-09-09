@@ -636,7 +636,7 @@ describe('brand routes', () => {
     }
   });
 
-  it('keeps a scoped brand when canonical design-system deletion is denied', async () => {
+  it('keeps a brand when canonical design-system deletion is denied', async () => {
     writeBrandFixture('brand-delete-denied', {
       designSystemId: 'user:brand-delete-denied',
       projectId: 'project-delete-denied',
@@ -645,9 +645,9 @@ describe('brand routes', () => {
     const deleteDesignSystemForRequest = vi.fn(async (_req, res, designSystemId, options) => {
       expect(designSystemId).toBe('user:brand-delete-denied');
       expect(options?.beforeDelete).toEqual(expect.any(Function));
-      // Canonical authority denied the request, so it deliberately does not
+      // Canonical deletion denied the request, so it deliberately does not
       // invoke the callback that aborts the active extraction.
-      res.status(403).json({ error: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED' });
+      res.status(403).json({ error: 'DESIGN_SYSTEM_DELETE_DENIED' });
       return false;
     });
     const server = await startBrandServer({
