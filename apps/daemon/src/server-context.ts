@@ -67,7 +67,6 @@ export interface RoutineDeps {
 export interface ProjectPreviewScopeDeps {
   mint: (
     projectId: string,
-    workspace?: { workspaceId: string; workspaceMemberId: string } | null,
     options?: { readonly ttlMs?: number },
   ) => string;
   revoke: (scope: string) => void;
@@ -78,10 +77,6 @@ export interface ProjectPreviewScopeDeps {
     options?: { readonly ttlMs?: number },
   ) => number | undefined;
   validate: (projectId: string, scope: string) => boolean;
-  resolve: (
-    projectId: string,
-    scope: string,
-  ) => { workspaceId: string; workspaceMemberId: string } | null | undefined;
 }
 
 export interface TelemetryDeps {

@@ -116,10 +116,7 @@ interface PluginRouteHelpers {
     res: Response,
     mode: 'install' | 'upgrade',
   ): Promise<unknown>;
-  loadPluginRegistryView(options?: {
-    workspaceId?: string | null;
-    workspaceMemberId?: string | null;
-  }): Promise<unknown>;
+  loadPluginRegistryView(): Promise<unknown>;
   buildConnectorProbe(service: unknown): unknown;
   handleShareProject(
     req: Request,

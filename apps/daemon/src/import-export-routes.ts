@@ -408,10 +408,7 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
           ? name.trim()
           : path.basename(normalizedPath);
       const entryFile = await detectEntryFile(normalizedPath);
-      const designSystemValidation = await validateProjectDesignSystemId(
-        designSystemId,
-        { workspaceId: null },
-      );
+      const designSystemValidation = await validateProjectDesignSystemId(designSystemId);
       if (!designSystemValidation.ok) {
         return sendApiError(
           res,
@@ -420,10 +417,7 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
           designSystemValidation.message,
         );
       }
-      const skillValidation = await validateProjectSkillId(
-        skillId,
-        { workspaceId: null },
-      );
+      const skillValidation = await validateProjectSkillId(skillId);
       if (!skillValidation.ok) {
         return sendApiError(
           res,
@@ -481,10 +475,6 @@ const RENDERER_PREVIEW_SCOPE_SETUP_MARGIN_MS = 10_000;
 const SCREENSHOT_RENDER_PREVIEW_SCOPE_TTL_MS =
   DESKTOP_RENDERER_IPC_TIMEOUT_MS + RENDERER_PREVIEW_SCOPE_SETUP_MARGIN_MS;
 
-type AuthorizedExportRead = {
-  readonly previewWorkspace: null;
-};
-
 type ScreenshotExportBody = {
   readonly deck?: unknown;
   readonly editable?: unknown;
@@ -498,7 +488,6 @@ type ScreenshotExportBody = {
 };
 
 type ScreenshotExportRequest = {
-  readonly authority: AuthorizedExportRead;
   readonly body: ScreenshotExportBody | null | undefined;
 };
 
@@ -543,7 +532,7 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
     options: {
       toolEndpoint?: string;
     } = {},
-  ): Promise<AuthorizedExportRead | null> {
+  ): Promise<boolean> {
     const authorization = req.get('authorization');
     if (
       typeof authorization === 'string'
@@ -555,14 +544,14 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
         'project:export',
         { endpoint: options.toolEndpoint ?? req.path },
       );
-      if (!grant) return null;
+      if (!grant) return false;
       if (ctx.auth.requestProjectOverride(req.params.id, grant.projectId)) {
         sendApiError(res, 403, 'FORBIDDEN', 'tool token belongs to a different project');
-        return null;
+        return false;
       }
-      return { previewWorkspace: null };
+      return true;
     }
-    return { previewWorkspace: null };
+    return true;
   }
 
   function isNoSlideDeckRenderError(rendered: { ok: boolean; error?: string }): boolean {
@@ -790,7 +779,7 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
     projectId: string,
     request: ScreenshotExportRequest,
   ) {
-    const { authority, body } = request;
+    const { body } = request;
     let renderOutputDir: string | null = null;
     let renderPreviewScope: string | null = null;
     try {
@@ -813,11 +802,9 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
       }
       if (typeof desktopSlideRenderer !== 'function') {
         if (format === 'image' && typeof desktopArtifactExporter === 'function') {
-          renderPreviewScope = ctx.projectPreviewScopes.mint(
-            projectId,
-            authority.previewWorkspace,
-            { ttlMs: SCREENSHOT_RENDER_PREVIEW_SCOPE_TTL_MS },
-          );
+          renderPreviewScope = ctx.projectPreviewScopes.mint(projectId, {
+            ttlMs: SCREENSHOT_RENDER_PREVIEW_SCOPE_TTL_MS,
+          });
           const input = await buildDesktopArtifactExportInput({
             baseHref: scopedProjectPreviewBaseHref(projectId, fileName, renderPreviewScope),
             daemonUrl: daemonUrlRef.current,
@@ -903,11 +890,9 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
         projectId,
         projectsRoot: PROJECTS_DIR,
       };
-      renderPreviewScope = ctx.projectPreviewScopes.mint(
-        projectId,
-        authority.previewWorkspace,
-        { ttlMs: SCREENSHOT_RENDER_PREVIEW_SCOPE_TTL_MS },
-      );
+      renderPreviewScope = ctx.projectPreviewScopes.mint(projectId, {
+        ttlMs: SCREENSHOT_RENDER_PREVIEW_SCOPE_TTL_MS,
+      });
       renderOptions.baseHref = scopedProjectPreviewBaseHref(
         projectId,
         fileName,
@@ -1308,22 +1293,22 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
   // PNG and assemble a one-image-per-slide .pptx. Replaces the old "send a prompt
   // to the agent and hope it runs python-pptx" path with a deterministic export.
   app.post('/api/projects/:id/export/pptx', async (req, res) => {
-    const authority = await authorizeExportRead(req, res, {
+    const authorized = await authorizeExportRead(req, res, {
       toolEndpoint: PROJECT_EXPORT_TOOL_ENDPOINT,
     });
-    if (!authority) return;
-    await handleScreenshotExport(res, 'pptx', req.params.id, { authority, body: req.body });
+    if (!authorized) return;
+    await handleScreenshotExport(res, 'pptx', req.params.id, { body: req.body });
   });
 
   // Programmatic screenshot-based (raster) PDF: one pixel-perfect page per slide.
   // The print-ready vector PDF stays on POST /export/pdf; this is the "exactly
   // what you see" counterpart that shares the slide renderer with PPTX.
   app.post('/api/projects/:id/export/pdf-image', async (req, res) => {
-    const authority = await authorizeExportRead(req, res, {
+    const authorized = await authorizeExportRead(req, res, {
       toolEndpoint: PROJECT_EXPORT_TOOL_ENDPOINT,
     });
-    if (!authority) return;
-    await handleScreenshotExport(res, 'pdf', req.params.id, { authority, body: req.body });
+    if (!authorized) return;
+    await handleScreenshotExport(res, 'pdf', req.params.id, { body: req.body });
   });
 
   // Programmatic image export: a single pixel-perfect PNG. For a deck it renders
@@ -1331,21 +1316,21 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
   // the whole document at natural size. Viewport-independent — unlike the
   // host-compositor snapshot, the size never depends on the preview pane.
   app.post('/api/projects/:id/export/image', async (req, res) => {
-    const authority = await authorizeExportRead(req, res, {
+    const authorized = await authorizeExportRead(req, res, {
       toolEndpoint: PROJECT_EXPORT_TOOL_ENDPOINT,
     });
-    if (!authority) return;
-    await handleScreenshotExport(res, 'image', req.params.id, { authority, body: req.body });
+    if (!authorized) return;
+    await handleScreenshotExport(res, 'image', req.params.id, { body: req.body });
   });
 
   // A true one-file HTML export: every required same-project dependency is
   // embedded by the daemon. Remote HTTP(S) dependencies remain external and
   // are listed in a machine-readable manifest inside the output.
   app.post('/api/projects/:id/export/html', async (req, res) => {
-    const authority = await authorizeExportRead(req, res, {
+    const authorized = await authorizeExportRead(req, res, {
       toolEndpoint: PROJECT_EXPORT_TOOL_ENDPOINT,
     });
-    if (!authority) return;
+    if (!authorized) return;
     await handleStandaloneHtmlExport(res, req.params.id, req.body);
   });
 
@@ -1362,10 +1347,10 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
     if (!isExportFormat(format)) {
       return sendApiError(res, 400, 'BAD_REQUEST', 'invalid export format');
     }
-    const authority = await authorizeExportRead(req, res, {
+    const authorized = await authorizeExportRead(req, res, {
       toolEndpoint: PROJECT_EXPORT_TOOL_ENDPOINT,
     });
-    if (!authority) return;
+    if (!authorized) return;
     if (format === 'html') {
       return handleStandaloneHtmlExport(res, req.params.id, {
         fileName,
@@ -1374,7 +1359,6 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
       });
     }
     await handleScreenshotExport(res, format, req.params.id, {
-      authority,
       body: {
         fileName,
         // pptx is deck-only (handleScreenshotExport forces it); pdf/image honor the

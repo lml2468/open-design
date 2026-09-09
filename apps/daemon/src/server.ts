@@ -1936,12 +1936,11 @@ function createProjectPreviewScopeRegistry() {
   }
 
   return {
-    mint(projectId, workspace = null, options = {}) {
+    mint(projectId, options = {}) {
       pruneExpired();
       const scope = randomUUID();
       scopes.set(scope, {
         projectId: String(projectId),
-        workspace,
         expiresAt: Date.now() + (options.ttlMs ?? PROJECT_PREVIEW_SCOPE_TTL_MS),
       });
       return scope;
@@ -1981,17 +1980,6 @@ function createProjectPreviewScopeRegistry() {
         return false;
       }
       return entry.projectId === String(projectId);
-    },
-    resolve(projectId, scope) {
-      const key = String(scope || '');
-      const entry = scopes.get(key);
-      if (!entry) return undefined;
-      if (entry.expiresAt <= Date.now()) {
-        scopes.delete(key);
-        return undefined;
-      }
-      if (entry.projectId !== String(projectId)) return undefined;
-      return entry.workspace ?? null;
     },
   };
 }

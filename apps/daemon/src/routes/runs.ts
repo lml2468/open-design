@@ -448,10 +448,7 @@ interface RunRoutesDesignService {
 
 /** The Skill catalogue used to freeze user-selected Skills for a run. */
 interface RunRoutesSkillCatalogService {
-  listAllSkillLikeEntries: (options?: {
-    workspaceId?: string | null;
-    workspaceMemberId?: string | null;
-  }) => Promise<readonly SkillInfo[]>;
+  listAllSkillLikeEntries: () => Promise<readonly SkillInfo[]>;
 }
 
 interface ProjectFileEntry {
@@ -578,10 +575,7 @@ export interface RegisterRunRoutesDeps {
       runs: ChatRunService;
       db: SqliteDb;
     }) => void;
-    loadPluginRegistryView: (options?: {
-      workspaceId?: string | null;
-      workspaceMemberId?: string | null;
-    }) => Promise<Parameters<typeof resolvePluginSnapshot>[0]['registry']>;
+    loadPluginRegistryView: () => Promise<Parameters<typeof resolvePluginSnapshot>[0]['registry']>;
     renderPluginBriefTemplate: (template: string, inputs?: Record<string, unknown>) => string;
     /**
      * Exact local catalogue lookup, the same one `/api/plugins/:id/apply-local`

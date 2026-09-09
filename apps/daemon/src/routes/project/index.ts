@@ -4351,7 +4351,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         requestedPath,
         project.metadata,
       );
-      const scope = projectPreviewScopes.mint(project.id, null);
+      const scope = projectPreviewScopes.mint(project.id);
       const expiresAt = projectPreviewScopes.expiresAt(project.id, scope);
       if (expiresAt === undefined) {
         sendApiError(res, 503, 'PREVIEW_SCOPE_NOT_FOUND', 'preview scope not found');
@@ -4399,7 +4399,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
         return;
       }
-      if (projectPreviewScopes.resolve(project.id, scope) === undefined) {
+      if (!projectPreviewScopes.validate(project.id, scope)) {
         sendApiError(res, 404, 'PREVIEW_SCOPE_NOT_FOUND', 'preview scope not found');
         return;
       }
@@ -4487,7 +4487,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
         return;
       }
-      if (projectPreviewScopes.resolve(project.id, scope) === undefined) {
+      if (!projectPreviewScopes.validate(project.id, scope)) {
         sendApiError(res, 404, 'PREVIEW_SCOPE_NOT_FOUND', 'preview scope not found');
         return;
       }
@@ -4589,7 +4589,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
           // returning the same bytes as before. The containment base is only a
           // URL-preview transport detail requested by FileViewer.
           if (req.query.odPreviewBridge === undefined) return html;
-          const scope = projectPreviewScopes.mint(projectId, null);
+          const scope = projectPreviewScopes.mint(projectId);
           const expiresAt = projectPreviewScopes.expiresAt(projectId, scope);
           if (expiresAt === undefined) return html;
           return injectProjectPreviewBase(
