@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 测试对象 | `run_created`、`run_finished`、恢复动作曝光/点击、启动前拦截、Task 成功率查询 |
-| 目标 Provider | `amr`、`claude_code`、`codex_cli` |
+| 目标 Provider | `opencode`、`claude_code`、`codex_cli` |
 | Schema | `event_schema_version = 4`；旧扁平参数在兼容窗口继续双写 |
 | 主要角色 | OpenDesign QA、研发、数据分析 |
 | 核心目标 | 验证事件能发出、参数语义正确、跨 Run 能归并、PostHog 中能正确查询 |
@@ -14,7 +14,7 @@
 
 ## 2. 测试结论必须回答的问题
 
-1. AMR、Claude Code、Codex 的首轮执行、失败和恢复 Run 是否都能正常上报。
+1. OpenCode、Claude Code、Codex 的首轮执行、失败和恢复 Run 是否都能正常上报。
 2. 首次失败、后续重试成功时，多个 Run 是否共享同一个 `task_execution_id`。
 3. Task 成功率是否按“一次用户意图”计算，而不是把第一次失败永久算作失败。
 4. `failure_category`、`failure_reason`、`failure_stage` 是否只描述最终失败 Run，并且可稳定分组。
@@ -67,11 +67,11 @@ flowchart LR
 - 正向用例开启 Metrics；反向用例明确关闭 Metrics。
 - 每个测试创建独立 `project_id`、`conversation_id` 和安装身份，避免与其他验证数据混淆。
 - Provider 行为优先使用 `mocks/` 中的匿名真实 Trace 回放，避免消耗额度并保证失败可复现。
-- 发布前再对当前真实 AMR、Claude Code、Codex CLI 各做一次最小 Smoke，用于发现 CLI 版本或流格式漂移。
+- 发布前再对当前真实 OpenCode、Claude Code、Codex CLI 各做一次最小 Smoke，用于发现 CLI 版本或流格式漂移。
 
 ### 5.2 黄金任务集
 
-AMR、Claude Code、Codex 每个 Provider 分别执行以下 4 个 Task：
+OpenCode、Claude Code、Codex 每个 Provider 分别执行以下 4 个 Task：
 
 | Task | Run 序列 | 最终 Task 状态 |
 | --- | --- | --- |
@@ -100,13 +100,13 @@ AMR、Claude Code、Codex 每个 Provider 分别执行以下 4 个 Task：
 
 | ID | 优先级 | 测试场景 | 前置条件与步骤 | 预期结果 |
 | --- | --- | --- | --- | --- |
-| A01 | P0 | 三个 Provider 首 Run 成功 | 分别选择 AMR、Claude Code、Codex，发送可稳定完成的 Design 任务 | 各产生一对 `run_created`/`run_finished`；Task 字段完整；`result=success` |
+| A01 | P0 | 三个 Provider 首 Run 成功 | 分别选择 OpenCode、Claude Code、Codex，发送可稳定完成的 Design 任务 | 各产生一对 `run_created`/`run_finished`；Task 字段完整；`result=success` |
 | A02 | P0 | 首 Run 最终失败 | Mock CLI 返回可分类的终态错误，不点击恢复 | `run_finished.result=failed`；失败分类、原因和阶段存在；Task 为 `system_failed` |
 | A03 | P0 | 手动重试挽回 | 首 Run 失败，点击 Retry，第二个 Run 成功 | 两个 Run ID 不同、Task ID 相同；第二个 `task_run_index=1`、`source_run_id` 指向首 Run；Task 只算一次成功 |
 | A04 | P0 | Resume 挽回 | 制造可恢复的中断，点击 Continue | 目标 Run 使用 `recovery_action_type=resume_run`；曝光、点击、创建和完成共享 `recovery_action_instance_id` |
-| A05 | P0 | 切 Runtime 挽回 | Claude/Codex 失败后切换到 AMR 并重试成功 | Task 归属仍是首 Run Provider；恢复分析可看到源 Provider 和目标 `amr` |
+| A05 | P0 | 切 Runtime 挽回 | Claude/Codex 失败后切换到 OpenCode 并重试成功 | Task 归属仍是首 Run Provider；恢复分析可看到源 Provider 和目标 `opencode` |
 | A06 | P0 | 切模型挽回 | 制造模型不可用，选择其他模型重试 | 新 Run 使用实际目标模型；`recovery_action_type=switch_model_retry`；Task ID 不变 |
-| A07 | P0 | 授权后重试 | AMR 返回登录/授权错误，完成授权后自动或手动重试 | 新 Run 使用 `authorize_and_retry`；重复的已登录轮询不能重复创建 Run |
+| A07 | P0 | 授权后重试 | OpenCode 返回登录/授权错误，完成授权后自动或手动重试 | 新 Run 使用 `authorize_and_retry`；重复的已登录轮询不能重复创建 Run |
 | A08 | P0 | 澄清回答 | 首 Run 输出 `<question-form>`，用户提交回答，后续 Run 成功 | 首 Run `clarification_requested=true`，不算有效成功；回答 Run 与原 Task 相连并最终使 Task 成功 |
 | A09 | P0 | 同 Run 自动重试 | 首次 Provider 调用遇到可自动重试错误，第二次调用成功 | `run_id` 和 Task 序号不变；只有一条最终 `run_finished`；`automatic_retry.retry_count>0` 且最终成功 |
 | A10 | P0 | 启动前拦截后恢复 | BYOK 缺 Key/模型，点击发送被拦截；修复配置后重新发送同一 Draft | 先出现 `element=run_start_blocked`，当时没有 Run；恢复后首 Run 仍为 `task_run_index=0` 且继承原 Task ID |
@@ -127,7 +127,7 @@ AMR、Claude Code、Codex 每个 Provider 分别执行以下 4 个 Task：
 | B06 | P0 | 消息升级和重载 | 从旧数据库启动，执行一次 Run，重启后加载消息并 Retry | 增量迁移成功；`taskAnalytics` 持久化；重载后的 Retry 继续原 Task |
 | B07 | P0 | Daemon 终态补偿 | Run 已终止但正常分析完成标记缺失，重启 Daemon | 补发一条带 v4 Task/聚合字段的 `run_finished`；再次重启不重复补发 |
 | B08 | P1 | 数组字段 | 一个 Run 使用多个 Skill/MCP | `capabilities.skill_ids`、`mcp_server_ids` 保持数组；兼容期单值字段仍按旧规则发送 |
-| B09 | P1 | Provider ID 标准化 | 分别由 AMR、Claude、Codex 触发恢复动作 | 所有 Run 和恢复事件统一使用 `amr`、`claude_code`、`codex_cli`，不能混入 `claude`/`codex` |
+| B09 | P1 | Provider ID 标准化 | 分别由 OpenCode、Claude、Codex 触发恢复动作 | 所有 Run 和恢复事件统一使用 `opencode`、`claude_code`、`codex_cli`，不能混入 `claude`/`codex` |
 
 ### C. Token 口径
 
@@ -158,7 +158,7 @@ AMR、Claude Code、Codex 每个 Provider 分别执行以下 4 个 Task：
 
 | ID | 优先级 | 测试场景 | 前置条件与步骤 | 预期结果 |
 | --- | --- | --- | --- | --- |
-| E01 | P0 | CTA 曝光 | 打开带 Retry、Continue 或切 AMR 的失败卡 | 每个实际展示的 CTA 各有一条 `surface_view`，不能只报动作数组 |
+| E01 | P0 | CTA 曝光 | 打开带 Retry、Continue 或切 OpenCode 的失败卡 | 每个实际展示的 CTA 各有一条 `surface_view`，不能只报动作数组 |
 | E02 | P0 | CTA 点击 | 点击恢复 CTA | 发送 `ui_click`；ID 和动作类型与对应曝光一致 |
 | E03 | P0 | 点击到 Run | CTA 点击后目标 Run 创建 | `recovery_action_instance_id` 从点击透传到 `run_created` 和 `run_finished` |
 | E04 | P0 | 切换目标 | 点击切模型或切 Runtime | Click 事件包含目标 Provider/模型；目标 Run 上报实际使用值 |
@@ -185,7 +185,7 @@ AMR、Claude Code、Codex 每个 Provider 分别执行以下 4 个 Task：
 
 - 新项目、新对话，Metrics 已开启。
 - Mock CLI 配置为一次成功并生成可识别 Artifact。
-- 当前 Provider 依次为 AMR、Claude Code、Codex。
+- 当前 Provider 依次为 OpenCode、Claude Code、Codex。
 
 **执行步骤：**
 
@@ -196,7 +196,7 @@ AMR、Claude Code、Codex 每个 Provider 分别执行以下 4 个 Task：
 
 **预期结果：**
 
-- `agent_provider_id` 分别为 `amr`、`claude_code`、`codex_cli`。
+- `agent_provider_id` 分别为 `opencode`、`claude_code`、`codex_cli`。
 - 首 Run 的 Task ID 在 created/finished 中一致，`initial_run_id=run_id`、`task_run_index=0`。
 - `result=success`，`clarification_requested=false`。
 - 新旧字段同时存在；`tokens`、`timing` 可作为 JSON 查询。
@@ -222,24 +222,24 @@ AMR、Claude Code、Codex 每个 Provider 分别执行以下 4 个 Task：
 - 曝光、点击、第二 Run 共享一个恢复动作实例 ID。
 - 该 Task 最终只计为一个 `success`，不同时保留一个失败 Task。
 
-### 场景 3：切 Runtime 到 AMR 后成功
+### 场景 3：切 Runtime 到 OpenCode 后成功
 
 **测试目标：** 验证 Task 主归属和恢复效果归因互不混淆。
 
-**起始条件：** Claude Code 或 Codex 首 Run 固定失败；AMR 固定成功。
+**起始条件：** Claude Code 或 Codex 首 Run 固定失败；OpenCode 固定成功。
 
 **执行步骤：**
 
 1. 使用源 Provider 发送任务并等待失败。
-2. 点击切换到 AMR 并重试。
-3. 等待 AMR Run 成功。
+2. 点击切换到 OpenCode 并重试。
+3. 等待 OpenCode Run 成功。
 4. 查询 Task 和恢复动作链路。
 
 **预期结果：**
 
 - Task 主看板仍归属首 Run Provider。
-- 恢复点击包含源 Provider 和目标 `amr`。
-- 目标 Run 的 `agent_provider_id=amr`，Task ID 不变。
+- 恢复点击包含源 Provider 和目标 `opencode`。
+- 目标 Run 的 `agent_provider_id=opencode`，Task ID 不变。
 - 恢复分析将成功归因给 `switch_runtime_retry`。
 
 ### 场景 4：请求澄清后回答成功
@@ -346,7 +346,7 @@ AMR、Claude Code、Codex 每个 Provider 分别执行以下 4 个 Task：
 
 1. 启动本地 HTTP 接收器，接收 PostHog batch，并支持解压 gzip。
 2. 将 `POSTHOG_HOST` 指向接收器，提供测试 Key，开启 Metrics。
-3. 启动真实 Daemon，但把 AMR、Claude、Codex CLI 替换为仓库 Mock Trace。
+3. 启动真实 Daemon，但把 OpenCode、Claude、Codex CLI 替换为仓库 Mock Trace。
 4. 通过真实 `/api/runs` 创建 Run，而不是直接调用聚合 Builder。
 5. 收集 `run_created`、`run_finished`，断言完整 Payload、公共参数和隐私。
 6. 对一次失败和一次恢复成功提交相同 `task_execution_id`，验证线协议上的任务归并。
@@ -361,7 +361,7 @@ AMR、Claude Code、Codex 每个 Provider 分别执行以下 4 个 Task：
 
 1. 打开全新项目并发送任务。
 2. Mock CLI 让首 Run 失败，页面出现恢复卡。
-3. 点击 Retry、Continue 或切 AMR。
+3. 点击 Retry、Continue 或切 OpenCode。
 4. 第二个 Mock Run 成功。
 5. 从 `/api/runs` 请求体读取 `analyticsHints.taskExecutionId` 和恢复动作实例 ID。
 6. 断言两个请求的任务链路，并检查最终 UI Artifact 可用。
@@ -500,7 +500,7 @@ WHERE event = 'run_finished'
 - `apps/web/tests/components/ChatPane.resume-failed.test.tsx`：Resume CTA 曝光、点击和回调。
 - `apps/web/tests/components/ProjectView.run-isolation.test.tsx`：启动前拦截。
 - `apps/web/tests/components/ProjectView.run-cleanup.test.tsx`：真实 ProjectView 发送、终态和重载主链路。
-- `e2e/ui/amr-run-failure-recovery.test.ts`：真实 UI 失败卡、Retry、目标 Run 和成功内容恢复链路。
+- `e2e/ui/run-failure-recovery.test.ts`：真实 UI 失败卡、Retry、目标 Run 和成功内容恢复链路。
 - `apps/daemon/tests/run-analytics-observability.test.ts`：Provider Usage、缓存和首次调用 Token。
 - `apps/daemon/tests/run-artifact-fs.test.ts`：HTML/媒体、内容变化、CSS 依赖和种子 HTML。
 - `apps/daemon/tests/db-message-events.test.ts`：Task analytics 消息持久化。
