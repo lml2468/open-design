@@ -47,7 +47,6 @@ import {
 import {
   countBucket,
   stableAnalyticsRequestErrorCode,
-  workspaceAnalyticsDimensions,
 } from '../analytics/workspace';
 import type { ProjectCollectionClickProps } from '@open-design/contracts/analytics';
 
@@ -280,7 +279,6 @@ export function RecentProjectsStrip({
   const analytics = useAnalytics();
   const analyticsPage = space === 'projects' ? 'all_projects' : 'home';
   const rowRef = useRef<HTMLDivElement | null>(null);
-  const workspaceDimensions = workspaceAnalyticsDimensions(null);
   function trackCollection(
     element: ProjectCollectionClickProps['element'],
     properties: Partial<Omit<ProjectCollectionClickProps, 'page_name' | 'area' | 'element'>> = {},
@@ -290,7 +288,6 @@ export function RecentProjectsStrip({
       page_name: analyticsPage,
       area: 'project_collection',
       element,
-      ...workspaceDimensions,
       ...properties,
     }, requestId ? { requestId } : undefined);
   }
@@ -552,11 +549,7 @@ export function RecentProjectsStrip({
     options: { force?: boolean } = {},
   ): Promise<void> => {
     if (!activeRef.current) return Promise.resolve();
-    const snapshotKey = projectCoverSnapshotKey(
-      null,
-      project.id,
-      project.updatedAt,
-    );
+    const snapshotKey = projectCoverSnapshotKey(project.id, project.updatedAt);
     if (!options.force) {
       // Serve the last successful decision for this exact project/version
       // instead of re-running the files scan + probe on every remount.
@@ -759,7 +752,6 @@ export function RecentProjectsStrip({
         succeeded_count: 1,
         failed_count: 0,
         duration_ms: Math.round(performance.now() - startedAt),
-        ...workspaceDimensions,
       });
     }).catch((err) => {
       console.warn('[RecentProjectsStrip] duplicate project failed:', err);
@@ -773,7 +765,6 @@ export function RecentProjectsStrip({
         failed_count: 1,
         duration_ms: Math.round(performance.now() - startedAt),
         error_code: 'request_failed',
-        ...workspaceDimensions,
       });
     });
   }
@@ -801,7 +792,6 @@ export function RecentProjectsStrip({
           failed_count: 1,
           duration_ms: Math.round(performance.now() - startedAt),
           error_code: 'request_failed',
-          ...workspaceDimensions,
         });
         setDeleteFailed(true);
         return;
@@ -816,7 +806,6 @@ export function RecentProjectsStrip({
         succeeded_count: 1,
         failed_count: 0,
         duration_ms: Math.round(performance.now() - startedAt),
-        ...workspaceDimensions,
       });
     } catch (err) {
       console.warn('[RecentProjectsStrip] delete project failed:', err);
@@ -831,7 +820,6 @@ export function RecentProjectsStrip({
         failed_count: 1,
         duration_ms: Math.round(performance.now() - startedAt),
         error_code: stableAnalyticsRequestErrorCode(err),
-        ...workspaceDimensions,
       });
     } finally {
       setDeletePending(false);
@@ -884,7 +872,6 @@ export function RecentProjectsStrip({
       failed_count: failedCount,
       duration_ms: Math.round(performance.now() - startedAt),
       ...(failedCount > 0 ? { error_code: 'one_or_more_failed' } : {}),
-      ...workspaceDimensions,
     });
   }
 

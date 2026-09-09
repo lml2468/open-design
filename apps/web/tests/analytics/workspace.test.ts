@@ -4,32 +4,9 @@ import {
   countBucket,
   stableAnalyticsErrorCode,
   stableAnalyticsRequestErrorCode,
-  workspaceAnalyticsDimensions,
 } from '../../src/analytics/workspace';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
-describe('workspace analytics dimensions', () => {
-  it('emits stable Workspace dimensions without names or member identity', () => {
-    const context = workspaceContextFixture({
-      workspaceId: 'workspace-team',
-      workspaceMemberId: 'member-private',
-      workspaceType: 'team',
-      role: 'admin',
-      displayName: 'Private Workspace Name',
-    });
-
-    const dimensions = workspaceAnalyticsDimensions(context);
-
-    expect(dimensions).toMatchObject({
-      workspace_key: 'workspace-team',
-      workspace_type: 'team',
-      workspace_role: 'admin',
-      $groups: { workspace: 'workspace-team' },
-    });
-    expect(dimensions).not.toHaveProperty('workspaceMemberId');
-    expect(dimensions).not.toHaveProperty('displayName');
-  });
-
+describe('analytics helpers', () => {
   it('uses bounded buckets and stable error classes', () => {
     expect([0, 1, 2, 5, 6, 10, 11].map(countBucket)).toEqual([
       '0',
@@ -53,28 +30,4 @@ describe('workspace analytics dimensions', () => {
       .toBe('server_error');
   });
 
-  it('does not treat unresolved seat state as available', () => {
-    const context = workspaceContextFixture({
-      workspaceId: 'workspace-loading',
-      workspaceMemberId: 'member-loading',
-    });
-    delete (context as Partial<typeof context>).seatSummary;
-
-    expect(workspaceAnalyticsDimensions(context).seat_state).toBe('unknown');
-  });
-
-  it('treats the directory-only zero-seat sentinel as unknown', () => {
-    const context = workspaceContextFixture({
-      workspaceId: 'workspace-directory',
-      workspaceMemberId: 'member-directory',
-      seatSummary: {
-        seatLimit: 0,
-        usedSeats: 0,
-        availableSeats: 0,
-        isSeatFull: true,
-      },
-    });
-
-    expect(workspaceAnalyticsDimensions(context).seat_state).toBe('unknown');
-  });
 });

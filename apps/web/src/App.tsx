@@ -422,7 +422,6 @@ interface SettingsReturnTarget {
 }
 
 const DESIGN_SYSTEM_CATALOG_IDENTITY = 'daemon-local';
-const LOCAL_TAB_IDENTITY_SCOPE = 'local-projects';
 
 /**
  * The project route must never use `!activeProject` as an unbounded loading
@@ -3200,13 +3199,7 @@ function AppInner() {
               ? [...projects, activeProject]
               : projects
           }
-          activeProjectResolved={
-            route.kind === 'project' && activeProject
-              ? true
-              : undefined
-          }
           onboardingCompleted={config.onboardingCompleted === true}
-          identityScopeKey={LOCAL_TAB_IDENTITY_SCOPE}
         />
         {/* EntryShell is unmounted while a project is open, so the project route
             mounts the shared GitHub and updater controls into the tabs chrome. */}

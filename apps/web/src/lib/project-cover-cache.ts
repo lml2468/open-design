@@ -4,17 +4,14 @@
 // deck document fetch). Returning to a home surface used to re-run that scan
 // for every card in the grid even though nothing changed
 // (evidence/electron-project-waterfall-20260727). This cache remembers the
-// last successful decision per (workspace identity, project, version) so a remount
+// last successful decision per (project, version) so a remount
 // renders covers immediately and only re-probes what actually changed.
 //
 // Scope and staleness rules (handoff §4.2):
-// - The key carries the complete workspace authority identity, project id and the project's
-//   `updatedAt` version; a content update that bumps the project version
-//   misses the cache naturally, and covers never leak across workspaces.
+// - The key carries the project id and the project's `updatedAt` version; a
+//   content update that bumps the project version misses the cache naturally.
 // - The stored value carries the preview file identity (name + mtime) inside
 //   `ProjectCoverOverride`.
-// - `team-project-content-ready` (owner pushed new content) explicitly
-//   invalidates the project's entries before the forced re-probe.
 // - The map is capped: least-recently-used entries fall out, so this never
 //   becomes an unbounded process-global cache.
 
@@ -30,11 +27,10 @@ interface ProjectCoverSnapshot {
 const snapshots = new Map<string, ProjectCoverSnapshot>();
 
 export function projectCoverSnapshotKey(
-  workspaceIdentity: string | null | undefined,
   projectId: string,
   version: number,
 ): string {
-  return `${workspaceIdentity ?? 'local'}|${projectId}|${version}`;
+  return `${projectId}|${version}`;
 }
 
 /** `undefined` means "no snapshot"; a snapshot may hold a `null` cover. */
@@ -61,14 +57,13 @@ export function setProjectCoverSnapshot(
 }
 
 /**
- * Drop every stored version of one project's cover (all workspaces). Used
- * when authoritative content-changed events arrive so the next request
+ * Drop every stored version of one project's cover so the next request
  * re-probes instead of serving the stale decision.
  */
 export function invalidateProjectCoverSnapshots(projectId: string): void {
   for (const key of [...snapshots.keys()]) {
     const parts = key.split('|');
-    if (parts[1] === projectId) snapshots.delete(key);
+    if (parts[0] === projectId) snapshots.delete(key);
   }
 }
 

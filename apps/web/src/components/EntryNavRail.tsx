@@ -30,10 +30,7 @@ import {
   trackAccountMenuClick,
   trackEntryNavigationClick,
 } from '../analytics/events';
-import {
-  entryViewToTracking,
-  workspaceAnalyticsDimensions,
-} from '../analytics/workspace';
+import { entryViewToTracking } from '../analytics/workspace';
 import { workspaceChromeAccountActionsHost } from './workspaceChromeActions';
 
 const REPO_URL = 'https://github.com/nexu-io/open-design';
@@ -443,10 +440,8 @@ export function ProjectTopRightControls({
  */
 function RailSocialRow({
   page,
-  dimensions,
 }: {
   page: TrackingWorkspacePage;
-  dimensions: ReturnType<typeof workspaceAnalyticsDimensions>;
 }) {
   const { t, locale } = useI18n();
   const analytics = useAnalytics();
@@ -468,7 +463,6 @@ function RailSocialRow({
       page_name: page,
       area: 'account_menu',
       element,
-      ...dimensions,
     });
   }
 
@@ -527,7 +521,6 @@ export function EntryNavRail({
   const { t } = useI18n();
   const analytics = useAnalytics();
   const analyticsPage = entryViewToTracking(view);
-  const workspaceDimensions = workspaceAnalyticsDimensions(null);
   const communityLabel = t('pluginsHome.title');
   // #5517 renamed the rail's first item from 最近 (Recents) to 首页 (Home) —
   // the key keeps its historical name, the VALUE now reads Home in every
@@ -542,7 +535,6 @@ export function EntryNavRail({
       element: 'nav_item',
       target: entryViewToTracking(next),
       entry_from: 'sidebar',
-      ...workspaceDimensions,
     });
     onViewChange(next);
   };
@@ -585,7 +577,6 @@ export function EntryNavRail({
                 element: 'search',
                 target: 'search',
                 entry_from: 'sidebar',
-                ...workspaceDimensions,
               });
               onOpenSearch?.();
             }}
@@ -673,7 +664,7 @@ export function EntryNavRail({
         </NavButton>
       </div>
       <div className="entry-nav-rail__footer">
-        <RailSocialRow page={analyticsPage} dimensions={workspaceDimensions} />
+        <RailSocialRow page={analyticsPage} />
       </div>
       </div>
 

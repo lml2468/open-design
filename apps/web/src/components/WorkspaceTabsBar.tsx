@@ -14,7 +14,7 @@ import {
   subscribeWorkspaceTabsDock,
 } from './workspaceTabsDock';
 import { useT } from '../i18n';
-import { buildPath, navigate, type EntryHomeView, type Route } from '../router';
+import { navigate, type EntryHomeView, type Route } from '../router';
 import type { Project } from '../types';
 import { Icon, type IconName } from './Icon';
 import {
@@ -62,17 +62,6 @@ interface WorkspaceTabsState {
   activeTabId: string;
 }
 
-interface PersistedWorkspaceTabsSnapshot {
-  state: WorkspaceTabsState;
-  updatedAt: number;
-}
-
-interface PersistedWorkspaceTabsStore {
-  current: WorkspaceTabsState | null;
-  scopeKey: string | undefined;
-  scopes: Record<string, PersistedWorkspaceTabsSnapshot>;
-}
-
 interface DisplayTab {
   id: string;
   title: string;
@@ -91,37 +80,16 @@ interface TabDragTarget {
 interface Props {
   route: Route;
   projects: Project[];
-  /**
-   * Whether the local project currently named by `route` resolved successfully.
-   * `undefined` means the current route is not a resolved project and must not
-   * relax account-boundary resets.
-   */
-  activeProjectResolved?: boolean;
   // Once onboarding is finished, the permanent entry
   // tab must never linger on the 'onboarding' (Welcome) view — some completion
   // paths navigate straight to a new project/design-system and leave the entry
   // tab showing Welcome in the background. This flips it back to Home.
   onboardingCompleted?: boolean;
-  /**
-   * Stable "AMR account + active workspace" identity key the currently open
-   * tabs belong to (derived in App.tsx from `amrLoginStatus` +
-   * `workspaceContext` — see the comment there for the exact composition).
-   * `null` means "not resolved yet" (before the first AMR status read
-   * completes): the bar leaves whatever it already restored from
-   * localStorage untouched rather than guessing.
-   *
-   * Once resolved, each value owns an isolated tab snapshot. Switching to a
-   * different workspace restores only that scope's tabs (or a fresh Home tab
-   * on first visit), so returning to a workspace keeps its order and active
-   * tab without exposing those tabs in another scope.
-   */
-  identityScopeKey?: string | null;
 }
 
 const STORAGE_KEY = 'open-design:workspace-tabs:v1';
 const OPEN_WORKSPACE_TAB_EVENT = 'open-design:workspace-tabs:open';
 const REMOVE_WORKSPACE_PROJECT_TABS_EVENT = 'open-design:workspace-tabs:remove-project';
-const MAX_PERSISTED_TAB_SCOPES = 12;
 const TAB_DRAG_HAPTIC_MS = 8;
 const TAB_DROP_HAPTIC_MS = 12;
 
@@ -413,120 +381,37 @@ function reviveTabsState(value: unknown): WorkspaceTabsState | null {
   return normalizeTabsState({ tabs, activeTabId: activeTabId || tabs[0]!.id });
 }
 
-function readPersistedTabsStore(): PersistedWorkspaceTabsStore {
-  const empty: PersistedWorkspaceTabsStore = {
-    current: null,
-    scopeKey: undefined,
-    scopes: {},
-  };
-  if (typeof window === 'undefined') return empty;
+function readPersistedTabsState(): WorkspaceTabsState | null {
+  if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return empty;
+    if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
-    if (parsed === null || typeof parsed !== 'object') return empty;
-    const record = parsed as Record<string, unknown>;
-    const current = reviveTabsState(record);
-    const scopeKey = typeof record.scopeKey === 'string' ? record.scopeKey : undefined;
-    const scopes: Record<string, PersistedWorkspaceTabsSnapshot> = {};
-    if (record.scopes !== null && typeof record.scopes === 'object') {
-      for (const [key, value] of Object.entries(record.scopes as Record<string, unknown>)) {
-        if (!key || value === null || typeof value !== 'object') continue;
-        const snapshotRecord = value as Record<string, unknown>;
-        const state = reviveTabsState(snapshotRecord.state);
-        if (!state) continue;
-        scopes[key] = {
-          state,
-          updatedAt: typeof snapshotRecord.updatedAt === 'number'
-            ? snapshotRecord.updatedAt
-            : 0,
-        };
-      }
-    }
-    // Migrate the previous single-scope format in memory. It remains readable
-    // at the top level while the next write adds the scoped registry.
-    if (scopeKey && current && !scopes[scopeKey]) {
-      scopes[scopeKey] = { state: current, updatedAt: 0 };
-    }
-    return { current, scopeKey, scopes };
+    return reviveTabsState(parsed);
   } catch {
-    return empty;
+    return null;
   }
 }
 
-function persistTabsStore(
-  store: PersistedWorkspaceTabsStore,
-  currentScopeKey: string | undefined,
-  current: WorkspaceTabsState,
-): void {
+function persistTabsState(current: WorkspaceTabsState): void {
   if (typeof window === 'undefined') return;
   try {
-    const scopes = currentScopeKey
-      ? {
-          ...store.scopes,
-          [currentScopeKey]: {
-            state: normalizeTabsState(current),
-            updatedAt: Date.now(),
-          },
-        }
-      : store.scopes;
-    const retainedScopes = Object.fromEntries(
-      Object.entries(scopes)
-        .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
-        .slice(0, MAX_PERSISTED_TAB_SCOPES),
-    );
-    const payloadScopeKey = currentScopeKey ?? store.scopeKey;
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({
-        ...normalizeTabsState(current),
-        ...(payloadScopeKey ? { scopeKey: payloadScopeKey, scopes: retainedScopes } : {}),
-      }),
+      JSON.stringify(normalizeTabsState(current)),
     );
-    store.current = current;
-    store.scopeKey = payloadScopeKey;
-    store.scopes = retainedScopes;
   } catch {
     // Best-effort browser chrome state. Navigation itself remains URL-driven.
   }
 }
 
-function freshHomeTabsState(): WorkspaceTabsState {
-  const homeTab = createEntryTab('home');
-  return { tabs: [homeTab], activeTabId: homeTab.id };
-}
-
 function initialTabsState(
   route: Route,
-  persisted: PersistedWorkspaceTabsStore,
-  identityScopeKey: string | null | undefined,
+  persisted: WorkspaceTabsState | null,
 ): WorkspaceTabsState {
   const fallback = tabFromRoute(route);
   const fallbackState = { tabs: [fallback], activeTabId: fallback.id };
-  if (identityScopeKey === undefined) {
-    return syncStateToRoute(persisted.current ?? fallbackState, route);
-  }
-  if (identityScopeKey === null) {
-    // An unowned snapshot (no `scopeKey` stamp — written by a build that
-    // predates tab scoping) cannot be attributed to whichever identity is
-    // about to resolve, so it must not even be displayed provisionally
-    // (recvqziATl6LlJ / recvqxKdOz0S6g). Owned snapshots keep the warm-reload
-    // restore; the scope effect reconciles them once the identity resolves.
-    if (persisted.scopeKey === undefined) {
-      return syncStateToRoute(fallbackState, route);
-    }
-    return persisted.current ?? syncStateToRoute(fallbackState, route);
-  }
-  const scoped = persisted.scopes[identityScopeKey]?.state;
-  if (persisted.scopeKey === identityScopeKey) {
-    return syncStateToRoute(scoped ?? persisted.current ?? fallbackState, route);
-  }
-  if (persisted.scopeKey === undefined) {
-    // Same attribution rule with the scope already resolved at mount time:
-    // unowned storage never seeds a resolved scope. Route truth alone does.
-    return syncStateToRoute(fallbackState, route);
-  }
-  return scoped ?? freshHomeTabsState();
+  return syncStateToRoute(persisted ?? fallbackState, route);
 }
 
 function syncStateToRoute(state: WorkspaceTabsState, route: Route): WorkspaceTabsState {
@@ -612,30 +497,6 @@ function syncStateToRoute(state: WorkspaceTabsState, route: Route): WorkspaceTab
   return normalizeTabsState({ tabs: nextTabs, activeTabId: replacement.id });
 }
 
-function accountBucketForScope(scopeKey: string): string {
-  return scopeKey.split('::', 1)[0] ?? scopeKey;
-}
-
-function shouldRehomeResolvedProjectAfterSignIn({
-  previousScopeKey,
-  nextScopeKey,
-  route,
-  activeProjectResolved,
-}: {
-  previousScopeKey: string;
-  nextScopeKey: string;
-  route: Route;
-  activeProjectResolved: boolean | undefined;
-}): boolean {
-  return (
-    accountBucketForScope(previousScopeKey) === 'anon'
-    && accountBucketForScope(nextScopeKey) !== 'anon'
-    && route.kind === 'project'
-    && activeProjectResolved === true
-  );
-}
-
-
 /** Corner home glyph (per product: the brand tile gave way to a plain home
  *  icon). `currentColor` so it follows the button's muted/hover ink. */
 function ChromeHomeGlyph() {
@@ -649,27 +510,12 @@ function ChromeHomeGlyph() {
 export function WorkspaceTabsBar({
   route,
   projects,
-  activeProjectResolved,
   onboardingCompleted = false,
-  identityScopeKey,
 }: Props) {
   const t = useT();
-  const [persistedTabsStore] = useState(readPersistedTabsStore);
   const [state, setState] = useState<WorkspaceTabsState>(
-    () => initialTabsState(route, persistedTabsStore, identityScopeKey),
+    () => initialTabsState(route, readPersistedTabsState()),
   );
-  const lastSeenScopeKeyRef = useRef<string | undefined>(persistedTabsStore.scopeKey);
-  const resolvedScopeOnceRef = useRef(false);
-  const pendingScopeStateRef = useRef<{
-    scopeKey: string;
-    state: WorkspaceTabsState;
-  } | null>(null);
-  const pendingScopeRouteRef = useRef<{
-    scopeKey: string;
-    path: string;
-  } | null>(null);
-  const stateRef = useRef(state);
-  stateRef.current = state;
   // #5517 corner fan: the "+" button opens a corner-anchored radial menu of
   // template wedges instead of immediately spawning a home tab.
   const [radialMenu, setRadialMenu] = useState<{ x: number; y: number } | null>(null);
@@ -862,29 +708,8 @@ export function WorkspaceTabsBar({
     [displayTabs],
   );
   useEffect(() => {
-    if (identityScopeKey === null) return;
-    const pendingScopeRoute = pendingScopeRouteRef.current;
-    if (
-      pendingScopeRoute
-      && pendingScopeRoute.scopeKey === identityScopeKey
-    ) {
-      // React StrictMode replays mount effects without remounting refs. Keep
-      // rejecting the outgoing workspace URL until the router commits the
-      // route selected for the incoming scope.
-      if (pendingScopeRoute.path !== buildPath(route)) return;
-      pendingScopeRouteRef.current = null;
-    }
-    if (
-      typeof identityScopeKey === 'string'
-      && lastSeenScopeKeyRef.current !== identityScopeKey
-    ) {
-      // A workspace transition owns route reconciliation: the current URL can
-      // still describe the outgoing workspace for this render and must never
-      // be folded into the incoming workspace's snapshot.
-      return;
-    }
     setState((current) => syncStateToRoute(current, route));
-  }, [route, identityScopeKey]);
+  }, [route]);
 
   useEffect(() => {
     if (!previousOnboardingCompletedRef.current && onboardingCompleted) {
@@ -927,167 +752,6 @@ export function WorkspaceTabsBar({
       });
     });
   }, [onboardingCompleted, onboardingActive, route.kind]);
-
-  // Tab-scope enforcement: every AMR account + workspace key owns one isolated
-  // snapshot. Save the outgoing state before loading the incoming state, and
-  // navigate to that snapshot's active tab. The persistent registry is capped
-  // (MAX_PERSISTED_TAB_SCOPES), so workspace bouncing remains recoverable
-  // without turning localStorage into an unbounded recently-closed cache.
-  //
-  // Suppressed while onboarding is active: `createNewTab`/`openRadialMenu`
-  // are both gated on `onboardingActive`, so the ONLY tab that can exist
-  // during onboarding is the single pinned entry tab — there is nothing to
-  // protect against yet, and forcing a close+navigate-home mid-flow would
-  // eject the user from the Connect step before they finish it (a real
-  // scenario: finishing AMR sign-in mid-onboarding is exactly a scope change
-  // per this design). The new key is still recorded via the ref so the
-  // reconciliation does not re-fire the moment onboarding completes with a
-  // scope that has not changed again since.
-  useEffect(() => {
-    if (typeof identityScopeKey !== 'string') return;
-    const previous = lastSeenScopeKeyRef.current;
-    lastSeenScopeKeyRef.current = identityScopeKey;
-    const firstResolvedScope = !resolvedScopeOnceRef.current;
-    resolvedScopeOnceRef.current = true;
-    if (previous === identityScopeKey) return;
-
-    if (previous === undefined) {
-      // Upgrade compatibility, held to the attribution rule (recvqziATl6LlJ /
-      // recvqxKdOz0S6g): a legacy single snapshot has no owner stamp, so it
-      // must never be adopted into whichever scope happens to resolve first —
-      // the account that opened those tabs may have switched since (pre-scoping
-      // builds never closed tabs on an account swap), and adopting would
-      // surface another account's project tabs inside the current account's
-      // workspace. Tabs are bookmarks: when attribution is unknowable, drop
-      // the snapshot and rebuild from route truth (fresh Home plus whatever
-      // tab the current URL already points at). A session with no unowned
-      // snapshot in storage (fresh install / already-scoped storage) keeps
-      // adopting its own live, session-created state unchanged.
-      const unownedSnapshotInStorage =
-        persistedTabsStore.scopeKey === undefined && persistedTabsStore.current !== null;
-      const adopted = syncStateToRoute(
-        unownedSnapshotInStorage ? freshHomeTabsState() : stateRef.current,
-        route,
-      );
-      persistedTabsStore.scopes[identityScopeKey] = {
-        state: adopted,
-        updatedAt: Date.now(),
-      };
-      pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: adopted };
-      setState(adopted);
-      return;
-    }
-
-    if (!firstResolvedScope) {
-      persistedTabsStore.scopes[previous] = {
-        state: stateRef.current,
-        updatedAt: Date.now(),
-      };
-    }
-
-    if (onboardingActive) {
-      // Onboarding must not be interrupted by sign-in resolving a workspace:
-      // never navigate away from the flow. But re-homing the live state to
-      // the new scope is attribution, and the live state is not always the
-      // single pinned entry tab the flow itself creates — a snapshot restored
-      // at mount can ride along (browser localStorage outlives a daemon
-      // data-dir reset that replays onboarding). Within one account that is
-      // the owner's own state; across accounts (a direct mid-onboarding
-      // account swap) it must fail closed to a fresh Home state instead
-      // (recvqziATl6LlJ leak family) — visually identical for the legitimate
-      // sign-in-mid-onboarding case (a single entry tab either way, synced to
-      // the onboarding route), and never a cross-account tab transfer.
-      const rehomed =
-        accountBucketForScope(previous) === accountBucketForScope(identityScopeKey)
-          ? stateRef.current
-          : syncStateToRoute(freshHomeTabsState(), route);
-      persistedTabsStore.scopes[identityScopeKey] = {
-        state: rehomed,
-        updatedAt: Date.now(),
-      };
-      if (rehomed !== stateRef.current) {
-        pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: rehomed };
-        setState(rehomed);
-      }
-      return;
-    }
-
-    // Settings is app-local rather than Workspace-owned. Keep that explicit
-    // destination when leaving a project-pinned Workspace scope for the same
-    // account's ambient scope, and through the failed-run CTA's anonymous ->
-    // signed-in authorization handoff. Rebuild from a fresh entry tab so no
-    // project tab crosses the scope boundary. Account A -> B still falls
-    // through to the fail-closed reset below.
-    const previousAccountBucket = accountBucketForScope(previous);
-    const nextAccountBucket = accountBucketForScope(identityScopeKey);
-    if (
-      route.kind === 'home'
-      && route.view === 'settings'
-      && (
-        previousAccountBucket === nextAccountBucket
-        || (previousAccountBucket === 'anon' && nextAccountBucket !== 'anon')
-      )
-    ) {
-      const rehomed = syncStateToRoute(freshHomeTabsState(), route);
-      persistedTabsStore.scopes[identityScopeKey] = {
-        state: rehomed,
-        updatedAt: Date.now(),
-      };
-      pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: rehomed };
-      pendingScopeRouteRef.current = null;
-      setState(rehomed);
-      return;
-    }
-
-    // Inline "Authorize & retry" must finish the same run in place. Re-home
-    // only the live route tab (plus a fresh Home tab) when anonymous login
-    // resolves either an unbound local project or an exact witness for the
-    // resolved local project. Unresolved projects, sign-out, authenticated
-    // account A→B, and Team/Personal workspace switches all retain the
-    // fail-closed reset below.
-    if (shouldRehomeResolvedProjectAfterSignIn({
-      previousScopeKey: previous,
-      nextScopeKey: identityScopeKey,
-      route,
-      activeProjectResolved,
-    })) {
-      const rehomed = syncStateToRoute(freshHomeTabsState(), route);
-      persistedTabsStore.scopes[identityScopeKey] = {
-        state: rehomed,
-        updatedAt: Date.now(),
-      };
-      pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: rehomed };
-      pendingScopeRouteRef.current = null;
-      setState(rehomed);
-      return;
-    }
-
-    // Preserve the prior fail-closed authentication boundary: workspace
-    // bouncing within one account is recoverable, but sign-out or an account
-    // change always lands on a fresh Home state instead of reviving browser
-    // chrome from a previous authenticated session.
-    const mayRestore =
-      accountBucketForScope(previous) === accountBucketForScope(identityScopeKey);
-    const nextState = mayRestore
-      ? persistedTabsStore.scopes[identityScopeKey]?.state ?? freshHomeTabsState()
-      : freshHomeTabsState();
-    pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: nextState };
-    setState(nextState);
-    const activeTab =
-      nextState.tabs.find((tab) => tab.id === nextState.activeTabId) ?? nextState.tabs[0]!;
-    const nextRoute = routeForTab(activeTab);
-    const nextPath = buildPath(nextRoute);
-    pendingScopeRouteRef.current = buildPath(route) === nextPath
-      ? null
-      : { scopeKey: identityScopeKey, path: nextPath };
-    navigate(nextRoute);
-  }, [
-    activeProjectResolved,
-    identityScopeKey,
-    onboardingActive,
-    persistedTabsStore,
-    route,
-  ]);
 
   // Scroll the active tab into view when it changes. The strip itself
   // is native-scrollable horizontally (see CSS), so we just nudge the
@@ -1213,21 +877,8 @@ export function WorkspaceTabsBar({
   }, [state.activeTabId, state.tabs.length]);
 
   useEffect(() => {
-    const pending = pendingScopeStateRef.current;
-    if (pending) {
-      // Effects from the render that observed a NEW scope still close over the
-      // OLD scope's state. Wait for React to commit the selected snapshot
-      // before associating any state with the incoming key.
-      if (pending.scopeKey !== identityScopeKey || pending.state !== state) return;
-      pendingScopeStateRef.current = null;
-    }
-    if (identityScopeKey === null) return;
-    persistTabsStore(
-      persistedTabsStore,
-      typeof identityScopeKey === 'string' ? identityScopeKey : undefined,
-      state,
-    );
-  }, [state, identityScopeKey, persistedTabsStore]);
+    persistTabsState(state);
+  }, [state]);
 
   useEffect(() => {
     function onWorkspaceTabShortcut(event: KeyboardEvent) {

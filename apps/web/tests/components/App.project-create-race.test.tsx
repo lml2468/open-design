@@ -420,18 +420,11 @@ vi.mock('../../src/components/ProjectView', () => ({
 
 vi.mock('../../src/components/WorkspaceTabsBar', () => ({
   WorkspaceTabsBar: ({
-    activeProjectResolved,
     projects,
   }: {
-    activeProjectResolved?: boolean;
     projects: Project[];
   }) => (
     <>
-      <span data-testid="workspace-tabs-active-project-resolution">
-        {activeProjectResolved === undefined
-          ? 'unresolved'
-          : activeProjectResolved ? 'resolved' : 'missing'}
-      </span>
       {projects.map((project) => (
         <span key={project.id} data-testid={`workspace-tab-name-${project.id}`}>
           {project.name}
@@ -1841,10 +1834,6 @@ describe('App project creation routing', () => {
 
     await screen.findByTestId('project-view');
     expect(mockedGetProject).not.toHaveBeenCalled();
-    expect(screen.getByTestId('workspace-tabs-active-project-resolution').textContent).toBe(
-      'resolved',
-    );
-
     await act(async () => {
       directoryResponse.resolve({
         ok: true,
@@ -1855,11 +1844,6 @@ describe('App project creation routing', () => {
       await directoryResponse.promise;
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('workspace-tabs-active-project-resolution').textContent).toBe(
-        'resolved',
-      );
-    });
     expect(mockedGetProject).not.toHaveBeenCalled();
   });
 
@@ -2310,20 +2294,6 @@ describe('App project creation routing', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to projects' }));
     expect(await screen.findByTestId('entry-project-project-new')).not.toBeNull();
-  });
-
-  it('passes active local project resolution to the tab switch guard', async () => {
-    stubWorkspaceContext('ws-1', 'wm-1');
-    mockedListProjects.mockResolvedValue([existingProject]);
-
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Existing project' }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('workspace-tabs-active-project-resolution').textContent).toBe(
-        'resolved',
-      );
-    });
   });
 
   it('returns from full-page Settings to the exact project conversation and file route', async () => {

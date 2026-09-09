@@ -57,7 +57,6 @@ type DesignListItem =
 const DESIGNS_VIEW_STORAGE_KEY = "od:designs:view";
 const PROJECTS_AUTO_REFRESH_MS = 15000;
 const MAX_BACKGROUND_PROJECT_READS = 2;
-const LOCAL_PROJECT_COVER_SCOPE = "local";
 
 async function mapWithConcurrency<T, R>(
 	items: readonly T[],
@@ -228,7 +227,7 @@ export function DesignsTab({
 		const immediateEntries: Array<readonly [string, ProjectCoverOverride | null]> = [];
 		const unresolvedProjects = projects.filter((project) => {
 			const snapshot = getProjectCoverSnapshot(
-				projectCoverSnapshotKey(LOCAL_PROJECT_COVER_SCOPE, project.id, project.updatedAt),
+				projectCoverSnapshotKey(project.id, project.updatedAt),
 			);
 			if (snapshot === undefined) return true;
 			immediateEntries.push([project.id, snapshot.cover] as const);
@@ -275,7 +274,7 @@ export function DesignsTab({
 					}
 				}
 				setProjectCoverSnapshot(
-					projectCoverSnapshotKey(LOCAL_PROJECT_COVER_SCOPE, project.id, project.updatedAt),
+					projectCoverSnapshotKey(project.id, project.updatedAt),
 					cover,
 				);
 				return [project.id, cover] as const;

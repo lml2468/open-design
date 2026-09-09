@@ -171,11 +171,7 @@ export function RailRecentRow({
   onDelete?: (id: string) => Promise<boolean | void> | boolean | void;
 }) {
   const t = useT();
-  const snapshotKey = projectCoverSnapshotKey(
-    'local',
-    project.id,
-    project.updatedAt,
-  );
+  const snapshotKey = projectCoverSnapshotKey(project.id, project.updatedAt);
   const [cover, setCover] = useState<CoverState>(
     () => getProjectCoverSnapshot(snapshotKey)?.cover,
   );
