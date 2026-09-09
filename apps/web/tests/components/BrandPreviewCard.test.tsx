@@ -3,27 +3,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { BrandSummary, WorkspaceCollabContext } from '@open-design/contracts';
-import { workspaceContextFixture } from '../helpers/workspace-context';
-
-const workspaceContextState = vi.hoisted(() => ({
-  context: null as WorkspaceCollabContext | null,
-  resourceReadIdentity: undefined as
-    | { context: WorkspaceCollabContext; generation: string }
-    | null
-    | undefined,
-  loading: false,
-}));
-const fetchProjectFileTextMock = vi.hoisted(() => vi.fn(async () => null as string | null));
-
-vi.mock('../../src/collab/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => workspaceContextState,
-  workspaceResourceReadContext: (state: typeof workspaceContextState) => state.context,
-}));
+import type { BrandSummary } from '@open-design/contracts';
 
 vi.mock('../../src/providers/registry', () => ({
   projectRawUrl: (projectId: string, filePath: string) => `/raw/${projectId}/${filePath}`,
-  fetchProjectFileText: fetchProjectFileTextMock,
+  fetchProjectFileText: vi.fn(async () => null as string | null),
 }));
 
 import { BrandPreviewCard } from '../../src/components/BrandPreviewCard';
@@ -68,10 +52,6 @@ describe('BrandPreviewCard', () => {
         json: async () => ({}),
       }),
     );
-    workspaceContextState.context = null;
-    workspaceContextState.resourceReadIdentity = undefined;
-    fetchProjectFileTextMock.mockClear();
-    fetchProjectFileTextMock.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -120,41 +100,6 @@ describe('BrandPreviewCard', () => {
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: /landing page/i })).toBeNull();
-    });
-  });
-
-  it('resets the real kit preview and font read when only the read generation advances', async () => {
-    const context = workspaceContextFixture({
-      workspaceId: 'workspace-preview',
-      workspaceType: 'personal',
-      workspaceMemberId: 'member-preview',
-    });
-    workspaceContextState.context = context;
-    workspaceContextState.resourceReadIdentity = { context, generation: 'generation-a' };
-
-    const view = render(
-      <I18nProvider initial="en">
-        <BrandPreviewCard summary={rampBrand} variant="panel" />
-      </I18nProvider>,
-    );
-    await waitFor(() => expect(fetchProjectFileTextMock).toHaveBeenCalledTimes(1));
-    const logo = screen.getByTestId('brand-preview-card').querySelector('img');
-    expect(logo?.getAttribute('src')).toContain('/api/brands/brand-ramp/logo');
-    fireEvent.error(logo!);
-    expect(screen.getByTestId('brand-preview-card').querySelector('img')?.getAttribute('src'))
-      .toBe('/raw/project-ramp/logos/ramp.svg');
-
-    workspaceContextState.resourceReadIdentity = { context, generation: 'generation-b' };
-    view.rerender(
-      <I18nProvider initial="en">
-        <BrandPreviewCard summary={rampBrand} variant="panel" />
-      </I18nProvider>,
-    );
-
-    await waitFor(() => {
-      expect(fetchProjectFileTextMock).toHaveBeenCalledTimes(2);
-      expect(screen.getByTestId('brand-preview-card').querySelector('img')?.getAttribute('src'))
-        .toContain('/api/brands/brand-ramp/logo');
     });
   });
 

@@ -10533,7 +10533,6 @@ export function ProjectView({
                   variant="icon"
                   designSystems={designSystems}
                   selectedId={projectDesignSystemId ?? null}
-                  workspaceContext={projectRunWorkspaceContext}
                   disabled={projectMutationReadOnly}
                   onChange={handleChangeDesignSystemId}
                 />
@@ -10668,7 +10667,6 @@ export function ProjectView({
       {contextPluginDetails ? (
         <PluginDetailsModal
           record={contextPluginDetails}
-          workspaceContext={projectRunWorkspaceContext}
           onClose={() => setContextPluginDetails(null)}
           onUse={() => setContextPluginDetails(null)}
           onDuplicate={(record) => void handleDuplicateContextPlugin(record)}
@@ -10679,7 +10677,6 @@ export function ProjectView({
       {contextDesignSystemDetails ? (
         <DesignSystemPreviewModal
           system={contextDesignSystemDetails}
-          workspaceContext={projectRunWorkspaceContext}
           initialViewId="kit"
           onClose={() => setContextDesignSystemDetails(null)}
         />

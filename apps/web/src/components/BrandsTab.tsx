@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@open-design/components';
-import type { BrandSummary, WorkspaceCollabContext } from '@open-design/contracts';
+import type { BrandSummary } from '@open-design/contracts';
 import { useT } from '../i18n';
 import { navigate, useRoute } from '../router';
 import {
@@ -14,11 +14,6 @@ import { BrandLogo, BrandPreviewCard, hostnameOf } from './BrandPreviewCard';
 import { BrandReferencePicker } from './BrandReferencePicker';
 import { NewBrandModal } from './NewBrandModal';
 import styles from './BrandsTab.module.css';
-import { useWorkspaceContext } from '../collab/useWorkspaceContext';
-import {
-  resolveWorkspaceResourceReadIdentity,
-  workspaceResourceReadIdentityKey,
-} from '../collab/workspace-identity';
 
 export interface BrandsTabProps {
   /**
@@ -35,10 +30,6 @@ export interface BrandsTabProps {
 
 export function BrandsTab({ onApplyDesignSystem, onOpenProject, onDesignSystemsRefresh }: BrandsTabProps = {}) {
   const t = useT();
-  const workspaceState = useWorkspaceContext();
-  const resourceReadIdentity = resolveWorkspaceResourceReadIdentity(workspaceState);
-  const workspaceContext = resourceReadIdentity?.context ?? null;
-  const workspaceReadGeneration = workspaceResourceReadIdentityKey(resourceReadIdentity);
   const route = useRoute();
   // A `/brands/:id` deep-link (from the rail, a chat link, or a shared URL)
   // preselects which brand the inline preview renders. Undefined on `/brands`.
@@ -213,8 +204,6 @@ export function BrandsTab({ onApplyDesignSystem, onOpenProject, onDesignSystemsR
                 summary={summary}
                 active={summary.meta.id === selectedBrandId}
                 onSelect={handleSelect}
-                workspaceContext={workspaceContext}
-                workspaceReadGeneration={workspaceReadGeneration}
               />
             ))
           )}
@@ -263,16 +252,12 @@ interface ListItemProps {
   summary: BrandSummary;
   active: boolean;
   onSelect: (id: string) => void;
-  workspaceContext: WorkspaceCollabContext | null;
-  workspaceReadGeneration: string;
 }
 
 function BrandListItem({
   summary,
   active,
   onSelect,
-  workspaceContext,
-  workspaceReadGeneration,
 }: ListItemProps) {
   const t = useT();
   const { meta, brand } = summary;
@@ -297,8 +282,6 @@ function BrandListItem({
           faviconSize={64}
           className={styles.itemLogo}
           fallbackClassName={styles.itemLogoFallback}
-          workspaceContext={workspaceContext}
-          readGeneration={workspaceReadGeneration}
         />
       </span>
       <span className={styles.itemMeta}>

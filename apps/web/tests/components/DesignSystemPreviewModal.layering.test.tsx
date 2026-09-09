@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { createElement, type ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 import { DesignSystemPreviewModal } from '../../src/components/DesignSystemPreviewModal';
 import { I18nProvider } from '../../src/i18n';
@@ -14,7 +12,6 @@ const {
   fetchDesignSystemShowcaseMock,
   fetchProjectFileTextMock,
   projectRawUrlMock,
-  workspaceContextState,
 } = vi.hoisted(() => ({
   fetchDesignSystemMock: vi.fn(async () => ({
     id: 'claymorphism',
@@ -33,15 +30,8 @@ const {
           typography: {},
         })
       : null),
-  projectRawUrlMock: vi.fn((projectId: string, filePath: string, context?: WorkspaceCollabContext | null) =>
-    context
-      ? `/raw/${projectId}/${filePath}?workspaceId=${context.workspaceId}&workspaceMemberId=${context.workspaceMemberId}`
-      : `/raw/${projectId}/${filePath}`),
-  workspaceContextState: {
-    context: null as WorkspaceCollabContext | null,
-    resourceReadIdentity: null as { context: WorkspaceCollabContext; generation: string } | null,
-    loading: false,
-  },
+  projectRawUrlMock: vi.fn((projectId: string, filePath: string) =>
+    `/raw/${projectId}/${filePath}`),
 }));
 
 vi.mock('../../src/providers/registry', () => ({
@@ -54,12 +44,6 @@ vi.mock('../../src/providers/registry', () => ({
   projectRawUrl: projectRawUrlMock,
 }));
 
-vi.mock('../../src/collab/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => workspaceContextState,
-  workspaceResourceReadContext: (state: typeof workspaceContextState) =>
-    state.resourceReadIdentity?.context ?? state.context,
-}));
-
 const SYSTEM = {
   id: 'claymorphism',
   title: 'Claymorphism',
@@ -67,29 +51,6 @@ const SYSTEM = {
   category: 'style',
   source: 'built-in',
 } as DesignSystemSummary;
-
-const PROJECT_WORKSPACE_CONTEXT: WorkspaceCollabContext = {
-  workspaceId: 'workspace-project',
-  workspaceType: 'team',
-  workspaceMemberId: 'member-viewer',
-  role: 'member',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  billingState: 'active',
-  planId: null,
-  providerMode: 'platform_credits',
-  seatSummary: { seatLimit: 3, usedSeats: 2, availableSeats: 1, isSeatFull: false },
-  permissions: {
-    canManageMembers: false,
-    canManageBilling: false,
-    canInviteMembers: false,
-    canManageAutoRecharge: false,
-    canShareProjects: true,
-    canWriteSyncedFiles: false,
-    canViewWorkspaceSettings: false,
-    canManageSharedResources: false,
-  },
-};
 
 function renderInsideStackingContext() {
   const host = document.createElement('div');
@@ -117,18 +78,9 @@ describe('DesignSystemPreviewModal layering', () => {
     fetchDesignSystemMock.mockClear();
     fetchProjectFileTextMock.mockClear();
     projectRawUrlMock.mockClear();
-    workspaceContextState.context = null;
-    workspaceContextState.resourceReadIdentity = null;
-    workspaceContextState.loading = false;
   });
 
-  it('uses the exact directory read identity while the richer context is loading', async () => {
-    workspaceContextState.resourceReadIdentity = {
-      context: PROJECT_WORKSPACE_CONTEXT,
-      generation: 'directory-generation',
-    };
-    workspaceContextState.loading = true;
-
+  it('loads project-backed kit assets without Workspace authority', async () => {
     render(
       <I18nProvider>
         <DesignSystemPreviewModal
@@ -144,27 +96,6 @@ describe('DesignSystemPreviewModal layering', () => {
         'project-clay',
         'logos/mark.svg',
       );
-    });
-  });
-
-  it('uses the exact project Workspace scope when the ambient shell context is unresolved', async () => {
-    const props = {
-      system: { ...SYSTEM, projectId: 'project-clay' },
-      initialViewId: 'kit' as const,
-      onClose: () => {},
-      workspaceContext: PROJECT_WORKSPACE_CONTEXT,
-    } as ComponentProps<typeof DesignSystemPreviewModal> & {
-      workspaceContext: WorkspaceCollabContext;
-    };
-
-    render(
-      <I18nProvider>
-        {createElement(DesignSystemPreviewModal, props)}
-      </I18nProvider>,
-    );
-
-    await waitFor(() => {
-      expect(fetchDesignSystemMock).toHaveBeenCalledWith('claymorphism');
     });
   });
 
