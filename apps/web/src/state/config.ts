@@ -1290,15 +1290,7 @@ export async function syncConfigToDaemon(
   try {
     const response = await fetch('/api/app-config', {
       method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        ...(prefs.orbit?.workspaceScope
-          ? {
-              'x-od-workspace-id': prefs.orbit.workspaceScope.workspaceId,
-              'x-od-workspace-member-id': prefs.orbit.workspaceScope.workspaceMemberId,
-            }
-          : {}),
-      },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(prefs),
     });
     if (!response.ok) throw new Error(`Failed to sync app config (${response.status})`);

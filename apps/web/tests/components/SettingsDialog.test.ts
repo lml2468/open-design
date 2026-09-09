@@ -1236,49 +1236,20 @@ describe('SettingsDialog Orbit run behavior', () => {
     });
   });
 
-  it('pins a manual Orbit run to the exact tab Workspace identity', () => {
-    const configured = configForManualOrbitRun(
-      {
-        ...baseConfig,
-        orbit: {
-          enabled: true,
-          time: '09:30',
-          templateSkillId: null,
-        },
+  it('keeps manual Orbit runs daemon-local', () => {
+    const configured = configForManualOrbitRun({
+      ...baseConfig,
+      orbit: {
+        enabled: true,
+        time: '09:30',
+        templateSkillId: null,
       },
-      {
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-        workspaceType: 'team',
-        workspaceName: 'A',
-        role: 'owner',
-        memberStatus: 'active',
-        lifecycleState: 'active',
-        billingState: 'active',
-        planId: 'team_basic',
-        providerMode: 'platform_credits',
-        seatSummary: {
-          seatLimit: 3,
-          usedSeats: 1,
-          availableSeats: 2,
-          isSeatFull: false,
-        },
-        permissions: {
-          canManageMembers: true,
-          canManageBilling: true,
-          canInviteMembers: true,
-          canManageAutoRecharge: true,
-          canShareProjects: true,
-          canWriteSyncedFiles: true,
-          canViewWorkspaceSettings: true,
-          canManageSharedResources: true,
-        },
-      },
-    );
+    });
 
-    expect(configured.orbit?.workspaceScope).toEqual({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
+    expect(configured.orbit).toEqual({
+      enabled: true,
+      time: '09:30',
+      templateSkillId: 'orbit-general',
     });
   });
 });

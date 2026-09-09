@@ -95,10 +95,6 @@ export interface OrbitConfigPrefs {
   enabled: boolean;
   time: string;
   templateSkillId?: string | null;
-  workspaceScope?: {
-    workspaceId: string;
-    workspaceMemberId: string;
-  } | null;
 }
 
 export interface ProjectLocationPrefs {
@@ -331,24 +327,6 @@ function validateOrbit(raw: unknown): OrbitConfigPrefs | undefined {
       ? obj.templateSkillId.trim()
       : null;
   }
-  if (Object.hasOwn(obj, 'workspaceScope')) {
-    const rawScope = obj.workspaceScope;
-    if (rawScope && typeof rawScope === 'object' && !Array.isArray(rawScope)) {
-      const workspaceId =
-        typeof (rawScope as Record<string, unknown>).workspaceId === 'string'
-          ? ((rawScope as Record<string, unknown>).workspaceId as string).trim()
-          : '';
-      const workspaceMemberId =
-        typeof (rawScope as Record<string, unknown>).workspaceMemberId === 'string'
-          ? ((rawScope as Record<string, unknown>).workspaceMemberId as string).trim()
-          : '';
-      orbit.workspaceScope =
-        workspaceId && workspaceMemberId ? { workspaceId, workspaceMemberId } : null;
-    } else {
-      orbit.workspaceScope = null;
-    }
-  }
-
   return orbit;
 }
 
@@ -608,19 +586,6 @@ function applyConfigValue(
   if (key === 'orbit') {
     const validated = validateOrbit(value);
     if (validated !== undefined) {
-      const existingOrbit = target[key] as OrbitConfigPrefs | undefined;
-      if (
-        value
-        && typeof value === 'object'
-        && !Array.isArray(value)
-        && !Object.hasOwn(value, 'workspaceScope')
-        && existingOrbit?.workspaceScope
-      ) {
-        // Older clients do not know this field. Editing Orbit time/enabled
-        // must not silently convert an already-scoped unattended automation
-        // back into an ambient/unbound one. An explicit null still clears it.
-        validated.workspaceScope = existingOrbit.workspaceScope;
-      }
       target[key] = validated;
     } else {
       delete target[key];

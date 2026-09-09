@@ -30,11 +30,11 @@ import { getAgentDef } from '../src/agents.js';
 import { readAppConfig, writeAppConfig } from '../src/app-config.js';
 import { readMemoryConfig, writeMemoryConfig } from '../src/memory.js';
 import {
-  ensureWorkspaceProject,
   getProject,
   upsertMessage,
 } from '../src/db.js';
 import { seedLegacyWorkspaceResource } from './helpers/legacy-workspace-resources.js';
+import { seedLegacyWorkspaceProject } from './helpers/legacy-workspace-projects.js';
 
 
 async function withFakeAgent<T>(
@@ -109,7 +109,7 @@ describe('/api/chat', () => {
 
     const sqlite = new Database(resolve(process.env.OD_DATA_DIR, 'app.sqlite'));
     try {
-      ensureWorkspaceProject(sqlite as never, {
+      seedLegacyWorkspaceProject(sqlite, {
         projectId,
         workspaceId,
         visibility: 'personal',

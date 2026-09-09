@@ -3,34 +3,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const workspaceA = {
-  workspaceId: 'workspace-a',
-  workspaceMemberId: 'member-a',
-  workspaceType: 'team' as const,
-  workspaceName: 'A',
-  role: 'owner' as const,
-  memberStatus: 'active' as const,
-  lifecycleState: 'active' as const,
-  permissions: {
-    canManageWorkspace: true,
-    canManageMembers: true,
-    canManageBilling: true,
-    canShareProjects: true,
-    canWriteSyncedFiles: true,
-  },
-};
-const workspaceB = {
-  ...workspaceA,
-  workspaceId: 'workspace-b',
-  workspaceMemberId: 'member-b',
-  workspaceName: 'B',
-};
-let workspaceContext: any = workspaceA;
-
-vi.mock('../../src/collab/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => ({ context: workspaceContext, loading: false }),
-}));
-
 vi.mock('../../src/state/projects', () => ({
   listProjects: vi.fn(async () => []),
 }));
@@ -44,12 +16,11 @@ afterEach(() => {
   cleanup();
   globalThis.fetch = originalFetch;
   window.confirm = originalConfirm;
-  workspaceContext = workspaceA;
   vi.restoreAllMocks();
 });
 
-describe('RoutinesSection Workspace scope', () => {
-  it('persists the exact tab Workspace for create-each-run automations', async () => {
+describe('RoutinesSection local automation requests', () => {
+  it('creates automations without retired Workspace identity', async () => {
     const creates: Array<{ body: any; headers: Headers }> = [];
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
@@ -88,15 +59,12 @@ describe('RoutinesSection Workspace scope', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => expect(creates).toHaveLength(1));
-    expect(creates[0]!.body.context.workspaceScope).toEqual({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    });
-    expect(creates[0]!.headers.get('x-od-workspace-id')).toBe('workspace-a');
-    expect(creates[0]!.headers.get('x-od-workspace-member-id')).toBe('member-a');
+    expect(creates[0]!.body).not.toHaveProperty('context.workspaceScope');
+    expect(creates[0]!.headers.get('x-od-workspace-id')).toBeNull();
+    expect(creates[0]!.headers.get('x-od-workspace-member-id')).toBeNull();
   });
 
-  it('keeps a stale A card action scoped to A while the shell switches to B', async () => {
+  it('keeps card actions daemon-local', async () => {
     const patches: Headers[] = [];
     const routineA = {
       id: 'routine-a',
@@ -120,15 +88,11 @@ describe('RoutinesSection Workspace scope', () => {
     };
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
-      const headers = new Headers(init?.headers);
       if (url === '/api/routines' && !init?.method) {
-        if (headers.get('x-od-workspace-id') === 'workspace-b') {
-          return await new Promise<Response>(() => {});
-        }
         return Response.json({ routines: [routineA] });
       }
       if (url === '/api/routines/routine-a' && init?.method === 'PATCH') {
-        patches.push(headers);
+        patches.push(new Headers(init?.headers));
         return Response.json({
           routine: { ...routineA, enabled: false },
         });
@@ -139,16 +103,15 @@ describe('RoutinesSection Workspace scope', () => {
     const view = render(<RoutinesSection />);
     expect(await screen.findByText('A digest')).toBeTruthy();
 
-    workspaceContext = workspaceB;
     view.rerender(<RoutinesSection />);
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
 
     await waitFor(() => expect(patches).toHaveLength(1));
-    expect(patches[0]!.get('x-od-workspace-id')).toBe('workspace-a');
-    expect(patches[0]!.get('x-od-workspace-member-id')).toBe('member-a');
+    expect(patches[0]!.get('x-od-workspace-id')).toBeNull();
+    expect(patches[0]!.get('x-od-workspace-member-id')).toBeNull();
   });
 
-  it('uses the routine scope for list, run, history, and delete requests', async () => {
+  it('omits Workspace identity from list, run, history, and delete requests', async () => {
     const observed = new Map<string, Headers>();
     const routineA = {
       id: 'routine-a',
@@ -210,8 +173,8 @@ describe('RoutinesSection Workspace scope', () => {
       'GET /api/routines/routine-a/runs?limit=10',
       'DELETE /api/routines/routine-a',
     ]) {
-      expect(observed.get(key)?.get('x-od-workspace-id'), key).toBe('workspace-a');
-      expect(observed.get(key)?.get('x-od-workspace-member-id'), key).toBe('member-a');
+      expect(observed.get(key)?.get('x-od-workspace-id'), key).toBeNull();
+      expect(observed.get(key)?.get('x-od-workspace-member-id'), key).toBeNull();
     }
   });
 });

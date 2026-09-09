@@ -8,13 +8,13 @@ import path from 'node:path';
 import { registerBrandRoutes, type BrandRoutesDeps } from '../src/brand-routes.js';
 import {
   closeDatabase,
-  getWorkspaceProjectByProjectId,
   insertConversation,
   insertProject,
   listMessages,
   openDatabase,
   upsertMessage,
 } from '../src/db.js';
+import { getLegacyWorkspaceProjectByProjectId } from './helpers/legacy-workspace-projects.js';
 import type { PrefetchResult } from '../src/brands/prefetch.js';
 
 const NO_LOGO_FALLBACK = async () => ({ changed: false });
@@ -630,7 +630,7 @@ describe('brand routes', () => {
       });
       expect(started.status).toBe(200);
 
-      expect(getWorkspaceProjectByProjectId(db, started.body.projectId)).toBeUndefined();
+      expect(getLegacyWorkspaceProjectByProjectId(db, started.body.projectId)).toBeUndefined();
     } finally {
       await server.close();
     }
@@ -679,7 +679,7 @@ describe('brand routes', () => {
         body: { url: 'https://example.com', description: 'Signed-out single-player brand.' },
       });
       expect(started.status).toBe(200);
-      expect(getWorkspaceProjectByProjectId(db, started.body.projectId)).toBeUndefined();
+      expect(getLegacyWorkspaceProjectByProjectId(db, started.body.projectId)).toBeUndefined();
     } finally {
       await server.close();
     }

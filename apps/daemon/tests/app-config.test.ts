@@ -161,7 +161,7 @@ describe('app-config', () => {
       expect(cfg.orbit).not.toHaveProperty('templateSkillId');
     });
 
-    it('preserves only the minimal persisted Orbit Workspace identity', async () => {
+    it('drops retired Orbit Workspace identity from stored config', async () => {
       await writeFile(
         path.join(dataDir, 'app-config.json'),
         JSON.stringify({
@@ -179,13 +179,13 @@ describe('app-config', () => {
 
       const cfg = await readAppConfig(dataDir);
 
-      expect(cfg.orbit?.workspaceScope).toEqual({
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
+      expect(cfg.orbit).toEqual({
+        enabled: true,
+        time: '09:30',
       });
     });
 
-    it('keeps scoped Orbit identity when an older client updates Orbit without that field', async () => {
+    it('does not preserve retired Orbit Workspace identity across writes', async () => {
       await writeAppConfig(dataDir, {
         orbit: {
           enabled: true,
@@ -195,7 +195,7 @@ describe('app-config', () => {
             workspaceMemberId: 'member-a',
           },
         },
-      });
+      } as any);
 
       await writeAppConfig(dataDir, {
         orbit: {
@@ -208,15 +208,11 @@ describe('app-config', () => {
         orbit: {
           enabled: false,
           time: '10:15',
-          workspaceScope: {
-            workspaceId: 'workspace-a',
-            workspaceMemberId: 'member-a',
-          },
         },
       });
     });
 
-    it('allows an explicit null to clear a persisted Orbit Workspace identity', async () => {
+    it('ignores an explicit legacy Orbit Workspace scope', async () => {
       await writeAppConfig(dataDir, {
         orbit: {
           enabled: true,
@@ -226,7 +222,7 @@ describe('app-config', () => {
             workspaceMemberId: 'member-a',
           },
         },
-      });
+      } as any);
 
       await writeAppConfig(dataDir, {
         orbit: {
@@ -234,13 +230,12 @@ describe('app-config', () => {
           time: '10:15',
           workspaceScope: null,
         },
-      });
+      } as any);
 
       await expect(readAppConfig(dataDir)).resolves.toMatchObject({
         orbit: {
           enabled: false,
           time: '10:15',
-          workspaceScope: null,
         },
       });
     });

@@ -18,8 +18,8 @@ import express from 'express';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
-  ensureWorkspaceProject,
 } from '../src/db.js';
+import { seedLegacyWorkspaceProject } from './helpers/legacy-workspace-projects.js';
 import { registerGenuiRoutes } from '../src/routes/genui.js';
 import { startServer } from '../src/server.js';
 
@@ -222,7 +222,7 @@ describe('GET /api/runs/:runId/genui/:surfaceId enriches with snapshot spec', ()
     const db = new Database(dbPath);
     const runId = `run-phase2a5-${Date.now()}`;
     const surfaceRowId = `srf-phase2a5-${Date.now()}`;
-    ensureWorkspaceProject(db, {
+    seedLegacyWorkspaceProject(db, {
       projectId,
       workspaceId: WORKSPACE_ID,
       visibility: 'team',

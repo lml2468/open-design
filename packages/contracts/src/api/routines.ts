@@ -4,7 +4,6 @@
 
 import type { AutomationSourceIngestionResponse } from './automations.js';
 import type { RunContextSelection } from './context.js';
-import type { AutomationWorkspaceScope } from './app-config.js';
 
 export type RoutineScheduleKind =
   | 'hourly'
@@ -105,13 +104,7 @@ export interface Routine {
   updatedAt: number;
 }
 
-export interface RoutineContextSelection extends RunContextSelection {
-  /**
-   * Persisted only for create_each_run. Reuse routines derive their Workspace
-   * from the target project's binding instead of this field.
-   */
-  workspaceScope?: AutomationWorkspaceScope | null;
-}
+export type RoutineContextSelection = RunContextSelection;
 
 export interface RoutineRun {
   id: string;

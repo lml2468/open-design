@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { closeDatabase, openDatabase } from '../src/db.js';
 
-describe('retired workspace_resources schema', () => {
+describe('retired Workspace schema', () => {
   let tempDir: string | null = null;
 
   afterEach(() => {
@@ -19,6 +19,17 @@ describe('retired workspace_resources schema', () => {
 
     const table = db.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workspace_resources'",
+    ).get();
+
+    expect(table).toBeUndefined();
+  });
+
+  it('does not create the retired Workspace project-binding table', () => {
+    tempDir = mkdtempSync(path.join(os.tmpdir(), 'od-retired-workspace-projects-'));
+    const db = openDatabase(tempDir, { dataDir: tempDir });
+
+    const table = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workspace_projects'",
     ).get();
 
     expect(table).toBeUndefined();

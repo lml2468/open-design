@@ -27,7 +27,6 @@ import {
   type ToolTokenGrant,
 } from '../tool-tokens.js';
 import { scaffoldHyperFramesComposition } from '../media/hyperframes-scaffold.js';
-import { normalizePersistedAutomationWorkspaceScope } from '../automations/workspace-scope.js';
 
 const LONG_MEDIA_PROXY_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -584,36 +583,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       return res.status(403).json({ error: 'cross-origin request rejected' });
     }
     try {
-      const currentConfig = await readAppConfig(RUNTIME_DATA_DIR);
-      if (
-        req.body?.orbit
-        && typeof req.body.orbit === 'object'
-        && Object.hasOwn(req.body.orbit, 'workspaceScope')
-        && JSON.stringify(req.body.orbit) !== JSON.stringify(currentConfig.orbit)
-      ) {
-        const scope = normalizePersistedAutomationWorkspaceScope(
-          req.body.orbit.workspaceScope,
-        );
-        if (req.body.orbit.workspaceScope !== null && !scope) {
-          return res.status(400).json({
-            error: 'Orbit Workspace scope must contain workspaceId and workspaceMemberId',
-            code: 'WORKSPACE_CONTEXT_INCOMPLETE',
-          });
-        }
-        if (scope) {
-          const claimedWorkspaceId = String(req.get('x-od-workspace-id') ?? '').trim();
-          const claimedMemberId = String(req.get('x-od-workspace-member-id') ?? '').trim();
-          if (
-            claimedWorkspaceId !== scope.workspaceId
-            || claimedMemberId !== scope.workspaceMemberId
-          ) {
-            return res.status(400).json({
-              error: 'Orbit Workspace scope must match the explicit request identity',
-              code: 'WORKSPACE_CONTEXT_INCOMPLETE',
-            });
-          }
-        }
-      }
       const config = await writeAppConfig(RUNTIME_DATA_DIR, req.body);
       orbitService.configure(config.orbit);
       onAppConfigWritten?.(config);

@@ -5967,7 +5967,6 @@ export async function persistConfigAndRunOrbit(
 
 export function configForManualOrbitRun(
   config: AppConfig,
-  workspaceContext: WorkspaceCollabContext | null = null,
 ): AppConfig {
   const effectiveTemplateSkillId = config.orbit?.templateSkillId || DEFAULT_ORBIT.templateSkillId || '';
   return {
@@ -5975,16 +5974,6 @@ export function configForManualOrbitRun(
     orbit: {
       ...(config.orbit ?? DEFAULT_ORBIT),
       ...(effectiveTemplateSkillId ? { templateSkillId: effectiveTemplateSkillId } : {}),
-      ...(workspaceContext
-        ? {
-            workspaceScope: {
-              workspaceId: workspaceContext.workspaceId,
-              workspaceMemberId: workspaceContext.workspaceMemberId,
-            },
-          }
-        : config.orbit?.workspaceScope
-          ? { workspaceScope: config.orbit.workspaceScope }
-          : {}),
     },
   };
 }
@@ -6082,16 +6071,6 @@ function OrbitSection({
       orbit: {
         ...(curr.orbit ?? DEFAULT_ORBIT),
         ...patch,
-        ...(workspaceContext
-          ? {
-              workspaceScope: {
-                workspaceId: workspaceContext.workspaceId,
-                workspaceMemberId: workspaceContext.workspaceMemberId,
-              },
-            }
-          : curr.orbit?.workspaceScope
-            ? { workspaceScope: curr.orbit.workspaceScope }
-            : {}),
       },
     }));
   };
@@ -6202,7 +6181,7 @@ function OrbitSection({
 
     void (async () => {
       try {
-        const runConfig = configForManualOrbitRun(cfg, workspaceContext);
+        const runConfig = configForManualOrbitRun(cfg);
         const payload = await persistConfigAndRunOrbit(runConfig, {
           daemonProviders: daemonMediaProviders,
           syncMediaProviders: daemonMediaProvidersFetchState === 'ok',

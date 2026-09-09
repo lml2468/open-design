@@ -16,8 +16,6 @@ import { localizeRunFailureReason } from '../i18n/runErrors';
 import type { Dict } from '../i18n/types';
 import { useAnalytics } from '../analytics/provider';
 import { trackAutomationsClick } from '../analytics/events';
-import { useWorkspaceContext } from '../collab/useWorkspaceContext';
-import { workspaceProjectHeaders } from '../collab/workspace-identity';
 import { listProjects } from '../state/projects';
 
 // Shared translator signature: every sub-component in this file is module-scoped,
@@ -25,31 +23,6 @@ import { listProjects } from '../state/projects';
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
 
 type ProjectSummary = { id: string; name: string };
-type RoutineWorkspaceScope = {
-  workspaceId: string;
-  workspaceMemberId: string;
-};
-
-function routineWorkspaceScope(routine: Routine): RoutineWorkspaceScope | null {
-  const scope = routine.context?.workspaceScope;
-  const workspaceId = scope?.workspaceId?.trim() ?? '';
-  const workspaceMemberId = scope?.workspaceMemberId?.trim() ?? '';
-  return workspaceId && workspaceMemberId
-    ? { workspaceId, workspaceMemberId }
-    : null;
-}
-
-function routineWorkspaceHeaders(
-  scope: RoutineWorkspaceScope | null | undefined,
-): HeadersInit {
-  return scope
-    ? {
-        'x-od-workspace-id': scope.workspaceId,
-        'x-od-workspace-member-id': scope.workspaceMemberId,
-      }
-    : {};
-}
-
 type RoutinesSectionProps = {
   onClose?: () => void;
 };
@@ -402,13 +375,11 @@ function ScheduleEditor({
 
 function RunHistory({
   routineId,
-  workspaceScope,
   refreshKey,
   onClose,
   t,
 }: {
   routineId: string;
-  workspaceScope: RoutineWorkspaceScope | null;
   refreshKey: number;
   onClose?: () => void;
   t: TranslateFn;
@@ -419,9 +390,7 @@ function RunHistory({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/routines/${routineId}/runs?limit=10`, {
-          headers: routineWorkspaceHeaders(workspaceScope),
-        });
+        const res = await fetch(`/api/routines/${routineId}/runs?limit=10`);
         if (!res.ok) throw new Error(`runs: ${res.status}`);
         const json = await res.json();
         if (!cancelled) setRuns(json.runs ?? []);
@@ -432,12 +401,7 @@ function RunHistory({
     return () => {
       cancelled = true;
     };
-  }, [
-    routineId,
-    workspaceScope?.workspaceId,
-    workspaceScope?.workspaceMemberId,
-    refreshKey,
-  ]);
+  }, [routineId, refreshKey]);
 
   if (runs === null)
     return (
@@ -499,9 +463,6 @@ function RunHistory({
 export function RoutinesSection({ onClose }: RoutinesSectionProps) {
   const t = useT();
   const analytics = useAnalytics();
-  // Workspace context still scopes automation mutations during the transition,
-  // while `listProjects` itself always reads the complete local catalog.
-  const { context: routinesWorkspaceContext } = useWorkspaceContext();
   const fireAutomation = (element: 'new_automation' | 'create' | 'save' | 'cancel' | 'run_now' | 'edit' | 'pause' | 'resume' | 'delete' | 'history') => {
     trackAutomationsClick(analytics.track, { page_name: 'automations', area: 'automations', element });
   };
@@ -528,14 +489,9 @@ export function RoutinesSection({ onClose }: RoutinesSectionProps) {
 
   const refresh = async () => {
     const generation = ++refreshGenerationRef.current;
-    const requestWorkspaceContext = routinesWorkspaceContext;
     try {
       const [rRes, projectList] = await Promise.all([
-        fetch('/api/routines', {
-          headers: requestWorkspaceContext
-            ? workspaceProjectHeaders(requestWorkspaceContext)
-            : {},
-        }),
+        fetch('/api/routines'),
         listProjects(),
       ]);
       if (!rRes.ok) throw new Error(`routines: ${rRes.status}`);
@@ -554,14 +510,8 @@ export function RoutinesSection({ onClose }: RoutinesSectionProps) {
 
   useEffect(() => {
     void refresh();
-    // Routines remain Workspace-scoped during the transition, so refresh their
-    // mutation surface when that identity changes. The project picker itself
-    // always reads the complete local catalog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    routinesWorkspaceContext?.workspaceId,
-    routinesWorkspaceContext?.workspaceMemberId,
-  ]);
+  }, []);
 
   const projectsById = useMemo(() => {
     const map = new Map<string, string>();
@@ -596,17 +546,6 @@ export function RoutinesSection({ onClose }: RoutinesSectionProps) {
       if (isEdit && !existingRoutine) {
         throw new Error('The automation is no longer available.');
       }
-      const requestScope = isEdit
-        ? routineWorkspaceScope(existingRoutine!)
-        : routinesWorkspaceContext
-          ? {
-              workspaceId: routinesWorkspaceContext.workspaceId,
-              workspaceMemberId: routinesWorkspaceContext.workspaceMemberId,
-            }
-          : null;
-      if (target.mode === 'create_each_run' && requestScope) {
-        body.context = { workspaceScope: requestScope };
-      }
       const url = isEdit ? `/api/routines/${editingId}` : '/api/routines';
       const payload = isEdit
         ? {
@@ -619,14 +558,7 @@ export function RoutinesSection({ onClose }: RoutinesSectionProps) {
         : body;
       const res = await fetch(url, {
         method: isEdit ? 'PATCH' : 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(isEdit
-            ? routineWorkspaceHeaders(requestScope)
-            : routinesWorkspaceContext
-            ? workspaceProjectHeaders(routinesWorkspaceContext)
-            : {}),
-        },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
@@ -650,7 +582,6 @@ export function RoutinesSection({ onClose }: RoutinesSectionProps) {
     try {
       const res = await fetch(`/api/routines/${routine.id}/run`, {
         method: 'POST',
-        headers: routineWorkspaceHeaders(routineWorkspaceScope(routine)),
       });
       if (!res.ok && res.status !== 202) {
         const j = await res.json().catch(() => ({}));
@@ -673,7 +604,6 @@ export function RoutinesSection({ onClose }: RoutinesSectionProps) {
         method: 'PATCH',
         headers: {
           'content-type': 'application/json',
-          ...routineWorkspaceHeaders(routineWorkspaceScope(routine)),
         },
         body: JSON.stringify({ enabled: !routine.enabled }),
       });
@@ -695,7 +625,6 @@ export function RoutinesSection({ onClose }: RoutinesSectionProps) {
     try {
       const res = await fetch(`/api/routines/${routine.id}`, {
         method: 'DELETE',
-        headers: routineWorkspaceHeaders(routineWorkspaceScope(routine)),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -936,7 +865,6 @@ export function RoutinesSection({ onClose }: RoutinesSectionProps) {
                   <div className="routines-item-history">
                     <RunHistory
                       routineId={r.id}
-                      workspaceScope={routineWorkspaceScope(r)}
                       refreshKey={historyTick}
                       onClose={onClose}
                       t={t}

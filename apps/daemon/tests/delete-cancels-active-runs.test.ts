@@ -21,13 +21,8 @@ import {
   closeDatabase,
   deleteConversation,
   deleteProject as dbDeleteProject,
-  ensureWorkspaceProject,
   getConversation,
   getProject,
-  getWorkspaceProject,
-  getWorkspaceProjectByProjectId,
-  rebindWorkspaceProject,
-  updateWorkspaceProject,
   insertConversation,
   insertProject,
   listConversations,
@@ -130,15 +125,6 @@ async function mountProjectApp(
       removeProjectDir: vi.fn(async () => {}),
       stageProjectDirsForDelete: vi.fn(async () => {}),
       validateLinkedDirs: vi.fn(() => ({ dirs: [], error: null })),
-      // Real db-backed workspace-project lookups: the delete route's
-      // workspace mutation gate dereferences these, and a bare project with
-      // no workspace row must flow through the same legacy-allow path the
-      // production server takes.
-      ensureWorkspaceProject,
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      updateWorkspaceProject,
-      rebindWorkspaceProject,
     },
     projectFiles: {
       ensureProject: noop,

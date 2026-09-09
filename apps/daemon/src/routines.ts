@@ -39,10 +39,6 @@ export interface RoutineContextSelection {
   pluginIds?: string[];
   mcpServerIds?: string[];
   connectorIds?: string[];
-  workspaceScope?: {
-    workspaceId: string;
-    workspaceMemberId: string;
-  } | null;
 }
 
 export interface Routine {

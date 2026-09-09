@@ -4,8 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer } from '../src/server.js';
-import { ensureWorkspaceProject, insertProject, openDatabase } from '../src/db.js';
+import { insertProject, openDatabase } from '../src/db.js';
 import { createSnapshot } from '../src/plugins/snapshots.js';
+import { seedLegacyWorkspaceProject } from './helpers/legacy-workspace-projects.js';
 
 let server: http.Server;
 let baseUrl: string;
@@ -36,7 +37,7 @@ beforeAll(async () => {
       updatedAt: now,
     });
     if (visibility) {
-      ensureWorkspaceProject(db, {
+      seedLegacyWorkspaceProject(db, {
         projectId,
         workspaceId: 'snapshot-workspace',
         visibility,

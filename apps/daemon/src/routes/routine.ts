@@ -10,7 +10,6 @@ import {
   getProject,
   getRoutine,
   getRoutineRun,
-  getWorkspaceProjectByProjectId,
   insertRoutine,
   listRoutineRuns,
   listRoutines,
@@ -22,10 +21,6 @@ import {
   validateTarget as validateRoutineTarget,
   type RoutineService,
 } from '../routines.js';
-import {
-  AutomationWorkspaceScopeError,
-  normalizePersistedAutomationWorkspaceScope,
-} from '../automations/workspace-scope.js';
 import type { PathDeps, RouteDeps } from '../server-context.js';
 
 export interface RegisterRoutineRoutesDeps extends RouteDeps<'db' | 'routines'> {
@@ -58,28 +53,14 @@ function normalizeRoutineContext(value: unknown) {
     throw new Error('context must be an object');
   }
   const input = value as Record<string, unknown>;
-  const hasWorkspaceScope = Object.hasOwn(input, 'workspaceScope');
-  const workspaceScope = hasWorkspaceScope
-    ? normalizePersistedAutomationWorkspaceScope(input.workspaceScope)
-    : null;
-  if (hasWorkspaceScope && input.workspaceScope !== null && !workspaceScope) {
-    throw new Error(
-      'context.workspaceScope must contain workspaceId and workspaceMemberId',
-    );
-  }
   const context = {
     skillIds: cleanStringList(input.skillIds, 'context.skillIds'),
     pluginIds: cleanStringList(input.pluginIds, 'context.pluginIds'),
     mcpServerIds: cleanStringList(input.mcpServerIds, 'context.mcpServerIds'),
     connectorIds: cleanStringList(input.connectorIds, 'context.connectorIds'),
-    ...(hasWorkspaceScope
-      ? { workspaceScope }
-      : {}),
   };
   return Object.fromEntries(
-    Object.entries(context).filter(([key, value]) =>
-      key === 'workspaceScope' ? value !== null : Array.isArray(value) && value.length > 0,
-    ),
+    Object.entries(context).filter(([, value]) => value.length > 0),
   );
 }
 
@@ -147,120 +128,9 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
   const { db } = ctx;
   const { routineService } = ctx.routines;
 
-  function authorizeRoutineWorkspaceContext(
-    req: any,
-    context: ReturnType<typeof normalizeRoutineContext>,
-    targetMode: 'create_each_run' | 'reuse',
-    verifyExplicitScope = true,
-  ) {
-    if (targetMode === 'reuse') {
-      const { workspaceScope: _ignoredWorkspaceScope, ...projectBoundContext } = context;
-      return projectBoundContext;
-    }
-    const scope = normalizePersistedAutomationWorkspaceScope(context.workspaceScope);
-    if (!scope) return context;
-    if (!verifyExplicitScope) return { ...context, workspaceScope: scope };
-    const claimedWorkspaceId = String(req.get?.('x-od-workspace-id') ?? '').trim();
-    const claimedMemberId = String(req.get?.('x-od-workspace-member-id') ?? '').trim();
-    if (
-      claimedWorkspaceId !== scope.workspaceId
-      || claimedMemberId !== scope.workspaceMemberId
-    ) {
-      throw new Error('routine Workspace scope must match the explicit request identity');
-    }
-    return { ...context, workspaceScope: scope };
-  }
-
-  function claimedWorkspaceScope(req: any) {
-    const workspaceId = String(req.get?.('x-od-workspace-id') ?? '').trim();
-    const workspaceMemberId = String(
-      req.get?.('x-od-workspace-member-id') ?? '',
-    ).trim();
-    if (!workspaceId && !workspaceMemberId) return null;
-    if (!workspaceId || !workspaceMemberId) {
-      throw new Error('both Workspace and member identity headers are required');
-    }
-    return { workspaceId, workspaceMemberId };
-  }
-
-  function persistedRoutineWorkspaceId(row: any): string | null {
-    if (row.projectMode === 'reuse' && row.projectId) {
-      return getWorkspaceProjectByProjectId(db, row.projectId)?.workspaceId ?? null;
-    }
-    return normalizePersistedAutomationWorkspaceScope(
-      parseStoredRoutineContext(row).workspaceScope,
-    )?.workspaceId ?? null;
-  }
-
-  function authorizeRoutineRecord(req: any, row: any) {
-    const claimed = claimedWorkspaceScope(req);
-    if (row.projectMode === 'reuse' && row.projectId) {
-      const binding = getWorkspaceProjectByProjectId(db, row.projectId);
-      if (!binding?.workspaceId) return null;
-      if (!claimed || claimed.workspaceId !== binding.workspaceId) {
-        throw new AutomationWorkspaceScopeError(
-          'WORKSPACE_ACCESS_DENIED',
-          'the routine belongs to a different Workspace',
-          false,
-        );
-      }
-      if (
-        binding.createdByWorkspaceMemberId
-        && binding.createdByWorkspaceMemberId !== claimed.workspaceMemberId
-      ) {
-        throw new AutomationWorkspaceScopeError(
-          'WORKSPACE_ACCESS_DENIED',
-          'the routine belongs to a different Workspace member',
-          false,
-        );
-      }
-      return {
-        workspaceId: binding.workspaceId,
-        workspaceMemberId: claimed.workspaceMemberId,
-      };
-    }
-
-    const persisted = normalizePersistedAutomationWorkspaceScope(
-      parseStoredRoutineContext(row).workspaceScope,
-    );
-    if (!persisted) return null;
-    if (
-      !claimed
-      || claimed.workspaceId !== persisted.workspaceId
-      || claimed.workspaceMemberId !== persisted.workspaceMemberId
-    ) {
-      throw new AutomationWorkspaceScopeError(
-        'WORKSPACE_ACCESS_DENIED',
-        'the routine belongs to a different Workspace',
-        false,
-      );
-    }
-    return persisted;
-  }
-
-  function exposeRoutineWorkspaceScope(
-    routine: ReturnType<typeof routineDbRowToContract>,
-    scope: { workspaceId: string; workspaceMemberId: string } | null,
-  ) {
-    if (!scope) return routine;
-    return {
-      ...routine,
-      context: {
-        ...routine.context,
-        workspaceScope: scope,
-      },
-    };
-  }
-
   function sendRoutineError(res: any, err: any, fallbackStatus: number) {
-    const status = err instanceof AutomationWorkspaceScopeError
-      ? 403
-      : fallbackStatus;
-    return res.status(status).json({
+    return res.status(fallbackStatus).json({
       error: String(err?.message ?? err),
-      ...(err instanceof AutomationWorkspaceScopeError
-        ? { code: err.code, ...(err.retryable ? { retryable: true } : {}) }
-        : {}),
     });
   }
 
@@ -325,37 +195,14 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
     if (!partial || body.context !== undefined) normalizeRoutineContext(body.context);
   }
 
-  app.get('/api/routines', async (req, res) => {
+  app.get('/api/routines', async (_req, res) => {
     try {
-      const claimed = claimedWorkspaceScope(req);
-      const routines = listRoutines(db).flatMap((row) => {
-        const persistedWorkspaceId = persistedRoutineWorkspaceId(row);
-        const persistedScope = row.projectMode === 'reuse'
-          ? null
-          : normalizePersistedAutomationWorkspaceScope(
-              parseStoredRoutineContext(row).workspaceScope,
-            );
-        if (persistedWorkspaceId && persistedWorkspaceId !== claimed?.workspaceId) {
-          return [];
-        }
-        if (
-          persistedScope
-          && persistedScope.workspaceMemberId !== claimed?.workspaceMemberId
-        ) {
-          return [];
-        }
+      const routines = listRoutines(db).map((row) => {
         const latest = getLatestRoutineRun(db, row.id);
         const contract = routineDbRowToContract(row, latest);
         const nextDate = routineService?.nextRunAt(row.id) ?? null;
         contract.nextRunAt = nextDate ? nextDate.getTime() : null;
-        return [
-          exposeRoutineWorkspaceScope(
-            contract,
-            persistedWorkspaceId
-              ? persistedScope ?? claimed
-              : null,
-          ),
-        ];
+        return contract;
       });
       res.json({ routines });
     } catch (err: any) {
@@ -370,18 +217,7 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
       const id = `routine-${randomUUID()}`;
       const now = Date.now();
       const scheduleCols = scheduleToDbCols(body.schedule);
-      const context = await authorizeRoutineWorkspaceContext(
-        req,
-        normalizeRoutineContext(body.context),
-        body.target.mode,
-      );
-      const createdScope = body.target.mode === 'reuse'
-        ? await authorizeRoutineRecord(req, {
-            projectMode: 'reuse',
-            projectId: body.target.projectId,
-            contextJson: '{}',
-          })
-        : normalizePersistedAutomationWorkspaceScope(context.workspaceScope);
+      const context = normalizeRoutineContext(body.context);
       insertRoutine(db, {
         id,
         name: body.name.trim(),
@@ -398,19 +234,9 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
       });
       routineService?.rescheduleOne(id);
       const routine = routineFromDb(id);
-      res.status(201).json({
-        routine: exposeRoutineWorkspaceScope(routine!, createdScope),
-      });
+      res.status(201).json({ routine });
     } catch (err: any) {
-      const status = err instanceof AutomationWorkspaceScopeError
-        ? 403
-        : 400;
-      res.status(status).json({
-        error: String(err?.message ?? err),
-        ...(err instanceof AutomationWorkspaceScopeError
-          ? { code: err.code, ...(err.retryable ? { retryable: true } : {}) }
-          : {}),
-      });
+      res.status(400).json({ error: String(err?.message ?? err) });
     }
   });
 
@@ -418,10 +244,7 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
     try {
       const row = getRoutine(db, req.params.id);
       if (!row) return res.status(404).json({ error: 'routine not found' });
-      const scope = await authorizeRoutineRecord(req, row);
-      res.json({
-        routine: exposeRoutineWorkspaceScope(routineFromDb(req.params.id)!, scope),
-      });
+      res.json({ routine: routineFromDb(req.params.id)! });
     } catch (err: any) {
       sendRoutineError(res, err, 400);
     }
@@ -431,8 +254,6 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
     try {
       const existing = getRoutine(db, req.params.id);
       if (!existing) return res.status(404).json({ error: 'routine not found' });
-      const existingScope = await authorizeRoutineRecord(req, existing);
-      let resultingScope = existingScope;
       const body = req.body || {};
       validateRoutineInput(body, true);
       const patch: any = {};
@@ -446,54 +267,16 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
       if (body.skillId !== undefined) patch.skillId = body.skillId ?? null;
       if (body.agentId !== undefined) patch.agentId = body.agentId ?? null;
       if (body.context !== undefined || body.target !== undefined) {
-        const effectiveTargetMode = body.target?.mode ?? existing.projectMode;
-        const storedContext = parseStoredRoutineContext(existing);
-        let context = body.context !== undefined
-          ? normalizeRoutineContext(body.context)
-          : storedContext;
-        const requestHasWorkspaceScope = Boolean(
-          body.context
-          && typeof body.context === 'object'
-          && !Array.isArray(body.context)
-          && Object.hasOwn(body.context, 'workspaceScope'),
+        patch.contextJson = JSON.stringify(
+          body.context !== undefined
+            ? normalizeRoutineContext(body.context)
+            : parseStoredRoutineContext(existing),
         );
-        if (
-          effectiveTargetMode === 'create_each_run'
-          && !requestHasWorkspaceScope
-          && (storedContext.workspaceScope || existingScope)
-        ) {
-          context = {
-            ...context,
-            workspaceScope: storedContext.workspaceScope ?? existingScope,
-          };
-        }
-        const authorizedContext = await authorizeRoutineWorkspaceContext(
-          req,
-          context,
-          effectiveTargetMode,
-          requestHasWorkspaceScope,
-        );
-        patch.contextJson = JSON.stringify(authorizedContext);
-        resultingScope = effectiveTargetMode === 'create_each_run'
-          ? normalizePersistedAutomationWorkspaceScope(
-              authorizedContext.workspaceScope,
-            )
-          : await authorizeRoutineRecord(req, {
-              ...existing,
-              projectMode: 'reuse',
-              projectId: body.target?.projectId ?? existing.projectId,
-              contextJson: JSON.stringify(authorizedContext),
-            });
       }
       if (body.enabled !== undefined) patch.enabled = Boolean(body.enabled);
       updateRoutine(db, req.params.id, patch);
       routineService?.rescheduleOne(req.params.id);
-      res.json({
-        routine: exposeRoutineWorkspaceScope(
-          routineFromDb(req.params.id)!,
-          resultingScope,
-        ),
-      });
+      res.json({ routine: routineFromDb(req.params.id)! });
     } catch (err: any) {
       sendRoutineError(res, err, 400);
     }
@@ -503,7 +286,6 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
     try {
       const existing = getRoutine(db, req.params.id);
       if (!existing) return res.status(404).json({ error: 'routine not found' });
-      await authorizeRoutineRecord(req, existing);
       routineService?.unschedule(req.params.id);
       dbDeleteRoutine(db, req.params.id);
       res.status(204).end();
@@ -516,12 +298,6 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
     try {
       const existing = getRoutine(db, req.params.id);
       if (!existing) return res.status(404).json({ error: 'routine not found' });
-      // Execution is not a local membership decision. The routine/project
-      // already persists its exact Workspace billing address; start the run
-      // with that address and let the authenticated Vela backend make the
-      // final membership, permission, and billing decision. Re-reading the
-      // daemon directory here made a transient outage either block the run or
-      // tempt callers to drop Team scope and charge Personal instead.
       const start = await routineService.runNow(req.params.id);
       res.status(202).json({
         routine: routineFromDb(req.params.id),
@@ -539,7 +315,6 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
     try {
       const existing = getRoutine(db, req.params.id);
       if (!existing) return res.status(404).json({ error: 'routine not found' });
-      await authorizeRoutineRecord(req, existing);
       const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
       res.json({ runs: listRoutineRuns(db, req.params.id, limit) });
     } catch (err: any) {
@@ -551,7 +326,6 @@ export function registerRoutineRoutes(app: Express, ctx: RegisterRoutineRoutesDe
     try {
       const routine = getRoutine(db, req.params.id);
       if (!routine) return res.status(404).json({ error: 'routine not found' });
-      await authorizeRoutineRecord(req, routine);
       const run = getRoutineRun(db, req.params.runId);
       if (!run || run.routineId !== req.params.id) {
         return res.status(404).json({ error: 'routine run not found' });

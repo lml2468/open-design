@@ -648,12 +648,7 @@ import {
   getMessageTelemetryFinalizationState,
   getPreviewComment,
   getProject,
-  findTeamWorkspaceIdForProject,
-  getWorkspaceProject,
-  getWorkspaceProjectByProjectId,
-  listWorkspaceProjectBindings,
   getTemplate,
-  ensureWorkspaceProject,
   insertConversation,
   insertProject,
   insertRoutine,
@@ -687,8 +682,6 @@ import {
   updatePreviewCommentAnchor,
   updatePreviewCommentStatus,
   updateProject,
-  updateWorkspaceProject,
-  rebindWorkspaceProject,
   updateRoutine,
   updateRoutineRun,
   clearAgentSession,
@@ -768,9 +761,6 @@ import {
   createActiveWorkspaceSelectionStore,
 } from './collab/active-workspace-selection.js';
 import { withLastKnownWorkspaceContext } from './collab/workspace-context.js';
-import {
-  createWorkspaceTypeRegistry,
-} from './collab/team-share-scope.js';
 import { resolveWorkspaceScope } from './collab/workspace-scope.js';
 import {
   createWorkspaceDirectoryAuthorityBroker,
@@ -793,10 +783,6 @@ import {
 } from './routes/static-resource.js';
 export { rewriteSkillAssetUrls } from './routes/static-resource.js';
 import { registerRoutineRoutes, routineDbRowToContract } from './routes/routine.js';
-import {
-  bindProjectToPersistedAutomationWorkspace,
-  normalizePersistedAutomationWorkspaceScope,
-} from './automations/workspace-scope.js';
 import { createPluginInstallationHelpers, normalizeProjectPluginFolderPath, resolveProjectChildDirectory } from './services/plugin-installation.js';
 import { createPluginShareTaskStore } from './services/plugin-share-tasks.js';
 import { getRouteRegistrationInventory, installRouteRegistrationGuard } from './route-registration-guard.js';
@@ -2953,12 +2939,6 @@ export async function startServer({
     };
   };
   const activeWorkspace = createActiveWorkspaceSelectionStore(RUNTIME_DATA_DIR);
-  // What this daemon has learned about each workspace's type, memoized from
-  // exact directory/context reads it already performs. It is the
-  // second witness behind the team-share invariant: a team share may only be
-  // recorded in — and a project-scoped collab call may only be pinned to — a
-  // workspace that can actually host a team plane. See collab/team-share-scope.ts.
-  const workspaceTypes = createWorkspaceTypeRegistry();
   const configuredAmrEnv = () =>
     agentCliEnvForAgent(readAppConfigSync(RUNTIME_DATA_DIR).agentCliEnv, 'amr');
   const workspaceDirectoryAuthority = createWorkspaceDirectoryAuthorityBroker({
@@ -2966,7 +2946,6 @@ export async function startServer({
       const result = await fetchVelaWorkspaceDirectory({
         configuredEnv: configuredAmrEnv(),
       });
-      if (result.ok) workspaceTypes.learn(result.items);
       return result;
     },
     identityKey: () => velaWorkspaceDirectoryIdentity(
@@ -3104,44 +3083,6 @@ export async function startServer({
     refreshWorkspaceAccountIdentity();
     return verifyWorkspaceReadAuthority(req);
   };
-  const verifyProjectWorkspaceContextForRequest = async (
-    req: any,
-    projectId?: string,
-    options: { fresh?: boolean } = {},
-  ) => {
-    const verified = await verifyExplicitWorkspaceRequestContext(
-      { req },
-      options,
-    );
-    if (!verified.ok) return verified;
-    if (projectId) {
-      const binding = getWorkspaceProjectByProjectId(db, projectId);
-      if (
-        binding?.workspaceId
-        && binding.workspaceId !== verified.context.workspaceId
-      ) {
-        return {
-          ok: false as const,
-          status: 403 as const,
-          code: 'WORKSPACE_ACCESS_DENIED' as const,
-          message: 'the requested workspace does not own this project',
-        };
-      }
-    }
-    return verified;
-  };
-  const verifiedWorkspaceContextForRequest = (
-    req: any,
-    projectId?: string,
-  ) => verifyProjectWorkspaceContextForRequest(req, projectId);
-  const verifiedWorkspaceReadContextForRequest = (
-    req: any,
-    projectId?: string,
-  ) => verifyProjectWorkspaceContextForRequest(
-    req,
-    projectId,
-    { fresh: false },
-  );
   let workspaceAnalyticsService: AnalyticsService | null = null;
   registerCollabContextRoutes(app, {
     workspaceContext: workspaceContextProvider,
@@ -3596,13 +3537,6 @@ export async function startServer({
   const uploadDeps = { upload, importUpload, handleProjectUpload };
   const projectStoreDeps = {
     getProject,
-    findTeamWorkspaceIdForProject,
-    getWorkspaceProject,
-    getWorkspaceProjectByProjectId,
-    listWorkspaceProjectBindings,
-    ensureWorkspaceProject,
-    updateWorkspaceProject,
-    rebindWorkspaceProject,
     insertProject,
     updateProject,
     dbDeleteProject,
@@ -10754,7 +10688,6 @@ export async function startServer({
     prompt,
     systemPrompt,
     template,
-    workspaceScope,
   }) => {
     // Each Orbit run gets its own project so the conversation, messages, and
     // live artifact are isolated. The handler does the synchronous prep here
@@ -10775,8 +10708,6 @@ export async function startServer({
     if (!agentId) throw new Error('No available agent is configured for Orbit. Choose an agent in Settings first.');
 
     const now = Date.now();
-    const normalizedWorkspaceScope =
-      normalizePersistedAutomationWorkspaceScope(workspaceScope);
     const projectId = `orbit-${randomUUID()}`;
     const conversationId = `orbit-conv-${randomUUID()}`;
     const assistantMessageId = `orbit-assistant-${randomUUID()}`;
@@ -10796,12 +10727,6 @@ export async function startServer({
       createdAt: now,
       updatedAt: now,
     });
-    bindProjectToPersistedAutomationWorkspace(
-      (input) => ensureWorkspaceProject(db, input),
-      normalizedWorkspaceScope,
-      projectId,
-      now,
-    );
     insertConversation(db, {
       id: conversationId,
       projectId,
@@ -10976,8 +10901,6 @@ export async function startServer({
     }
 
     const now = startedAt;
-    const storedRoutineWorkspaceScope =
-      normalizePersistedAutomationWorkspaceScope(routine.context.workspaceScope);
     const routineContext = normalizeRunContextSelection(routine.context);
     const routineSkillId = routine.skillId ?? routineContext.skillIds?.[0] ?? null;
     const contextMetadata = {
@@ -11032,12 +10955,6 @@ export async function startServer({
         createdAt: now,
         updatedAt: now,
       });
-      bindProjectToPersistedAutomationWorkspace(
-        (input) => ensureWorkspaceProject(db, input),
-        storedRoutineWorkspaceScope,
-        projectId,
-        now,
-      );
       createdProjectId = projectId;
     };
     if (routine.target.mode === 'reuse') {

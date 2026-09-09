@@ -65,7 +65,6 @@ export type OrbitRunHandler = (request: {
   prompt: string;
   systemPrompt: string;
   template: OrbitTemplateSelection | null;
-  workspaceScope: OrbitConfigPrefs['workspaceScope'];
 }) => Promise<OrbitRunHandlerStart>;
 
 type OrbitOutputLocale = 'en' | 'zh-CN' | 'zh-TW';
@@ -190,7 +189,6 @@ function normalizeOrbitConfig(config: Partial<OrbitConfigPrefs> | undefined): Or
       : typeof config?.templateSkillId === 'string' && config.templateSkillId.trim()
         ? config.templateSkillId.trim()
         : null,
-    workspaceScope: config?.workspaceScope ?? null,
   };
 }
 
@@ -529,7 +527,6 @@ export class OrbitService {
       prompt,
       systemPrompt,
       template: localizedTemplate,
-      workspaceScope: this.config.workspaceScope ?? null,
     });
 
     this.inflightProjectId = handlerStart.projectId;

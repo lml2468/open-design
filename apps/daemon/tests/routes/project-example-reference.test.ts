@@ -86,8 +86,6 @@ function buildDeps(input: {
         createdAt: 1,
         updatedAt: 1,
       }),
-      getWorkspaceProject: () => null,
-      getWorkspaceProjectByProjectId: () => null,
       listProjects: () => [],
     }),
     projectFiles: functionProxy({

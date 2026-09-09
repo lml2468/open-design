@@ -17,10 +17,10 @@ import type {
 } from '@open-design/sidecar-proto';
 import {
   closeDatabase,
-  ensureWorkspaceProject,
   insertProject,
   openDatabase,
 } from '../src/db.js';
+import { seedLegacyWorkspaceProject } from './helpers/legacy-workspace-projects.js';
 import { startServer } from '../src/server.js';
 import { toolTokenRegistry } from '../src/tool-tokens.js';
 
@@ -82,13 +82,13 @@ describe('od export run-scoped project authority', () => {
       createdAt: now,
       updatedAt: now,
     });
-    ensureWorkspaceProject(db, {
+    seedLegacyWorkspaceProject(db, {
       projectId,
       workspaceId,
       visibility: 'team',
       createdByWorkspaceMemberId: memberId,
     });
-    ensureWorkspaceProject(db, {
+    seedLegacyWorkspaceProject(db, {
       projectId: foreignProjectId,
       workspaceId: 'foreign-workspace',
       visibility: 'team',

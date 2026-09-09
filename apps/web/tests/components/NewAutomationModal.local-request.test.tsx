@@ -3,28 +3,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../src/collab/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => ({
-    context: {
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-      workspaceType: 'team',
-      workspaceName: 'A',
-      role: 'owner',
-      memberStatus: 'active',
-      lifecycleState: 'active',
-      permissions: {
-        canManageWorkspace: true,
-        canManageMembers: true,
-        canManageBilling: true,
-        canShareProjects: true,
-        canWriteSyncedFiles: true,
-      },
-    },
-    loading: false,
-  }),
-}));
-
 vi.mock('../../src/state/projects', () => ({
   listPlugins: vi.fn(async () => []),
 }));
@@ -43,8 +21,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('NewAutomationModal Workspace scope', () => {
-  it('saves create-each-run automation with exact Workspace/member headers and context', async () => {
+describe('NewAutomationModal local automation request', () => {
+  it('saves create-each-run automation without retired Workspace identity', async () => {
     const requests: Array<{ body: any; headers: Headers }> = [];
     globalThis.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
@@ -84,11 +62,8 @@ describe('NewAutomationModal Workspace scope', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
-    expect(requests[0]!.body.context.workspaceScope).toEqual({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    });
-    expect(requests[0]!.headers.get('x-od-workspace-id')).toBe('workspace-a');
-    expect(requests[0]!.headers.get('x-od-workspace-member-id')).toBe('member-a');
+    expect(requests[0]!.body).not.toHaveProperty('context.workspaceScope');
+    expect(requests[0]!.headers.get('x-od-workspace-id')).toBeNull();
+    expect(requests[0]!.headers.get('x-od-workspace-member-id')).toBeNull();
   });
 });

@@ -2009,11 +2009,9 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
           }
         }
       }
-      // Local disk is the v1 writable source of truth. Historical
-      // `workspace_projects` rows are migration metadata only and must not
-      // hide a local project or make the catalog depend on Vela membership.
-      // Collaboration visibility comes from explicit Project bindings and
-      // immutable published Versions, not from this local catalog.
+      // Local disk is the v1 writable source of truth. Collaboration
+      // visibility comes from explicit Project bindings and immutable
+      // published Versions, not from this local catalog.
       /** @type {import('@open-design/contracts').ProjectsResponse} */
       const body = {
         projects: listProjects(db)

@@ -33,16 +33,7 @@ function buildDeps(input: {
   loadRegistry?: ReturnType<typeof vi.fn>;
   insertProject?: ReturnType<typeof vi.fn>;
   insertConversation?: ReturnType<typeof vi.fn>;
-  ensureWorkspaceProject?: ReturnType<typeof vi.fn>;
 } = {}) {
-  const binding = {
-    projectId: PROJECT_ID,
-    workspaceId: WORKSPACE_ID,
-    visibility: 'personal',
-    resourceState: 'active',
-    createdByWorkspaceMemberId: MEMBER_ID,
-    updatedByWorkspaceMemberId: MEMBER_ID,
-  };
   const insertProject = input.insertProject ?? vi.fn();
   const insertConversation = input.insertConversation ?? vi.fn();
   return {
@@ -78,9 +69,6 @@ function buildDeps(input: {
         createdAt: 1,
         updatedAt: 1,
       }),
-      getWorkspaceProject: () => binding,
-      getWorkspaceProjectByProjectId: () => binding,
-      ensureWorkspaceProject: input.ensureWorkspaceProject ?? vi.fn(),
       updateProject: vi.fn(),
       listProjects: () => [],
     }),
@@ -175,11 +163,9 @@ describe('project resource selection uses daemon-local catalogs', () => {
     );
   });
 
-  it('creates a local-only project without writing a legacy Workspace binding', async () => {
-    const ensureWorkspaceProject = vi.fn();
+  it('creates a local-only project directly in the local catalog', async () => {
     const insertProject = vi.fn((_: unknown, input: Record<string, unknown>) => input);
     const baseUrl = await start(buildDeps({
-      ensureWorkspaceProject,
       insertProject,
     }));
 
@@ -193,7 +179,6 @@ describe('project resource selection uses daemon-local catalogs', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(ensureWorkspaceProject).not.toHaveBeenCalled();
     expect(insertProject).toHaveBeenCalledOnce();
   });
 

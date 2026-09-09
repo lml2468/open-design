@@ -18,7 +18,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { ensureWorkspaceProject, openDatabase } from '../../src/db.js';
+import { openDatabase } from '../../src/db.js';
+import { seedLegacyWorkspaceProject } from '../helpers/legacy-workspace-projects.js';
 import { startServer } from '../../src/server.js';
 
 describe('GET /api/projects/:id resolvedDir', () => {
@@ -189,7 +190,7 @@ describe('GET /api/projects/:id resolvedDir', () => {
     const dataDir = process.env.OD_DATA_DIR;
     if (!dataDir) throw new Error('OD_DATA_DIR is required for daemon route tests');
     const db = openDatabase(process.cwd(), { dataDir });
-    ensureWorkspaceProject(db, {
+    seedLegacyWorkspaceProject(db, {
       projectId,
       workspaceId: 'legacy-team-workspace',
       visibility: 'team',

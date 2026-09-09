@@ -485,14 +485,11 @@ describe('RoutineService scheduled run idempotency', () => {
     });
   });
 
-  it('preserves persisted Workspace scope for execution without a membership re-check', async () => {
+  it('passes local routine context to execution without Workspace identity', async () => {
     const persistence = new SharedRoutinePersistence([
       fixtureRoutine({
         context: {
-          workspaceScope: {
-            workspaceId: 'workspace-a',
-            workspaceMemberId: 'member-a',
-          },
+          connectorIds: ['github'],
         },
       }),
     ]);
@@ -504,10 +501,7 @@ describe('RoutineService scheduled run idempotency', () => {
     };
 
     service.setRunHandler(async ({ routine }) => {
-      expect(routine.context.workspaceScope).toEqual({
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-      });
+      expect(routine.context).toEqual({ connectorIds: ['github'] });
       sideEffects.projects += 1;
       sideEffects.conversations += 1;
       sideEffects.agentRuns += 1;
