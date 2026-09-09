@@ -14131,7 +14131,6 @@ function HtmlViewer({
         projectId,
         fileName: file.name,
         title: pdfTitle,
-        workspaceContext,
         // Broader deck signal than the viewer's nav so runtime-managed decks
         // (<deck-stage>) paginate per slide; the vector fallback below uses
         // the SAME signal, so an artifact exports identically with or without
@@ -14152,7 +14151,6 @@ function HtmlViewer({
       filePath: file.name,
       projectId,
       title: pdfTitle,
-      workspaceContext,
       ...(context?.versionId ? { versionId: context.versionId } : {}),
     });
   }
@@ -14167,7 +14165,6 @@ function HtmlViewer({
       filePath: file.name,
       fallbackHtml: context?.content ?? source ?? '',
       fallbackTitle: context?.title ?? exportTitle,
-      workspaceContext,
       ...(context?.versionId ? { versionId: context.versionId } : {}),
     }), context);
   }
@@ -14177,7 +14174,6 @@ function HtmlViewer({
       projectId,
       filePath: file.name,
       fallbackTitle: context?.title ?? exportTitle,
-      workspaceContext,
       ...(context?.versionId ? { versionId: context.versionId } : {}),
     }), context);
   }
@@ -14316,7 +14312,6 @@ function HtmlViewer({
           projectId,
           fileName: file.name,
           deck: imageDeckSignal,
-          workspaceContext,
           ...(plan.index != null ? { index: plan.index } : {}),
           ...(exportViewport?.width != null ? { width: exportViewport.width } : {}),
           ...(exportViewport?.height != null ? { height: exportViewport.height } : {}),
@@ -16016,7 +16011,6 @@ function HtmlViewer({
                             projectId,
                             fileName: file.name,
                             title: exportTitle,
-                            workspaceContext,
                             // Broader deck signal than the viewer's nav so
                             // runtime-managed decks (<deck-stage>) paginate per
                             // slide; the vector fallback below uses the SAME
@@ -16040,7 +16034,6 @@ function HtmlViewer({
                           filePath: file.name,
                           projectId,
                           title: exportTitle,
-                          workspaceContext,
                         });
                       });
                     }}
@@ -16099,7 +16092,6 @@ function HtmlViewer({
                         filePath: file.name,
                         fallbackHtml: source ?? '',
                         fallbackTitle: exportTitle,
-                        workspaceContext,
                       }));
                     }}
                   >
@@ -16118,7 +16110,6 @@ function HtmlViewer({
                         projectId,
                         filePath: file.name,
                         fallbackTitle: exportTitle,
-                        workspaceContext,
                       }));
                     }}
                   >
@@ -16868,7 +16859,6 @@ function HtmlViewer({
                       title: exportTitle,
                       deck: true,
                       editable,
-                      workspaceContext,
                     });
                     if (!res.ok) {
                       // `unavailable` covers two very different situations and

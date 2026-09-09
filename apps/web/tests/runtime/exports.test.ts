@@ -26,7 +26,6 @@ import {
   sourceLooksLikeExportableDeck,
   sourceLooksLikeNavigableDeck,
 } from '../../src/runtime/exports';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 describe('planDeckImageCapture (#4604 current-slide capture for runtime decks)', () => {
   it('whole-deck capture renders off-screen with no index (stitch all)', () => {
@@ -773,10 +772,6 @@ describe('binary project/design-system downloads', () => {
   });
 
   it('keeps every local Project export transport free of legacy Workspace headers', async () => {
-    const workspaceContext = workspaceContextFixture({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    });
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
       if (url.endsWith('/export/pdf')) {
@@ -805,7 +800,6 @@ describe('binary project/design-system downloads', () => {
       projectId: 'project-a',
       filePath: 'index.html',
       fallbackTitle: 'HTML',
-      workspaceContext,
     });
     await exportProjectAsPdf({
       deck: false,
@@ -813,29 +807,24 @@ describe('binary project/design-system downloads', () => {
       filePath: 'index.html',
       projectId: 'project-a',
       title: 'PDF',
-      workspaceContext,
     });
     await exportProjectAsPptx({
       projectId: 'project-a',
       fileName: 'index.html',
-      workspaceContext,
     });
     await exportProjectImageDataUrl({
       projectId: 'project-a',
       fileName: 'index.html',
-      workspaceContext,
     });
     await exportProjectAsZip({
       projectId: 'project-a',
       filePath: 'index.html',
       fallbackHtml: '<p>fallback</p>',
       fallbackTitle: 'ZIP',
-      workspaceContext,
     });
     await downloadProjectArchive({
       projectId: 'project-a',
       fallbackTitle: 'Archive',
-      workspaceContext,
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(6);

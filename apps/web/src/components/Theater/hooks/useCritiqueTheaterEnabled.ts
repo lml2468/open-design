@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 const STORAGE_KEY = 'open-design:config';
 const TOGGLE_EVENT = 'open-design:critique-theater-toggle';
@@ -120,11 +119,6 @@ export function useCritiqueTheaterEnabled(): boolean {
 export interface SetCritiqueTheaterEnabledOptions {
   /** Project id to round-trip the override through the daemon. */
   projectId?: string;
-  /**
-   * Persisted project Workspace authority. `null` is the explicit unbound
-   * compatibility lane; a bound project must provide its exact context.
-   */
-  workspaceContext?: WorkspaceCollabContext | null;
   /** Test seam: swap the PATCH transport. */
   fetchProjectSettings?: (url: string, init: RequestInit) => Promise<Response>;
 }

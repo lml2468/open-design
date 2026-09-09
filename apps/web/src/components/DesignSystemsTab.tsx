@@ -1201,12 +1201,10 @@ function DesignSystemDetail({
         await downloadDesignSystemArchive({
           designSystemId: system.id,
           fallbackTitle: system.title,
-          workspaceContext,
         }) || (projectId
           ? await downloadProjectArchive({
               projectId,
               fallbackTitle: system.title,
-              workspaceContext,
             })
           : false);
       setDownloadFailed(!ok);

@@ -5,10 +5,8 @@ import {
   type CritiqueSseEventName,
   type PanelEvent,
 } from '@open-design/contracts/critique';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 import type { CritiqueAction } from './reducer';
-import { workspaceResourceUrl } from '../../../collab/workspace-identity';
 import { BackoffController } from '../../../lib/backoff';
 
 export interface CritiqueEventsConnection {
@@ -27,34 +25,22 @@ export interface CritiqueEventsConnectionOptions {
   clearTimeoutFn?: typeof clearTimeout;
   /** Test seam: deterministic jitter source for the reconnect backoff. */
   randomFn?: () => number;
-  /** Persisted project authority encoded into the EventSource URL. */
-  workspaceContext?: WorkspaceCollabContext | null;
 }
 
 const DEFAULT_INITIAL_BACKOFF = 1000;
 const DEFAULT_MAX_BACKOFF = 30_000;
 
-export function critiqueEventsUrl(
-  projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): string {
-  return workspaceResourceUrl(
-    `/api/projects/${encodeURIComponent(projectId)}/events`,
-    workspaceContext,
-  );
+export function critiqueEventsUrl(projectId: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/events`;
 }
 
 /** Browser-owned artifact navigation cannot attach project authority headers. */
 export function critiqueArtifactUrl(
   projectId: string,
   runId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
-  return workspaceResourceUrl(
-    `/api/projects/${encodeURIComponent(projectId)}`
-      + `/critique/${encodeURIComponent(runId)}/artifact`,
-    workspaceContext,
-  );
+  return `/api/projects/${encodeURIComponent(projectId)}`
+    + `/critique/${encodeURIComponent(runId)}/artifact`;
 }
 
 /**
@@ -149,7 +135,7 @@ export function createCritiqueEventsConnection(
 
   const connect = (): void => {
     if (cancelled) return;
-    const es = new Ctor(critiqueEventsUrl(projectId, options.workspaceContext));
+    const es = new Ctor(critiqueEventsUrl(projectId));
     source = es;
     es.addEventListener('ready', () => {
       backoff.reset();

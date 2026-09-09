@@ -7,11 +7,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
 
 import {
   createCritiqueEventsConnection,
@@ -80,29 +75,6 @@ class StubEventSource implements EventTarget {
 
 const RUN_ID = 'run_sse';
 
-function teamContext(
-  workspaceId: string,
-  workspaceMemberId: string,
-): WorkspaceCollabContext {
-  return {
-    workspaceId,
-    workspaceType: 'team',
-    workspaceMemberId,
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    teamId: `team-${workspaceId}`,
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 2 }),
-    permissions: buildWorkspacePermissions({
-      role: 'member',
-      lifecycleState: 'active',
-    }),
-  };
-}
-
 beforeEach(() => {
   StubEventSource.instances = [];
 });
@@ -121,34 +93,14 @@ describe('critique SSE connection manager (Phase 7.2)', () => {
     conn.close();
   });
 
-  it('keeps the EventSource URL free of legacy Workspace query authority', () => {
-    const workspaceA = teamContext('workspace-a', 'member-a');
-    const scoped = critiqueEventsUrl('same-project', workspaceA);
-    const parsed = new URL(scoped, 'https://od.local');
-    expect(parsed.searchParams.get('workspaceId')).toBeNull();
-    expect(parsed.searchParams.get('workspaceMemberId')).toBeNull();
-    expect(critiqueEventsUrl('same-project', null)).toBe(
-      '/api/projects/same-project/events',
-    );
-
-    createCritiqueEventsConnection('same-project', () => undefined, {
-      EventSourceCtor: StubEventSource as unknown as typeof EventSource,
-      workspaceContext: workspaceA,
-    });
-    expect(StubEventSource.instances[0]!.url).toBe(scoped);
+  it('uses the local Project EventSource URL', () => {
+    expect(critiqueEventsUrl('same-project')).toBe('/api/projects/same-project/events');
   });
 
-  it('keeps artifact navigation URLs free of legacy Workspace query authority', () => {
-    const workspaceA = teamContext('workspace-a', 'member-a');
-    const parsed = new URL(
-      critiqueArtifactUrl('project-a', 'run-a', workspaceA),
-      'https://od.local',
-    );
-    expect(parsed.pathname).toBe(
+  it('uses the local Project artifact URL', () => {
+    expect(critiqueArtifactUrl('project-a', 'run-a')).toBe(
       '/api/projects/project-a/critique/run-a/artifact',
     );
-    expect(parsed.searchParams.get('workspaceId')).toBeNull();
-    expect(parsed.searchParams.get('workspaceMemberId')).toBeNull();
   });
 
   it('subscribes to every CRITIQUE_SSE_EVENT_NAMES channel', () => {

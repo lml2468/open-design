@@ -4676,12 +4676,10 @@ function DesignSystemProjectPanel({
         await downloadProjectArchive({
           projectId,
           fallbackTitle: system.title,
-          workspaceContext,
         }) ||
         await downloadDesignSystemArchive({
           designSystemId: system.id,
           fallbackTitle: system.title,
-          workspaceContext,
         });
       if (!ok) throw new Error(t('ds.actionFailed'));
       notifyKit('success', t('ds.actionDone'));

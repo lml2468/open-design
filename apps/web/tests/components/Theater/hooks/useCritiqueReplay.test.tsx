@@ -9,11 +9,6 @@
 
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
 import type { PanelEvent } from '@open-design/contracts/critique';
 
 import { useCritiqueReplay } from '../../../../src/components/Theater/hooks/useCritiqueReplay';
@@ -47,29 +42,6 @@ const RUN_ID = 'run_replay';
 
 function ndjson(events: PanelEvent[]): string {
   return events.map((e) => JSON.stringify(e)).join('\n') + '\n';
-}
-
-function teamContext(
-  workspaceId: string,
-  workspaceMemberId: string,
-): WorkspaceCollabContext {
-  return {
-    workspaceId,
-    workspaceType: 'team',
-    workspaceMemberId,
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    teamId: `team-${workspaceId}`,
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 2 }),
-    permissions: buildWorkspacePermissions({
-      role: 'member',
-      lifecycleState: 'active',
-    }),
-  };
 }
 
 const TRANSCRIPT: PanelEvent[] = [
@@ -124,9 +96,8 @@ describe('useCritiqueReplay (Phase 7.3)', () => {
     expect(sink.state.rounds).toHaveLength(1);
   });
 
-  it('fetches a local Project transcript without legacy Workspace headers', async () => {
+  it('fetches a local Project transcript directly', async () => {
     const sink: Sink = { state: { phase: 'idle' }, status: 'idle', error: null };
-    const workspaceA = teamContext('workspace-a', 'member-a');
     let transcriptInit: RequestInit | undefined;
     const fetchTranscript = vi.fn(async (_url: string, init?: RequestInit) => {
       transcriptInit = init;
@@ -136,7 +107,7 @@ describe('useCritiqueReplay (Phase 7.3)', () => {
       <Probe
         url="/api/projects/project-a/critique/run-a/transcript"
         speed="instant"
-        options={{ fetchTranscript, workspaceContext: workspaceA }}
+        options={{ fetchTranscript }}
         sink={sink}
       />,
     );

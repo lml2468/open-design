@@ -12,7 +12,6 @@ import {
   type CritiqueEventsConnection,
   type CritiqueEventsConnectionOptions,
 } from '../state/sse';
-import { workspaceIdentityCacheKey } from '../../../collab/workspace-identity';
 
 export interface UseCritiqueStreamOptions extends CritiqueEventsConnectionOptions {
   /**
@@ -78,7 +77,6 @@ export function useCritiqueStream(
         maxBackoffMs: options.maxBackoffMs,
         setTimeoutFn: options.setTimeoutFn,
         clearTimeoutFn: options.clearTimeoutFn,
-        workspaceContext: options.workspaceContext,
       },
     );
     return () => conn.close();
@@ -88,7 +86,6 @@ export function useCritiqueStream(
   }, [
     projectId,
     enabled,
-    workspaceIdentityCacheKey(options.workspaceContext),
     options.EventSourceCtor,
     options.initialBackoffMs,
     options.maxBackoffMs,

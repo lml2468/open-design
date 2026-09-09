@@ -37,7 +37,6 @@ import {
 } from '../providers/registry';
 import {
   workspaceIdentityCacheKey,
-  workspaceResourceUrl,
 } from '../collab/workspace-identity';
 import { buildSrcdoc } from '../runtime/srcdoc';
 import {
@@ -114,7 +113,7 @@ export function BrandLogo({
 
   const src =
     stage === 'brand' && bid
-      ? workspaceResourceUrl(`/api/brands/${encodeURIComponent(bid)}/logo`, workspaceContext)
+      ? `/api/brands/${encodeURIComponent(bid)}/logo`
       : stage === 'custom' && logoSrc
         ? logoSrc
         : stage === 'favicon' && host

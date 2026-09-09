@@ -1,15 +1,5 @@
 import type { WorkspaceCollabContext } from '@open-design/contracts';
 
-/** Transitional URL shim. Local Project resources no longer encode Workspace
- * authority in navigation URLs. */
-export function workspaceResourceUrl(
-  path: string,
-  context: WorkspaceCollabContext | null | undefined,
-): string {
-  void context;
-  return path;
-}
-
 /** Append a query fragment without corrupting an already workspace-scoped URL. */
 export function appendResourceQuery(path: string, query: string): string {
   if (!query) return path;

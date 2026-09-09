@@ -26,8 +26,6 @@ import {
   isOpenDesignHostAvailable,
   printHostPdf,
 } from '@open-design/host';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
-import { workspaceResourceUrl } from '../collab/workspace-identity';
 import { sourceHasLegacyDeckScreenSlides } from './deck-slide-structure';
 
 // Re-exported so app components can gate desktop-only export paths without
@@ -90,7 +88,6 @@ export async function exportProjectAsHtml(opts: {
   filePath: string;
   fallbackTitle: string;
   versionId?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<void> {
   const url = `/api/projects/${encodeURIComponent(opts.projectId)}/export/html`;
   const resp = await fetch(url, {
@@ -781,7 +778,6 @@ export async function exportProjectAsPdf(opts: {
   projectId: string;
   title: string;
   versionId?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<ProjectPdfExportResult> {
   try {
     const resp = await fetch(`/api/projects/${encodeURIComponent(opts.projectId)}/export/pdf`, {
@@ -870,7 +866,6 @@ export async function exportProjectAsZip(opts: {
   fallbackHtml: string;
   fallbackTitle: string;
   versionId?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<void> {
   if (opts.versionId) {
     const segments = opts.filePath
@@ -951,7 +946,6 @@ export async function exportProjectAsPptx(opts: {
   // pptx only: produce an editable deck (native shapes/text) instead of a
   // screenshot one (one image per slide).
   editable?: boolean;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<ProjectScreenshotExportResult> {
   const format = opts.format ?? 'pptx';
   const path = format === 'pdf' ? 'export/pdf-image' : 'export/pptx';
@@ -1124,7 +1118,6 @@ export async function exportProjectImageDataUrl(opts: {
   width?: number;
   height?: number;
   versionId?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<ProjectImageExportResult> {
   const url = `/api/projects/${encodeURIComponent(opts.projectId)}/export/image`;
   let resp: Response;
@@ -1192,7 +1185,6 @@ export function exportProjectScreenshotPdf(opts: {
   title?: string;
   deck?: boolean;
   versionId?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<ProjectScreenshotExportResult> {
   return exportProjectAsPptx({ ...opts, format: 'pdf' });
 }
@@ -1213,12 +1205,8 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 export async function downloadDesignSystemArchive(opts: {
   designSystemId: string;
   fallbackTitle: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<boolean> {
-  const url = workspaceResourceUrl(
-    `/api/design-systems/${encodeURIComponent(opts.designSystemId)}/archive`,
-    opts.workspaceContext,
-  );
+  const url = `/api/design-systems/${encodeURIComponent(opts.designSystemId)}/archive`;
   try {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`archive request failed (${resp.status})`);
@@ -1235,7 +1223,6 @@ export async function downloadProjectArchive(opts: {
   projectId: string;
   fallbackTitle: string;
   root?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<boolean> {
   const root = opts.root?.replace(/^\/+|\/+$/g, '') ?? '';
   const url = `/api/projects/${encodeURIComponent(opts.projectId)}/archive${

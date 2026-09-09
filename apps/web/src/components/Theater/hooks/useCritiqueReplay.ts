@@ -1,7 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import type { Dispatch } from 'react';
 
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { isPanelEvent, type PanelEvent } from '@open-design/contracts/critique';
 
 import {
@@ -10,9 +9,6 @@ import {
   type CritiqueAction,
   type CritiqueState,
 } from '../state/reducer';
-import {
-  workspaceIdentityCacheKey,
-} from '../../../collab/workspace-identity';
 
 export type ReplaySpeed = 'paused' | 'instant' | 'live' | { intervalMs: number };
 
@@ -40,8 +36,6 @@ export interface UseCritiqueReplayOptions {
    */
   setTimeoutFn?: typeof setTimeout;
   clearTimeoutFn?: typeof clearTimeout;
-  /** Exact persisted Workspace authority for a project-owned transcript. */
-  workspaceContext?: WorkspaceCollabContext | null;
 }
 
 export interface UseCritiqueReplayResult {
@@ -152,7 +146,7 @@ export function useCritiqueReplay(
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcriptUrl, workspaceIdentityCacheKey(options.workspaceContext)]);
+  }, [transcriptUrl]);
 
   // Pace effect: react to both the parsed-events list AND speed changes.
   // Cleanup cancels any in-flight setTimeout, but the cursor ref survives

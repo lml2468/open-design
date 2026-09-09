@@ -11,11 +11,6 @@ import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
-import {
   setCritiqueTheaterEnabled,
   useCritiqueTheaterEnabled,
 } from '../../../../src/components/Theater/hooks/useCritiqueTheaterEnabled';
@@ -32,26 +27,6 @@ beforeEach(() => {
 function Probe({ sink }: { sink: { enabled?: boolean } }) {
   sink.enabled = useCritiqueTheaterEnabled();
   return null;
-}
-
-function teamContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'workspace-a',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-a',
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    teamId: 'team-a',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 2 }),
-    permissions: buildWorkspacePermissions({
-      role: 'member',
-      lifecycleState: 'active',
-    }),
-  };
 }
 
 describe('useCritiqueTheaterEnabled (Phase 15.3)', () => {
@@ -377,7 +352,6 @@ describe('useCritiqueTheaterEnabled (Phase 15.3)', () => {
     await act(async () => {
       setCritiqueTheaterEnabled(true, {
         projectId: 'proj-team',
-        workspaceContext: teamContext(),
         fetchProjectSettings,
       });
       await new Promise((resolve) => setTimeout(resolve, 0));

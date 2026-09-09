@@ -448,7 +448,6 @@ export function RailRecentRow({
                 filePath: '',
                 fallbackHtml: '',
                 fallbackTitle: project.name,
-                workspaceContext,
               });
             }}
           >
