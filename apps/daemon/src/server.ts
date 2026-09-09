@@ -2541,7 +2541,7 @@ export async function startServer({
     },
   });
   const {
-    ensureUserDesignSystemWorkspaceProject,
+    ensureUserDesignSystemProject,
     isProjectUsableDesignSystem,
     listAllDesignSystems,
     listAllDesignTemplates,
@@ -2550,9 +2550,8 @@ export async function startServer({
     readAvailableDesignSystem,
     readAvailableDesignSystemPackageInfo,
     readAvailableDesignSystemStaticFile,
-    readDesignSystemWorkspaceTextFile,
-    resolveUserDesignSystemShareDirectory,
-    syncUserDesignSystemAssetsFromWorkspace,
+    readDesignSystemProjectTextFile,
+    syncUserDesignSystemAssetsFromProject,
     validateProjectDesignSystemId,
     validateProjectSkillId,
   } = designSystemServices;
@@ -3717,7 +3716,7 @@ export async function startServer({
       buildUserDesignSystemArchive,
       createUserDesignSystem,
       deleteUserDesignSystem,
-      ensureUserDesignSystemWorkspaceProject,
+      ensureUserDesignSystemProject,
       listAllDesignSystems,
       listUserDesignSystemFiles,
       listUserDesignSystemRevisions,
@@ -3725,11 +3724,11 @@ export async function startServer({
       readAvailableDesignSystem,
       readAvailableDesignSystemPackageInfo,
       readAvailableDesignSystemStaticFile,
-      readDesignSystemWorkspaceTextFile,
+      readDesignSystemProjectTextFile,
       readUserDesignSystemFile,
       renderDesignSystemPreview,
       renderDesignSystemShowcase,
-      syncUserDesignSystemAssetsFromWorkspace,
+      syncUserDesignSystemAssetsFromProject,
       updateUserDesignSystem,
       updateUserDesignSystemRevisionStatus,
     },
@@ -4557,7 +4556,7 @@ export async function startServer({
       let systems = await listAllDesignSystems();
       let summary = systems.find((system) => system.id === effectiveDesignSystemId);
       if (summary?.source === 'user') {
-        await ensureUserDesignSystemWorkspaceProject(db, effectiveDesignSystemId);
+        await ensureUserDesignSystemProject(db, effectiveDesignSystemId);
         systems = await listAllDesignSystems();
         summary = systems.find((system) => system.id === effectiveDesignSystemId);
       }
@@ -4566,7 +4565,7 @@ export async function startServer({
         && project.designSystemId === effectiveDesignSystemId;
       designSystemTitle = summary?.title;
       if (summary && (isProjectUsableDesignSystem(summary) || editingOwnDraftDesignSystem)) {
-        const workspaceBody = await readDesignSystemWorkspaceTextFile(
+        const projectBody = await readDesignSystemProjectTextFile(
           db,
           summary,
           'DESIGN.md',
@@ -4574,7 +4573,7 @@ export async function startServer({
         const registryBody = await readAvailableDesignSystem(
           effectiveDesignSystemId,
         );
-        designSystemBody = (workspaceBody ?? registryBody) ?? undefined;
+        designSystemBody = (projectBody ?? registryBody) ?? undefined;
         // Single seam: env gate + built-in→user-installed fallback chain
         // live together inside `resolveDesignSystemAssets` so the whole
         // server-side asset-resolution path can be tested end-to-end

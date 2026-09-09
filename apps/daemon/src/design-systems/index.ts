@@ -1281,9 +1281,9 @@ export async function updateUserDesignSystem(
   return listed.find((s) => s.id === `user:${dirId}`) ?? null;
 }
 
-// A design-system workspace project mirrors its design system's title:
-// ensureUserDesignSystemWorkspaceProject re-stamps the project name from
-// the registry title every time the workspace is ensured, so a rename
+// A design-system backing Project mirrors its design system's title:
+// ensureUserDesignSystemProject re-stamps the project name from
+// the registry title whenever the Project is ensured, so a rename
 // applied only to the project row silently reverts on the next open.
 // Renames on these projects must instead be written through to the
 // design-system title — the sync then carries the new name back onto the
@@ -2139,8 +2139,8 @@ async function writeGeneratedDesignSystemFiles(
   );
 }
 
-// A real asset file synced in from a workspace project's editing-time
-// mirror — arbitrary bytes the agent already produced there (e.g. a
+// A real asset file synced in from a backing Project's editing directory —
+// arbitrary bytes the agent already produced there (e.g. a
 // regenerated logo.svg), not generator output.
 export type DesignSystemAssetSourceFile = {
   /** POSIX-relative path under the design-system root, e.g. "assets/logo.svg". */
@@ -2156,9 +2156,9 @@ export type DesignSystemAssetSyncResult = {
 /**
  * Copies real asset bytes into a user design system's canonical `assets/`
  * directory — the fix for the logo/asset desync (spec 04 §9.3,
- * recvqb1t4FrckM): canonical is the only directory `team-resource-share`
- * packages and downloads read from, but agent-produced assets only ever
- * landed in the workspace-project editing mirror, so a regenerated logo
+ * recvqb1t4FrckM): canonical is the only directory archive downloads read
+ * from, but agent-produced assets only ever landed in the backing Project's
+ * editing directory, so a regenerated logo
  * never reached what got shared or downloaded.
  *
  * Every write here is caller-supplied bytes, never generator output, so it

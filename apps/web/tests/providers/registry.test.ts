@@ -7,7 +7,6 @@ import {
   DEFAULT_DEPLOY_PROVIDER_ID,
   deleteDesignSystemDraft,
   uninstallDesignSystem,
-  DesignSystemDeleteError,
   deletePreviewComment,
   deployProjectFile,
   createDesignSystemDraft,
@@ -128,23 +127,6 @@ describe('daemon-local design-system catalog', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     expect(fetchMock).toHaveBeenCalledWith('/api/design-systems');
-  });
-
-  it('preserves the permission code from a denied design-system delete', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      error: 'WORKSPACE_RESOURCE_MANAGE_DENIED',
-    }), { status: 403, headers: { 'Content-Type': 'application/json' } }));
-    vi.stubGlobal('fetch', fetchMock);
-    await expect(deleteDesignSystemDraft('user:team-brand')).rejects.toEqual(
-      expect.objectContaining<Partial<DesignSystemDeleteError>>({
-        name: 'DesignSystemDeleteError',
-        status: 403,
-        code: 'WORKSPACE_RESOURCE_MANAGE_DENIED',
-      }),
-    );
-    expect(fetchMock).toHaveBeenCalledWith('/api/design-systems/user%3Ateam-brand', {
-      method: 'DELETE',
-    });
   });
 
   it('creates a design system without Workspace identity headers', async () => {

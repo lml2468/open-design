@@ -1,9 +1,9 @@
 // Logo/asset desync fix (spec 04 §9.3, recvqb1t4FrckM): the canonical design
-// system directory (USER_DESIGN_SYSTEMS_DIR/<id>) is the only place
-// team-resource-share, the download archive, and the showcase ever read
-// from — but until this fix, a real asset an agent regenerated (e.g.
-// assets/logo.svg) only ever landed in the workspace project's editing
-// mirror and never got copied back. These specs pin the two layers that fix
+// system directory (USER_DESIGN_SYSTEMS_DIR/<id>) is the only place archive
+// downloads and the showcase read from — but until this fix, a real asset an
+// agent regenerated (e.g. assets/logo.svg) only landed in the backing
+// Project's editing directory and never got copied back. These specs pin the
+// two layers that fix
 // it:
 //
 //   1. `syncUserDesignSystemAssetsFromFiles` (design-systems/index.ts) — the
@@ -11,9 +11,9 @@
 //      `.od-generated.json` fingerprint for the overwritten path so the
 //      generator never reclaims it, and flips `artifactMode` to
 //      'agent-managed' the first time anything real syncs.
-//   2. `createDesignSystemServerServices().syncUserDesignSystemAssetsFromWorkspace`
-//      — the orchestration: locates the design system's workspace project
-//      the same way `ensureUserDesignSystemWorkspaceProject` does, and
+//   2. `createDesignSystemServerServices().syncUserDesignSystemAssetsFromProject`
+//      — the orchestration: locates the design system's backing Project
+//      the same way `ensureUserDesignSystemProject` does, and
 //      copies whatever real files sit under that project's `assets/`
 //      directory.
 
@@ -155,7 +155,7 @@ describe('syncUserDesignSystemAssetsFromFiles', () => {
   });
 });
 
-describe('createDesignSystemServerServices().syncUserDesignSystemAssetsFromWorkspace', () => {
+describe('createDesignSystemServerServices().syncUserDesignSystemAssetsFromProject', () => {
   let workRoot = '';
   let userDesignSystemsDir = '';
   let projectsDir = '';
@@ -219,7 +219,7 @@ describe('createDesignSystemServerServices().syncUserDesignSystemAssetsFromWorks
     if (workRoot) await rm(workRoot, { recursive: true, force: true });
   });
 
-  it('locates the workspace project via the ds-<id> naming convention and copies its real assets into canonical', async () => {
+  it('locates the backing Project via the ds-<id> naming convention and copies its real assets into canonical', async () => {
     const created = await createUserDesignSystem(userDesignSystemsDir, {
       title: 'Acme Brand',
       body: '# Acme Brand\n\nBrand body copy.',
@@ -236,12 +236,12 @@ describe('createDesignSystemServerServices().syncUserDesignSystemAssetsFromWorks
     });
     const projectAssetsDir = path.join(projectsDir, projectId, 'assets');
     await mkdir(projectAssetsDir, { recursive: true });
-    const realLogo = Buffer.from('<svg><!-- real workspace logo --></svg>');
+    const realLogo = Buffer.from('<svg><!-- real project logo --></svg>');
     await writeFile(path.join(projectAssetsDir, 'logo.svg'), realLogo);
     // A non-asset project file must not get pulled into canonical by this sync.
     await writeFile(path.join(projectsDir, projectId, 'DESIGN.md'), '# stale copy', 'utf8');
 
-    const outcome = await services.syncUserDesignSystemAssetsFromWorkspace(db, created.id);
+    const outcome = await services.syncUserDesignSystemAssetsFromProject(db, created.id);
     expect(outcome.ok).toBe(true);
     if (outcome.ok) expect(outcome.synced).toEqual(['assets/logo.svg']);
 
@@ -254,80 +254,18 @@ describe('createDesignSystemServerServices().syncUserDesignSystemAssetsFromWorks
     expect(meta.artifactMode).toBe('agent-managed');
   });
 
-  it('prepares the canonical share directory from workspace assets before publishing', async () => {
+  it('reports no-project when the design system has no backing project row yet', async () => {
     const created = await createUserDesignSystem(userDesignSystemsDir, {
-      title: 'Share Ready Brand',
-      body: '# Share Ready Brand\n\nBrand body copy.',
-    });
-    const dirId = created.id.replace(/^user:/, '');
-    const projectId = `ds-${dirId}`;
-    insertProject(db, {
-      id: projectId,
-      name: 'Share Ready Brand',
-      designSystemId: created.id,
-      metadata: { importedFrom: 'design-system' },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    const projectAssetsDir = path.join(projectsDir, projectId, 'assets');
-    await mkdir(projectAssetsDir, { recursive: true });
-    const latestWorkspaceLogo = Buffer.from('<svg><!-- latest workspace logo --></svg>');
-    await writeFile(path.join(projectAssetsDir, 'logo.svg'), latestWorkspaceLogo);
-
-    const resolveShareDir = (
-      services as typeof services & {
-        resolveUserDesignSystemShareDirectory(
-          dbHandle: typeof db,
-          id: string,
-        ): Promise<string>;
-      }
-    ).resolveUserDesignSystemShareDirectory;
-    const shareDir = await resolveShareDir(db, created.id);
-
-    expect(shareDir).toBe(path.join(userDesignSystemsDir, dirId));
-    const publishedLogo = await readFile(path.join(shareDir, 'assets', 'logo.svg'));
-    expect(publishedLogo.equals(latestWorkspaceLogo)).toBe(true);
-  });
-
-  it('fails closed instead of returning a stale canonical share directory when workspace sync is unavailable', async () => {
-    const created = await createUserDesignSystem(userDesignSystemsDir, {
-      title: 'Unbound Brand',
-      body: '# Unbound Brand\n\nBrand body copy.',
-    });
-    const dirId = created.id.replace(/^user:/, '');
-    const staleCanonicalLogo = await readFile(
-      path.join(userDesignSystemsDir, dirId, 'assets', 'logo.svg'),
-    );
-
-    const resolveShareDir = (
-      services as typeof services & {
-        resolveUserDesignSystemShareDirectory(
-          dbHandle: typeof db,
-          id: string,
-        ): Promise<string>;
-      }
-    ).resolveUserDesignSystemShareDirectory;
-
-    await expect(resolveShareDir(db, created.id)).rejects.toThrow(
-      'design_system_share_asset_sync_failed:no-workspace-project',
-    );
-    await expect(
-      readFile(path.join(userDesignSystemsDir, dirId, 'assets', 'logo.svg')),
-    ).resolves.toEqual(staleCanonicalLogo);
-  });
-
-  it('reports no-workspace-project when the design system has no bound project row yet', async () => {
-    const created = await createUserDesignSystem(userDesignSystemsDir, {
-      title: 'No Workspace Yet',
-      body: '# No Workspace Yet\n\nBody copy.',
+      title: 'No Project Yet',
+      body: '# No Project Yet\n\nBody copy.',
     });
 
-    const outcome = await services.syncUserDesignSystemAssetsFromWorkspace(db, created.id);
-    expect(outcome).toEqual({ ok: false, reason: 'no-workspace-project' });
+    const outcome = await services.syncUserDesignSystemAssetsFromProject(db, created.id);
+    expect(outcome).toEqual({ ok: false, reason: 'no-project' });
   });
 
   it('reports not-found for an unknown design system id', async () => {
-    const outcome = await services.syncUserDesignSystemAssetsFromWorkspace(db, 'user:missing');
+    const outcome = await services.syncUserDesignSystemAssetsFromProject(db, 'user:missing');
     expect(outcome).toEqual({ ok: false, reason: 'not-found' });
   });
 });

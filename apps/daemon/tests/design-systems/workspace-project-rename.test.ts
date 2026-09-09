@@ -10,10 +10,10 @@ import {
   workspaceRenameDesignSystemId,
 } from '../../src/design-systems/index.js';
 
-// Renaming a design-system workspace project used to revert silently:
-// ensureUserDesignSystemWorkspaceProject re-stamps the project name from
-// the registry title on every workspace open, so a rename applied only to
-// the project row was overwritten by the stale title. The fix writes the
+// Renaming a design-system backing Project used to revert silently:
+// ensureUserDesignSystemProject re-stamps the project name from
+// the registry title whenever the Project is ensured, so a rename applied
+// only to the project row was overwritten by the stale title. The fix writes the
 // rename through to the design-system title; these tests pin that
 // write-through and the predicate that gates it.
 

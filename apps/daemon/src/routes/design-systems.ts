@@ -40,7 +40,7 @@ export interface RegisterDesignSystemRoutesDeps extends RouteDeps<'db' | 'paths'
     ) => Promise<{ buffer: Buffer; baseName: string; title: string } | null>;
     createUserDesignSystem: (root: string, input: UserDesignSystemInput) => Promise<DesignSystemSummary>;
     deleteUserDesignSystem: (root: string, id: string) => Promise<boolean>;
-    ensureUserDesignSystemWorkspaceProject: (
+    ensureUserDesignSystemProject: (
       db: DbHandle,
       id: string,
     ) => Promise<DesignSystemWorkspaceProject | null>;
@@ -58,22 +58,19 @@ export interface RegisterDesignSystemRoutesDeps extends RouteDeps<'db' | 'paths'
       contentType: string;
       updatedAt: string;
     } | null>;
-    readDesignSystemWorkspaceTextFile: (db: DbHandle, summary: AvailableDesignSystemSummary | undefined, filePath: string) => Promise<string | null>;
+    readDesignSystemProjectTextFile: (db: DbHandle, summary: AvailableDesignSystemSummary | undefined, filePath: string) => Promise<string | null>;
     readUserDesignSystemFile: (root: string, id: string, filePath: string) => Promise<DesignSystemFileDetail | null>;
     renderDesignSystemPreview: (id: string, body: string) => string;
     renderDesignSystemShowcase: (id: string, body: string) => string;
     /**
-     * Physically copies the real `assets/` files out of a user design
-     * system's workspace project (where an agent's Write/Edit tool calls
-     * actually land) into the canonical directory — the fix for spec 04
-     * §9.3 (recvqb1t4FrckM): canonical is the only directory
-     * `team-resource-share` and the download archive read from, and until
-     * this existed nothing ever copied a regenerated logo back into it.
+     * Physically copies real `assets/` files out of a user design system's
+     * backing Project (where an agent's Write/Edit tool calls land) into the
+     * canonical directory used by archive downloads.
      */
-    syncUserDesignSystemAssetsFromWorkspace: (
+    syncUserDesignSystemAssetsFromProject: (
       db: DbHandle,
       id: string,
-    ) => Promise<{ ok: true; synced: string[] } | { ok: false; reason: 'not-found' | 'no-workspace-project' }>;
+    ) => Promise<{ ok: true; synced: string[] } | { ok: false; reason: 'not-found' | 'no-project' }>;
     updateUserDesignSystem: (root: string, id: string, input: UserDesignSystemInput) => Promise<DesignSystemSummary | null>;
     updateUserDesignSystemRevisionStatus: (root: string, id: string, revisionId: string, status: 'accepted' | 'rejected') => Promise<DesignSystemRevision | null>;
   };
@@ -121,7 +118,7 @@ export function registerDesignSystemRoutes(
     buildUserDesignSystemArchive,
     createUserDesignSystem,
     deleteUserDesignSystem,
-    ensureUserDesignSystemWorkspaceProject,
+    ensureUserDesignSystemProject,
     listAllDesignSystems,
     listUserDesignSystemFiles,
     listUserDesignSystemRevisions,
@@ -129,11 +126,11 @@ export function registerDesignSystemRoutes(
     readAvailableDesignSystem,
     readAvailableDesignSystemPackageInfo,
     readAvailableDesignSystemStaticFile,
-    readDesignSystemWorkspaceTextFile,
+    readDesignSystemProjectTextFile,
     readUserDesignSystemFile,
     renderDesignSystemPreview,
     renderDesignSystemShowcase,
-    syncUserDesignSystemAssetsFromWorkspace,
+    syncUserDesignSystemAssetsFromProject,
     updateUserDesignSystem,
     updateUserDesignSystemRevisionStatus,
   } = ctx.designSystems;
@@ -270,7 +267,7 @@ export function registerDesignSystemRoutes(
     try {
       const systems = await listAllDesignSystems();
       const summary = systems.find((s) => s.id === req.params.id);
-      const projectBody = await readDesignSystemWorkspaceTextFile(db, summary, 'DESIGN.md');
+      const projectBody = await readDesignSystemProjectTextFile(db, summary, 'DESIGN.md');
       const body = projectBody ?? await readAvailableDesignSystem(req.params.id);
       if (body === null || !summary) {
         return res.status(404).json({ error: 'design system not found' });
@@ -338,14 +335,14 @@ export function registerDesignSystemRoutes(
 
   app.post('/api/design-systems/:id/workspace', async (req, res) => {
     try {
-      const workspace = await ensureUserDesignSystemWorkspaceProject(
+      const project = await ensureUserDesignSystemProject(
         db,
         req.params.id,
       );
-      if (!workspace) {
+      if (!project) {
         return res.status(404).json({ error: 'editable design system not found' });
       }
-      res.status(201).json(workspace);
+      res.status(201).json(project);
     } catch (err) {
       res.status(400).json({ error: String(err) });
     }
@@ -428,14 +425,14 @@ export function registerDesignSystemRoutes(
 
   // Asset sync (spec 04 §9.3, recvqb1t4FrckM): a signal-only endpoint — the
   // browser never uploads file bytes here. The daemon locates the design
-  // system's workspace project itself (same lookup
-  // `ensureUserDesignSystemWorkspaceProject` uses) and copies real files
+  // system's backing Project itself (same lookup
+  // `ensureUserDesignSystemProject` uses) and copies real files
   // under that project's `assets/` directory into the canonical design
   // system directory, entirely on the daemon side of the data-directory
   // boundary.
   app.post('/api/design-systems/:id/sync-assets', async (req, res) => {
     try {
-      const outcome = await syncUserDesignSystemAssetsFromWorkspace(
+      const outcome = await syncUserDesignSystemAssetsFromProject(
         db,
         req.params.id,
       );
@@ -443,7 +440,7 @@ export function registerDesignSystemRoutes(
         if (outcome.reason === 'not-found') {
           return res.status(404).json({ error: 'editable design system not found' });
         }
-        // No workspace project to sync from yet — a benign no-op, not an
+        // No backing Project to sync from yet — a benign no-op, not an
         // error; the trigger sites call this speculatively on every asset
         // write and run-end.
         return res.json({ synced: [] });

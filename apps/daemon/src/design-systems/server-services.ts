@@ -54,7 +54,7 @@ type DesignSystemListOptions = {
 
 export type DesignSystemAssetSyncOutcome =
   | { ok: true; synced: string[] }
-  | { ok: false; reason: 'not-found' | 'no-workspace-project' };
+  | { ok: false; reason: 'not-found' | 'no-project' };
 
 export function createDesignSystemServerServices({
   roots,
@@ -86,8 +86,8 @@ export function createDesignSystemServerServices({
     readUserDesignSystemFile: (root: string, id: string, filePath: string) => Promise<{ path: string; content: string } | null | undefined>;
     readUserDesignSystemFileBytes: (root: string, id: string, filePath: string) => Promise<{ path: string; bytes: Buffer } | null | undefined>;
     linkUserDesignSystemProject: (root: string, id: string, projectId: string) => Promise<unknown>;
-    // Physically copies real asset bytes (sourced from a workspace project's
-    // editing mirror) into the canonical assets/ dir and un-fingerprints them
+    // Physically copies real asset bytes (sourced from a backing Project's
+    // editing directory) into the canonical assets/ dir and un-fingerprints them
     // so the generator never overwrites them again (spec 04 §9.3).
     syncUserDesignSystemAssetsFromFiles: (
       root: string,
@@ -195,10 +195,9 @@ export function createDesignSystemServerServices({
 
   async function validateProjectDesignSystemId(id: unknown) {
     // Product boundary: this validator identifies the item in the daemon's
-    // locally reconciled catalog; it is not a fresh Team-authorization gate.
+    // local catalog; it is not an external authorization gate.
     // A not-yet-reconciled local copy remains usable, while a locally recorded
-    // tombstone removes it from future selection. Never add a network
-    // membership check to this project-create path.
+    // tombstone removes it from future selection.
     if (id === undefined || id === null || id === '') return { ok: true, id: null };
     if (typeof id !== 'string') {
       return {
@@ -228,10 +227,8 @@ export function createDesignSystemServerServices({
 
   async function validateProjectSkillId(id: unknown) {
     // Same invariant as Design Systems and exact-source plugins: project
-    // creation follows locally reconciled content. Team membership is checked
-    // by remote install/pull/sync/share operations, not by Send. Eventual
-    // consistency is intentional: a stale local copy remains usable until
-    // reconciliation records the retraction in the local catalog.
+    // creation follows locally reconciled content. A stale local copy remains
+    // usable until reconciliation records the retraction in the local catalog.
     if (id === undefined || id === null || id === '') {
       return { ok: true, id: null };
     }
@@ -261,7 +258,7 @@ export function createDesignSystemServerServices({
     return dirId;
   }
 
-  function userDesignSystemWorkspaceProjectId(id: string) {
+  function userDesignSystemProjectId(id: string) {
     const dirId = userDesignSystemDirectoryId(id);
     if (!dirId) return null;
     return `ds-${dirId}`.slice(0, 128);
@@ -271,10 +268,10 @@ export function createDesignSystemServerServices({
     if (typeof summary?.projectId === 'string' && projects.isSafeId(summary.projectId)) {
       return summary.projectId;
     }
-    return userDesignSystemWorkspaceProjectId(id);
+    return userDesignSystemProjectId(id);
   }
 
-  async function resolveDesignSystemWorkspaceProject(
+  async function resolveDesignSystemProject(
     _dbHandle: Database.Database,
     id: string,
   ) {
@@ -288,11 +285,11 @@ export function createDesignSystemServerServices({
     return { summary, projectId, sourceRoot };
   }
 
-  async function ensureUserDesignSystemWorkspaceProject(
+  async function ensureUserDesignSystemProject(
     dbHandle: Database.Database,
     id: string,
   ) {
-    const resolved = await resolveDesignSystemWorkspaceProject(dbHandle, id);
+    const resolved = await resolveDesignSystemProject(dbHandle, id);
     if (!resolved) return null;
     const { summary, projectId, sourceRoot } = resolved;
 
@@ -346,7 +343,7 @@ export function createDesignSystemServerServices({
         project.metadata,
       );
     }
-    await removeLegacyDesignSystemWorkspaceArtifacts(project);
+    await removeLegacyDesignSystemProjectArtifacts(project);
     await designSystems.linkUserDesignSystemProject(sourceRoot, id, project.id);
     const projectFiles = await projects.listFiles(
       paths.PROJECTS_DIR,
@@ -373,7 +370,7 @@ export function createDesignSystemServerServices({
     return /preview\/(colors-node-types|colors-ui-palette|typography-scale|spacing-system|logo-variants)\.html|ui_kits\/generated_interface(?:\/index\.html|\/)?/u.test(text);
   }
 
-  async function removeLegacyDesignSystemWorkspaceArtifacts(project: ProjectRecord) {
+  async function removeLegacyDesignSystemProjectArtifacts(project: ProjectRecord) {
     if (project?.metadata?.importedFrom !== 'design-system') return;
     const dir = projects.resolveProjectDir(paths.PROJECTS_DIR, project.id, project.metadata);
     for (const artifact of designSystems.LEGACY_DESIGN_SYSTEM_ARTIFACTS) {
@@ -396,7 +393,7 @@ export function createDesignSystemServerServices({
     }
   }
 
-  async function readDesignSystemWorkspaceTextFile(
+  async function readDesignSystemProjectTextFile(
     dbHandle: Database.Database,
     summary: DesignSystemSummary | null | undefined,
     filePath: string,
@@ -420,24 +417,22 @@ export function createDesignSystemServerServices({
   }
 
   /**
-   * Copies the real `assets/` files out of a user design system's workspace
-   * project (the editing-time mirror an agent actually writes to) into the
-   * canonical design-system directory, so `team-resource-share`'s zip and
-   * `/api/design-systems/:id/archive` stop shipping a stale/placeholder
-   * `assets/logo.svg` (spec 04 §9.3, recvqb1t4FrckM). Locates the source
-   * project the same way `ensureUserDesignSystemWorkspaceProject` does
-   * (`projectBackedDesignSystemProjectId`), just copying in the opposite
-   * direction — from the project mirror back to canonical.
+   * Copies the real `assets/` files out of a user design system's backing
+   * project (the editing-time directory an agent actually writes to) into the
+   * canonical design-system directory so archive downloads cannot ship a
+   * stale/placeholder `assets/logo.svg`. The source project is resolved by
+   * `projectBackedDesignSystemProjectId`; bytes then flow from that Project
+   * back to the canonical design-system package.
    */
-  async function syncUserDesignSystemAssetsFromWorkspace(
+  async function syncUserDesignSystemAssetsFromProject(
     dbHandle: Database.Database,
     id: string,
   ): Promise<DesignSystemAssetSyncOutcome> {
-    const resolved = await resolveDesignSystemWorkspaceProject(dbHandle, id);
+    const resolved = await resolveDesignSystemProject(dbHandle, id);
     if (!resolved) return { ok: false, reason: 'not-found' };
     const { projectId, sourceRoot } = resolved;
     const project = projects.getProject(dbHandle, projectId);
-    if (!project) return { ok: false, reason: 'no-workspace-project' };
+    if (!project) return { ok: false, reason: 'no-project' };
 
     const projectFiles = await projects.listFiles(
       paths.PROJECTS_DIR,
@@ -475,29 +470,8 @@ export function createDesignSystemServerServices({
     return { ok: true, synced: result.synced };
   }
 
-  /**
-   * Resolves the directory that a team-share publish may archive. Unlike the
-   * read-only canonical path resolver, this first snapshots the workspace
-   * project's latest assets back into canonical. A missing source fails
-   * closed so a repeat "Sync to team" can never publish stale bytes.
-   */
-  async function resolveUserDesignSystemShareDirectory(
-    dbHandle: Database.Database,
-    id: string,
-  ): Promise<string> {
-    const outcome = await syncUserDesignSystemAssetsFromWorkspace(dbHandle, id);
-    if (!outcome.ok) {
-      throw new Error(`design_system_share_asset_sync_failed:${outcome.reason}`);
-    }
-    const dirId = userDesignSystemDirectoryId(id);
-    if (!dirId) {
-      throw new Error('design_system_share_asset_sync_failed:not-found');
-    }
-    return path.join(paths.USER_DESIGN_SYSTEMS_DIR, dirId);
-  }
-
   return {
-    ensureUserDesignSystemWorkspaceProject,
+    ensureUserDesignSystemProject,
     isProjectUsableDesignSystem,
     listAllDesignSystems,
     listAllDesignTemplates,
@@ -506,9 +480,8 @@ export function createDesignSystemServerServices({
     readAvailableDesignSystem,
     readAvailableDesignSystemPackageInfo,
     readAvailableDesignSystemStaticFile,
-    readDesignSystemWorkspaceTextFile,
-    resolveUserDesignSystemShareDirectory,
-    syncUserDesignSystemAssetsFromWorkspace,
+    readDesignSystemProjectTextFile,
+    syncUserDesignSystemAssetsFromProject,
     validateProjectDesignSystemId,
     validateProjectSkillId,
   };

@@ -33,7 +33,7 @@ function registerRoutes(app: express.Express, staticHtml: string | null) {
       buildUserDesignSystemArchive: async () => null,
       createUserDesignSystem: async () => ({}) as never,
       deleteUserDesignSystem: async () => false,
-      ensureUserDesignSystemWorkspaceProject: async () => null,
+      ensureUserDesignSystemProject: async () => null,
       listAllDesignSystems: async () => [],
       listUserDesignSystemFiles: async () => null,
       listUserDesignSystemRevisions: async () => null,
@@ -48,12 +48,12 @@ function registerRoutes(app: express.Express, staticHtml: string | null) {
               updatedAt: 'Tue, 30 Jun 2026 00:00:00 GMT',
             }
           : null,
-      readDesignSystemWorkspaceTextFile: async () => null,
+      readDesignSystemProjectTextFile: async () => null,
       readUserDesignSystemFile: async () => null,
       renderDesignSystemPreview: () => '<!doctype html><title>preview</title>',
       renderDesignSystemShowcase: (id: string, body: string) =>
         `<!doctype html><title>${id} synthetic</title><main>${body}</main>`,
-      syncUserDesignSystemAssetsFromWorkspace: async () => ({ ok: false, reason: 'not-found' }),
+      syncUserDesignSystemAssetsFromProject: async () => ({ ok: false, reason: 'not-found' }),
       updateUserDesignSystem: async () => null,
       updateUserDesignSystemRevisionStatus: async () => null,
     },

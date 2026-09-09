@@ -23,7 +23,6 @@ import {
 import { takeDesignSystemFocus } from '../runtime/brands';
 import {
   deleteDesignSystemDraft,
-  DesignSystemDeleteError,
   fetchDesignSystem,
   fetchProjectFileText,
   projectRawUrl,
@@ -411,13 +410,7 @@ export function DesignSystemsTab({
       errorCode = err instanceof Error
         ? `DS_DELETE_THREW:${err.message.slice(0, 80)}`
         : 'DS_DELETE_THREW';
-      notifyAction(
-        'error',
-        err instanceof DesignSystemDeleteError
-          && err.code === 'WORKSPACE_RESOURCE_MANAGE_DENIED'
-          ? t('dsManager.deletePermissionDenied')
-          : t('ds.actionFailed'),
-      );
+      notifyAction('error', t('ds.actionFailed'));
     } finally {
       setBusyAction(null);
       trackDesignSystemStatusResult(analytics.track, {

@@ -7,7 +7,6 @@ import type { DesignSystemSummary } from '@open-design/contracts';
 import { DesignSystemsTab } from '../../src/components/DesignSystemsTab';
 import {
   deleteDesignSystemDraft,
-  DesignSystemDeleteError,
   fetchDesignSystem,
   updateDesignSystemDraft,
 } from '../../src/providers/registry';
@@ -313,35 +312,6 @@ describe('DesignSystemsTab', () => {
     await waitFor(() => expect(screen.getByText('Done')).toBeTruthy());
   });
 
-  it('explains when a design system delete is denied instead of suggesting a retry', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    vi.mocked(deleteDesignSystemDraft).mockRejectedValueOnce(
-      new DesignSystemDeleteError(
-        'WORKSPACE_RESOURCE_MANAGE_DENIED',
-        403,
-        'WORKSPACE_RESOURCE_MANAGE_DENIED',
-      ),
-    );
-    render(
-      <DesignSystemsTab
-        systems={systems}
-        selectedId={null}
-        onSelect={() => {}}
-        onCreate={() => {}}
-        onOpenSystem={() => {}}
-      />,
-    );
-
-    fireEvent.click(await screen.findByTestId('design-kit-more-actions'));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Acme Design System' }));
-
-    await waitFor(() => {
-      expect(
-        screen.getByText('You don\'t have permission to delete this design system.'),
-      ).toBeTruthy();
-    });
-    expect(screen.queryByText('Something went wrong. Please try again.')).toBeNull();
-  });
 });
 
 // --- #2062: built-in library surface-chip filtering -----------------------

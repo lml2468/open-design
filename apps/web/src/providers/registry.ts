@@ -856,17 +856,6 @@ export async function syncDesignSystemAssetsFromWorkspace(
   }
 }
 
-export class DesignSystemDeleteError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
-    super(message);
-    this.name = 'DesignSystemDeleteError';
-  }
-}
-
 export async function deleteDesignSystemDraft(
   id: string,
 ): Promise<boolean> {
@@ -875,16 +864,9 @@ export async function deleteDesignSystemDraft(
       `/api/design-systems/${encodeURIComponent(id)}`,
       { method: 'DELETE' },
     );
-    if (!resp.ok && resp.status === 403) {
-      const errorBody = await readApiErrorBody(resp);
-      const code = errorBody.code
-        ?? (/^[A-Z][A-Z0-9_]+$/.test(errorBody.message) ? errorBody.message : undefined);
-      throw new DesignSystemDeleteError(errorBody.message, resp.status, code);
-    }
     if (resp.ok) noteDesignSystemCatalogMutation();
     return resp.ok;
-  } catch (error) {
-    if (error instanceof DesignSystemDeleteError) throw error;
+  } catch {
     return false;
   }
 }
