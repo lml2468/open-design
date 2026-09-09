@@ -11,11 +11,7 @@ import { FileViewer } from '../../src/components/FileViewer';
 import { resetSharedCancellableGet } from '../../src/lib/shared-cancellable-get';
 import type { ProjectFile } from '../../src/types';
 function collabValue(): CollabContextValue {
-  return {
-    workspaceContext: null,
-    workspaceContextLoading: false,
-    projectResourceAuthority: 'local',
-  };
+  return {};
 }
 
 function Wrap({ children }: { children: ReactNode }) {

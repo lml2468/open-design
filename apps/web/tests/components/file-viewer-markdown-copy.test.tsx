@@ -11,9 +11,7 @@ import type { ProjectFile } from '../../src/types';
 import { fetchProjectFileText, writeProjectTextFile } from '../../src/providers/registry';
 import {
   CollabProvider,
-  type CollabContextValue,
 } from '../../src/collab/collab-context';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 vi.mock('../../src/providers/registry', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/registry')>(
@@ -53,30 +51,8 @@ function baseFile(overrides: Partial<ProjectFile> = {}): ProjectFile {
   };
 }
 
-function teamWorkspaceContext(
-  overrides: Partial<WorkspaceCollabContext> = {},
-): WorkspaceCollabContext {
-  return {
-    workspaceId: 'workspace-team',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-1',
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    permissions: {
-      canShareProjects: false,
-      canWriteSyncedFiles: false,
-    },
-    ...overrides,
-  } as WorkspaceCollabContext;
-}
-
-function renderWithWorkspace(ui: React.ReactElement, workspaceContext: WorkspaceCollabContext) {
-  const collab: CollabContextValue = {
-    workspaceContext,
-    workspaceContextLoading: false,
-  };
-  return render(<CollabProvider value={collab}>{ui}</CollabProvider>);
+function renderWithCollab(ui: React.ReactElement) {
+  return render(<CollabProvider value={{}}>{ui}</CollabProvider>);
 }
 
 describe('FileViewer markdown code block copy', () => {
@@ -164,13 +140,11 @@ describe('FileViewer markdown code block copy', () => {
     ]);
   });
 
-  it('renders relative markdown images with server-derived project authority', async () => {
+  it('renders relative markdown images from the local Project', async () => {
     mockedFetchProjectFileText.mockResolvedValue('![Team image](./relative.png)');
-    const context = teamWorkspaceContext();
 
-    const { container } = renderWithWorkspace(
+    const { container } = renderWithCollab(
       <FileViewer projectId="project-1" projectKind="prototype" file={baseFile()} />,
-      context,
     );
 
     await waitFor(() => {

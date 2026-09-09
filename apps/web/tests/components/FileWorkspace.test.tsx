@@ -315,11 +315,8 @@ function teamContext(
   };
 }
 
-function collabValue(workspaceContext: WorkspaceCollabContext): CollabContextValue {
-  return {
-    workspaceContext,
-    workspaceContextLoading: false,
-  };
+function collabValue(_workspaceContext: WorkspaceCollabContext): CollabContextValue {
+  return {};
 }
 
 function cssDeclarations(css: string, selector: string): string {

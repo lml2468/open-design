@@ -161,12 +161,9 @@ function renderWithProjectWorkspace(
 }
 
 function projectWorkspaceCollabValue(
-  workspaceContext: WorkspaceCollabContext | null,
+  _workspaceContext: WorkspaceCollabContext | null,
 ): CollabContextValue {
-  return {
-    workspaceContext,
-    workspaceContextLoading: false,
-  };
+  return {};
 }
 
 const TEST_SNAPSHOT_DATA_URL = 'data:image/png;base64,c25hcHNob3Q=';
@@ -744,10 +741,7 @@ describe('FileViewer preview scale', () => {
       file,
     };
     const { container, rerender } = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
+      <CollabProvider value={projectWorkspaceCollabValue(null)}>
         <FileViewer {...props} workspaceActive={false} />
       </CollabProvider>,
     );
@@ -767,10 +761,7 @@ describe('FileViewer preview scale', () => {
     expect(retainedFrame.dataset.odActive).toBe('true');
 
     rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
+      <CollabProvider value={projectWorkspaceCollabValue(null)}>
         <FileViewer {...props} workspaceActive />
       </CollabProvider>,
     );
@@ -10510,10 +10501,7 @@ describe('FileViewer tweaks toolbar', () => {
   });
 
   it('keeps the Comment CTA for a new element annotation in a viewer-only project', async () => {
-    const collab: CollabContextValue = {
-      workspaceContext: teamWorkspaceContext(),
-      workspaceContextLoading: false,
-    };
+    const collab: CollabContextValue = {};
 
     render(
       <CollabProvider value={collab}>

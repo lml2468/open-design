@@ -199,7 +199,6 @@ import type {
   ChatSessionMode,
   InstalledPluginRecord,
   RunContextSelection,
-  WorkspaceCollabContext,
   WorkspaceContextItem,
 } from '@open-design/contracts';
 import type {
@@ -243,7 +242,6 @@ import { ProjectCollaborationPublish } from './collaboration/ProjectCollaboratio
 import {
   CollabProvider,
   type CollabContextValue,
-  type ProjectResourceAuthority,
 } from '../collab/collab-context';
 import { persistCommentAnchors } from '../collab/comment-anchor-client';
 import type { AnchorWriteBack } from '../comments';
@@ -1672,11 +1670,6 @@ export function ProjectView({
     };
   }, [projectAuthorizationKey]);
   const analytics = useAnalytics();
-  const projectRunWorkspaceContext: WorkspaceCollabContext | null = null;
-  const projectRunAuthorityKey = 'local';
-  const projectResourceAuthority: ProjectResourceAuthority = 'local';
-  const projectRunWorkspaceContextRef = useRef(projectRunWorkspaceContext);
-  projectRunWorkspaceContextRef.current = projectRunWorkspaceContext;
   // Onboarding first-generation funnel (spec §11.1). Consume the pending entry
   // (set by the Home recommendation) exactly once on mount; the refs guard the
   // two lifecycle events so each fires only for the genuine first send / first
@@ -1827,7 +1820,7 @@ export function ProjectView({
   const activeConversationIdRef = useRef(activeConversationId);
   activeConversationIdRef.current = activeConversationId;
   const [pendingEmptyConversationSeed, setPendingEmptyConversationSeed] =
-    useState<{ projectId: string; authorityKey: string } | null>(null);
+    useState<{ projectId: string } | null>(null);
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
     [conversations, activeConversationId],
@@ -1848,16 +1841,9 @@ export function ProjectView({
   );
   const collabValue = useMemo<CollabContextValue>(
     () => ({
-      workspaceContext: projectRunWorkspaceContext,
-      workspaceContextLoading: false,
-      projectResourceAuthority,
       onLostAnchors: handleLostAnchors,
     }),
-    [
-      projectRunWorkspaceContext,
-      projectResourceAuthority,
-      handleLostAnchors,
-    ],
+    [handleLostAnchors],
   );
   const activeSessionMode = activeConversation?.sessionMode ?? 'design';
   const [messagesConversationId, setMessagesConversationId] = useState<string | null>(null);
@@ -2221,7 +2207,6 @@ export function ProjectView({
   // Track which conversation the current messages belong to, so we can
   // correctly gate new-conversation creation even during async loads.
   const messagesConversationIdRef = useRef<string | null>(null);
-  const messagesAuthorityKeyRef = useRef<string | null>(null);
   const creatingConversationRef = useRef(false);
   // Last conversation id this view pushed into the URL. Lets the
   // route -> active-conversation sync tell a genuine external navigation
@@ -2235,8 +2220,6 @@ export function ProjectView({
   useEffect(() => {
     projectIdRef.current = project.id;
   }, [project.id]);
-  const projectRunAuthorityKeyRef = useRef(projectRunAuthorityKey);
-  projectRunAuthorityKeyRef.current = projectRunAuthorityKey;
   const conversationsLoadedProjectIdRef = useRef<string | null>(null);
   // Live mirror of the full project prop, for async handlers whose useCallback
   // deps only track `project.id` (e.g. the project-events handler below):
@@ -2365,7 +2348,6 @@ export function ProjectView({
           setActiveConversationId(null);
           setPendingEmptyConversationSeed({
             projectId: project.id,
-            authorityKey: projectRunAuthorityKey,
           });
         } else {
           setPendingEmptyConversationSeed(null);
@@ -2406,14 +2388,12 @@ export function ProjectView({
   }, [
     commitPreviewComments,
     project.id,
-    projectRunAuthorityKey,
   ]);
 
   useEffect(() => {
     if (
       !pendingEmptyConversationSeed
       || pendingEmptyConversationSeed.projectId !== project.id
-      || pendingEmptyConversationSeed.authorityKey !== projectRunAuthorityKey
     ) {
       return;
     }
@@ -2445,7 +2425,6 @@ export function ProjectView({
   }, [
     pendingEmptyConversationSeed,
     project.id,
-    projectRunAuthorityKey,
   ]);
 
   // Issue #1505: when the URL changes the routed conversation id while
@@ -2494,15 +2473,13 @@ export function ProjectView({
       setMessagesConversationId(null);
       setFailedMessagesConversationId(null);
       messagesConversationIdRef.current = null;
-      messagesAuthorityKeyRef.current = null;
       setStreaming(false);
       streamingConversationIdRef.current = null;
       setStreamingConversationId(null);
       return;
     }
     const reloadingCurrentConversation =
-      messagesConversationIdRef.current === activeConversationId
-      && messagesAuthorityKeyRef.current === projectRunAuthorityKey;
+      messagesConversationIdRef.current === activeConversationId;
     const liveReloadMessageIds = new Set<string>();
     if (
       messagesConversationIdRef.current === activeConversationId
@@ -2530,9 +2507,9 @@ export function ProjectView({
     const preservingLiveConversation = liveReloadMessageIds.size > 0;
     // Reset the initialized flag so auto-send waits for this authoritative DB
     // read to settle before checking messages.length. A same-conversation
-    // authority refresh keeps the prior transcript visible. An authority-key
-    // handoff keeps only the live turn, so its pending read cannot detach the
-    // stream or later replace those rows with an empty snapshot.
+    // same-conversation refresh keeps the prior transcript visible. A pending
+    // read keeps only the live turn, so it cannot detach the stream or later
+    // replace those rows with an empty snapshot.
     setMessagesInitialized(false);
     let cancelled = false;
     setFailedMessagesConversationId(null);
@@ -2556,7 +2533,6 @@ export function ProjectView({
     const commentsGeneration = previewCommentsGenerationRef.current;
     if (!reloadingCurrentConversation && !preservingLiveConversation) {
       messagesConversationIdRef.current = null;
-      messagesAuthorityKeyRef.current = null;
     }
     (async () => {
       try {
@@ -2591,7 +2567,6 @@ export function ProjectView({
         setError(null);
         savedArtifactRef.current = null;
         messagesConversationIdRef.current = activeConversationId;
-        messagesAuthorityKeyRef.current = projectRunAuthorityKey;
         setMessagesConversationId(activeConversationId);
         setFailedMessagesConversationId(null);
       } catch (err) {
@@ -2611,7 +2586,6 @@ export function ProjectView({
         setError(message);
         if (!preservingLiveConversation) {
           messagesConversationIdRef.current = null;
-          messagesAuthorityKeyRef.current = null;
           setMessagesConversationId(null);
         }
         setFailedMessagesConversationId(activeConversationId);
@@ -2625,7 +2599,6 @@ export function ProjectView({
     activeConversationId,
     commitPreviewComments,
     messageLoadRetryNonce,
-    projectRunAuthorityKey,
   ]);
 
   useEffect(() => {
@@ -2806,7 +2779,7 @@ export function ProjectView({
     return () => {
       cancelled = true;
     };
-  }, [project.id, projectRunAuthorityKey]);
+  }, [project.id]);
 
   // Debounce the canonical (daemon + SQLite) tab-state write. The embedded
   // browser fans out url/title/favicon updates in bursts on a single page load
@@ -2919,7 +2892,7 @@ export function ProjectView({
       onAcceptedGeneration?.(acceptedGeneration);
     }
     return next;
-  }, [project.id, projectRunAuthorityKey]);
+  }, [project.id]);
 
   useEffect(() => {
     projectFilesRef.current = projectFiles;
@@ -2947,14 +2920,14 @@ export function ProjectView({
         return null;
       }
     },
-    [project.id, projectRunAuthorityKey],
+    [project.id],
   );
 
   const refreshLiveArtifacts = useCallback(async (): Promise<LiveArtifactSummary[]> => {
     const next = await fetchLiveArtifacts(project.id);
     setLiveArtifacts(next);
     return next;
-  }, [project.id, projectRunAuthorityKey]);
+  }, [project.id]);
 
   const refreshWorkspaceItems = useCallback(async (
     options?: { freshProjectFiles?: boolean },
@@ -3406,8 +3379,6 @@ export function ProjectView({
     refreshLiveArtifacts,
     project.id,
     projectAuthorizationKey,
-    projectRunAuthorityKey,
-    projectRunWorkspaceContext,
   ]);
   // Project events are emitted by the local daemon and authorized by the local
   // daemon session. Remote Collaboration Server state is reconciled separately.
@@ -3645,7 +3616,7 @@ export function ProjectView({
         baseUrl: parsed.baseUrl || parsed.url,
       };
     },
-    [project.id, projectRunWorkspaceContext, t],
+    [project.id, t],
   );
 
   const readBrandBrowserSnapshot = useCallback(
@@ -4243,7 +4214,6 @@ export function ProjectView({
       routeConversationId,
       commitPreviewComments,
       previewComments,
-      projectRunWorkspaceContext,
       t,
     ],
   );
@@ -7604,7 +7574,6 @@ export function ProjectView({
       byokImageModelOptionsPV,
       byokVideoModelOptionsPV,
       byokSpeechModelOptionsPV,
-      projectRunWorkspaceContext,
       projectMutationReadOnly,
     ],
   );
@@ -7953,7 +7922,7 @@ export function ProjectView({
       }
       return { status: 'queued', commentIds: queuedCommentIds };
     },
-    [handleSend, project.id, currentConversationQueueDisabled, projectRunWorkspaceContext],
+    [handleSend, project.id, currentConversationQueueDisabled],
   );
   const commentQueueOnSend = currentConversationBusy && !currentConversationQueueDisabled;
 
@@ -8420,7 +8389,6 @@ export function ProjectView({
       setStreamingConversationId(null);
       setMessagesConversationId(null);
       messagesConversationIdRef.current = fresh.id;
-      messagesAuthorityKeyRef.current = projectRunAuthorityKey;
       setConversations((curr) => [fresh, ...curr]);
       setActiveConversationId(fresh.id);
       // Push the new conversation id into the URL synchronously so the
@@ -8453,7 +8421,6 @@ export function ProjectView({
     messages.length,
     navigate,
     openTabsState.active,
-    projectRunAuthorityKey,
     projectMutationReadOnly,
   ]);
 
@@ -8470,7 +8437,6 @@ export function ProjectView({
     setFailedMessagesConversationId(null);
     setConversationLoadError(null);
     messagesConversationIdRef.current = null;
-    messagesAuthorityKeyRef.current = null;
     setActiveConversationId(id);
     // Push the new conversation id into the URL synchronously so the
     // route-sync effect at L512 sees a matching `routeConversationId`
@@ -8666,7 +8632,6 @@ export function ProjectView({
         setStreamingConversationId(null);
         setMessagesConversationId(null);
         messagesConversationIdRef.current = null;
-        messagesAuthorityKeyRef.current = null;
         setFailedMessagesConversationId(null);
         setConversations((curr) => [fresh, ...curr.filter((c) => c.id !== fresh.id)]);
         setActiveConversationId(fresh.id);

@@ -35,19 +35,9 @@ import { CollabProvider, type CollabContextValue } from '../../src/collab/collab
 import { FileViewer } from '../../src/components/FileViewer';
 import { resetSharedCancellableGet } from '../../src/lib/shared-cancellable-get';
 import type { ProjectFile } from '../../src/types';
-import { workspaceContextFixture } from '../helpers/workspace-context';
-
-const WORKSPACE_CONTEXT = workspaceContextFixture({
-  workspaceId: 'ws-deck-hidden-mount',
-  workspaceMemberId: 'member-deck-hidden-mount',
-});
 
 function collabValue(): CollabContextValue {
-  return {
-    workspaceContext: WORKSPACE_CONTEXT,
-    workspaceContextLoading: false,
-    projectResourceAuthority: 'workspace',
-  };
+  return {};
 }
 
 function Wrap({ children }: { children: ReactNode }) {

@@ -22,7 +22,6 @@ import type {
   ProjectFolder,
 } from "../../src/types";
 import { VISUAL_STABILITY_STORAGE_KEY } from "../../src/utils/visualStability";
-import { workspaceContextFixture } from "../helpers/workspace-context";
 
 function folder(path: string): ProjectFolder {
   return {
@@ -353,11 +352,7 @@ describe("DesignFilesPanel selection", () => {
     expect(onDeleteFiles).toHaveBeenCalledWith(["file-1.html", "file-2.png"]);
   });
 
-  it("keeps batch archive downloads local when legacy Workspace context is present", async () => {
-    const workspaceContext = workspaceContextFixture({
-      workspaceId: "workspace-a",
-      workspaceMemberId: "member-a",
-    });
+  it("keeps batch archive downloads local", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response("zip", {
         status: 200,
@@ -379,10 +374,7 @@ describe("DesignFilesPanel selection", () => {
     const files = [file({ name: "page.html", kind: "html" })];
     const { container } = render(
       <CollabProvider
-        value={{
-          workspaceContext,
-          workspaceContextLoading: false,
-        }}
+        value={{}}
       >
         <DesignFilesPanel
           projectId="test-project"

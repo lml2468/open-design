@@ -5,11 +5,6 @@ import { fireEvent, waitFor } from '@testing-library/react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
 
 import { FileWorkspace } from '../../src/components/FileWorkspace';
 import {
@@ -102,28 +97,8 @@ function designSystem(overrides: Partial<DesignSystemSummary> = {}): DesignSyste
   };
 }
 
-function teamContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'workspace-logo',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-logo',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    teamId: 'team-logo',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-  };
-}
-
-function collabValue(workspaceContext: WorkspaceCollabContext): CollabContextValue {
-  return {
-    workspaceContext,
-    workspaceContextLoading: false,
-  };
+function collabValue(): CollabContextValue {
+  return {};
 }
 
 function renderWorkspace(element: React.ReactElement) {
@@ -158,8 +133,7 @@ function todoWrite(
 }
 
 describe('FileWorkspace design-system project surface', () => {
-  it('keeps a legacy logo-only brand.json visible through server-derived project authority', async () => {
-    const workspaceContext = teamContext();
+  it('keeps a legacy logo-only brand.json visible for a local Project', async () => {
     registryMocks.fetchProjectFileText.mockImplementation((_projectId: string, name: string) => {
       if (name === 'DESIGN.md') return Promise.resolve('# Legacy Logo');
       if (name === 'brand.json') {
@@ -171,7 +145,7 @@ describe('FileWorkspace design-system project surface', () => {
     });
 
     const container = renderWorkspace(
-      <CollabProvider value={collabValue(workspaceContext)}>
+      <CollabProvider value={collabValue()}>
         <FileWorkspace
           projectId="ds-legacy-logo"
           projectKind="prototype"
