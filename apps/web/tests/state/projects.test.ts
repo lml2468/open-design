@@ -31,43 +31,9 @@ import {
   waitGeneratedPluginShareTask,
 } from '../../src/state/projects';
 import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
-import {
   designBrowserHistoryStorageKey,
   designBrowserViewportStorageKey,
 } from '../../src/components/design-browser-storage';
-
-function personalWorkspaceContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'ws-personal',
-    workspaceType: 'personal',
-    workspaceMemberId: 'wm-1',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 1, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-  };
-}
-
-function teamWorkspaceContext(
-  overrides: Partial<WorkspaceCollabContext> = {},
-): WorkspaceCollabContext {
-  return {
-    ...personalWorkspaceContext(),
-    workspaceId: 'ws-team',
-    workspaceType: 'team',
-    role: 'member',
-    teamId: 'team-1',
-    ...overrides,
-  };
-}
 
 describe('listMessages', () => {
   afterEach(() => {

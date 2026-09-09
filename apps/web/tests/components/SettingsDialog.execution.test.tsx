@@ -4,7 +4,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OpenDesignHostUpdaterStatusSnapshot } from '@open-design/host';
 import { installMockOpenDesignHost } from '@open-design/host/testing';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { en } from '../../src/i18n/locales/en';
 
 function optionNames(container: HTMLElement): string[] {
@@ -111,7 +110,6 @@ import { providerModelsCacheKey } from '../../src/components/providerModelsCache
 import { I18nProvider } from '../../src/i18n';
 import { LOCALES } from '../../src/i18n/types';
 import { MAX_MAX_TOKENS, MIN_MAX_TOKENS } from '../../src/state/maxTokens';
-import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 import type {
   AgentInfo,
   AppConfig,
@@ -147,18 +145,6 @@ const availableAgents: AgentInfo[] = [
     models: [{ id: 'default', label: 'Default' }],
   },
 ];
-
-function workspaceDirectoryResponse(
-  context: WorkspaceCollabContext | null,
-): Response {
-  return new Response(
-    JSON.stringify(workspaceDirectoryFixture(context ? [context] : [])),
-    {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    },
-  );
-}
 
 type OnRefreshAgents = (
   options?: AgentRefreshOptions,
@@ -919,12 +905,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
   it('saves and auto-tests the self-hosted Ollama preset without an API key', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -1752,12 +1732,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
   it('auto-tests a saved complete BYOK config when Settings opens', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -1791,15 +1765,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
   it('auto-tests BYOK after required fields become locally valid', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url === '/api/workspace/directory') {
-        return workspaceDirectoryResponse(null);
-      }
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -2092,12 +2057,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
       // current extraction override from /api/memory on mount. Swallow
       // it here so the assertion below only counts the test-connection
       // POST the user actually triggered.
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -2146,12 +2105,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
   it('shows provider upstream detail for failed BYOK connection tests', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -2309,12 +2262,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     let sentApiKey: unknown;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -2359,12 +2306,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
   it('shows a BYOK API key cleaned notice after blur cleanup', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -2409,15 +2350,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     let attempt = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url === '/api/workspace/directory') {
-        return workspaceDirectoryResponse(null);
-      }
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -2464,12 +2396,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
   it('marks a successful BYOK test after a config edit as success after action', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -2529,12 +2455,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
   it('renders invalid Base URL test failures on the Base URL field', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -2569,12 +2489,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
   it('renders auth failed test failures on the API key field', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -2611,12 +2525,6 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
   it('focuses the model field when the BYOK test returns model not found', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -2862,12 +2770,6 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     ];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -3074,12 +2976,6 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
   it('renders a Local CLI connection test for selected installed agents', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
       if (url === '/api/memory') {
         return new Response(
           JSON.stringify({ enabled: true, memories: [], extraction: null }),
@@ -4120,18 +4016,6 @@ describe('SettingsDialog pets interactions', () => {
 });
 
 describe('IntegrationsView skills tab', () => {
-  beforeEach(() => {
-    // IntegrationsView still resolves Workspace state for neighboring
-    // collaboration-aware sections. The Skill catalog itself is daemon-local.
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/api/workspace/directory')) {
-        return workspaceDirectoryResponse(null);
-      }
-      throw new Error(`Unexpected IntegrationsView request: ${url}`);
-    }));
-  });
-
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();

@@ -1,12 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installMockOpenDesignHost } from '@open-design/host/testing';
 import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
-
-import {
   cancelConnectorAuthorization,
   CLOUDFLARE_PAGES_PROVIDER_ID,
   connectConnector,
@@ -93,31 +87,6 @@ describe('skill operation diagnostics', () => {
     });
   });
 });
-
-function personalWorkspaceContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'ws-personal',
-    workspaceType: 'personal',
-    workspaceMemberId: 'wm-1',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 1, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-  };
-}
-
-function teamWorkspaceContext(): WorkspaceCollabContext {
-  return {
-    ...personalWorkspaceContext(),
-    workspaceId: 'ws-team-a',
-    workspaceType: 'team',
-    workspaceMemberId: 'wm-team-a',
-  };
-}
 
 function agentStreamResponse(text: string): Response {
   const encoder = new TextEncoder();
@@ -538,7 +507,6 @@ describe('fetchProjectFiles', () => {
   });
 
   it('re-reads after a successful mutation overtakes an in-flight file list', async () => {
-    const workspaceContext = personalWorkspaceContext();
     const staleFiles = [{
       name: 'stale.html',
       path: 'stale.html',
@@ -591,7 +559,6 @@ describe('fetchProjectFiles', () => {
   });
 
   it('re-reads after an external file event invalidates settled and in-flight scoped lists', async () => {
-    const workspaceContext = personalWorkspaceContext();
     const firstFiles = [{
       name: 'first.html',
       path: 'first.html',

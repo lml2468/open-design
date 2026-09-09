@@ -7,11 +7,6 @@ import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
 
 import {
   DESIGN_FILES_TAB,
@@ -295,27 +290,7 @@ function workspaceFile(name: string): ProjectFile {
   };
 }
 
-function teamContext(
-  workspaceId: string,
-  workspaceMemberId: string,
-): WorkspaceCollabContext {
-  return {
-    workspaceId,
-    workspaceType: 'team',
-    workspaceMemberId,
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    teamId: `team-${workspaceId}`,
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-  };
-}
-
-function collabValue(_workspaceContext: WorkspaceCollabContext): CollabContextValue {
+function collabValue(): CollabContextValue {
   return {};
 }
 
@@ -1365,7 +1340,7 @@ describe('FileWorkspace launcher tab creation', () => {
             advance revision
           </button>
           <IframeKeepAliveProvider>
-            <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+            <CollabProvider value={collabValue()}>
               <FileWorkspace
                 projectId="project-1"
                 projectKind="prototype"
@@ -1441,7 +1416,7 @@ describe('FileWorkspace launcher tab creation', () => {
       });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <CollabProvider value={collabValue()}>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -1494,7 +1469,7 @@ describe('FileWorkspace launcher tab creation', () => {
       });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <CollabProvider value={collabValue()}>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -1548,7 +1523,7 @@ describe('FileWorkspace launcher tab creation', () => {
       });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <CollabProvider value={collabValue()}>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -1590,7 +1565,7 @@ describe('FileWorkspace launcher tab creation', () => {
     expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(readsBeforeDelete);
   });
 
-  it('keeps warmed HTML preview frames through equivalent context refreshes and transient empty file snapshots', async () => {
+  it('keeps warmed HTML preview frames through equivalent provider rerenders and transient empty file snapshots', async () => {
     const alphaName = 'alpha.html';
     const betaName = 'beta.html';
     mockedFetchProjectFileText.mockImplementation(async (_projectId, fileName) => (
@@ -1601,18 +1576,16 @@ describe('FileWorkspace launcher tab creation', () => {
       active,
       files,
       tabs,
-      workspaceContext,
       filesRefreshKey = 0,
     }: {
       active: string;
       files: ProjectFile[];
       tabs: string[];
-      workspaceContext: WorkspaceCollabContext;
       filesRefreshKey?: number;
     }) {
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(workspaceContext)}>
+          <CollabProvider value={collabValue()}>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -1629,13 +1602,11 @@ describe('FileWorkspace launcher tab creation', () => {
       );
     }
 
-    const workspaceContext = teamContext('workspace-a', 'member-a');
     const { rerender } = render(
       <Harness
         active={alphaName}
         files={[workspaceFile(alphaName), workspaceFile(betaName)]}
         tabs={[alphaName, betaName]}
-        workspaceContext={workspaceContext}
       />,
     );
     await waitFor(() => expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(1));
@@ -1646,13 +1617,12 @@ describe('FileWorkspace launcher tab creation', () => {
         active={betaName}
         files={[workspaceFile(alphaName), workspaceFile(betaName)]}
         tabs={[alphaName, betaName]}
-        workspaceContext={{ ...workspaceContext }}
       />,
     );
     await waitFor(() => expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(2));
     const betaFrame = screen.getByTestId('artifact-preview-frame');
 
-    // Ambient workspace refreshes can briefly publish an empty file snapshot.
+    // An ambient file refresh can briefly publish an empty file snapshot.
     // Open tabs are the durable witness that these files were not closed or
     // deleted, so both warmed iframe nodes must stay connected through it.
     rerender(
@@ -1660,7 +1630,6 @@ describe('FileWorkspace launcher tab creation', () => {
         active={betaName}
         files={[]}
         tabs={[alphaName, betaName]}
-        workspaceContext={{ ...workspaceContext }}
       />,
     );
     expect(document.body.contains(alphaFrame)).toBe(true);
@@ -1674,7 +1643,6 @@ describe('FileWorkspace launcher tab creation', () => {
         active={alphaName}
         files={[workspaceFile(alphaName), workspaceFile(betaName)]}
         tabs={[alphaName, betaName]}
-        workspaceContext={{ ...workspaceContext }}
       />,
     );
     expect(screen.getByTestId('artifact-preview-frame')).toBe(alphaFrame);
@@ -1688,7 +1656,6 @@ describe('FileWorkspace launcher tab creation', () => {
         active={alphaName}
         files={[workspaceFile(alphaName), workspaceFile(betaName)]}
         tabs={[alphaName]}
-        workspaceContext={{ ...workspaceContext }}
       />,
     );
     await waitFor(() => expect(document.querySelector('iframe[title="beta.html"]')).toBeNull());
@@ -1698,13 +1665,12 @@ describe('FileWorkspace launcher tab creation', () => {
   it('evicts a deleted HTML viewer after a committed file refresh even when its tab persists', async () => {
     const alphaName = 'alpha.html';
     const betaName = 'beta.html';
-    const workspaceContext = teamContext('workspace-a', 'member-a');
     const tabs = [alphaName, betaName];
 
     function Harness({ files, refreshKey }: { files: ProjectFile[]; refreshKey: number }) {
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(workspaceContext)}>
+          <CollabProvider value={collabValue()}>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -1762,7 +1728,7 @@ describe('FileWorkspace launcher tab creation', () => {
       const [snapshot, setSnapshot] = useState({ files: initialFiles, generation: 1 });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <CollabProvider value={collabValue()}>
             <button
               type="button"
               data-testid="commit-r1-missing"
@@ -1883,7 +1849,7 @@ describe('FileWorkspace launcher tab creation', () => {
         const [snapshot, setSnapshot] = useState({ files: initialFiles, generation: 1 });
         return (
           <IframeKeepAliveProvider>
-            <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+            <CollabProvider value={collabValue()}>
               <button
                 type="button"
                 data-testid="commit-racing-r1-missing"
@@ -1976,7 +1942,7 @@ describe('FileWorkspace launcher tab creation', () => {
       const [snapshot, setSnapshot] = useState({ files: initialFiles, generation: 1 });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <CollabProvider value={collabValue()}>
             <output data-testid="failed-r2-generation">{snapshot.generation}</output>
             <button
               type="button"
@@ -2238,7 +2204,7 @@ describe('FileWorkspace launcher tab creation', () => {
       });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <CollabProvider value={collabValue()}>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -2295,7 +2261,7 @@ describe('FileWorkspace launcher tab creation', () => {
 
     render(
       <IframeKeepAliveProvider>
-        <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+        <CollabProvider value={collabValue()}>
           <FileWorkspace
             projectId="project-1"
             projectKind="prototype"
@@ -2348,12 +2314,11 @@ describe('FileWorkspace launcher tab creation', () => {
   });
 
   it('evicts the previous project preview pool when the workspace changes', async () => {
-    const workspaceContext = teamContext('workspace-a', 'member-a');
     function Harness({ projectId, fileName }: { projectId: string; fileName: string }) {
       const file = workspaceFile(fileName);
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(workspaceContext)}>
+          <CollabProvider value={collabValue()}>
             <FileWorkspace
               projectId={projectId}
               projectKind="prototype"
@@ -2393,7 +2358,7 @@ describe('FileWorkspace launcher tab creation', () => {
       });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <CollabProvider value={collabValue()}>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -3020,9 +2985,7 @@ describe('FileWorkspace launcher tab creation', () => {
     });
   });
 
-  it('keeps design-system source reads independent from Workspace identity', async () => {
-    const workspaceA = teamContext('workspace-a', 'member-a');
-    const workspaceB = teamContext('workspace-b', 'member-b');
+  it('keeps design-system source reads stable across equivalent provider rerenders', async () => {
     const props = {
       projectId: 'project-1',
       projectKind: 'prototype' as const,
@@ -3042,7 +3005,7 @@ describe('FileWorkspace launcher tab creation', () => {
     };
 
     const { rerender } = render(
-      <CollabProvider value={collabValue(workspaceA)}>
+      <CollabProvider value={collabValue()}>
         <FileWorkspace {...props} />
       </CollabProvider>,
     );
@@ -3063,13 +3026,9 @@ describe('FileWorkspace launcher tab creation', () => {
         { cache: 'no-store', cacheBustKey: 0 },
       );
     });
-    for (const call of mockedFetchProjectFileText.mock.calls) {
-      expect(call[2]).not.toHaveProperty('workspaceContext');
-    }
-
     mockedFetchProjectFileText.mockClear();
     rerender(
-      <CollabProvider value={collabValue(workspaceB)}>
+      <CollabProvider value={collabValue()}>
         <FileWorkspace {...props} />
       </CollabProvider>,
     );

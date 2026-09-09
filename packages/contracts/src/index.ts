@@ -17,7 +17,6 @@ export * from './api/community.js';
 export * from './api/context.js';
 export * from './api/connectors.js';
 export * from './api/comments.js';
-export * from './api/collab.js';
 export * from './api/collaboration-server.js';
 export * from './api/connectionTest.js';
 export * from './api/export.js';

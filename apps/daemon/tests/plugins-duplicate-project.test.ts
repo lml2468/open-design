@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   InstalledPluginRecord,
   Project,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { sendApiError } from '../src/http/api-errors.js';
 import { closeDatabase } from '../src/db.js';
@@ -47,43 +46,6 @@ async function makePreviewPlugin(root: string, id = 'duplicate-fixture'): Promis
   } as InstalledPluginRecord;
 }
 
-async function verifyWorkspaceRequestAuthority(req: express.Request) {
-  const workspaceId = req.get('x-od-workspace-id')?.trim() ?? '';
-  const workspaceMemberId =
-    req.get('x-od-workspace-member-id')?.trim() ?? '';
-  return {
-    ok: true as const,
-    context: {
-      workspaceId,
-      workspaceName: workspaceId,
-      workspaceType: 'team',
-      workspaceMemberId,
-      role: 'member',
-      memberStatus: 'active',
-      lifecycleState: 'active',
-      billingState: 'active',
-      planId: null,
-      providerMode: 'platform_credits',
-      seatSummary: {
-        seatLimit: 5,
-        usedSeats: 1,
-        availableSeats: 4,
-        isSeatFull: false,
-      },
-      permissions: {
-        canManageMembers: false,
-        canManageBilling: false,
-        canInviteMembers: false,
-        canManageAutoRecharge: false,
-        canShareProjects: true,
-        canWriteSyncedFiles: true,
-        canViewWorkspaceSettings: true,
-        canManageSharedResources: false,
-      },
-    } as WorkspaceCollabContext,
-  };
-}
-
 describe('plugin project duplication', () => {
   it.skipIf(process.platform === 'win32')(
     'rejects duplicates that would skip a required symlinked file',
@@ -109,7 +71,7 @@ describe('plugin project duplication', () => {
     },
   );
 
-  it('duplicates locally even when legacy Workspace headers are present', async () => {
+  it('duplicates an installed plugin into a local project', async () => {
     const root = await makeTempRoot('od-plugin-duplicate-authority-');
     const projectsRoot = path.join(root, 'projects');
     const plugin = await makePreviewPlugin(root, 'authority-plugin-fixture');
@@ -157,7 +119,6 @@ describe('plugin project duplication', () => {
         getInstalledPlugin: vi.fn(() => plugin),
         listInstalledPlugins: vi.fn(() => []),
       },
-      verifyWorkspaceRequestAuthority,
       helpers: {
         requireLocalDaemonRequest: ((_req, _res, next) => next()) as express.RequestHandler,
         assembleExample: (templateHtml: string) => templateHtml,
@@ -173,14 +134,6 @@ describe('plugin project duplication', () => {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            'x-od-workspace-id': 'workspace-authority',
-            'x-od-workspace-type': 'team',
-            'x-od-workspace-member-id': 'member-authority',
-            'x-od-workspace-role': 'member',
-            'x-od-workspace-lifecycle-state': 'active',
-            'x-od-workspace-member-status': 'active',
-            'x-od-workspace-can-share-projects': 'true',
-            'x-od-workspace-can-write-synced-files': 'true',
           },
           body: JSON.stringify({}),
         },
@@ -258,7 +211,6 @@ describe('plugin project duplication', () => {
         getInstalledPlugin: vi.fn(() => plugin),
         listInstalledPlugins: vi.fn(() => []),
       },
-      verifyWorkspaceRequestAuthority,
       helpers: {
         requireLocalDaemonRequest: ((_req, _res, next) => next()) as express.RequestHandler,
         assembleExample: (templateHtml: string) => templateHtml,
@@ -274,14 +226,6 @@ describe('plugin project duplication', () => {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            'x-od-workspace-id': 'workspace-plugin-a',
-            'x-od-workspace-type': 'team',
-            'x-od-workspace-member-id': 'member-plugin-a',
-            'x-od-workspace-role': 'member',
-            'x-od-workspace-lifecycle-state': 'active',
-            'x-od-workspace-member-status': 'active',
-            'x-od-workspace-can-share-projects': 'true',
-            'x-od-workspace-can-write-synced-files': 'true',
           },
           body: JSON.stringify({ name: 'Workspace Plugin Fixture' }),
         },

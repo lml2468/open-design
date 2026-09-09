@@ -13,7 +13,6 @@ import { AssistantMessage } from '../../src/components/AssistantMessage';
 import { CollabProvider } from '../../src/collab/collab-context';
 import * as registry from '../../src/providers/registry';
 import type { ChatMessage, ProjectFile } from '../../src/types';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 beforeAll(() => {
   const store = new Map<string, string>();
@@ -64,19 +63,8 @@ function producedFile(name: string): ProjectFile {
   } as ProjectFile;
 }
 
-const PROJECT_A_CONTEXT = workspaceContextFixture({
-  workspaceId: 'workspace-a',
-  workspaceMemberId: 'member-a',
-});
-
-function projectCollabValue(workspaceContext = PROJECT_A_CONTEXT) {
-  return {
-    workspaceContext,
-    workspaceContextLoading: false,
-    enabled: false,
-    publishedVersion: null,
-    isOwner: false,
-  };
+function projectCollabValue() {
+  return {};
 }
 
 describe('internal control markers', () => {

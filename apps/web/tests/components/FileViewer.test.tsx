@@ -102,66 +102,18 @@ import {
   CollabProvider,
   type CollabContextValue,
 } from '../../src/collab/collab-context';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
-
-/** A team workspace context — the only state that can address the resource hub,
- *  and therefore the only one where the public "Publish file" entry is offered. */
-function teamWorkspaceContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'ws-1',
-    workspaceType: 'team',
-    teamId: 'team-1',
-    workspaceMemberId: 'wm-1',
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 5, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'member', lifecycleState: 'active' }),
-  };
-}
-
-function personalWorkspaceContext(): WorkspaceCollabContext {
-  return {
-    ...teamWorkspaceContext(),
-    workspaceId: 'personal-ws-1',
-    workspaceType: 'personal',
-    teamId: undefined,
-  };
-}
-
-/** Fetch stub that answers the workspace-context read with `context`, and every
- *  other route with the empty-deployments payload these viewer tests expect. */
-function stubFetchWithWorkspaceContext(context: WorkspaceCollabContext | null): void {
+function stubEmptyDeploymentsFetch(): void {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/workspace/context')) {
-        return new Response(JSON.stringify({ context }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }),
+    vi.fn(async () => new Response(JSON.stringify({ deployments: [] }), { status: 200 })),
   );
 }
 
-function renderWithProjectWorkspace(
-  ui: ReactElement,
-  workspaceContext: WorkspaceCollabContext | null,
-) {
-  const value = projectWorkspaceCollabValue(workspaceContext);
-  return render(<CollabProvider value={value}>{ui}</CollabProvider>);
+function renderWithCollab(ui: ReactElement) {
+  return render(<CollabProvider value={projectCollabValue()}>{ui}</CollabProvider>);
 }
 
-function projectWorkspaceCollabValue(
-  _workspaceContext: WorkspaceCollabContext | null,
-): CollabContextValue {
+function projectCollabValue(): CollabContextValue {
   return {};
 }
 
@@ -736,7 +688,7 @@ describe('FileViewer preview scale', () => {
       file,
     };
     const { container, rerender } = render(
-      <CollabProvider value={projectWorkspaceCollabValue(null)}>
+      <CollabProvider value={projectCollabValue()}>
         <FileViewer {...props} workspaceActive={false} />
       </CollabProvider>,
     );
@@ -756,7 +708,7 @@ describe('FileViewer preview scale', () => {
     expect(retainedFrame.dataset.odActive).toBe('true');
 
     rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(null)}>
+      <CollabProvider value={projectCollabValue()}>
         <FileViewer {...props} workspaceActive />
       </CollabProvider>,
     );
@@ -1388,10 +1340,7 @@ describe('FileViewer SVG artifacts', () => {
       );
     }
 
-    const view = renderWithProjectWorkspace(
-      <Shell version={file.mtime} />,
-      teamWorkspaceContext(),
-    );
+    const view = renderWithCollab(<Shell version={file.mtime} />);
     await waitFor(() => expect(sourceReads).toHaveLength(1));
 
     for (let round = 0; round < 10; round += 1) {
@@ -1404,20 +1353,14 @@ describe('FileViewer SVG artifacts', () => {
     expect(sourceReads).toHaveLength(1);
 
     view.rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(teamWorkspaceContext())}>
+      <CollabProvider value={projectCollabValue()}>
         <Shell version={file.mtime + 1} />
       </CollabProvider>,
     );
     await waitFor(() => expect(sourceReads).toHaveLength(2));
 
-    const nextWorkspaceContext = {
-      ...teamWorkspaceContext(),
-      workspaceId: 'ws-2',
-      workspaceMemberId: 'wm-2',
-      teamId: 'team-2',
-    };
     view.rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(nextWorkspaceContext)}>
+      <CollabProvider value={projectCollabValue()}>
         <Shell version={file.mtime + 1} />
       </CollabProvider>,
     );
@@ -2037,14 +1980,13 @@ describe('FileViewer SVG artifacts', () => {
     expect(markup).toContain('sandbox="allow-scripts allow-downloads"');
   });
 
-  it('does not mint a second preview capability for Workspace URL-load HTML', () => {
-    const context = teamWorkspaceContext();
+  it('does not mint a second preview capability for URL-load HTML', () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) => (
       Response.json({ deployments: [] })
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithProjectWorkspace(
+    renderWithCollab(
       <FileViewer
         projectId="project-1"
         projectKind="prototype"
@@ -2064,7 +2006,6 @@ describe('FileViewer SVG artifacts', () => {
         })}
         liveHtml="<html><body>URL loaded</body></html>"
       />,
-      context,
     );
 
     expect(
@@ -2093,7 +2034,7 @@ describe('FileViewer SVG artifacts', () => {
     });
 
     const markup = renderToStaticMarkup(
-      <CollabProvider value={projectWorkspaceCollabValue(teamWorkspaceContext())}>
+      <CollabProvider value={projectCollabValue()}>
         <FileViewer
           projectId="project-1"
           projectKind="prototype"
@@ -5287,7 +5228,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(screen.queryByTestId('deck-thumbnail-rail')).toBeNull();
   });
 
-  it('keeps deck thumbnail resource URLs independent of shell Workspace changes', async () => {
+  it('keeps deck thumbnail resource URLs project-scoped across rerenders', async () => {
     const file = baseFile({
       name: 'deck.html',
       path: 'deck.html',
@@ -5302,13 +5243,6 @@ describe('FileViewer SVG artifacts', () => {
         exports: ['html'],
       },
     });
-    const workspaceA = teamWorkspaceContext();
-    const workspaceB: WorkspaceCollabContext = {
-      ...workspaceA,
-      workspaceId: 'ws-2',
-      teamId: 'team-2',
-      workspaceMemberId: 'wm-2',
-    };
     const viewer = (
       <FileViewer
         projectId="project-1"
@@ -5319,7 +5253,7 @@ describe('FileViewer SVG artifacts', () => {
       />
     );
     const { container, rerender } = render(
-      <CollabProvider value={projectWorkspaceCollabValue(workspaceA)}>
+      <CollabProvider value={projectCollabValue()}>
         {viewer}
       </CollabProvider>,
     );
@@ -5331,7 +5265,7 @@ describe('FileViewer SVG artifacts', () => {
     const originalSrcDoc = thumbnail!.srcdoc;
 
     rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(workspaceB)}>
+      <CollabProvider value={projectCollabValue()}>
         {viewer}
       </CollabProvider>,
     );
@@ -6510,14 +6444,12 @@ describe('FileViewer SVG artifacts', () => {
         exports: ['html'],
       },
     });
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
+    stubEmptyDeploymentsFetch();
 
-    renderWithProjectWorkspace(
+    renderWithCollab(
       <FileViewer projectId="project-1" projectKind="prototype" file={file}
         liveHtml="<html><body><h1>Hello</h1></body></html>"
       />,
-      context,
     );
 
     fireEvent.click(screen.getByRole('button', { name: /share/i }));
@@ -7283,15 +7215,13 @@ describe('FileViewer SVG artifacts', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     try {
-      const workspaceContext = teamWorkspaceContext();
-      renderWithProjectWorkspace(
+      renderWithCollab(
         <FileViewer
           projectId="project-1"
           projectKind="prototype"
           file={file}
           liveHtml="<html><body><h1>Current</h1></body></html>"
         />,
-        workspaceContext,
       );
 
       fireEvent.click(screen.getByRole('button', { name: 'Versions' }));
@@ -8992,7 +8922,6 @@ describe('FileViewer tweaks toolbar', () => {
   });
 
   it('preserves an authored base without minting a project-scoped preview capability', async () => {
-    const context = teamWorkspaceContext();
     const authoredBase = '<base href="https://cdn.example/assets/">';
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) => (
       new Response(JSON.stringify({ deployments: [] }), { status: 200 })
@@ -9000,7 +8929,7 @@ describe('FileViewer tweaks toolbar', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(
-      <CollabProvider value={projectWorkspaceCollabValue(context)}>
+      <CollabProvider value={projectCollabValue()}>
         <FileViewer
           projectId="project-1"
           projectKind="prototype"
@@ -9260,14 +9189,13 @@ describe('FileViewer tweaks toolbar', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithProjectWorkspace(
+    renderWithCollab(
       <FileViewer
         projectId="project-1"
         projectKind="prototype"
         file={htmlPreviewFile()}
         liveHtml={source}
       />,
-      personalWorkspaceContext(),
     );
 
     await waitFor(() => {
@@ -9279,7 +9207,7 @@ describe('FileViewer tweaks toolbar', () => {
     ))).toHaveLength(0);
   });
 
-  it('keeps a personal srcDoc transport stable when relative-asset discovery settles', async () => {
+  it('keeps a srcDoc transport stable when relative-asset discovery settles', async () => {
     const filesResponse = deferredResponse();
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === 'string'
@@ -9300,14 +9228,13 @@ describe('FileViewer tweaks toolbar', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     try {
-      renderWithProjectWorkspace(
+      renderWithCollab(
         <FileViewer
           projectId="project-1"
           projectKind="prototype"
           file={htmlPreviewFile({ name: 'page.html', path: 'page.html' })}
           liveHtml={'<html><body><script>localStorage.getItem("theme")</script><img src="assets/hero.png"></body></html>'}
         />,
-        personalWorkspaceContext(),
       );
 
       const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;

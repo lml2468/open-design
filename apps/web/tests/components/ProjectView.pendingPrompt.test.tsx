@@ -41,7 +41,6 @@ const registryOriginals = vi.hoisted(() => ({
     projectId: string,
     options?: {
       signal?: AbortSignal;
-      workspaceContext?: import('@open-design/contracts').WorkspaceCollabContext | null;
       fresh?: boolean;
       requireAuthoritative?: boolean;
     },

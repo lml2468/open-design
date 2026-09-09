@@ -33,7 +33,6 @@ import {
 } from '../../src/providers/registry';
 import { listProjects, listTemplates } from '../../src/state/projects';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
-import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 
 // The real router is deliberately NOT mocked: this spec is about which history
 // layer Back lands on, which only the real pushState/popstate bookkeeping can
@@ -182,13 +181,7 @@ describe('design-system create page — Back destination', () => {
     vi.mocked(fetchDaemonConfig).mockResolvedValue({});
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.endsWith('/api/workspace/directory')) {
-          return jsonResponse(workspaceDirectoryFixture([]));
-        }
-        return jsonResponse({});
-      }),
+      vi.fn(async () => jsonResponse({})),
     );
   });
 
