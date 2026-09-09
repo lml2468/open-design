@@ -17,8 +17,10 @@ const MAX_LOG_BYTES = 2 * 1024 * 1024;
 export type SelfHostedCollaborationServer = {
   bootstrapToken: string;
   dataDir: string;
+  logText: () => string;
   origin: string;
   root: string;
+  tokenSecret: string;
   close: (options?: { preserve?: boolean }) => Promise<void>;
 };
 
@@ -81,8 +83,10 @@ export async function startSelfHostedCollaborationServer(
   return {
     bootstrapToken,
     dataDir,
+    logText: () => log.text(),
     origin,
     root,
+    tokenSecret,
     close: async (options = {}) => {
       if (closed) return;
       closed = true;

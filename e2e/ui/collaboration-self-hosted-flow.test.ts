@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readFile, rm } from 'node:fs/promises';
 import type { Page, Request, Response } from '@playwright/test';
 
 import {
@@ -40,6 +42,7 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
   );
   let server: SelfHostedCollaborationServer | undefined;
   let cluster: CollabCluster | undefined;
+  let reviewerEnrollmentSession: AuthSession | undefined;
   let failed = false;
   try {
     server = await test.step('start a real isolated Collaboration Server', async () =>
@@ -49,6 +52,7 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
       root: testInfo.outputPath('fake-agent-runtimes'),
       runtimeIds: ['codex'],
     });
+    const reviewerAgentEnvWitness = testInfo.outputPath('reviewer-agent-environment.json');
 
     cluster = await test.step('start two isolated Desktop clients', async () =>
       await createCollabCluster(browser, testInfo, [
@@ -58,7 +62,10 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
         },
         {
           id: 'reviewer',
-          env: fakeAgents.codex.env,
+          env: {
+            ...fakeAgents.codex.env,
+            OD_E2E_AGENT_ENV_WITNESS: reviewerAgentEnvWitness,
+          },
         },
       ]));
     const owner = cluster.clients.owner!;
@@ -116,7 +123,7 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
       );
       const token = new URL(invitation.desktopDeepLink).searchParams.get('nonce');
       expect(token).toBeTruthy();
-      await serverJson(
+      const accepted = await serverJson<{ session: AuthSession }>(
         server!.origin,
         '/api/v1/invitations/accept',
         {
@@ -130,6 +137,7 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
           }),
         },
       );
+      reviewerEnrollmentSession = accepted.session;
       await configureCollaborationAccount(
         reviewer.page,
         server!.origin,
@@ -160,37 +168,33 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
         body: await reviewer.page.screenshot(),
         contentType: 'image/png',
       });
+      await dialog.getByRole('button', { name: 'Close' }).click();
     });
 
-    const agentComment = await test.step('review and confirm a provenance-bearing Agent comment before upload', async () => {
-      const response = await reviewer.page.request.post(
-        `/api/collaboration/projects/${encodeURIComponent(remoteProjectId)}/review-comments/batch`,
-        {
-          data: {
-            comments: [{
-              versionId: versionOneId,
-              target: {
-                filePath: `preview/${ARTIFACT_FILE}`,
-                selectionKind: 'visual',
-                position: { x: 0.55, y: 0.4, width: 0, height: 0 },
-              },
-              note: AGENT_COMMENT,
-              source: 'agent',
-              agent: {
-                name: 'Reviewer Agent',
-                model: 'fake-review-model',
-                reviewRunId: 'review-run-e2e-1',
-              },
-              attachmentIds: [],
-            }],
-          },
-          timeout: T.long,
-        },
+    const agentComment = await test.step('run Reviewer Agent through od review and confirm its staged comment', async () => {
+      const reviewerProjectId = `review-workbench-${Date.now()}`;
+      const reviewerProject = await createLocalProject(reviewer.page, reviewerProjectId);
+      await reviewer.page.goto(
+        `/projects/${reviewerProjectId}/conversations/${reviewerProject.conversationId}`,
+        { waitUntil: 'domcontentloaded' },
       );
-      expect(response.ok(), await response.text()).toBeTruthy();
-      expect(response.status()).toBe(202);
-      const body = await response.json() as { batch: { id: string; comments: unknown[] } };
-      expect(body.batch.comments).toHaveLength(1);
+      await waitForLoadingToClear(reviewer.page);
+      await dismissPrivacyDialog(reviewer.page);
+      await sendPrompt(
+        reviewer.page,
+        `Run the deterministic self-hosted Reviewer Agent workflow for project ${remoteProjectId} version ${versionOneId}.`,
+      );
+
+      await expect.poll(async () => {
+        const response = await reviewer.page.request.get(
+          `/api/collaboration/projects/${encodeURIComponent(remoteProjectId)}/review-comments/batches?versionId=${encodeURIComponent(versionOneId)}`,
+        );
+        if (!response.ok()) return [];
+        const body = await response.json() as {
+          batches?: Array<{ comments?: Array<{ note?: string }> }>;
+        };
+        return body.batches?.flatMap((batch) => batch.comments?.map(({ note }) => note) ?? []) ?? [];
+      }, { timeout: T.long }).toContain(AGENT_COMMENT);
 
       const beforeConfirmation = await reviewer.page.request.get(
         `/api/collaboration/projects/${encodeURIComponent(remoteProjectId)}/review-comments?versionId=${encodeURIComponent(versionOneId)}`,
@@ -199,7 +203,11 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
       const commentsBefore = await beforeConfirmation.json() as { comments: Array<{ note: string }> };
       expect(commentsBefore.comments.some(({ note }) => note === AGENT_COMMENT)).toBe(false);
 
+      const settings = await collaborationSettings(reviewer.page);
+      const row = settings.locator('.collaboration-settings__projects li', { hasText: PROJECT_NAME });
+      await row.getByRole('button', { name: 'Open review' }).click();
       const dialog = reviewer.page.getByRole('dialog', { name: PROJECT_NAME });
+      await expect(dialog).toBeVisible();
       await dialog.getByRole('button', { name: 'Refresh comments' }).click();
       await expect(dialog.getByText('Agent comments awaiting approval')).toBeVisible();
       await expect(dialog.getByText(AGENT_COMMENT)).toBeVisible();
@@ -264,6 +272,48 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
       return published;
     });
     expect(secondPublish.versionId).not.toBe(versionOneId);
+
+    await test.step('prove Server credentials stay out of Renderers, Agent env, and logs', async () => {
+      const [ownerCredentials, reviewerCredentials] = await Promise.all([
+        readDesktopCredentials(owner.runtime.dataDir),
+        readDesktopCredentials(reviewer.runtime.dataDir),
+      ]);
+      const secrets = [
+        { label: 'Server bootstrap token', value: server!.bootstrapToken },
+        { label: 'Server signing secret', value: server!.tokenSecret },
+        { label: 'Owner password', value: OWNER_PASSWORD },
+        { label: 'Reviewer password', value: REVIEWER_PASSWORD },
+        { label: 'bootstrap Owner access token', value: ownerSession.accessToken },
+        { label: 'bootstrap Owner refresh token', value: ownerSession.refreshToken },
+        {
+          label: 'Reviewer enrollment access token',
+          value: requireSession(reviewerEnrollmentSession).accessToken,
+        },
+        {
+          label: 'Reviewer enrollment refresh token',
+          value: requireSession(reviewerEnrollmentSession).refreshToken,
+        },
+        { label: 'Owner Desktop access token', value: ownerCredentials.accessToken },
+        { label: 'Owner Desktop refresh token', value: ownerCredentials.refreshToken },
+        { label: 'Reviewer Desktop access token', value: reviewerCredentials.accessToken },
+        { label: 'Reviewer Desktop refresh token', value: reviewerCredentials.refreshToken },
+      ];
+
+      const [ownerRenderer, reviewerRenderer, ownerLogs, reviewerLogs, witness] = await Promise.all([
+        readRendererSurface(owner.page),
+        readRendererSurface(reviewer.page),
+        owner.runtime.logs(owner.env),
+        reviewer.runtime.logs(reviewer.env),
+        readAgentEnvironmentWitness(reviewerAgentEnvWitness),
+      ]);
+
+      assertNoSecrets('Owner Renderer', ownerRenderer, secrets);
+      assertNoSecrets('Reviewer Renderer', reviewerRenderer, secrets);
+      assertNoSecrets('Owner daemon/Web logs', serializeLogLines(ownerLogs), secrets);
+      assertNoSecrets('Reviewer daemon/Web logs', serializeLogLines(reviewerLogs), secrets);
+      assertNoSecrets('Collaboration Server logs', server!.logText(), secrets);
+      assertAgentEnvironmentHasNoServerSecrets(witness, secrets);
+    });
   } catch (error) {
     failed = true;
     throw error;
@@ -529,9 +579,110 @@ function isCreateRunResponse(response: Response): boolean {
 
 type AuthSession = {
   accessToken: string;
+  refreshToken: string;
 };
 
 type RemoteProject = {
   revision: number;
 };
-import { rm } from 'node:fs/promises';
+
+type Secret = {
+  label: string;
+  value: string;
+};
+
+type AgentEnvironmentWitness = {
+  keys: string[];
+  values: Array<{ key: string; length: number; sha256: string }>;
+};
+
+async function readDesktopCredentials(dataDir: string): Promise<{
+  accessToken: string;
+  refreshToken: string;
+}> {
+  const raw = JSON.parse(
+    await readFile(`${dataDir}/collaboration-server.json`, 'utf8'),
+  ) as { session?: { accessToken?: unknown; refreshToken?: unknown } };
+  if (
+    typeof raw.session?.accessToken !== 'string'
+    || typeof raw.session.refreshToken !== 'string'
+  ) {
+    throw new Error('Desktop collaboration credential store is missing its authenticated session');
+  }
+  return {
+    accessToken: raw.session.accessToken,
+    refreshToken: raw.session.refreshToken,
+  };
+}
+
+async function readRendererSurface(page: Page): Promise<string> {
+  const state = await page.evaluate(async () => ({
+    cookie: document.cookie,
+    html: document.documentElement.outerHTML,
+    inputs: Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea'))
+      .map((element) => ({ name: element.name, type: element.type, value: element.value })),
+    localStorage: Object.fromEntries(
+      Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index))
+        .filter((key): key is string => key !== null)
+        .map((key) => [key, window.localStorage.getItem(key)]),
+    ),
+    sessionStorage: Object.fromEntries(
+      Array.from({ length: window.sessionStorage.length }, (_, index) => window.sessionStorage.key(index))
+        .filter((key): key is string => key !== null)
+        .map((key) => [key, window.sessionStorage.getItem(key)]),
+    ),
+    cacheNames: 'caches' in window ? await caches.keys() : [],
+    databaseNames: 'databases' in indexedDB
+      ? (await indexedDB.databases()).map(({ name }) => name ?? '')
+      : [],
+    resourceUrls: performance.getEntriesByType('resource').map(({ name }) => name),
+  }));
+  const publicSession = await page.request.get('/api/collaboration/server');
+  return JSON.stringify({ state, publicSession: await publicSession.text() });
+}
+
+async function readAgentEnvironmentWitness(path: string): Promise<AgentEnvironmentWitness> {
+  return JSON.parse(await readFile(path, 'utf8')) as AgentEnvironmentWitness;
+}
+
+function serializeLogLines(
+  logs: Record<string, { lines: string[] }>,
+): string {
+  return Object.values(logs).flatMap(({ lines }) => lines).join('\n');
+}
+
+function assertNoSecrets(surface: string, content: string, secrets: Secret[]): void {
+  for (const secret of secrets) {
+    if (secret.value && content.includes(secret.value)) {
+      throw new Error(`${surface} contains forbidden secret: ${secret.label}`);
+    }
+  }
+}
+
+function assertAgentEnvironmentHasNoServerSecrets(
+  witness: AgentEnvironmentWitness,
+  secrets: Secret[],
+): void {
+  const hashes = new Set(witness.values.map(({ sha256 }) => sha256));
+  for (const secret of secrets) {
+    const fingerprint = createHash('sha256').update(secret.value).digest('hex');
+    if (hashes.has(fingerprint)) {
+      throw new Error(`Reviewer Agent environment contains forbidden secret: ${secret.label}`);
+    }
+  }
+  const forbiddenKeys = witness.keys.filter((key) => [
+    'OD_SERVER_BOOTSTRAP_TOKEN',
+    'OD_SERVER_TOKEN_SECRET',
+    'OD_COLLABORATION_ACCESS_TOKEN',
+    'OD_COLLABORATION_REFRESH_TOKEN',
+    'COLLABORATION_SERVER_TOKEN',
+  ].includes(key.toUpperCase()));
+  if (forbiddenKeys.length > 0) {
+    throw new Error(`Reviewer Agent environment contains forbidden Server credential keys: ${forbiddenKeys.join(', ')}`);
+  }
+}
+
+function requireSession(session: AuthSession | undefined): AuthSession {
+  if (!session) throw new Error('Reviewer enrollment session was not captured');
+  return session;
+}

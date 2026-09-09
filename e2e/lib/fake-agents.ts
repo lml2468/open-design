@@ -201,7 +201,9 @@ const agentId = ${JSON.stringify(agentId)};
 const args = process.argv.slice(2);
 const { mkdir, writeFile: writeFileFs } = require('node:fs/promises');
 const { readFileSync, writeFileSync } = require('node:fs');
-const { join } = require('node:path');
+const { createHash } = require('node:crypto');
+const { spawnSync } = require('node:child_process');
+const { dirname, join } = require('node:path');
 const protocolDeckCanaryHtml = ${JSON.stringify(PROTOCOL_DECK_CANARY_HTML)};
 const legacyTemplateDeckCanaryHtml = ${JSON.stringify(LEGACY_TEMPLATE_DECK_CANARY_HTML)};
 
@@ -240,6 +242,7 @@ if (process.stdin.isTTY || agentId === 'deepseek') {
 async function emitRun(promptText) {
   if (emitted) return;
   emitted = true;
+  await writeEnvironmentWitness();
   if (promptText.includes('Hold the daemon run open until canceled')) {
     // Stay running (busy) without ever emitting a terminal result, so a test
     // can queue a follow-up turn and interrupt it via send-now. Keep the event
@@ -429,6 +432,13 @@ async function emitRun(promptText) {
       { content: 'Draft layout', status: 'completed' },
       { content: 'Build components', status: 'completed' },
     ], 'end_turn');
+    return;
+  }
+  const collaborationReviewMatch = promptText.match(
+    /Run the deterministic self-hosted Reviewer Agent workflow for project ([A-Za-z0-9_-]+) version ([A-Za-z0-9_-]+)\\./,
+  );
+  if (collaborationReviewMatch) {
+    await emitCollaborationReviewRun(collaborationReviewMatch[1], collaborationReviewMatch[2]);
     return;
   }
   if (promptText.includes('Apply the attached collaboration review comments')) {
@@ -839,6 +849,121 @@ async function emitCollaborationFeedbackEditRun(promptText) {
   emitSuccess('Applied the attached human and Reviewer Agent feedback to real-daemon-smoke.html.', false, false);
   process.exitCode = 0;
   exitSoon(0);
+}
+
+async function emitCollaborationReviewRun(remoteProjectId, versionId) {
+  const versions = runReviewCli(['versions', remoteProjectId, '--json']);
+  if (!Array.isArray(versions.versions) || !versions.versions.some((version) => version.id === versionId)) {
+    throw new Error('Reviewer Agent could not find the requested immutable Version');
+  }
+
+  const manifest = runReviewCli([
+    'manifest',
+    remoteProjectId,
+    '--version',
+    versionId,
+    '--json',
+  ]);
+  if (manifest.entrypoint !== 'preview/real-daemon-smoke.html') {
+    throw new Error('Reviewer Agent received an unexpected Review Bundle entrypoint');
+  }
+
+  const source = runReviewCliText([
+    'read-file',
+    remoteProjectId,
+    '--version',
+    versionId,
+    '--path',
+    manifest.entrypoint,
+  ]);
+  if (!source.includes('Real Daemon Smoke')) {
+    throw new Error('Reviewer Agent could not read the immutable Review Bundle file');
+  }
+
+  const comments = runReviewCli([
+    'comments',
+    remoteProjectId,
+    '--version',
+    versionId,
+    '--json',
+  ]);
+  if (!Array.isArray(comments.comments)
+    || !comments.comments.some((comment) => comment.note === 'Make the primary headline more explicit.')) {
+    throw new Error('Reviewer Agent could not read the existing human review comment');
+  }
+
+  const staged = runReviewCli(
+    ['submit-comments', remoteProjectId, '--input', '-', '--json'],
+    JSON.stringify({
+      comments: [{
+        versionId,
+        target: {
+          filePath: manifest.entrypoint,
+          selectionKind: 'visual',
+          position: { x: 0.55, y: 0.4, width: 0, height: 0 },
+        },
+        note: 'Reviewer Agent: strengthen the call to action.',
+        source: 'agent',
+        agent: {
+          name: 'Reviewer Agent',
+          model: 'fake-review-model',
+          reviewRunId: 'review-run-e2e-1',
+        },
+        attachmentIds: [],
+      }],
+    }),
+  );
+  if (!staged.batch || staged.batch.comments?.length !== 1) {
+    throw new Error('Reviewer Agent did not stage exactly one review comment');
+  }
+
+  emitSuccess(
+    'Reviewed the immutable Version through od review and staged one Agent comment for human approval.',
+    false,
+    false,
+  );
+  process.exitCode = 0;
+  exitSoon(0);
+}
+
+function runReviewCli(args, input) {
+  return JSON.parse(runReviewCliText(args, input));
+}
+
+function runReviewCliText(args, input) {
+  const nodeBin = process.env.OD_NODE_BIN;
+  const odBin = process.env.OD_BIN;
+  if (!nodeBin || !odBin) {
+    throw new Error('Reviewer Agent requires OD_NODE_BIN and OD_BIN');
+  }
+  const result = spawnSync(nodeBin, [odBin, 'review', ...args], {
+    encoding: 'utf8',
+    env: process.env,
+    input,
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      'od review failed (' + String(result.status) + '): '
+        + String(result.stderr || result.error || '').slice(0, 500),
+    );
+  }
+  return result.stdout;
+}
+
+async function writeEnvironmentWitness() {
+  const target = process.env.OD_E2E_AGENT_ENV_WITNESS;
+  if (!target) return;
+  const values = Object.entries(process.env)
+    .filter((entry) => typeof entry[1] === 'string')
+    .map(([key, value]) => ({
+      key,
+      length: value.length,
+      sha256: createHash('sha256').update(value).digest('hex'),
+    }))
+    .sort((left, right) => left.key.localeCompare(right.key));
+  await mkdir(dirname(target), { recursive: true });
+  await writeFileFs(target, JSON.stringify({ agentId, keys: values.map(({ key }) => key), values }), 'utf8');
 }
 
 async function emitManagedAliasArtifactEditRun(promptText) {
