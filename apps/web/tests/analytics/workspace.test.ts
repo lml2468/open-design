@@ -44,8 +44,8 @@ describe('workspace analytics dimensions', () => {
     expect(stableAnalyticsErrorCode(503)).toBe('server_error');
     expect(stableAnalyticsErrorCode()).toBe('network_error');
     expect(stableAnalyticsRequestErrorCode({ code: 'network_error' })).toBe('network_error');
-    expect(stableAnalyticsRequestErrorCode({ code: 'WORKSPACE_AUTHORITY_UNAVAILABLE', status: 503 }))
-      .toBe('WORKSPACE_AUTHORITY_UNAVAILABLE');
+    expect(stableAnalyticsRequestErrorCode({ code: 'UPSTREAM_UNAVAILABLE', status: 503 }))
+      .toBe('UPSTREAM_UNAVAILABLE');
     expect(stableAnalyticsRequestErrorCode({ status: 404 })).toBe('not_found');
     expect(stableAnalyticsRequestErrorCode({ code: 'bad code / project-name' }))
       .toBe('request_failed');

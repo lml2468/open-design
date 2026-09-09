@@ -257,7 +257,7 @@ interface Props {
   designSystemsLoading?: boolean;
   defaultDesignSystemId?: string | null;
   // `'blocked'` means the shell refused the submit but already surfaced its
-  // own UI (e.g. the AMR balance gate dialog): keep the draft, show no error.
+  // own UI: keep the draft, show no duplicate error.
   onSubmit: (
     payload: PluginLoopSubmit,
   ) => Promise<boolean | 'blocked' | void> | boolean | 'blocked' | void;
@@ -1220,7 +1220,7 @@ export function HomeView({
   // Workspace context. Refresh only a missing value or the value previously
   // supplied by context, preserving an explicit plugin input when one exists.
   // This reads the exact context selected for this tab; it never consults or
-  // writes Vela/daemon account-level active-workspace state. That model cannot
+  // writes daemon account-level active-workspace state. That model cannot
   // represent two clients of one account open in different Workspaces.
   useEffect(() => {
     const nextWorkspaceName = workspaceContext?.workspaceName?.trim() || null;
@@ -2822,7 +2822,7 @@ export function HomeView({
         setError(t('home.createFailed'));
         return;
       }
-      // Blocked-and-handled (AMR balance gate): the shell already shows its
+      // Blocked-and-handled: the shell already shows its
       // dialog. Keep the composer draft and staged contexts for the retry.
       if (accepted === 'blocked') return;
       // Create accepted — now it is safe to spend the one-shot marker.

@@ -204,7 +204,7 @@ function summarizeModelStepEvents(events) {
     cancelled,
     incomplete,
     retryCount,
-    // AMR/OpenCode reports provider usage per model step. Summing the unique
+    // OpenCode reports provider usage per model step. Summing the unique
     // step records recovers the turn total without treating the values as
     // cumulative snapshots or double-counting repeated lifecycle frames.
     reasoningTokens: reasoningTokenSampleCount > 0 ? reasoningTokens : undefined,

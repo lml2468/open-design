@@ -118,8 +118,8 @@ export async function readInstallationFile(
   }
 }
 
-// Synchronous mirror of readInstallationFile for callers on a sync path (e.g.
-// building the spawn env for the vela CLI). Same parse + same fail-soft.
+// Synchronous mirror of readInstallationFile for callers on a sync path, such
+// as building an agent spawn environment. Same parse + same fail-soft.
 export function readInstallationFileSync(
   installationDir: string,
 ): InstallationFile {

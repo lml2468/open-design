@@ -140,19 +140,6 @@ export const API_ERROR_CODES = [
   'COLLABORATION_PUBLISH_CANDIDATE_CHANGED',
   'COLLABORATION_REVIEW_UNAVAILABLE',
   'COLLABORATION_SNAPSHOT_UNSAFE',
-  // Workspace-scoped project creation/import failures. These are public route
-  // errors shared by ordinary project creation, folder/ZIP import, Desktop
-  // host import, and Plugin Remix.
-  'WORKSPACE_CONTEXT_INCOMPLETE',
-  'WORKSPACE_PROJECT_PERMISSION_DENIED',
-  'WORKSPACE_AUTHORITY_UNAVAILABLE',
-  // Moving a project into the team space was refused because the team hub
-  // already registers the project under a DIFFERENT member's ownership
-  // (vela `team_project_owner_conflict`). This is a permanent ownership
-  // conflict, not a transient failure: retrying cannot succeed until the
-  // registered owner unshares the project, so clients must not render it as
-  // a "try again later" error.
-  'TEAM_PROJECT_OWNER_CONFLICT',
   // A design-system enrichment ("AI Optimize") run was requested while the
   // same conversation already has a non-terminal run. The enrichment turn is
   // a hidden seeded prompt that refines the registered design system in

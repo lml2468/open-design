@@ -192,9 +192,9 @@ describe('home composer sending state', () => {
 
   it('surfaces a business HTTP error without claiming the daemon is unreachable', async () => {
     const onSubmit = vi.fn().mockRejectedValue(new ProjectCreateError(
-      'Workspace membership authority is temporarily unavailable',
+      'The upstream service is temporarily unavailable',
       503,
-      'WORKSPACE_AUTHORITY_UNAVAILABLE',
+      'UPSTREAM_UNAVAILABLE',
       true,
       'request-1',
     ));
@@ -205,7 +205,7 @@ describe('home composer sending state', () => {
     fireEvent.click(await screen.findByTestId('home-hero-submit'));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Workspace membership authority is temporarily unavailable',
+      'The upstream service is temporarily unavailable',
     );
     expect(screen.getByRole('alert')).not.toHaveTextContent('Local service');
     expect(screen.getByTestId('home-hero-input')).toHaveTextContent(

@@ -301,7 +301,7 @@ export interface RuntimeInfo {
   clientType?: 'desktop' | 'web' | 'unknown';
   /** Exact CLI version observed by the daemon's bounded detection probe. */
   agentCliVersion?: string;
-  /** Optional companion runtime used behind the selected CLI (AMR → OpenCode). */
+  /** Optional companion runtime used behind the selected CLI. */
   runtimeCompanionName?: string;
   runtimeCompanionVersion?: string;
 }

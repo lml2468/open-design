@@ -462,14 +462,14 @@ interface EffectiveInputTokens {
 //   - INCLUSIVE (OpenAI chat-completions, codex's rollout `last_token_usage`):
 //     input_tokens already contains the cache-read subset → effective = input,
 //     uncached = input - read.
-//   - ADDITIVE (Anthropic, and the Responses-API / ACP usage that the AMR/vela
-//     and pi STREAM emits): input_tokens is the UNCACHED remainder and the
+//   - ADDITIVE (Anthropic, and Responses-API / ACP usage such as pi STREAM):
+//     input_tokens is the UNCACHED remainder and the
 //     cache-read/creation tokens are reported separately on top → effective =
 //     input + read + creation, uncached = input.
 // Picking the wrong convention is not cosmetic: treating an additive payload as
 // inclusive makes the denominator far too small, so `cache_hit_ratio` /
-// `first_call_cache_hit_ratio` blow past 1.0 (observed ~78% of AMR and ~57% of
-// pi follow-up runs) and `uncached_input_tokens` collapses to 0.
+// `first_call_cache_hit_ratio` blow past 1.0 and
+// `uncached_input_tokens` collapses to 0.
 //
 // The discriminator is a hard arithmetic invariant, not a heuristic guess: a
 // cache-read subset can never exceed the total it is a subset of, so

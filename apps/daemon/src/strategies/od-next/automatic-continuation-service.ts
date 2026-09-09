@@ -165,9 +165,9 @@ export function rolloutStopSignalForBlockedContinuation(
   //
   // The other two signals mean OD Next's own contract broke, which is true
   // whichever agent hit it, so disabling the strategy daemon-wide is
-  // proportionate. Unverifiable Children are a property of ONE runtime — Vela
-  // ships no child-lifecycle producer today, so an AMR complex Run cannot be
-  // certified at all — and the task is already fail-closed with its reason
+  // proportionate. Unverifiable Children can be a runtime capability gap, so
+  // such a complex Run cannot be certified at all — and the task is already
+  // fail-closed with its reason
   // codes persisted. Latching there took OD Next away from Codex, Claude and
   // OpenCode because a fourth runtime lacks a capability, recoverable only by
   // an operator `od strategy rollout reset`. `complex_child_unverified` stays

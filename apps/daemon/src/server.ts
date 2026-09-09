@@ -6424,7 +6424,7 @@ export async function startServer({
     }
     lifecycle.mark('prompt_build_end');
     lifecycle.mark('launch_preflight_start');
-    // (model resolution + AMR concretization hoisted above the resume guard)
+    // Model resolution is hoisted above the resume guard.
     const executionProfile = executionProfileFromStreamFormat(def.streamFormat);
     // Accumulates the agent's visible text this run so the close handler can
     // tell whether the turn ended on a clarifying question form. The
@@ -7602,8 +7602,8 @@ export async function startServer({
     // `runStartTimeMs` is consumed by the run-end artifact-manifest
     // reconciler (#2893 / #3110) to skip artifacts whose mtime predates
     // this run. The original main-side hunk also re-declared `const send`
-    // here; on this branch `send` was hoisted into the AMR preflight
-    // earlier, so we keep only the new `runStartTimeMs` declaration.
+    // here; `send` is already declared above, so keep only the new
+    // `runStartTimeMs` declaration.
     const runStartTimeMs = Date.now();
     const firstOutputTimeoutMs =
       resolveChatRunFirstOutputTimeoutMs(def.firstOutputTimeoutMs);
@@ -7860,7 +7860,7 @@ export async function startServer({
      * the bridge's own flushed bookkeeping. Letting any of it re-stamp the
      * clock is what makes a run that sat silent for the whole timeout window
      * report an age of a few hundred milliseconds, which is exactly the reading
-     * that sent the 2026-07-28 AMR incident's triage after the wrong window.
+     * that can send stall triage after the wrong window.
      *
      * Scoped to the attempt, not the run: a retry (or the resume-failed reseed)
      * builds a fresh `startChatRun` closure, so the next attempt starts with an
@@ -9568,8 +9568,8 @@ export async function startServer({
 
       // Resume-target-missing recovery runs BEFORE the generic fatal/stream-error
       // short-circuits. The signal arrives differently per adapter: codex reports
-      // "no rollout found for thread id" as a stream `error` event, while AMR/vela
-      // reports a structured `resume_failed` JSON-RPC error that the ACP bridge
+      // "no rollout found for thread id" as a stream `error` event, while ACP
+      // adapters can report a structured `resume_failed` JSON-RPC error that the bridge
       // turns into a FATAL. Either would otherwise be swallowed by the
       // `fatal_rpc_error` / `stream_error` paths below and leave the dead session
       // id stored — so every later turn would retry the same broken resume (#4275
@@ -10047,7 +10047,7 @@ export async function startServer({
           publishNativeSessionRecoveryMetadata();
         }
       }
-      // ACP session/load adapters (AMR/vela) report a durable upstream handle
+      // ACP session/load adapters report a durable upstream handle
       // from the ACP session; persist it (under the resume-identity guard) so
       // the next turn resumes via session/load. A missing handle clears the row
       // (so a fresh session is opened next turn), mirroring the capture-style

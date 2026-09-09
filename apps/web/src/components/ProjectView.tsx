@@ -2179,7 +2179,7 @@ export function ProjectView({
   // A BYOK preflight can reject a send before any Run exists. Keep that
   // submission's task identity in memory so fixing Settings and resubmitting
   // the same draft completes the original task funnel instead of fabricating a
-  // second task. AMR hard gates persist the full send in the queue separately.
+  // second task. Hard gates persist the full send in the queue separately.
   const blockedRunTaskRef = useRef<{
     conversationId: string;
     requestKey: string;
@@ -4017,7 +4017,7 @@ export function ProjectView({
 
   // `code` is the structured API error code (e.g. AGENT_AUTH_REQUIRED); it
   // rides along on the error status event so AssistantMessage can render the
-  // hosted-AMR nudge for model/auth/quota failures on non-AMR agents.
+  // localized guidance for structured model/auth/quota failures.
   const appendAssistantErrorEvent = useCallback(
     (
       messageId: string,
@@ -7440,7 +7440,7 @@ export function ProjectView({
         );
         // Session-dimension hints on the BYOK-OpenCode path too, so
         // run_created / run_finished carry the same session-global and
-        // project-scoped run sequence on every runtime (cli / amr / byok).
+        // project-scoped run sequence on every runtime (CLI and BYOK).
         const byokSessionTurn = claimRunTurnIndex();
         const byokProjectTurn = claimProjectTurnIndex(project.id);
         const byokHasExistingArtifact = projectFilesRef.current.some(

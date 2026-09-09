@@ -17,8 +17,8 @@ interface Props {
 
 /**
  * Sign-out confirmation (recvqgMWpJZqhL): every logout entry point — the
- * nav-rail account menu and the AMR account pill (Settings, chat error cards,
- * balance dialog) — must pass through this explicit confirm step so a stray
+ * nav-rail account menu and any other account surface must pass through this
+ * explicit confirm step so a stray
  * click can never sign the user out. Reuses the shared `modal-confirm`
  * alertdialog shape (Dialog + title/description/footer primitives) instead of
  * inventing a new popup.

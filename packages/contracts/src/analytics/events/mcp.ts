@@ -26,7 +26,6 @@ export type McpFailureStage =
   | 'run_accept'
   | 'runtime_preflight'
   | 'generation'
-  | 'recharge_wait'
   | 'artifact_validation'
   | 'delivery'
   | 'finalize';
@@ -35,7 +34,6 @@ export type McpFailureSource =
   | 'local_mcp'
   | 'open_design_daemon'
   | 'runtime_cli'
-  | 'vela_api'
   | 'model_provider'
   | 'artifact_store'
   | 'preview_delivery'

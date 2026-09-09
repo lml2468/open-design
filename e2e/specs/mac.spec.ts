@@ -463,9 +463,7 @@ macDescribe('packaged mac runtime smoke', () => {
       expect(firstRun.projectId).toEqual(expect.any(String));
       expect(firstRun.hrefBefore).toMatch(/^(od:\/\/app\/|http:\/\/127\.0\.0\.1:\d+\/$)/);
       expect(firstRun.hrefAfter).toContain(`/projects/${firstRun.projectId}`);
-      expect(firstRun.injectedAuthorityOutageCount).toBe(1);
-      expect(firstRun.createRunRequestCount).toBeGreaterThanOrEqual(2);
-      expect(firstRun.createRunResponseStatuses[0]).toBe(503);
+      expect(firstRun.createRunRequestCount).toBe(1);
       expect(firstRun.createRunResponseStatuses.at(-1)).toBeGreaterThanOrEqual(200);
       expect(firstRun.createRunResponseStatuses.at(-1)).toBeLessThan(300);
       expect(firstRun.runEventRequestCount).toBeGreaterThan(0);

@@ -109,7 +109,7 @@ type TranslateFn = (
 ) => string;
 
 // The host reports whether it accepted the answer into a real chat turn. A
-// `false` result means a pre-run guard (for example the AMR balance gate)
+// `false` result means a pre-run guard
 // prevented the send, so the inline form must remain editable.
 export type QuestionFormSubmitHandler = (
   text: string,
@@ -4311,8 +4311,8 @@ function buildBlocks(events: AgentEvent[]): Block[] {
         ev.label === "requesting" ||
         ev.label === "thinking" ||
         ev.label === "empty_response" ||
-        // Vela emits OpenCode's compaction lifecycle as internal observability.
-        // Older transcripts persisted it as a generic status before the ACP
+        // Some OpenCode transcripts persisted compaction lifecycle as a generic
+        // status before the ACP
         // adapter classified it as a diagnostic, so suppress that legacy label
         // during history replay as well as on the live path.
         ev.label === "opencode_compaction" ||

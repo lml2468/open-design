@@ -252,8 +252,8 @@ describe('createConversation', () => {
   it('surfaces the daemon error for an interactive conversation write', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => Response.json({
       error: {
-        code: 'WORKSPACE_PROJECT_PERMISSION_DENIED',
-        message: 'workspace project mutation is not allowed',
+        code: 'FORBIDDEN',
+        message: 'project mutation is not allowed',
       },
     }, { status: 403 })));
 
@@ -262,7 +262,7 @@ describe('createConversation', () => {
       forkAfterMessageId: 'assistant-1',
       throwOnError: true,
     })).rejects.toMatchObject({
-      message: 'workspace project mutation is not allowed',
+      message: 'project mutation is not allowed',
       status: 403,
     });
   });

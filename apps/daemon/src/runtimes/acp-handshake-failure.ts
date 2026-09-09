@@ -23,8 +23,7 @@
  * body, and the paragraph's own `Details: …` restatement printed the agent's
  * line a second time in a card that already shows it. Instead the failure
  * travels as `AGENT_CLI_SESSION_REFUSED` plus the runtime identity as
- * structured `details`, and `apps/web/src/runtime/amr-guidance.ts` maps that
- * code to localized copy.
+ * structured `details`, and the web client maps that code to localized copy.
  *
  * The raw `json-rpc id N: …` line is left untouched in the message fields on
  * purpose. `run.error` is both what the details block shows and what

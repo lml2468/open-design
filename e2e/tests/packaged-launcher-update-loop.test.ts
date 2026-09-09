@@ -13,7 +13,6 @@ const HISTORICAL_OUTER_RELAY_URL = "https://relay.outer.example/v1";
 const PAYLOAD_RELAY_URL = "https://relay.payload.example/v2";
 
 type PackagedConfigLike = {
-  amrProfile: null;
   appVersion: string;
   daemonCliEntry: null;
   daemonSidecarEntry: null;
@@ -70,7 +69,6 @@ type PackagedPathsModule = {
 
 type PackagedLauncherRuntime = {
   config: {
-    amrProfile: string | null;
     appVersion: string | null;
     daemonCliEntry: string | null;
     daemonSidecarEntry: string | null;
@@ -79,8 +77,6 @@ type PackagedLauncherRuntime = {
     posthogKey: string | null;
     resourceRoot: string;
     telemetryRelayUrl: string | null;
-    velaWebUrl: string | null;
-    velaWebUrls?: Record<string, string>;
     webOutputMode: "server" | "standalone";
     webSidecarEntry: string | null;
     webStandaloneRoot: string | null;
@@ -115,7 +111,6 @@ type PackagedSidecarsModule = {
     paths: PackagedPaths,
     options: {
       appVersion: string | null;
-      amrProfile: string | null;
       daemonCliEntry: string | null;
       daemonSidecarEntry: string | null;
       electronNodeCommand: string | null;
@@ -126,8 +121,6 @@ type PackagedSidecarsModule = {
       posthogKey: string | null;
       requireDesktopAuth: boolean;
       telemetryRelayUrl: string | null;
-      velaWebUrl: string | null;
-      velaWebUrls?: Record<string, string>;
       webOutputMode: "server" | "standalone";
       webSidecarEntry: string | null;
       webStandaloneRoot: string | null;
@@ -224,7 +217,6 @@ await client.waitUntilStopped();
 
 function fakePackagedConfig(root: string, testCase: PlatformCase): PackagedConfigLike {
   return {
-    amrProfile: null,
     appVersion: testCase.currentVersion,
     daemonCliEntry: null,
     daemonSidecarEntry: null,
@@ -548,7 +540,6 @@ describe("packaged launcher payload update loop", () => {
         source: "packaged",
       }, promoted.paths, {
         appVersion: promoted.config.appVersion,
-        amrProfile: promoted.config.amrProfile,
         daemonCliEntry: promoted.config.daemonCliEntry,
         daemonSidecarEntry: promoted.config.daemonSidecarEntry,
         electronNodeCommand: null,
@@ -562,8 +553,6 @@ describe("packaged launcher payload update loop", () => {
         posthogKey: promoted.config.posthogKey,
         requireDesktopAuth: true,
         telemetryRelayUrl: promoted.config.telemetryRelayUrl,
-        velaWebUrl: promoted.config.velaWebUrl,
-        ...(promoted.config.velaWebUrls == null ? {} : { velaWebUrls: promoted.config.velaWebUrls }),
         webOutputMode: promoted.config.webOutputMode,
         webSidecarEntry: promoted.config.webSidecarEntry,
         webStandaloneRoot: promoted.config.webStandaloneRoot,
@@ -1020,7 +1009,6 @@ async function checkPackagedUpdate(scenario: FloorScenario): Promise<{
   const root = await mkdtemp(join(tmpdir(), "od-reinstall-floor-"));
   try {
     const config: PackagedConfigLike = {
-      amrProfile: null,
       appVersion: runningVersion,
       daemonCliEntry: null,
       daemonSidecarEntry: null,

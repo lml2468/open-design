@@ -227,8 +227,8 @@ export type RuntimeAgentDef = {
   // option and the associated free-text input. Use this for agents whose
   // CLI does not actually accept a model id (e.g. `agy` v1.0.3 has no
   // `--model` flag yet — upstream issue #35 — and the model is chosen
-  // server-side; AMR routes model selection through ACP's
-  // `session/set_model` and rejects free-form ids). Defaults to allowing
+  // server-side; some ACP runtimes route model selection through
+  // `session/set_model` and reject free-form ids). Defaults to allowing
   // custom input (undefined === true) so most adapters keep today's UX.
   supportsCustomModel?: boolean;
   // When `true`, the daemon trusts this adapter's CLI to carry its own
@@ -254,8 +254,8 @@ export type RuntimeAgentDef = {
   // path and `agent-cli-session-resume.md`. Profile-stdio transports can also
   // capture the id from a validated protocol status frame.
   capturesSessionIdFromStream?: boolean;
-  // ACP-runtime analogue of capture-style resume: the agent talks `acp-json-rpc`
-  // (today only AMR/vela) and supports resuming via `session/load`. The daemon
+  // ACP-runtime analogue of capture-style resume: an agent that talks
+  // `acp-json-rpc` may support resuming via `session/load`. The daemon
   // captures the durable upstream session handle from the ACP session
   // (`getDurableSessionId()`) and persists THAT, drives `session/load` on a
   // resume turn, and maps the agent's structured `resume_failed` error onto the
@@ -266,8 +266,8 @@ export type RuntimeAgentDef = {
   // Optional name of a daemon-process environment variable that overrides
   // the default model id when the chat run reaches the spawn layer with
   // null or the synthetic 'default'. Used by adapters whose CLI rejects
-  // 'default' (e.g. AMR / vela) so an operator can swap the hardcoded
-  // fallback without a code change — set the env var on the daemon
+  // 'default' so an operator can swap the hardcoded fallback without a code
+  // change — set the env var on the daemon
   // process when launching `tools-dev` / `od` daemon. The value must be
   // present in the daemon's `process.env`; Settings-UI per-agent env
   // values only reach the spawned child and are NOT consulted here.

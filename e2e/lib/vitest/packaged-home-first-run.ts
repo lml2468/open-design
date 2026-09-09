@@ -13,7 +13,6 @@ export type PackagedHomeFirstRunResult = {
   hrefAfter: string;
   hrefBefore: string;
   inputTextBeforeSubmit: string;
-  injectedAuthorityOutageCount: number;
   navigationEntryCountAfter: number;
   navigationEntryCountBefore: number;
   performanceTimeOriginAfter: number;
@@ -218,7 +217,6 @@ export function packagedHomeFirstRunExpression(): string {
         hrefBefore: location.href,
         inputTextBeforeSubmit,
         instrumented: true,
-        injectedAuthorityOutageCount: 0,
         navigationEntryCountBefore: performance.getEntriesByType('navigation').length,
         performanceTimeOriginBefore: performance.timeOrigin,
         readiness,
@@ -227,7 +225,6 @@ export function packagedHomeFirstRunExpression(): string {
         runEventRequestCount: 0,
         runEventResponseStatuses: [],
         submitClicked: false,
-        workspaceRequestHeaders: {},
         workspaceTabClicksBeforeOutput: 0,
       };
 
@@ -247,30 +244,7 @@ export function packagedHomeFirstRunExpression(): string {
           && pathname.endsWith('/events')
           && pathname.split('/').length === 5;
         if (isCreateRun) {
-          const requestHeaders = new Headers(
-            input instanceof Request ? input.headers : init?.headers,
-          );
-          const workspaceId = requestHeaders.get('x-od-workspace-id');
-          const workspaceMemberId = requestHeaders.get('x-od-workspace-member-id');
-          state.workspaceRequestHeaders = {
-            ...(workspaceId ? { 'x-od-workspace-id': workspaceId } : {}),
-            ...(workspaceMemberId ? { 'x-od-workspace-member-id': workspaceMemberId } : {}),
-          };
           state.createRunRequestCount += 1;
-          if (state.injectedAuthorityOutageCount === 0) {
-            state.injectedAuthorityOutageCount += 1;
-            state.createRunResponseStatuses.push(503);
-            return new Response(JSON.stringify({
-              error: {
-                code: 'WORKSPACE_AUTHORITY_UNAVAILABLE',
-                message: 'workspace membership authority is temporarily unavailable',
-                retryable: true,
-              },
-            }), {
-              status: 503,
-              headers: { 'Content-Type': 'application/json' },
-            });
-          }
         }
         if (isRunEvents) state.runEventRequestCount += 1;
         const response = await originalFetch(...args);
@@ -324,7 +298,6 @@ export function packagedHomeFirstRunSnapshotExpression(): string {
       const diagnosticFetch = typeof state?.originalFetch === 'function'
         ? state.originalFetch
         : globalThis.fetch.bind(globalThis);
-      const diagnosticRequestInit = { headers: state?.workspaceRequestHeaders ?? {} };
       const [route, encodedProjectId, conversationsRoute, encodedConversationId] =
         location.pathname.split('/').filter(Boolean);
       const projectId = route === 'projects' && encodedProjectId
@@ -339,7 +312,6 @@ export function packagedHomeFirstRunSnapshotExpression(): string {
       const runsResponse = projectId
         ? await diagnosticFetch(
             '/api/runs?projectId=' + encodeURIComponent(projectId),
-            diagnosticRequestInit,
           )
         : null;
       const runsBody = runsResponse?.ok ? await runsResponse.json() : { runs: [] };
@@ -350,7 +322,6 @@ export function packagedHomeFirstRunSnapshotExpression(): string {
       const eventsResponse = terminalRun?.id
         ? await diagnosticFetch(
             '/api/runs/' + encodeURIComponent(terminalRun.id) + '/events',
-            diagnosticRequestInit,
           )
         : null;
       const eventsText = eventsResponse?.ok ? await eventsResponse.text() : '';
@@ -358,7 +329,6 @@ export function packagedHomeFirstRunSnapshotExpression(): string {
         ? await diagnosticFetch(
             '/api/projects/' + encodeURIComponent(projectId)
               + '/conversations/' + encodeURIComponent(conversationId) + '/messages',
-            diagnosticRequestInit,
           )
         : null;
       const messagesBody = messagesResponse?.ok
@@ -379,7 +349,6 @@ export function packagedHomeFirstRunSnapshotExpression(): string {
         hrefAfter: location.href,
         hrefBefore: state?.hrefBefore ?? '',
         inputTextBeforeSubmit: state?.inputTextBeforeSubmit ?? '',
-        injectedAuthorityOutageCount: state?.injectedAuthorityOutageCount ?? -1,
         navigationEntryCountAfter: performance.getEntriesByType('navigation').length,
         navigationEntryCountBefore: state?.navigationEntryCountBefore ?? -1,
         performanceTimeOriginAfter: performance.timeOrigin,
@@ -410,7 +379,6 @@ export function assertPackagedHomeFirstRunResult(
     || typeof candidate.hrefAfter !== 'string'
     || typeof candidate.hrefBefore !== 'string'
     || typeof candidate.inputTextBeforeSubmit !== 'string'
-    || typeof candidate.injectedAuthorityOutageCount !== 'number'
     || typeof candidate.navigationEntryCountAfter !== 'number'
     || typeof candidate.navigationEntryCountBefore !== 'number'
     || typeof candidate.performanceTimeOriginAfter !== 'number'

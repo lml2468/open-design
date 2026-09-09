@@ -59,7 +59,6 @@ import { trackRunProgress, trackRunStart, trackRunTerminal } from '../observabil
 const MAX_TRANSCRIPT_MESSAGE_CHARS = 12_000;
 const LARGE_TOOL_RESULT_CHARS = 8_000;
 const HIGH_INPUT_TOKEN_WARNING_THRESHOLD = 200_000;
-const RUN_CREATE_AUTHORITY_RETRY_DELAYS_MS = [500, 1_000, 2_000] as const;
 const BYOK_OPENCODE_AGENT_ID = 'byok-opencode';
 const API_MODE_AGENT_IDS = new Set([
   'anthropic-api',
@@ -743,40 +742,19 @@ export async function streamViaDaemon({
   const body = JSON.stringify(request);
 
   try {
-    let createResp: Response;
-    for (let attempt = 0; ; attempt += 1) {
-      createResp = await fetch('/api/runs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Tells the daemon which front-end carrier started the run so the
-          // telemetry trace can be tagged 'client:desktop' vs 'client:web'.
-          // The daemon falls back to a User-Agent sniff when this header is
-          // absent (e.g. third-party clients), so omitting it in tests is OK.
-          'X-OD-Client': detectClientType(),
-          // Identifies the caller's workspace to the daemon's workspace-resource
-          // mutation gate (see `enforceWorkspaceProjectMutation` in
-          // apps/daemon/src/routes/runs.ts) — without it, a team member's own
-          // run on a team-bound project 401s exactly like an unauthenticated
-          // caller's would. Omitted (headers stay absent) for signed-out /
-          // personal usage, matching every other workspace-gated write.
-          ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
-        },
-        body,
-      });
-      if (createResp.ok) break;
-
-      const errorBody = await createResp.clone().json().catch(() => null) as ApiErrorResponse | null;
-      const error = errorBody?.error;
-      const retryableAuthorityOutage =
-        createResp.status === 503
-        && error?.code === 'WORKSPACE_AUTHORITY_UNAVAILABLE'
-        && error.retryable === true;
-      const delayMs = RUN_CREATE_AUTHORITY_RETRY_DELAYS_MS[attempt];
-      if (!retryableAuthorityOutage || delayMs === undefined || cancelSignal?.aborted) break;
-      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-      if (cancelSignal?.aborted) return;
-    }
+    const createResp = await fetch('/api/runs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Tells the daemon which front-end carrier started the run so the
+        // telemetry trace can be tagged 'client:desktop' vs 'client:web'.
+        // The daemon falls back to a User-Agent sniff when this header is
+        // absent (e.g. third-party clients), so omitting it in tests is OK.
+        'X-OD-Client': detectClientType(),
+        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
+      },
+      body,
+    });
 
     if (!createResp.ok) {
       const text = await createResp.text().catch(() => '');

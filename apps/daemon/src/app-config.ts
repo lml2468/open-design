@@ -708,9 +708,9 @@ export async function readAppConfig(dataDir: string): Promise<AppConfigPrefs> {
   return applyTelemetryDefaults(base);
 }
 
-// Synchronous mirror of readAppConfig for callers that cannot await — e.g.
-// building the spawn env for the vela CLI inside the synchronous
-// spawnEnvForAgent. It reuses the exact same parsing, validation and telemetry
+// Synchronous mirror of readAppConfig for callers that cannot await, such as
+// the synchronous spawnEnvForAgent path. It reuses the exact same parsing,
+// validation and telemetry
 // defaulting as the async path, so the consent decision and installationId can
 // never drift from what the rest of the daemon (and the web analytics config)
 // sees. The only intentional difference is that it skips the best-effort
