@@ -28,9 +28,7 @@ import {
   isPreviewRuntimeState,
   type PreviewRuntimeState,
 } from '@open-design/contracts/runtime/preview-runtime-state';
-import {
-  appendResourceQuery,
-} from '../collab/workspace-identity';
+import { appendResourceQuery } from '../lib/url-query';
 import {
   anonymizeArtifactId,
   artifactKindToTracking,
@@ -3138,7 +3136,6 @@ function FileActions({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   return (
     <div className="viewer-toolbar-actions">
       <a
@@ -17388,7 +17385,6 @@ function SketchViewer({
           projectId={projectId}
           file={file}
           className="viewer-sketch-preview"
-          workspaceContext={workspaceContext}
         />
       </div>
     </div>

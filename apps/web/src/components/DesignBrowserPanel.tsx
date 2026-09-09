@@ -78,7 +78,6 @@ import { Icon } from './Icon';
 import { BoardComposerPopover } from './BoardComposerPopover';
 import { PreviewDrawOverlay } from './PreviewDrawOverlay';
 import { RemixIcon } from './RemixIcon';
-import { useProjectCollabContext } from '../collab/collab-context';
 
 export {
   removeDesignBrowserProjectCache,
@@ -932,7 +931,6 @@ export function DesignBrowserPanel({
   browserTabId,
 }: DesignBrowserPanelProps) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const desktopHostAvailable = isOpenDesignHostAvailable();
   const initialState = initialBrowserState(initialUrl, initialTitle);
   // `loadUrl` is the navigation target bound to the <webview>/<iframe> `src`.
@@ -1773,7 +1771,7 @@ export function DesignBrowserPanel({
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : t('designBrowser.status.screenshotFailed'));
     }
-  }, [currentUrl, onAddImageToChat, onRefreshFiles, projectId, t, webviewNode, workspaceContext]);
+  }, [currentUrl, onAddImageToChat, onRefreshFiles, projectId, t, webviewNode]);
 
   useEffect(() => {
     const node = webviewNode;

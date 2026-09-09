@@ -12,7 +12,6 @@ import {
 } from "../runtime/in-project-link";
 import { navigate } from "../router";
 import { deleteProjectFile, projectFileUrl, uploadProjectFiles } from "../providers/registry";
-import { useProjectCollabContext } from "../collab/collab-context";
 import { useAnalytics } from "../analytics/provider";
 import {
   trackAssistantFeedbackButtonClick,
@@ -214,7 +213,6 @@ function SkillPluginCandidateCard({
   onRequestOpenFile?: (name: string) => void;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const [busy, setBusy] = useState<null | "draft" | "contribute">(null);
   const [notice, setNotice] = useState<ActionNotice | null>(null);
   const disabled = !projectId || busy !== null;
@@ -2241,7 +2239,6 @@ function ProducedFiles({
   onRequestOpenFile?: (name: string) => void;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   return (
     <div className="produced-files">
       <div className="produced-files-label">{t("assistant.producedFiles")}</div>
@@ -2755,7 +2752,6 @@ function FormBlock({
 }) {
   const t = useT();
   const analytics = useAnalytics();
-  const { workspaceContext } = useProjectCollabContext();
   const formKey =
     projectId && conversationId
       ? `${projectId}:${conversationId}:${assistantMessageId}:${form.id}`
@@ -2944,7 +2940,7 @@ function FormBlock({
     );
     pendingUploadCleanupRef.current = pending.filter((_, index) => !deleted[index]);
     return pendingUploadCleanupRef.current.length === 0;
-  }, [projectId, workspaceContext]);
+  }, [projectId]);
 
   const handleSubmit = useCallback(
     async (

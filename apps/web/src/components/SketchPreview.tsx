@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { AppState, BinaryFiles } from '@excalidraw/excalidraw/types';
 import type { ExcalidrawElement, NonDeleted } from '@excalidraw/excalidraw/element/types';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { fetchProjectFileText } from '../providers/registry';
 import type { ProjectFile } from '../types';
 import {
@@ -55,15 +54,13 @@ export function SketchPreview({
   projectId,
   file,
   className,
-  workspaceContext,
 }: {
   projectId: string;
   file: Pick<ProjectFile, 'kind' | 'name' | 'mtime'>;
   className?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }) {
   const cacheKey = isRenderableSketchJson(file)
-    ? sketchPreviewCacheKey(projectId, file.name, file.mtime, 'local')
+    ? sketchPreviewCacheKey(projectId, file.name, file.mtime)
     : null;
   const [preview, setPreview] = useState<SketchPreviewState | null>(() => (
     cacheKey ? previewCache.get(cacheKey) ?? null : null
@@ -76,7 +73,6 @@ export function SketchPreview({
       projectId,
       file.name,
       file.mtime,
-      'local',
     );
     const cached = previewCache.get(nextCacheKey);
     if (cached) {
@@ -314,9 +310,8 @@ function sketchPreviewCacheKey(
   projectId: string,
   name: string,
   mtime: number,
-  workspaceIdentity: string,
 ): string {
-  return `${workspaceIdentity}\n${projectId}\n${name}\n${mtime}`;
+  return `${projectId}\n${name}\n${mtime}`;
 }
 
 function rememberSketchPreview(key: string, preview: SketchPreviewState): void {

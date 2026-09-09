@@ -69,9 +69,7 @@ import { buildSrcdoc } from '../runtime/srcdoc';
 import { removeSpeakerNotesFromHtml } from '../runtime/speaker-notes';
 import { useDesignKit, hostnameOf, type KitColor } from '../runtime/design-kit';
 import { useKitModuleUpload } from '../runtime/kit-upload';
-import {
-  appendResourceQuery,
-} from '../collab/workspace-identity';
+import { appendResourceQuery } from '../lib/url-query';
 import {
   DesignKitView,
   type DesignKitActionFeedbackTone,

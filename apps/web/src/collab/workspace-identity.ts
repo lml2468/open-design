@@ -1,11 +1,5 @@
 import type { WorkspaceCollabContext } from '@open-design/contracts';
 
-/** Append a query fragment without corrupting an already workspace-scoped URL. */
-export function appendResourceQuery(path: string, query: string): string {
-  if (!query) return path;
-  return `${path}${path.includes('?') ? '&' : '?'}${query.replace(/^[?&]+/, '')}`;
-}
-
 /**
  * Monotonic account boundary, independent from ambient Workspace selection.
  *

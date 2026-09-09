@@ -90,7 +90,7 @@ import {
   forceSharedCancellableGet,
   sharedCancellableGet,
 } from '../lib/shared-cancellable-get';
-import { appendResourceQuery } from '../collab/workspace-identity';
+import { appendResourceQuery } from '../lib/url-query';
 
 export const DEFAULT_DEPLOY_PROVIDER_ID = 'vercel-self';
 export const CLOUDFLARE_PAGES_PROVIDER_ID = 'cloudflare-pages';

@@ -7,10 +7,7 @@ import { LIBRARY_UI_VISIBLE } from '../features/libraryUi';
 import type { Dict } from '../i18n/types';
 import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { projectFileUrl, projectRawUrl } from '../providers/registry';
-import {
-  appendResourceQuery,
-} from '../collab/workspace-identity';
-import { useProjectCollabContext } from '../collab/collab-context';
+import { appendResourceQuery } from '../lib/url-query';
 import { buildSrcdoc } from '../runtime/srcdoc';
 import type { LiveArtifactWorkspaceEntry, ProjectFile, ProjectFileKind, ProjectFolder } from '../types';
 import {
@@ -469,7 +466,6 @@ export function DesignFilesPanel({
   navState,
   onNavStateChange,
 }: Props) {
-  const { workspaceContext } = useProjectCollabContext();
   const t = useT();
   const analytics = useAnalytics();
   const [draggingFiles, setDraggingFiles] = useState(false);
@@ -1918,30 +1914,21 @@ function HtmlCardThumbnail({
   file: ProjectFile;
   filesRefreshKey: number;
 }) {
-  const {
-    workspaceContext,
-    workspaceContextLoading,
-  } = useProjectCollabContext();
   const tooLargeForThumbnail = file.size > HTML_THUMBNAIL_INLINE_MAX_BYTES;
   const url = projectFileUrl(projectId, file.name);
-  const authorizationScopeKey = workspaceContextLoading
-    ? null
-    : 'local';
+  const authorizationScopeKey = 'local';
   const refreshKey = htmlSourceSnapshotRefreshKey(file, filesRefreshKey);
-  const thumbnailIdentity = authorizationScopeKey
-    ? {
-        authorizationScopeKey,
-        projectId,
-        fileName: file.name,
-        refreshKey,
-      }
-    : null;
+  const thumbnailIdentity = {
+    authorizationScopeKey,
+    projectId,
+    fileName: file.name,
+    refreshKey,
+  };
   const baseHref = projectRawUrl(
     projectId,
     baseDirForFile(file.name),
   );
   const [srcDoc, setSrcDoc] = useState<string | null>(() => {
-    if (!thumbnailIdentity) return null;
     const source =
       getHtmlSourceSnapshot(
         thumbnailIdentity.authorizationScopeKey,
@@ -1987,7 +1974,7 @@ function HtmlCardThumbnail({
 
   useEffect(() => {
     setSrcDoc(null);
-    if (tooLargeForThumbnail || !thumbnailIdentity) return;
+    if (tooLargeForThumbnail) return;
     const cachedSource =
       getHtmlSourceSnapshot(
         thumbnailIdentity.authorizationScopeKey,

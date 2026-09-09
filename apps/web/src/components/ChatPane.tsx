@@ -45,8 +45,7 @@ import type { Dict } from '../i18n/types';
 import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { useLiquidGlass } from '../hooks/useLiquidGlass';
 import { projectRawUrl } from '../providers/registry';
-import { appendResourceQuery } from '../collab/workspace-identity';
-import { useProjectCollabContext } from '../collab/collab-context';
+import { appendResourceQuery } from '../lib/url-query';
 import { takeComposerSeedFor } from '../state/libraryHandoff';
 import { splitOnQuestionForms } from '../artifacts/question-form';
 import { stripArtifact } from '../artifacts/strip';
@@ -422,7 +421,6 @@ function ChatArtifactPreview({
   projectId: string | null;
   file: ProjectFile;
 }) {
-  const { workspaceContext } = useProjectCollabContext();
   if (!projectId) {
     return <ChatArtifactFallback kind={file.kind} />;
   }
@@ -436,7 +434,6 @@ function ChatArtifactPreview({
       <SketchPreview
         projectId={projectId}
         file={file}
-        workspaceContext={workspaceContext}
       />
     );
   }
@@ -1026,7 +1023,6 @@ export function ChatPane({
   designSystemPicker,
   config,
 }: Props) {
-  const { workspaceContext } = useProjectCollabContext();
   const { t, locale } = useI18n();
   const analytics = useAnalytics();
   const displayMessages = useMemo(
@@ -4336,7 +4332,6 @@ function UserMessageImpl({
   showSessionModeChip: boolean;
   highlighted?: boolean;
 }) {
-  const { workspaceContext } = useProjectCollabContext();
   const attachments = sortChatAttachmentsForDisplay(message.attachments ?? []);
   const commentAttachments = message.commentAttachments ?? [];
   const workspaceItems = message.runContext?.workspaceItems ?? [];

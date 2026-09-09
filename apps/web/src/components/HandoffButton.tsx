@@ -22,7 +22,6 @@ import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { Icon } from './Icon';
 import { EditorIcon } from './EditorIcon';
 import { AgentIcon } from './AgentIcon';
-import { useProjectCollabContext } from '../collab/collab-context';
 
 const PREFERRED_EDITOR_KEY = 'open-design:preferred-editor';
 const PREFERRED_FRAMEWORK_KEY = 'open-design:handoff-framework';
@@ -343,7 +342,6 @@ export function HandoffButton({
 }: Props) {
   const t = useT();
   const analytics = useAnalytics();
-  const { workspaceContext } = useProjectCollabContext();
   // One-liner so every hand-off interaction emits the same
   // `ui_click` / `area=handoff` shape; callers pass only what varies. The
   // active-artifact context is attached to every event so handoff slices line
