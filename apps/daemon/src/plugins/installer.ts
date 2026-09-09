@@ -149,7 +149,7 @@ interface GithubContentsBudget {
 
 /** Keep installer diagnostics finite so SSE clients never use paths or URLs as analytics keys. */
 export function classifyPluginInstallError(message: string): PluginInstallErrorCode {
-  if (/cannot be replaced|owned by another workspace member|destination folder already exists/i.test(message)) {
+  if (/cannot be replaced|destination folder already exists/i.test(message)) {
     return 'CONFLICT';
   }
   if (/files? are required|only \.tar\.gz|only \.tgz|source folder not found|source path is not a directory|github repository urls|invalid upload path|unsafe upload path|exceeds? (?:size cap of )?\d+ (?:bytes|mib)|too large/i.test(message)) {

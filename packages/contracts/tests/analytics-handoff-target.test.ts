@@ -6,9 +6,8 @@ import {
 } from '../src/analytics/events/ui-click.js';
 
 describe('handoff target tracking', () => {
-  it('keeps shipped handoff targets bounded without the retired AMR runtime', () => {
-    expect(TRACKING_HANDOFF_TARGET_IDS).not.toContain('amr');
-    expect(handoffTargetIdToTracking('amr')).toBe('other');
+  it('keeps shipped handoff targets bounded and maps unknown runtimes to other', () => {
+    expect(handoffTargetIdToTracking('unsupported-runtime')).toBe('other');
     expect(handoffTargetIdToTracking('codex')).toBe('codex');
   });
 });

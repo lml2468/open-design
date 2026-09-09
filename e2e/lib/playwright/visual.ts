@@ -352,7 +352,7 @@ export async function configureVisualPage(page: Page, options: VisualPageOptions
       await route.fulfill({ status: 404, json: { error: `unknown project ${projectId}` } });
       return;
     }
-    await route.fulfill({ json: { project: { ...project, workspaceId: null } } });
+    await route.fulfill({ json: { project } });
   });
 
   // The conversation boundary. `ProjectView` renders `ChatPane` — and therefore

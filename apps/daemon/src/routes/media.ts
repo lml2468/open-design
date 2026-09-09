@@ -597,11 +597,8 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
           error: { code: err.code, message: String(err.message) },
         });
       }
-      const status = err?.code === 'WORKSPACE_ACCESS_DENIED'
-          ? 403
-          : 500;
       res
-        .status(status)
+        .status(500)
         .json({
           error: String(err && err.message ? err.message : err),
           ...(err?.code ? { code: err.code } : {}),
@@ -683,11 +680,8 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       const locale = typeof req.body?.locale === 'string' ? req.body.locale : null;
       res.json(await orbitService.start('manual', { locale }));
     } catch (err: any) {
-      const status = err?.code === 'WORKSPACE_ACCESS_DENIED'
-          ? 403
-          : 500;
       res
-        .status(status)
+        .status(500)
         .json({
           error: String(err && err.message ? err.message : err),
           ...(err?.code ? { code: err.code } : {}),

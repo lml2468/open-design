@@ -194,7 +194,6 @@ function migrate(db: SqliteDb): void {
       updated_at INTEGER NOT NULL,
       anchor_state TEXT,
       anchored_version INTEGER,
-      author_member_id TEXT,
       last_good_position_json TEXT,
       review_source_json TEXT,
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -378,18 +377,14 @@ function migrate(db: SqliteDb): void {
     db.exec(`ALTER TABLE preview_comments ADD COLUMN slide_index INTEGER`);
   }
   migratePreviewCommentsSlideKey(db);
-  // Version-aware anchor columns and the retired Workspace author column are
-  // added after the slide-key rebuild so a legacy table rebuild cannot drop
-  // persisted data. New code no longer reads or writes author_member_id.
+  // Version-aware anchor columns are added after the slide-key rebuild so a
+  // legacy table rebuild cannot drop persisted data.
   const previewCommentAnchorCols = db.prepare(`PRAGMA table_info(preview_comments)`).all() as DbRow[];
   if (!previewCommentAnchorCols.some((c: DbRow) => c.name === 'anchor_state')) {
     db.exec(`ALTER TABLE preview_comments ADD COLUMN anchor_state TEXT`);
   }
   if (!previewCommentAnchorCols.some((c: DbRow) => c.name === 'anchored_version')) {
     db.exec(`ALTER TABLE preview_comments ADD COLUMN anchored_version INTEGER`);
-  }
-  if (!previewCommentAnchorCols.some((c: DbRow) => c.name === 'author_member_id')) {
-    db.exec(`ALTER TABLE preview_comments ADD COLUMN author_member_id TEXT`);
   }
   if (!previewCommentAnchorCols.some((c: DbRow) => c.name === 'last_good_position_json')) {
     db.exec(`ALTER TABLE preview_comments ADD COLUMN last_good_position_json TEXT`);
@@ -566,7 +561,6 @@ function migratePreviewCommentsAllowMultiplePerElement(db: SqliteDb): void {
       updated_at INTEGER NOT NULL,
       anchor_state TEXT,
       anchored_version INTEGER,
-      author_member_id TEXT,
       last_good_position_json TEXT,
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
@@ -576,11 +570,11 @@ function migratePreviewCommentsAllowMultiplePerElement(db: SqliteDb): void {
       (id, project_id, conversation_id, file_path, element_id, selector, label,
        text, position_json, html_hint, selection_kind, member_count, pod_members_json,
        style_json, attachments_json, slide_index, slide_key, note, status, created_at, updated_at,
-       anchor_state, anchored_version, author_member_id, last_good_position_json)
+       anchor_state, anchored_version, last_good_position_json)
     SELECT id, project_id, conversation_id, file_path, element_id, selector, label,
        text, position_json, html_hint, selection_kind, member_count, pod_members_json,
        style_json, attachments_json, slide_index, slide_key, note, status, created_at, updated_at,
-       anchor_state, anchored_version, author_member_id, last_good_position_json
+       anchor_state, anchored_version, last_good_position_json
       FROM preview_comments;
 
     DROP TABLE preview_comments;
@@ -2518,8 +2512,8 @@ export function upsertPreviewComment(
        (id, project_id, conversation_id, file_path, element_id, selector, label,
         text, position_json, html_hint, selection_kind, member_count, pod_members_json,
         style_json, attachments_json, slide_index, slide_key, note, status, created_at, updated_at,
-        anchored_version, author_member_id, review_source_json, pin_seq, sort_key)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        anchored_version, review_source_json, pin_seq, sort_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        selector = excluded.selector,
        label = excluded.label,
@@ -2535,7 +2529,6 @@ export function upsertPreviewComment(
        note = excluded.note,
        status = 'open',
        anchored_version = excluded.anchored_version,
-       author_member_id = excluded.author_member_id,
        review_source_json = excluded.review_source_json,
        updated_at = excluded.updated_at
      WHERE preview_comments.project_id = excluded.project_id
@@ -2563,7 +2556,6 @@ export function upsertPreviewComment(
     createdAt,
     now,
     anchoredVersion,
-    null,
     reviewSource ? JSON.stringify(reviewSource) : null,
     pinSeq,
     sortKey,
@@ -2647,75 +2639,6 @@ export function deletePreviewComment(db: SqliteDb, projectId: string, conversati
     .run(id, projectId, conversationId);
   return result.changes > 0;
 }
-
-const LEGACY_PROJECT_COMMENT_ANCHOR_PREFIX = 'comment-anchor-';
-
-/**
- * Remove the daemon-local anchor conversations created by the retired Team
- * Workspace comment transport. Existing local comments are moved to the most
- * recent ordinary conversation for the same Project; when none exists, the
- * migration creates one. New collaboration review comments already arrive
- * with an explicit local conversation selected by the Owner.
- */
-export function migrateLegacyProjectCommentAnchors(
-  db: SqliteDb,
-  now = Date.now(),
-): { anchorsRemoved: number; commentsMoved: number; conversationsCreated: number } {
-  const anchors = db.prepare(
-    `SELECT id, project_id AS projectId
-       FROM conversations
-      WHERE id LIKE ?
-      ORDER BY project_id ASC, created_at ASC, rowid ASC`,
-  ).all(`${LEGACY_PROJECT_COMMENT_ANCHOR_PREFIX}%`) as Array<{
-    id: string;
-    projectId: string;
-  }>;
-  let anchorsRemoved = 0;
-  let commentsMoved = 0;
-  let conversationsCreated = 0;
-  const migrateAnchors = db.transaction(() => {
-    const destinations = new Map<string, string>();
-    for (const anchor of anchors) {
-      let destinationId = destinations.get(anchor.projectId);
-      if (!destinationId) {
-        const existing = db.prepare(
-          `SELECT id FROM conversations
-            WHERE project_id = ?
-              AND id NOT LIKE ?
-            ORDER BY updated_at DESC, rowid DESC
-            LIMIT 1`,
-        ).get(anchor.projectId, `${LEGACY_PROJECT_COMMENT_ANCHOR_PREFIX}%`) as
-          | { id: string }
-          | undefined;
-        destinationId = existing?.id;
-        if (!destinationId) {
-          destinationId = `conversation-${randomUUID()}`;
-          insertConversation(db, {
-            id: destinationId,
-            projectId: anchor.projectId,
-            title: null,
-            sessionMode: 'design',
-            createdAt: now,
-            updatedAt: now,
-          });
-          conversationsCreated += 1;
-        }
-        destinations.set(anchor.projectId, destinationId);
-      }
-      const moved = db.prepare(
-        `UPDATE preview_comments
-            SET conversation_id = ?
-          WHERE project_id = ? AND conversation_id = ?`,
-      ).run(destinationId, anchor.projectId, anchor.id);
-      commentsMoved += moved.changes;
-      deleteConversation(db, anchor.id);
-      anchorsRemoved += 1;
-    }
-  });
-  migrateAnchors();
-  return { anchorsRemoved, commentsMoved, conversationsCreated };
-}
-
 
 export function getPreviewComment(db: SqliteDb, projectId: string, conversationId: string, id: string) {
   const row = db

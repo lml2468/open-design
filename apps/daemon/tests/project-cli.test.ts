@@ -84,29 +84,6 @@ async function startProjectStubServer(): Promise<StubServer> {
         res.end(JSON.stringify({ files: [] }));
         return;
       }
-      if (captured.method === 'GET' && captured.url === '/api/workspace/skills/team') {
-        res.statusCode = 200;
-        res.end(JSON.stringify({ ids: ['team-skill'], resources: [{ id: 'team-skill' }] }));
-        return;
-      }
-      if (captured.method === 'GET' && captured.url === '/api/workspace/directory') {
-        res.statusCode = 200;
-        res.end(JSON.stringify({
-          items: [
-            {
-              workspaceId: 'ws-personal',
-              workspaceName: 'Personal',
-              workspaceType: 'personal',
-              workspaceMemberId: 'mem-personal',
-              role: 'owner',
-              memberStatus: 'active',
-              lifecycleState: 'active',
-            },
-          ],
-          activeWorkspaceId: null,
-        }));
-        return;
-      }
       if (captured.method === 'GET' && captured.url === '/api/projects') {
         res.statusCode = 200;
         res.end(JSON.stringify({

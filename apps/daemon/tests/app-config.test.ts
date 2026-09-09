@@ -431,11 +431,8 @@ describe('app-config', () => {
             OPENAI_BASE_URL: '  https://proxy.example/openai  ',
             OPENAI_API_KEY: '  sk-proxy-openai  ',
           },
-          amr: {
-            VELA_BIN: '~/bin/vela',
-            VELA_API_URL: '  https://custom-amr.example  ',
-            OPEN_DESIGN_AMR_PROFILE: '  local  ',
-            OPENCODE_TEST_HOME: '  ~/.open-design-amr-opencode  ',
+          'unsupported-agent': {
+            UNSUPPORTED_BIN: '~/bin/unsupported',
             HOME: 'should-not-persist',
           },
           opencode: {

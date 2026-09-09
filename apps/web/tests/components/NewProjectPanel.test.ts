@@ -4,10 +4,9 @@ import { supportedModels } from '../../src/components/NewProjectPanel';
 import { AUDIO_MODELS_BY_KIND, IMAGE_MODELS, VIDEO_MODELS } from '../../src/media/models';
 
 describe('NewProjectPanel image provider visibility', () => {
-  it('shows OpenAI image models without exposing removed hosted providers', () => {
+  it('shows OpenAI image models without exposing non-image agents', () => {
     const imageModels = supportedModels('image', IMAGE_MODELS);
     expect(imageModels.some((model) => model.provider === 'openai')).toBe(true);
-    expect(imageModels.map((model) => String(model.provider))).not.toContain('vela');
     expect(imageModels.map((model) => String(model.provider))).not.toContain('codex');
   });
 

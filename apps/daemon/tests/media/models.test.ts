@@ -12,8 +12,8 @@ describe('image model defaults', () => {
     expect(IMAGE_MODELS.filter((model) => model.default).map((model) => model.id)).toEqual([
       'gpt-image-2',
     ]);
-    expect(MEDIA_PROVIDERS.some((provider) => provider.id === 'vela')).toBe(false);
-    expect(IMAGE_MODELS.some((model) => model.provider === 'vela')).toBe(false);
+    expect(MEDIA_PROVIDERS.every((provider) => provider.id.length > 0)).toBe(true);
+    expect(IMAGE_MODELS.every((model) => MEDIA_PROVIDERS.some((provider) => provider.id === model.provider))).toBe(true);
   });
 
   it('does not retain removed Cloud model aliases', () => {

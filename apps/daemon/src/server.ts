@@ -675,7 +675,6 @@ import {
   deleteRoutine as dbDeleteRoutine,
   openDatabase,
   reorderPreviewComment,
-  migrateLegacyProjectCommentAnchors,
   setTabs,
   updateConversation,
   updatePreviewCommentAnchor,
@@ -2665,12 +2664,6 @@ export async function startServer({
     next();
   });
   const db = openDatabase(PROJECT_ROOT, { dataDir: RUNTIME_DATA_DIR });
-  const legacyCommentAnchorMigration = migrateLegacyProjectCommentAnchors(db);
-  if (legacyCommentAnchorMigration.anchorsRemoved > 0) {
-    console.warn(
-      `[comments] migrated ${legacyCommentAnchorMigration.anchorsRemoved} legacy comment anchor(s)`,
-    );
-  }
   // Restore paired browser-extension origins into the in-memory allowlist the
   // /api origin middleware above consults, so a paired clipper survives daemon
   // restarts without re-pairing.

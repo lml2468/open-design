@@ -1010,14 +1010,7 @@ export interface Dict extends CollaborationSettingsDict {
   'entry.loadingWorkspace': string;
   'entry.useEverywhereTitle': string;
   'entry.useEverywhereAria': string;
-  'workspaceSwitcher.createTeam': string;
-  'workspaceSwitcher.draftsTooltip': string;
-  'workspaceSwitcher.allProjectsTooltip': string;
   'entry.primaryNavAria': string;
-  'entry.billingTierTeam': string;
-  'entry.billingTierFree': string;
-  'entry.billingTierPro': string;
-  'entry.billingFamilyCreator': string;
   'entry.accountToggleTheme': string;
   'entry.accountSwitchLanguage': string;
   'entry.accountLanguageMeta': string;
@@ -1031,11 +1024,6 @@ export interface Dict extends CollaborationSettingsDict {
   'signOut.confirmMessage': string;
   'signOut.confirmAction': string;
   'entry.navRecents': string;
-  'entry.navDashboard': string;
-  'entry.blankDraftsTitle': string;
-  'entry.blankDraftsDescription': string;
-  'entry.blankAllProjectsTitle': string;
-  'entry.blankAllProjectsDescription': string;
   'entry.blankCreate': string;
   // Left nav rail (icon-only) — surface labels also serve as tooltips
   'entry.navExpand': string;
@@ -1048,23 +1036,10 @@ export interface Dict extends CollaborationSettingsDict {
   'entry.navDesignSystems': string;
   'entry.navBrands': string;
   'entry.navIntegrations': string;
-  // Team-edition navigation shell.
-  'entry.navMembers': string;
-  'entry.navWorkspaceSettings': string;
-  'entry.navDrafts': string;
-  'entry.navAllProjects': string;
-  'entry.draftsDescription': string;
-  'entry.allProjectsDescription': string;
-  'entry.navBoard': string;
-  'entry.navTeamSection': string;
-  'entry.teamSlotNote': string;
   'entry.cloudRecovering': string;
-  'entry.authExpiredBody': string;
   'home.createFailed': string;
   'home.daemonRecovering': string;
   'home.bundledScenarioMissing': string;
-  'entry.workspaceLockedNote': string;
-  'entry.workspaceLockedRecover': string;
   'workspaceTabs.project': string;
   'workspaceTabs.pluginDetails': string;
   'workspaceTabs.marketplace': string;
@@ -1278,9 +1253,6 @@ export interface Dict extends CollaborationSettingsDict {
   'recentProjects.title': string;
   'recentProjects.viewAll': string;
   'recentProjects.empty': string;
-  'recentProjects.ownerAll': string;
-  'recentProjects.ownerMine': string;
-  'recentProjects.ownerOthers': string;
   'recentProjects.kindAll': string;
   'recentProjects.kindPrototype': string;
   'recentProjects.kindSlides': string;
@@ -1294,18 +1266,6 @@ export interface Dict extends CollaborationSettingsDict {
   /** Heading of the rail's recent-projects disclosure (最近浏览过). */
   'recentProjects.collectionRecent': string;
   'recentProjects.viewList': string;
-  'recentProjects.sharedBadge': string;
-  'recentProjects.sharedProjectFallbackName': string;
-  'recentProjects.creatorLine': string;
-  'recentProjects.selfCreator': string;
-  'recentProjects.teamMemberCreator': string;
-  'recentProjects.ownOnlyMutation': string;
-  'recentProjects.shareInProgress': string;
-  'recentProjects.sharedInTeam': string;
-  'recentProjects.unshareInProgress': string;
-  'recentProjects.unshareFailed': string;
-  'recentProjects.shareFailed': string;
-  'recentProjects.shareOwnerConflict': string;
   'recentProjects.clearFilters': string;
   'pluginsHome.title': string;
   'pluginsHome.subtitle': string;

@@ -414,42 +414,6 @@ describe("packaged smoke workflow", () => {
     expect(sandboxScript).toContain("process.env.OPENCODE_BIN");
     expect(sandboxScript).toContain("fake OpenCode fixture");
 
-    for (const retiredRuntimeMarker of [
-      "VELA_BIN",
-      "VELA_RUNTIME_KEY",
-      "AMR_USER",
-      "AMR_PASS",
-      "fake-vela",
-      "AMR runtime picker",
-    ]) {
-      expect(sandboxScript).not.toContain(retiredRuntimeMarker);
-    }
-  });
-
-  it("[P1] keeps retired Vela and AMR branding out of shipped guidance and examples", async () => {
-    const activeProductFiles = [
-      join(workspaceRoot, "AGENTS.md"),
-      join(workspaceRoot, "CONTEXT.md"),
-      join(workspaceRoot, "design-templates", "open-design-landing", "styles.css"),
-      join(workspaceRoot, "design-templates", "open-design-landing", "example.html"),
-      join(workspaceRoot, "plugins", "_official", "examples", "open-design-homepage", "example.html"),
-      join(
-        workspaceRoot,
-        "plugins",
-        "_official",
-        "examples",
-        "open-design-homepage",
-        "assets",
-        "_next",
-        "static",
-        "chunks",
-        "d59f7a97fb1c563f.js",
-      ),
-    ];
-
-    for (const filePath of activeProductFiles) {
-      expect(await readFile(filePath, "utf8")).not.toMatch(/\b(?:amr|vela)\b/i);
-    }
   });
 
   it("[P2] keeps packaged smoke outside the main CI gate", async () => {
@@ -2816,9 +2780,6 @@ process.stdin.on("end", () => {
     expect(canary).toContain("ref: main");
     expect(canary).not.toContain("inputs.ref");
     expect(canary).toContain("runs-on: windows-latest");
-    expect(canary).not.toContain("OPEN_DESIGN_AMR_PROFILE");
-    expect(canary).not.toContain("OD_VELA_WEB_URL");
-    expect(canary).not.toContain("--require-vela-cli");
     expect(canary).toContain("--namespace release-prerelease-canary-win");
     expect(canary).toContain('OD_PACKAGED_E2E_RELEASE_CHANNEL: prerelease');
     expect(canary).toContain('OD_PACKAGED_E2E_WIN_SMOKE_PROFILE: core');

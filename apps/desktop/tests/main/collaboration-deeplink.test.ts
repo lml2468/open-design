@@ -30,7 +30,7 @@ describe('collaboration deeplink core', () => {
   });
 
   it.each([
-    'opendesign://workspace/invite/continue?nonce=legacy',
+    'opendesign://unsupported/invite/continue?nonce=legacy',
     'opendesign://collaboration/invite/continue?server=http%3A%2F%2Fexample.com&invite_id=i&nonce=abcdefghijklmnopqrstuvwxyz123456',
     'opendesign://collaboration/invite/continue?server=https%3A%2F%2Fexample.com&invite_id=i&nonce=short',
     'opendesign://collaboration/review/open?server=https%3A%2F%2Fexample.com&project_id=p',

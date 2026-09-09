@@ -588,8 +588,8 @@ export interface RegisterRunRoutesDeps {
     ) => Promise<ResolvedExamplePluginRecord | null>;
     /**
      * Fail-closed request-scoped plugin lookup. The catalog API and the run
-     * API must use the same Workspace/member visibility rules; otherwise a
-     * caller can bypass a hidden Personal plugin by posting its id directly
+     * API must resolve the same daemon-local catalogue record; otherwise a
+     * caller could bypass catalogue selection by posting an unknown id directly
      * to /api/runs.
      */
     authorizePluginRequest?: (

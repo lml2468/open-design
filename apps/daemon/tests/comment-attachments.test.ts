@@ -65,7 +65,6 @@ describe('preview comment persistence', () => {
       expect.arrayContaining([
         'anchor_state',
         'anchored_version',
-        'author_member_id',
         'last_good_position_json',
         'review_source_json',
       ]),
@@ -389,7 +388,6 @@ describe('preview comment persistence', () => {
       expect.arrayContaining([
         'anchor_state',
         'anchored_version',
-        'author_member_id',
         'last_good_position_json',
       ]),
     );

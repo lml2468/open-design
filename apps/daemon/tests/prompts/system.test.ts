@@ -255,7 +255,7 @@ describe('composeSystemPrompt', () => {
       } as any,
     });
 
-    expect(prompt).not.toMatch(/\b(?:amr|vela)\b/i);
+    expect(prompt).toContain('media generate');
     expect(prompt).toContain('Do not call `Read` on the generated image');
   });
 
@@ -428,7 +428,6 @@ describe('composeSystemPrompt', () => {
       expect(prompt).toContain('### Run-scoped BYOK media defaults');
       expect(prompt).toContain('Image model: `flux-pro-ultra`');
       expect(prompt).toContain('Video model: `doubao-seedance-2-0-260128`');
-      expect(prompt).not.toMatch(/\b(?:amr|vela)\b/i);
       expect(prompt).not.toContain('trusted Workspace attribution');
     });
 

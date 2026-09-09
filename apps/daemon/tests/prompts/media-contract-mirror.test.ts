@@ -74,6 +74,5 @@ describe('MEDIA_USER_REPLY_CONTRACT mirrors', () => {
 
   it('routes an unspecified image model through the provider-neutral catalogue default', () => {
     expect(generationBody).toContain('otherwise use \\`gpt-image-2\\`');
-    expect(generationBody).not.toMatch(/\b(?:amr|vela)\b/i);
   });
 });

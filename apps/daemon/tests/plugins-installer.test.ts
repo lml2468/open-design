@@ -102,14 +102,14 @@ describe('installFromLocalFolder', () => {
     for await (const event of installFromLocalFolder(db, {
       source: sourceFolder,
       roots: { userPluginsRoot: pluginsRoot },
-      allowReplacePlugin: () => 'owned by another workspace member',
+      allowReplacePlugin: () => 'destination folder cannot be replaced',
     })) {
       events.push(event);
     }
 
     expect(events.at(-1)).toMatchObject({
       kind: 'error',
-      message: 'owned by another workspace member',
+      message: 'destination folder cannot be replaced',
     });
     expect(await readFile(installedManifest, 'utf8')).toBe(before);
     expect(listInstalledPlugins(db)[0]?.version).toBe('1.0.0');

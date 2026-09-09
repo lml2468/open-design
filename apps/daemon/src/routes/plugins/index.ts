@@ -369,8 +369,8 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
   });
   app.post('/api/plugins/:id/apply-local', async (req, res) => {
     // This endpoint identifies bytes the local catalogue already returned. It
-    // deliberately performs no Workspace authority read; catalogue sync owns
-    // local availability and remote mutations retain their own fresh gates.
+    // deliberately performs no remote authorization read; the daemon-local
+    // catalogue is the only source of plugin availability.
     res.setHeader('x-od-plugin-apply-local', '1');
     try {
       const body = req.body && typeof req.body === 'object'
