@@ -158,32 +158,14 @@ describe('BrandPreviewCard', () => {
     });
   });
 
-  it('keeps the card in place when a canonical scoped delete is denied', async () => {
-    workspaceContextState.context = {
-      workspaceId: 'workspace-delete',
-      workspaceType: 'team',
-      workspaceMemberId: 'member-delete',
-      role: 'member',
-      memberStatus: 'active',
-      lifecycleState: 'active',
-      billingState: 'active',
-      planId: null,
-      providerMode: 'platform_credits',
-      seatSummary: { seatLimit: 3, usedSeats: 2, availableSeats: 1, isSeatFull: false },
-      permissions: {
-        canManageMembers: false,
-        canManageBilling: false,
-        canInviteMembers: false,
-        canManageAutoRecharge: false,
-        canShareProjects: true,
-        canWriteSyncedFiles: false,
-        canViewWorkspaceSettings: false,
-        canManageSharedResources: false,
-      },
-    };
+  it('keeps the card in place when a local delete is denied', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 403 } as Response);
+    fetchMock.mockImplementation(async (input) => ({
+      ok: String(input) !== '/api/brands/brand-ramp',
+      status: String(input) === '/api/brands/brand-ramp' ? 403 : 200,
+      json: async () => ({}),
+    }) as Response);
     const onChanged = vi.fn();
 
     render(
@@ -196,7 +178,6 @@ describe('BrandPreviewCard', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith('/api/brands/brand-ramp', {
         method: 'DELETE',
-        headers: {},
       });
       expect(onChanged).not.toHaveBeenCalled();
       expect(window.location.pathname).toBe('/brands/brand-ramp');

@@ -13,7 +13,6 @@ import {
 import { navigate } from "../router";
 import { deleteProjectFile, projectFileUrl, uploadProjectFiles } from "../providers/registry";
 import { useProjectCollabContext } from "../collab/collab-context";
-import { workspaceProjectHeaders } from "../collab/workspace-identity";
 import { useAnalytics } from "../analytics/provider";
 import {
   trackAssistantFeedbackButtonClick,
@@ -230,7 +229,6 @@ function SkillPluginCandidateCard({
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(body),
     });

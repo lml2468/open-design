@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import type { WorkspaceCollabContext } from '@open-design/contracts';
-import { workspaceProjectHeaders } from '../../../collab/workspace-identity';
 
 const STORAGE_KEY = 'open-design:config';
 const TOGGLE_EVENT = 'open-design:critique-theater-toggle';
@@ -187,17 +186,11 @@ export function setCritiqueTheaterEnabled(
     const fetcher = options.fetchProjectSettings
       ?? ((url: string, init: RequestInit) => fetch(url, init));
     const projectUrl = `/api/projects/${encodeURIComponent(projectId)}`;
-    const projectHeaders = new Headers(
-      options.workspaceContext
-        ? workspaceProjectHeaders(options.workspaceContext)
-        : undefined,
-    );
     (async () => {
       let existingMetadata: Record<string, unknown> = {};
       try {
         const getRes = await fetcher(projectUrl, {
           method: 'GET',
-          ...(options.workspaceContext ? { headers: projectHeaders } : {}),
         });
         if (!getRes.ok) {
           throw new Error(`prefetch returned status ${getRes.status}`);
@@ -223,7 +216,7 @@ export function setCritiqueTheaterEnabled(
         return;
       }
       try {
-        const patchHeaders = new Headers(projectHeaders);
+        const patchHeaders = new Headers();
         patchHeaders.set('content-type', 'application/json');
         await fetcher(projectUrl, {
           method: 'PATCH',

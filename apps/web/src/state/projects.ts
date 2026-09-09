@@ -43,7 +43,6 @@ import { boundedRequestErrorCode } from '../analytics/workspace';
 
 export type { PluginInstallOutcome } from '@open-design/contracts';
 export type { PluginShareAction } from '@open-design/contracts';
-export { workspaceProjectHeaders } from '../collab/workspace-identity';
 
 export function invalidateProjectList(): void {
   evictCoalescedGet('local-projects');

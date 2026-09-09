@@ -22,7 +22,6 @@ import { DesignKitView } from './DesignKitView';
 import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import {
   resolveWorkspaceResourceReadIdentity,
-  workspaceProjectHeaders,
   workspaceResourceReadIdentityKey,
 } from '../collab/workspace-identity';
 import styles from './BrandPreviewCard.module.css';
@@ -147,9 +146,6 @@ export function BrandPreviewCard({
     try {
       const response = await fetch(`/api/brands/${encodeURIComponent(meta.id)}`, {
         method: 'DELETE',
-        ...(mutationWorkspaceContext
-          ? { headers: workspaceProjectHeaders(mutationWorkspaceContext) }
-          : {}),
       });
       if (!response.ok) throw new Error(`brand delete ${response.status}`);
       navigate({ kind: 'home', view: 'brands' }, { replace: true });

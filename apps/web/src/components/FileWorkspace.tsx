@@ -4488,9 +4488,7 @@ function DesignSystemProjectPanel({
   const t = useT();
   const analytics = useAnalytics();
   const { workspaceContext } = useProjectCollabContext();
-  // Match the exact fields sent by workspaceProjectHeaders. Billing-only
-  // refreshes must not blank and reload the kit, while a role, membership, or
-  // permission change must discard every prior identity's source snapshot.
+  // Billing-only context refreshes must not blank and reload the kit.
   const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
   const [reviewDecisions, setReviewDecisions] = useState<Record<string, DesignSystemReviewDecision>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});

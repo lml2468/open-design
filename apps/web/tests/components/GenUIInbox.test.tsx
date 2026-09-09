@@ -2,22 +2,8 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 import { GenUIInbox } from '../../src/components/GenUIInbox';
-
-const WORKSPACE_CONTEXT = {
-  workspaceId: 'workspace-team',
-  workspaceType: 'team',
-  workspaceMemberId: 'member-1',
-  role: 'owner',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  permissions: {
-    canShareProjects: true,
-    canWriteSyncedFiles: true,
-  },
-} as WorkspaceCollabContext;
 
 const SURFACE = {
   id: 'row-1',
@@ -43,7 +29,7 @@ describe('GenUIInbox local Project transport', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<GenUIInbox projectId="project-1" workspaceContext={WORKSPACE_CONTEXT} />);
+    render(<GenUIInbox projectId="project-1" />);
     fireEvent.click(await screen.findByRole('button', { name: 'Revoke' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));

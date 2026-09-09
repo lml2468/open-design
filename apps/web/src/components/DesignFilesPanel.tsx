@@ -10,7 +10,6 @@ import { projectFileUrl, projectRawUrl } from '../providers/registry';
 import {
   appendResourceQuery,
   workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
 } from '../collab/workspace-identity';
 import { useProjectCollabContext } from '../collab/collab-context';
 import { buildSrcdoc } from '../runtime/srcdoc';
@@ -1234,9 +1233,6 @@ export function DesignFilesPanel({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(workspaceContext
-            ? workspaceProjectHeaders(workspaceContext)
-            : {}),
         },
         body: JSON.stringify({ files: fileList }),
       });

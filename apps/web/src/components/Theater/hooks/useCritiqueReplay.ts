@@ -12,7 +12,6 @@ import {
 } from '../state/reducer';
 import {
   workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
 } from '../../../collab/workspace-identity';
 
 export type ReplaySpeed = 'paused' | 'instant' | 'live' | { intervalMs: number };
@@ -125,11 +124,7 @@ export function useCritiqueReplay(
     (async () => {
       let raw: string;
       try {
-        const fetched = options.workspaceContext
-          ? await fetcher(transcriptUrl, {
-              headers: workspaceProjectHeaders(options.workspaceContext),
-            })
-          : await fetcher(transcriptUrl);
+        const fetched = await fetcher(transcriptUrl);
         if (cancelled) return;
         if (typeof fetched === 'string') {
           raw = fetched;

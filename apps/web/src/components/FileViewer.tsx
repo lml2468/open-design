@@ -31,7 +31,6 @@ import {
 import {
   appendResourceQuery,
   workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
 } from '../collab/workspace-identity';
 import {
   anonymizeArtifactId,
@@ -9187,15 +9186,10 @@ function HtmlViewer({
       for (const assetPath of assetPaths) {
         if (cancelled) return;
         try {
-          const resp = await fetch(
-            appendResourceQuery(
-              projectRawUrl(projectId, assetPath),
-              `previewAssetCheck=${encodeURIComponent(cacheBust)}`,
-            ),
-            workspaceContext
-              ? { headers: workspaceProjectHeaders(workspaceContext) }
-              : undefined,
-          );
+          const resp = await fetch(appendResourceQuery(
+            projectRawUrl(projectId, assetPath),
+            `previewAssetCheck=${encodeURIComponent(cacheBust)}`,
+          ));
           if (cancelled) return;
           if (resp.ok || resp.status === 404) continue;
           const body = await readPreviewAssetResponseBody(resp);
@@ -17548,12 +17542,7 @@ async function fetchProjectRelativeText(
   const filePath = resolveProjectRelativePath(ownerFileName, assetRef);
   if (!filePath) return null;
   try {
-    const resp = await fetch(
-      projectRawUrl(projectId, filePath),
-      workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : undefined,
-    );
+    const resp = await fetch(projectRawUrl(projectId, filePath));
     if (!resp.ok) return null;
     return { filePath, text: await resp.text() };
   } catch {

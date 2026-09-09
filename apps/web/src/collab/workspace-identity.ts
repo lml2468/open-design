@@ -1,12 +1,5 @@
 import type { WorkspaceCollabContext } from '@open-design/contracts';
 
-/** Transitional call-site shim. Local Project requests no longer carry the
- * retired Workspace authority headers. */
-export function workspaceProjectHeaders(context: WorkspaceCollabContext): HeadersInit {
-  void context;
-  return {};
-}
-
 /** Transitional URL shim. Local Project resources no longer encode Workspace
  * authority in navigation URLs. */
 export function workspaceResourceUrl(
@@ -35,9 +28,8 @@ export function workspaceIdentityCacheKey(
  * Monotonic account boundary, independent from ambient Workspace selection.
  *
  * Lives here rather than in `useWorkspaceContext` so shared catalog modules can
- * partition their caches on it without importing a React hook module — the same
- * reason `workspaceProjectHeaders` lives here. `useWorkspaceContext` re-exports
- * the reader so existing callers are unaffected.
+ * partition their caches on it without importing a React hook module.
+ * `useWorkspaceContext` re-exports the reader so existing callers are unaffected.
  *
  * A sign-in/sign-out cycle can leave every context field identical while the
  * authority behind them has changed, so any cache keyed only on the context

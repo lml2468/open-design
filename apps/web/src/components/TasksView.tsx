@@ -29,13 +29,7 @@ import {
   type AutomationTemplateKind,
 } from './NewAutomationModal';
 import { describeRoutineSchedule } from './routineScheduleLabels';
-import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import { listProjects } from '../state/projects';
-import {
-  workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
-} from '../collab/workspace-identity';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 type ProjectSummary = { id: string; name: string };
 type TemplateFilter =
@@ -397,18 +391,6 @@ function errorMessage(err: unknown): string {
 export function TasksView({ skills = [], designTemplates = [], connectors = [], isActive = true }: Props) {
   const t = useT();
   const analytics = useAnalytics();
-  // Workspace context still scopes routine mutations during the transition,
-  // while `listProjects` itself always reads the complete local catalog.
-  const { context: tasksWorkspaceContext } = useWorkspaceContext();
-  const tasksWorkspaceIdentity = workspaceIdentityCacheKey(tasksWorkspaceContext);
-  const routineHeaders = useMemo(
-    () => tasksWorkspaceContext
-      ? workspaceProjectHeaders(tasksWorkspaceContext)
-      : undefined,
-    // The identity contains every authority field placed on the wire.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tasksWorkspaceIdentity],
-  );
   // P2 page_view page_name=automations. Ref-keyed so re-renders don't
   // double-fire while the user is on the page.
   const pageViewFiredRef = useState<{ fired: boolean }>(() => ({ fired: false }))[0];
@@ -481,7 +463,7 @@ export function TasksView({ skills = [], designTemplates = [], connectors = [], 
           return null;
         });
       const [rRes, projectList, tJson, proposalJson] = await Promise.all([
-        fetch('/api/routines', routineHeaders ? { headers: routineHeaders } : undefined),
+        fetch('/api/routines'),
         listProjects(),
         templateRequest,
         proposalRequest,
@@ -503,10 +485,7 @@ export function TasksView({ skills = [], designTemplates = [], connectors = [], 
       setLoading(false);
     }
     return { proposalRefreshFailed };
-    // Keep the callback partitioned by the transitional identity key until the
-    // remaining Workspace-shaped request parameters are removed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routineHeaders, tasksWorkspaceIdentity]);
+  }, []);
 
   useEffect(() => {
     // Hidden views do not fetch. This one is mounted from the first paint of
@@ -567,7 +546,6 @@ export function TasksView({ skills = [], designTemplates = [], connectors = [], 
     try {
       const res = await fetch(`/api/routines/${id}/run`, {
         method: 'POST',
-        ...(routineHeaders ? { headers: routineHeaders } : {}),
       });
       if (!res.ok && res.status !== 202) {
         const j = await res.json().catch(() => ({}));
@@ -599,7 +577,6 @@ export function TasksView({ skills = [], designTemplates = [], connectors = [], 
     try {
       const res = await fetch(`/api/routines/${routineId}/runs/${runId}/crystallize`, {
         method: 'POST',
-        ...(routineHeaders ? { headers: routineHeaders } : {}),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -634,7 +611,6 @@ export function TasksView({ skills = [], designTemplates = [], connectors = [], 
         method: 'PATCH',
         headers: {
           'content-type': 'application/json',
-          ...(routineHeaders ?? {}),
         },
         body: JSON.stringify({ enabled: !routine.enabled }),
       });
@@ -657,7 +633,6 @@ export function TasksView({ skills = [], designTemplates = [], connectors = [], 
     try {
       const res = await fetch(`/api/routines/${id}`, {
         method: 'DELETE',
-        ...(routineHeaders ? { headers: routineHeaders } : {}),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -860,7 +835,6 @@ export function TasksView({ skills = [], designTemplates = [], connectors = [], 
                     <AutomationRunHistory
                       routineId={r.id}
                       refreshKey={historyTick}
-                      workspaceContext={tasksWorkspaceContext}
                       crystallizingRunId={crystallizingRunId}
                       onCrystallizeRun={crystallizeRun}
                       onFireClick={fireClick}
@@ -1069,7 +1043,6 @@ function Metric({ label, value }: { label: string; value: number }) {
 function AutomationRunHistory({
   routineId,
   refreshKey,
-  workspaceContext,
   crystallizingRunId,
   onCrystallizeRun,
   onFireClick,
@@ -1077,23 +1050,19 @@ function AutomationRunHistory({
 }: {
   routineId: string;
   refreshKey: number;
-  workspaceContext: WorkspaceCollabContext | null;
   crystallizingRunId: string | null;
   onCrystallizeRun: (routineId: string, runId: string) => void;
   onFireClick: (element: AutomationsClickProps['element']) => void;
   t: TranslateFn;
 }) {
   const [runs, setRuns] = useState<RoutineRun[] | null>(null);
-  const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
 
   useEffect(() => {
     let cancelled = false;
     setRuns(null);
     void (async () => {
       try {
-        const res = await fetch(`/api/routines/${routineId}/runs?limit=10`, workspaceContext
-          ? { headers: workspaceProjectHeaders(workspaceContext) }
-          : undefined);
+        const res = await fetch(`/api/routines/${routineId}/runs?limit=10`);
         if (!res.ok) throw new Error(`runs: ${res.status}`);
         const json = await res.json();
         if (!cancelled) setRuns(json.runs ?? []);
@@ -1104,10 +1073,7 @@ function AutomationRunHistory({
     return () => {
       cancelled = true;
     };
-    // The captured context is exact for this identity; object churn with the
-    // same authority must not restart the history request.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey, routineId, workspaceIdentity]);
+  }, [refreshKey, routineId]);
 
   if (runs === null) {
     return <div className="automation-history automation-history--empty">{t('automations.runHistoryLoading')}</div>;
