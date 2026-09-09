@@ -2901,8 +2901,6 @@ export const en: Dict = {
   'fileViewer.speakerNotesSaved': 'Saved',
   'fileViewer.speakerNotesSaveFailed': 'Could not save speaker notes.',
   'fileViewer.speakerNotesPlaceholder': 'Add speaker notes for this slide...',
-  'fileViewer.previewAssetBlockedTitle': 'Preview asset blocked',
-  'fileViewer.previewAssetBlockedDetail': '{filePath} could not be loaded. Replace external symlinks with files inside this project.',
   'fileViewer.presenterReset': 'Reset',
   'fileViewer.present': 'Present',
   'fileViewer.presentInTab': 'In this tab',

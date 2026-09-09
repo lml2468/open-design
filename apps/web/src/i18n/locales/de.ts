@@ -2887,8 +2887,6 @@ export const de: Dict = {
   'fileViewer.speakerNotesSaved': 'Gespeichert',
   'fileViewer.speakerNotesSaveFailed': 'Sprechernotizen konnten nicht gespeichert werden.',
   'fileViewer.speakerNotesPlaceholder': 'Sprechernotizen für diese Folie hinzufügen…',
-  'fileViewer.previewAssetBlockedTitle': 'Vorschau-Asset blockiert',
-  'fileViewer.previewAssetBlockedDetail': '{filePath} konnte nicht geladen werden. Ersetzen Sie externe Symlinks durch Dateien innerhalb dieses Projekts.',
   'fileViewer.presenterReset': 'Zurücksetzen',
   'fileViewer.present': 'Präsentieren',
   'fileViewer.presentInTab': 'In diesem Tab',

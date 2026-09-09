@@ -9,7 +9,6 @@ import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { projectFileUrl, projectRawUrl } from '../providers/registry';
 import {
   appendResourceQuery,
-  workspaceIdentityCacheKey,
 } from '../collab/workspace-identity';
 import { useProjectCollabContext } from '../collab/collab-context';
 import { buildSrcdoc } from '../runtime/srcdoc';
@@ -1927,9 +1926,7 @@ function HtmlCardThumbnail({
   const url = projectFileUrl(projectId, file.name);
   const authorizationScopeKey = workspaceContextLoading
     ? null
-    : workspaceContext
-      ? `workspace:${workspaceIdentityCacheKey(workspaceContext)}`
-      : 'local';
+    : 'local';
   const refreshKey = htmlSourceSnapshotRefreshKey(file, filesRefreshKey);
   const thumbnailIdentity = authorizationScopeKey
     ? {

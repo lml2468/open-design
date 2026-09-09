@@ -2887,8 +2887,6 @@ export const ru: Dict = {
   'fileViewer.speakerNotesSaved': 'Сохранено',
   'fileViewer.speakerNotesSaveFailed': 'Не удалось сохранить заметки докладчика.',
   'fileViewer.speakerNotesPlaceholder': 'Добавьте заметки докладчика для этого слайда…',
-  'fileViewer.previewAssetBlockedTitle': 'Ресурс предпросмотра заблокирован',
-  'fileViewer.previewAssetBlockedDetail': 'Не удалось загрузить {filePath}. Замените внешние символические ссылки файлами внутри этого проекта.',
   'fileViewer.presenterReset': 'Сбросить',
   'fileViewer.present': 'Презентация',
   'fileViewer.presentInTab': 'В этой вкладке',

@@ -2887,8 +2887,6 @@ export const tr: Dict = {
   'fileViewer.speakerNotesSaved': 'Kaydedildi',
   'fileViewer.speakerNotesSaveFailed': 'Konuşmacı notları kaydedilemedi.',
   'fileViewer.speakerNotesPlaceholder': 'Bu slayt için konuşmacı notu ekleyin…',
-  'fileViewer.previewAssetBlockedTitle': 'Önizleme varlığı engellendi',
-  'fileViewer.previewAssetBlockedDetail': '{filePath} yüklenemedi. Harici symlinkleri bu projenin içindeki dosyalarla değiştirin.',
   'fileViewer.presenterReset': 'Sıfırla',
   'fileViewer.present': 'Sun',
   'fileViewer.presentInTab': 'Bu pencerede sun',

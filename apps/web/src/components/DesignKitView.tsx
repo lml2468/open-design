@@ -35,9 +35,6 @@ import {
   openExternalUrl,
   projectRawUrl,
 } from '../providers/registry';
-import {
-  workspaceIdentityCacheKey,
-} from '../collab/workspace-identity';
 import { buildSrcdoc } from '../runtime/srcdoc';
 import {
   fontStack,
@@ -105,11 +102,10 @@ export function BrandLogo({
 }: KitLogoProps) {
   const bid = brandId ?? id;
   const first: LogoStage = bid ? 'brand' : logoSrc ? 'custom' : host ? 'favicon' : 'letter';
-  const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
   const [stage, setStage] = useState<LogoStage>(first);
   useEffect(() => {
     setStage(first);
-  }, [first, bid, logoSrc, host, workspaceIdentity, readGeneration]);
+  }, [first, bid, logoSrc, host, readGeneration]);
 
   const src =
     stage === 'brand' && bid

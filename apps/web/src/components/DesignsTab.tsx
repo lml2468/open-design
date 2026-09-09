@@ -12,7 +12,6 @@ import {
 } from "../analytics/events";
 import { useT } from "../i18n";
 import { useWorkspaceContext } from "../collab/useWorkspaceContext";
-import { workspaceIdentityCacheKey } from "../collab/workspace-identity";
 import {
 	getProjectCoverSnapshot,
 	projectCoverSnapshotKey,
@@ -199,7 +198,7 @@ export function DesignsTab({
 	useEffect(() => {
 		if (!isActive || workspaceContextLoading) return;
 		const controller = new AbortController();
-		const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
+		const workspaceIdentity = 'local';
 		if (liveWorkspaceIdentityRef.current !== workspaceIdentity) {
 			liveWorkspaceIdentityRef.current = workspaceIdentity;
 			setLiveArtifactsByProject({});
@@ -235,7 +234,7 @@ export function DesignsTab({
 			setCoverByProject({});
 			return;
 		}
-		const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
+		const workspaceIdentity = 'local';
 		const workspaceIdentityChanged = coverWorkspaceIdentityRef.current !== workspaceIdentity;
 		coverWorkspaceIdentityRef.current = workspaceIdentity;
 		const immediateEntries: Array<readonly [string, ProjectCoverOverride | null]> = [];

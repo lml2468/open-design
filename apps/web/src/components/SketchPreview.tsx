@@ -2,7 +2,6 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { AppState, BinaryFiles } from '@excalidraw/excalidraw/types';
 import type { ExcalidrawElement, NonDeleted } from '@excalidraw/excalidraw/element/types';
 import type { WorkspaceCollabContext } from '@open-design/contracts';
-import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
 import { fetchProjectFileText } from '../providers/registry';
 import type { ProjectFile } from '../types';
 import {
@@ -63,9 +62,8 @@ export function SketchPreview({
   className?: string;
   workspaceContext?: WorkspaceCollabContext | null;
 }) {
-  const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
   const cacheKey = isRenderableSketchJson(file)
-    ? sketchPreviewCacheKey(projectId, file.name, file.mtime, workspaceIdentity)
+    ? sketchPreviewCacheKey(projectId, file.name, file.mtime, 'local')
     : null;
   const [preview, setPreview] = useState<SketchPreviewState | null>(() => (
     cacheKey ? previewCache.get(cacheKey) ?? null : null
@@ -78,7 +76,7 @@ export function SketchPreview({
       projectId,
       file.name,
       file.mtime,
-      workspaceIdentity,
+      'local',
     );
     const cached = previewCache.get(nextCacheKey);
     if (cached) {
@@ -98,7 +96,7 @@ export function SketchPreview({
     return () => {
       cancelled = true;
     };
-  }, [file.kind, file.name, file.mtime, projectId, workspaceIdentity]);
+  }, [file.kind, file.name, file.mtime, projectId]);
 
   const geometry = useMemo(() => {
     const resolvedItems = preview?.items ?? [];

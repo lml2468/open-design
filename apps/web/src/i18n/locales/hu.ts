@@ -2887,8 +2887,6 @@ export const hu: Dict = {
   'fileViewer.speakerNotesSaved': 'Mentve',
   'fileViewer.speakerNotesSaveFailed': 'Az előadói jegyzetek mentése nem sikerült.',
   'fileViewer.speakerNotesPlaceholder': 'Adj előadói jegyzeteket ehhez a diához…',
-  'fileViewer.previewAssetBlockedTitle': 'Az előnézeti elem blokkolva',
-  'fileViewer.previewAssetBlockedDetail': 'A(z) {filePath} nem tölthető be. Cseréld a külső szimbolikus linkeket a projekten belüli fájlokra.',
   'fileViewer.presenterReset': 'Visszaállítás',
   'fileViewer.present': 'Bemutatás',
   'fileViewer.presentInTab': 'Ezen a lapon',

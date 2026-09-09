@@ -3155,8 +3155,6 @@ export const zhCN: Dict = {
   "fileViewer.speakerNotesSaved": "已保存",
   "fileViewer.speakerNotesSaveFailed": "无法保存演讲者备注。",
   "fileViewer.speakerNotesPlaceholder": "为这一页添加演讲者备注...",
-  "fileViewer.previewAssetBlockedTitle": "预览资源已被阻止",
-  "fileViewer.previewAssetBlockedDetail": "无法加载 {filePath}。请将外部符号链接替换为此项目内的文件。",
   "fileViewer.presenterReset": "重置",
   "fileViewer.present": "演示",
   "fileViewer.presentInTab": "在当前标签页",

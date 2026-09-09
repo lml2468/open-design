@@ -111,50 +111,6 @@ export function htmlHasRootRelativeProjectAssetRefs(
   return found;
 }
 
-/**
- * True when an HTML document contains a relative subresource reference that
- * resolves inside the project. Unlike a plain `src|href` regex this covers
- * inline CSS `url(...)`, `srcset`, lazy-load attributes, and stylesheet links
- * while deliberately ignoring anchor navigation.
- *
- * With a null file set this is a conservative candidate check. Callers that
- * need to put the resolved path on the wire must wait for the real file list
- * and confirm membership before rewriting it.
- */
-export function htmlHasRelativeProjectAssetRefs(
-  html: string,
-  ownerFilePath: string,
-  projectFilePaths: ReadonlySet<string> | null,
-): boolean {
-  let found = false;
-  eachAssetRef(html, (ref) => {
-    if (found) return;
-    const path = resolveRelativeAssetPath(ownerFilePath, ref);
-    if (path && (projectFilePaths === null || projectFilePaths.has(path))) found = true;
-  });
-  return found;
-}
-
-/**
- * Collect project asset paths referenced by an HTML preview. Used by
- * FileViewer's host-side preflight so raw-route security failures do not stay
- * hidden as broken images inside a sandboxed iframe.
- */
-export function collectPreviewAssetPaths(
-  html: string,
-  ownerFilePath: string,
-  projectFilePaths: ReadonlySet<string> | null,
-): string[] {
-  const paths = new Set<string>();
-  eachAssetRef(html, (ref) => {
-    const rootPath = rootRelativeProjectAssetPath(ref, projectFilePaths);
-    const relPath = resolveRelativeAssetPath(ownerFilePath, ref);
-    const projectPath = rootPath ?? relPath;
-    if (projectPath) paths.add(projectPath);
-  });
-  return [...paths];
-}
-
 /** `zh/index.html` → `zh/`; flat files → ``. */
 export function assetBaseDirFor(filePath: string): string {
   const idx = filePath.lastIndexOf('/');
@@ -243,16 +199,6 @@ function appendAssetRefSuffix(url: string, suffix: string): string {
   return `${url}&${suffix.slice(1)}`;
 }
 
-function confirmedProjectAssetPath(
-  ownerFilePath: string,
-  ref: string,
-  projectFilePaths: ReadonlySet<string>,
-): string | null {
-  const rootPath = rootRelativeProjectAssetPath(ref, projectFilePaths);
-  const relativePath = rootPath ?? resolveRelativeAssetPath(ownerFilePath, ref);
-  return relativePath && projectFilePaths.has(relativePath) ? relativePath : null;
-}
-
 /**
  * Normalize every confirmed root-relative project asset ref in an HTML
  * document to an owner-relative path. Run BEFORE `inlineRelativeAssets`: the
@@ -299,54 +245,6 @@ export function normalizeRootRelativeProjectAssetRefs(
   // resolves through the <base href>, so owner-relative works here too.
   next = next.replace(CSS_URL, (match, quote: string, value: string) => {
     const rewritten = rewriteConfirmedRef(value, projectFilePaths, toOwnerRelative);
-    return rewritten === value ? match : `url(${quote}${rewritten}${quote})`;
-  });
-  return next;
-}
-
-export function rewriteProjectAssetRefsToRawUrls(
-  html: string,
-  ownerFilePath: string,
-  projectFilePaths: ReadonlySet<string>,
-  toRawUrl: (projectPath: string) => string,
-): string {
-  const rewrite = (ref: string): string => {
-    const projectPath = confirmedProjectAssetPath(ownerFilePath, ref, projectFilePaths);
-    if (!projectPath) return ref;
-    const { suffix } = splitRefSuffix(ref.trim());
-    return appendAssetRefSuffix(toRawUrl(projectPath), suffix);
-  };
-
-  let next = html.replace(
-    ASSET_ATTR,
-    (match, space: string, name: string, eq: string, quote: string, value: string) => {
-      const rewritten = rewrite(value);
-      return rewritten === value ? match : `${space}${name}${eq}${quote}${rewritten}${quote}`;
-    },
-  );
-  next = next.replace(LINK_TAG, (tag) =>
-    tag.replace(LINK_HREF, (hrefMatch, prefix: string, quote: string, value: string) => {
-      const rewritten = rewrite(value);
-      return rewritten === value ? hrefMatch : `${prefix}${quote}${rewritten}${quote}`;
-    }),
-  );
-  next = next.replace(SRCSET_ATTR, (match, prefix: string, quote: string, value: string) => {
-    const rewritten = value
-      .split(',')
-      .map((candidate) => {
-        const body = candidate.trim();
-        if (!body) return candidate;
-        const [url = '', ...descriptors] = body.split(/\s+/);
-        const rewrittenUrl = rewrite(url);
-        if (rewrittenUrl === url) return candidate;
-        const leading = candidate.match(/^\s*/)?.[0] ?? '';
-        return `${leading}${[rewrittenUrl, ...descriptors].join(' ')}`;
-      })
-      .join(',');
-    return rewritten === value ? match : `${prefix}${quote}${rewritten}${quote}`;
-  });
-  next = next.replace(CSS_URL, (match, quote: string, value: string) => {
-    const rewritten = rewrite(value);
     return rewritten === value ? match : `url(${quote}${rewritten}${quote})`;
   });
   return next;

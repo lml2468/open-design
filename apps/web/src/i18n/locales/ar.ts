@@ -2887,8 +2887,6 @@ export const ar: Dict = {
   'fileViewer.speakerNotesSaved': 'تم الحفظ',
   'fileViewer.speakerNotesSaveFailed': 'تعذر حفظ ملاحظات المتحدث.',
   'fileViewer.speakerNotesPlaceholder': 'أضف ملاحظات المتحدث لهذه الشريحة…',
-  'fileViewer.previewAssetBlockedTitle': 'تم حظر أصل المعاينة',
-  'fileViewer.previewAssetBlockedDetail': 'تعذر تحميل {filePath}. استبدل الروابط الرمزية الخارجية بملفات داخل هذا المشروع.',
   'fileViewer.presenterReset': 'إعادة ضبط',
   'fileViewer.present': 'تقديم',
   'fileViewer.presentInTab': 'في علامة التبويب هذه',

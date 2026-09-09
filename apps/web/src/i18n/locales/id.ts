@@ -2887,8 +2887,6 @@ export const id: Dict = {
   'fileViewer.speakerNotesSaved': 'Tersimpan',
   'fileViewer.speakerNotesSaveFailed': 'Tidak dapat menyimpan catatan pembicara.',
   'fileViewer.speakerNotesPlaceholder': 'Tambahkan catatan pembicara untuk slide ini…',
-  'fileViewer.previewAssetBlockedTitle': 'Aset pratinjau diblokir',
-  'fileViewer.previewAssetBlockedDetail': '{filePath} tidak dapat dimuat. Ganti symlink eksternal dengan file di dalam proyek ini.',
   'fileViewer.presenterReset': 'Atur ulang',
   'fileViewer.present': 'Presentasikan',
   'fileViewer.presentInTab': 'Presentasikan di tab',

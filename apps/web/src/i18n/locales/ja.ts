@@ -2989,8 +2989,6 @@ export const ja: Dict = {
   'fileViewer.speakerNotesSaved': '保存済み',
   'fileViewer.speakerNotesSaveFailed': 'スピーカーノートを保存できませんでした。',
   'fileViewer.speakerNotesPlaceholder': 'このスライドのスピーカーノートを追加…',
-  'fileViewer.previewAssetBlockedTitle': 'プレビューアセットがブロックされました',
-  'fileViewer.previewAssetBlockedDetail': '{filePath} を読み込めませんでした。外部シンボリックリンクをこのプロジェクト内のファイルに置き換えてください。',
   'fileViewer.presenterReset': 'リセット',
   'fileViewer.present': 'プレゼン',
   'fileViewer.presentInTab': 'このタブで',

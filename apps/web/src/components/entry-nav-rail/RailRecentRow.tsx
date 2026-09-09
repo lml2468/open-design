@@ -24,7 +24,6 @@ import { hasRunStatusGlyph, ProjectRunStatusIcon } from '../ProjectRunStatusIcon
 import { STATUS_LABEL_KEYS } from '../../state/projectRunStatus';
 import { exportProjectAsZip } from '../../runtime/exports';
 import { fetchProjectFiles } from '../../providers/registry';
-import { workspaceIdentityCacheKey } from '../../collab/workspace-identity';
 import {
   getProjectCoverSnapshot,
   projectCoverSnapshotKey,
@@ -175,7 +174,7 @@ export function RailRecentRow({
 }) {
   const t = useT();
   const snapshotKey = projectCoverSnapshotKey(
-    workspaceIdentityCacheKey(workspaceContext),
+    'local',
     project.id,
     project.updatedAt,
   );

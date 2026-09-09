@@ -2887,8 +2887,6 @@ export const fa: Dict = {
   'fileViewer.speakerNotesSaved': 'ذخیره شد',
   'fileViewer.speakerNotesSaveFailed': 'ذخیره یادداشت‌های سخنران ممکن نشد.',
   'fileViewer.speakerNotesPlaceholder': 'برای این اسلاید یادداشت سخنران اضافه کنید…',
-  'fileViewer.previewAssetBlockedTitle': 'دارایی پیش‌نمایش مسدود شد',
-  'fileViewer.previewAssetBlockedDetail': '{filePath} بارگیری نشد. پیوندهای نمادین خارجی را با فایل‌های داخل این پروژه جایگزین کنید.',
   'fileViewer.presenterReset': 'بازنشانی',
   'fileViewer.present': 'ارائه',
   'fileViewer.presentInTab': 'در این تب',

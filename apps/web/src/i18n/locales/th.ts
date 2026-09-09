@@ -2887,8 +2887,6 @@ export const th: Dict = {
   'fileViewer.speakerNotesSaved': 'บันทึกแล้ว',
   'fileViewer.speakerNotesSaveFailed': 'ไม่สามารถบันทึกโน้ตผู้บรรยายได้',
   'fileViewer.speakerNotesPlaceholder': 'เพิ่มโน้ตผู้บรรยายสำหรับสไลด์นี้…',
-  'fileViewer.previewAssetBlockedTitle': 'บล็อกแอสเซ็ตตัวอย่างแล้ว',
-  'fileViewer.previewAssetBlockedDetail': 'โหลด {filePath} ไม่ได้ แทนที่ symlink ภายนอกด้วยไฟล์ภายในโปรเจกต์นี้',
   'fileViewer.presenterReset': 'รีเซ็ต',
   'fileViewer.present': 'เปิดจอโชว์',
   'fileViewer.presentInTab': 'ค้างในหน้าจอแท็บ',

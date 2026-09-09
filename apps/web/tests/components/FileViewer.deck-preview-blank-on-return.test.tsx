@@ -1,31 +1,7 @@
 // @vitest-environment jsdom
-// Red spec for the "deck preview goes blank after leaving and returning to the
-// project" report (packaged client, multiple project tabs open).
-//
-// Mechanism under test — all three observed facts reproduce from it:
-//
-//   1. For a workspace-scoped project whose deck HTML references a relative
-//      project asset, PR #6142 holds the srcDoc preview at `''` (a bare white
-//      iframe, no loading cover) until `GET /api/projects/:id/files` and the
-//      scoped asset rewrite complete (`scopedRelativeAssetRefs &&
-//      inlinedSource === null` → `previewSource = null` → `srcDoc = ''`).
-//      The thumbnail rail and speaker notes render from `source` directly, so
-//      they stay healthy while the main stage is a white empty document.
-//
-//   2. FileViewer's project-file-list effect calls `fetchProjectFiles`
-//      WITHOUT an AbortSignal. `sharedCancellableGet` therefore marks the
-//      shared single-flight entry as *pinned*: it can never be aborted and it
-//      stays in the shared map until it settles. `fetchProjectFiles` resolves
-//      `[]` on every failure path — the only way it can stay unsettled is a
-//      request that neither resolves nor rejects (a stalled/queued
-//      connection). When that happens, every later viewer mount for the same
-//      project + workspace identity silently REJOINS the same dead promise
-//      instead of issuing its own read, so switching away and back to the
-//      project keeps showing the white stage forever.
-//
-// The spec freezes the invariant: a freshly mounted viewer must not be wedged
-// by a stalled read that a previous (now unmounted) viewer started — its own
-// mount re-issues the project-files read, and the preview hold releases.
+// Regression coverage for a deck preview after leaving and returning to a
+// local project. File-list discovery may stall, but ordinary relative assets
+// resolve against the stable raw-file base and must never hold back srcDoc.
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,21 +10,11 @@ import { CollabProvider, type CollabContextValue } from '../../src/collab/collab
 import { FileViewer } from '../../src/components/FileViewer';
 import { resetSharedCancellableGet } from '../../src/lib/shared-cancellable-get';
 import type { ProjectFile } from '../../src/types';
-import { workspaceContextFixture } from '../helpers/workspace-context';
-
-const WORKSPACE_CONTEXT = workspaceContextFixture({
-  workspaceId: 'ws-deck-blank',
-  workspaceMemberId: 'member-deck-blank',
-});
-
-// Full context value: a team-workspace project that is not live-shared.
-// `workspaceContext` + `projectResourceAuthority: 'workspace'` is what arms
-// the scoped-asset preview hold in FileViewer.
 function collabValue(): CollabContextValue {
   return {
-    workspaceContext: WORKSPACE_CONTEXT,
+    workspaceContext: null,
     workspaceContextLoading: false,
-    projectResourceAuthority: 'workspace',
+    projectResourceAuthority: 'local',
   };
 }
 
@@ -88,7 +54,7 @@ const DECK_HTML =
 type FilesRequestLog = { url: string }[];
 
 /**
- * Fetch mock for one workspace-scoped deck project:
+ * Fetch mock for one local deck project:
  *  - `GET .../raw/deck.html` resolves with the deck HTML,
  *  - `GET .../files` — the first request STALLS forever (neither resolves nor
  *    rejects, like a request queued behind saturated connections); every
@@ -187,7 +153,7 @@ afterEach(() => {
 });
 
 describe('deck preview blank after leaving and returning to the project', () => {
-  it('re-issues the project-files read on remount instead of rejoining a stalled shared read, releasing the preview hold', async () => {
+  it('renders immediately and re-issues a stalled project-files read on remount', async () => {
     const projectId = 'proj-deck-blank-return';
     const filesRequests: FilesRequestLog = [];
     installFetchMock(projectId, filesRequests);
@@ -199,16 +165,14 @@ describe('deck preview blank after leaving and returning to the project', () => 
       </Wrap>,
     );
 
-    // Deck source arrives and the deck chrome renders (thumbnail rail up)…
+    // Deck source arrives and the deck chrome renders without waiting for the
+    // unrelated file-list request.
     await waitFor(() => {
       expect(srcDocFrame().getAttribute('data-od-render-mode')).toBe('srcdoc');
       expect(document.querySelector('.deck-thumbnail-rail')).toBeTruthy();
+      expect(srcDocFrame().getAttribute('srcdoc') ?? '').toContain('slide-one');
     });
     expect(filesRequests.length).toBe(1);
-
-    // …while the main stage is held at an EMPTY document (bare white iframe):
-    // the scoped-asset hold is waiting on the stalled project-files read.
-    expect(srcDocFrame().getAttribute('srcdoc') ?? '').toBe('');
 
     // --- Phase 2: switch to another project (viewer unmounts) ---
     first.unmount();
@@ -226,13 +190,13 @@ describe('deck preview blank after leaving and returning to the project', () => 
       expect(filesRequests.length).toBeGreaterThanOrEqual(2);
     });
 
-    // With the read answered, the hold releases and the deck actually renders.
+    // The stable raw base keeps the deck visible on the remounted viewer too.
     await waitFor(() => {
       expect(srcDocFrame().getAttribute('srcdoc') ?? '').toContain('slide-one');
     });
   });
 
-  it('covers the held srcDoc preview with the loading indicator instead of a bare white iframe', async () => {
+  it('does not cover a loaded deck while project-file discovery is stalled', async () => {
     const projectId = 'proj-deck-blank-cover';
     const filesRequests: FilesRequestLog = [];
     installFetchMock(projectId, filesRequests);
@@ -243,19 +207,14 @@ describe('deck preview blank after leaving and returning to the project', () => 
       </Wrap>,
     );
 
-    // Deck data is on screen, the main stage is still held empty…
+    // Deck data is already usable even though the file-list request is still
+    // pending.
     await waitFor(() => {
       expect(srcDocFrame().getAttribute('data-od-render-mode')).toBe('srcdoc');
       expect(document.querySelector('.deck-thumbnail-rail')).toBeTruthy();
+      expect(srcDocFrame().getAttribute('srcdoc') ?? '').toContain('slide-one');
     });
-    expect(srcDocFrame().getAttribute('srcdoc') ?? '').toBe('');
-
-    // …so the user must see the loading cover, not a dead white pane. The
-    // URL-load path already has exactly this cover for its own first-load
-    // white-pane case; the srcDoc hold needs the same treatment.
-    await waitFor(() => {
-      expect(screen.getByTestId('artifact-preview-first-load')).toBeTruthy();
-    });
+    expect(screen.queryByTestId('artifact-preview-first-load')).toBeNull();
   });
 
   it('drops the loading cover once a legitimately empty file has loaded, instead of pinning it forever', async () => {

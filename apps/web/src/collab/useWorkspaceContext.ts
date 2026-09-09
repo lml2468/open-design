@@ -31,7 +31,7 @@ export function workspaceResourceReadContext(
   return state.context;
 }
 
-export { workspaceIdentityCacheKey, beginWorkspaceScopedRead } from './workspace-identity';
+export { beginWorkspaceScopedRead } from './workspace-identity';
 export type { WorkspaceScopedRead } from './workspace-identity';
 export { currentWorkspaceAccountGeneration };
 

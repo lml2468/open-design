@@ -2887,8 +2887,6 @@ export const ptBR: Dict = {
   'fileViewer.speakerNotesSaved': 'Salvo',
   'fileViewer.speakerNotesSaveFailed': 'Não foi possível salvar as notas do apresentador.',
   'fileViewer.speakerNotesPlaceholder': 'Adicione notas do apresentador para este slide…',
-  'fileViewer.previewAssetBlockedTitle': 'Recurso da prévia bloqueado',
-  'fileViewer.previewAssetBlockedDetail': 'Não foi possível carregar {filePath}. Substitua symlinks externos por arquivos dentro deste projeto.',
   'fileViewer.presenterReset': 'Redefinir',
   'fileViewer.present': 'Apresentar',
   'fileViewer.presentInTab': 'Nesta aba',

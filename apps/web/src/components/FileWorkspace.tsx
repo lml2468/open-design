@@ -71,7 +71,6 @@ import { useDesignKit, hostnameOf, type KitColor } from '../runtime/design-kit';
 import { useKitModuleUpload } from '../runtime/kit-upload';
 import {
   appendResourceQuery,
-  workspaceIdentityCacheKey,
 } from '../collab/workspace-identity';
 import {
   DesignKitView,
@@ -4488,8 +4487,7 @@ function DesignSystemProjectPanel({
   const t = useT();
   const analytics = useAnalytics();
   const { workspaceContext } = useProjectCollabContext();
-  // Billing-only context refreshes must not blank and reload the kit.
-  const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
+  const workspaceIdentity = 'local';
   const [reviewDecisions, setReviewDecisions] = useState<Record<string, DesignSystemReviewDecision>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [feedbackSection, setFeedbackSection] = useState<string | null>(null);

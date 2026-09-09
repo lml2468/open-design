@@ -2887,8 +2887,6 @@ export const fr: Dict = {
   'fileViewer.speakerNotesSaved': 'Enregistré',
   'fileViewer.speakerNotesSaveFailed': 'Impossible d’enregistrer les notes du présentateur.',
   'fileViewer.speakerNotesPlaceholder': 'Ajouter des notes pour cette diapositive…',
-  'fileViewer.previewAssetBlockedTitle': 'Ressource d’aperçu bloquée',
-  'fileViewer.previewAssetBlockedDetail': 'Impossible de charger {filePath}. Remplacez les liens symboliques externes par des fichiers dans ce projet.',
   'fileViewer.presenterReset': 'Réinitialiser',
   'fileViewer.present': 'Présenter',
   'fileViewer.presentInTab': 'Dans cet onglet',

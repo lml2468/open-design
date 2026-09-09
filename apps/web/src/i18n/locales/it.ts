@@ -2887,8 +2887,6 @@ export const it: Dict = {
   'fileViewer.speakerNotesSaved': 'Salvato',
   'fileViewer.speakerNotesSaveFailed': 'Impossibile salvare le note del relatore.',
   'fileViewer.speakerNotesPlaceholder': 'Aggiungi note del relatore per questa diapositiva…',
-  'fileViewer.previewAssetBlockedTitle': 'Asset anteprima bloccato',
-  'fileViewer.previewAssetBlockedDetail': 'Impossibile caricare {filePath}. Sostituisci i symlink esterni con file all’interno di questo progetto.',
   'fileViewer.presenterReset': 'Reimposta',
   'fileViewer.present': 'Presenta',
   'fileViewer.presentInTab': 'In questa scheda',

@@ -6,14 +6,6 @@ export function appendResourceQuery(path: string, query: string): string {
   return `${path}${path.includes('?') ? '&' : '?'}${query.replace(/^[?&]+/, '')}`;
 }
 
-/** Transitional cache partition for local Project resources. */
-export function workspaceIdentityCacheKey(
-  context: WorkspaceCollabContext | null | undefined,
-): string {
-  void context;
-  return 'local';
-}
-
 /**
  * Monotonic account boundary, independent from ambient Workspace selection.
  *
@@ -52,13 +44,6 @@ export function resetWorkspaceAccountGeneration(): void {
  * to default, two reads a few hundred ms apart can straddle a boundary and mix a
  * pre-boundary answer into a post-boundary one.
  */
-export function workspaceAccountScopedCacheKey(
-  context: WorkspaceCollabContext | null | undefined,
-  generation: number = currentWorkspaceAccountGeneration(),
-): string {
-  return `${generation}:${workspaceIdentityCacheKey(context)}`;
-}
-
 /**
  * Exact authority for a read-only Workspace resource request. The generation
  * is intentionally part of the identity even when every context field stays
@@ -97,7 +82,7 @@ export function workspaceResourceReadIdentityFromContext(
   return context
     ? {
         context,
-        generation: `explicit-context:${workspaceIdentityCacheKey(context)}`,
+        generation: 'explicit-context:local',
       }
     : null;
 }
@@ -106,7 +91,7 @@ export function workspaceResourceReadIdentityKey(
   identity: WorkspaceResourceReadIdentity | null | undefined,
 ): string {
   return identity
-    ? JSON.stringify([identity.generation, workspaceIdentityCacheKey(identity.context)])
+    ? identity.generation
     : 'none';
 }
 
@@ -136,9 +121,8 @@ export function beginWorkspaceScopedRead(
   context: WorkspaceCollabContext | null | undefined,
 ): WorkspaceScopedRead {
   const issuedFor = context ?? null;
-  const identity = workspaceIdentityCacheKey(issuedFor);
   return {
     context: issuedFor,
-    isStillCurrent: (current) => workspaceIdentityCacheKey(current ?? null) === identity,
+    isStillCurrent: () => true,
   };
 }

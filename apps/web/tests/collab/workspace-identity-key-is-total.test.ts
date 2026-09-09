@@ -7,7 +7,6 @@ import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 import {
   beginWorkspaceScopedRead,
-  workspaceIdentityCacheKey,
 } from '../../src/collab/useWorkspaceContext';
 
 /** A context missing `permissions` entirely — the shape many fixtures build. */
@@ -25,17 +24,6 @@ const complete = {
 } as unknown as WorkspaceCollabContext;
 
 describe('local workspace identity compatibility', () => {
-  it('computes a key for a context with no permissions instead of throwing', () => {
-    expect(() => workspaceIdentityCacheKey(partial)).not.toThrow();
-    expect(typeof workspaceIdentityCacheKey(partial)).toBe('string');
-  });
-
-  it('maps null, partial and complete contexts to the same local partition', () => {
-    expect(workspaceIdentityCacheKey(null)).toBe('local');
-    expect(workspaceIdentityCacheKey(partial)).toBe('local');
-    expect(workspaceIdentityCacheKey(complete)).toBe('local');
-  });
-
   // The path that actually broke CI: the guard runs long after the request, so
   // it must tolerate whatever context is current by then.
   it('lets a late commit-time guard compare a partial context without throwing', () => {

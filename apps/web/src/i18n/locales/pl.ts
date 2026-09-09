@@ -2887,8 +2887,6 @@ export const pl: Dict = {
   'fileViewer.speakerNotesSaved': 'Zapisano',
   'fileViewer.speakerNotesSaveFailed': 'Nie udało się zapisać notatek prelegenta.',
   'fileViewer.speakerNotesPlaceholder': 'Dodaj notatki prelegenta do tego slajdu…',
-  'fileViewer.previewAssetBlockedTitle': 'Zablokowano zasób podglądu',
-  'fileViewer.previewAssetBlockedDetail': 'Nie udało się wczytać {filePath}. Zastąp zewnętrzne dowiązania symboliczne plikami wewnątrz tego projektu.',
   'fileViewer.presenterReset': 'Resetuj',
   'fileViewer.present': 'Prezentuj',
   'fileViewer.presentInTab': 'W tej karcie',

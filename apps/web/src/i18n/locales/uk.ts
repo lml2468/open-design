@@ -2887,8 +2887,6 @@ export const uk: Dict = {
   'fileViewer.speakerNotesSaved': 'Збережено',
   'fileViewer.speakerNotesSaveFailed': 'Не вдалося зберегти нотатки доповідача.',
   'fileViewer.speakerNotesPlaceholder': 'Додайте нотатки доповідача для цього слайда…',
-  'fileViewer.previewAssetBlockedTitle': 'Ресурс попереднього перегляду заблоковано',
-  'fileViewer.previewAssetBlockedDetail': 'Не вдалося завантажити {filePath}. Замініть зовнішні символічні посилання файлами всередині цього проєкту.',
   'fileViewer.presenterReset': 'Скинути',
   'fileViewer.present': 'Презентувати',
   'fileViewer.presentInTab': 'На цій вкладці',

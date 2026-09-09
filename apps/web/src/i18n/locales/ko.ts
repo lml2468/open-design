@@ -2887,8 +2887,6 @@ export const ko: Dict = {
   'fileViewer.speakerNotesSaved': '저장됨',
   'fileViewer.speakerNotesSaveFailed': '발표자 노트를 저장하지 못했습니다.',
   'fileViewer.speakerNotesPlaceholder': '이 슬라이드의 발표자 노트를 추가하세요…',
-  'fileViewer.previewAssetBlockedTitle': '미리보기 에셋이 차단됨',
-  'fileViewer.previewAssetBlockedDetail': '{filePath}을(를) 불러올 수 없습니다. 외부 심볼릭 링크를 이 프로젝트 안의 파일로 바꾸세요.',
   'fileViewer.presenterReset': '초기화',
   'fileViewer.present': '프레젠테이션',
   'fileViewer.presentInTab': '현재 탭에서',

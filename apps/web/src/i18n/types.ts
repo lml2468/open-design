@@ -3711,8 +3711,6 @@ export interface Dict extends CollaborationSettingsDict {
   'fileViewer.speakerNotesSaved': string;
   'fileViewer.speakerNotesSaveFailed': string;
   'fileViewer.speakerNotesPlaceholder': string;
-  'fileViewer.previewAssetBlockedTitle': string;
-  'fileViewer.previewAssetBlockedDetail': string;
   'fileViewer.presenterReset': string;
   'fileViewer.present': string;
   'fileViewer.presentInTab': string;

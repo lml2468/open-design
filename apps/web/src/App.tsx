@@ -96,7 +96,6 @@ import {
   beginWorkspaceScopedRead,
   currentWorkspaceAccountGeneration,
   useWorkspaceContext,
-  workspaceIdentityCacheKey,
   workspaceResourceReadContext,
 } from './collab/useWorkspaceContext';
 import { deriveTabIdentityScope, UNSET_ACCOUNT_BUCKET } from './collab/tab-scope';

@@ -30,7 +30,6 @@ import {
 } from '@open-design/contracts/runtime/preview-runtime-state';
 import {
   appendResourceQuery,
-  workspaceIdentityCacheKey,
 } from '../collab/workspace-identity';
 import {
   anonymizeArtifactId,
@@ -194,11 +193,8 @@ import {
   type UrlLoadDecision,
 } from './file-viewer-render-mode';
 import {
-  collectPreviewAssetPaths,
-  htmlHasRelativeProjectAssetRefs,
   htmlHasRootRelativeProjectAssetRefs,
   normalizeRootRelativeProjectAssetRefs,
-  rewriteProjectAssetRefsToRawUrls,
   rewriteInlinedCssAssetRefs,
   rewriteInlinedScriptAssetRefs,
 } from './file-viewer-preview-assets';
@@ -366,9 +362,7 @@ const POWERED_PREVIEW_ALLOW =
 const BASE_PREVIEW_BRIDGE_QUERY = 'odPreviewBridge=scroll&odPreviewBridge=selection&odPreviewBridge=snapshot&odPreviewBridge=observability';
 const HTML_PASSIVE_PREVIEW_FULL_TEXT_LIMIT = 2 * 1024 * 1024;
 const HTML_ROUTING_TEXT_PREVIEW_LIMIT = 96 * 1024;
-const HTML_PREVIEW_ASSET_PREFLIGHT_LIMIT = 32;
 type HtmlSourceLoadMode = 'full' | 'routing-preview';
-type PreviewAssetWarning = { filePath: string };
 
 function previewTextNeedsFullSourceForSafeInline(source: string | null): boolean {
   if (!source) return false;
@@ -378,38 +372,6 @@ function previewTextNeedsFullSourceForSafeInline(source: string | null): boolean
     htmlNeedsRedirectGuard(source) ||
     hasTweaksTemplate(source)
   );
-}
-
-function isBlockedPreviewAssetResponse(body: unknown): boolean {
-  if (typeof body === 'string') {
-    return /path escapes project dir/i.test(body);
-  }
-  if (!body || typeof body !== 'object') return false;
-  const payload = body as { error?: unknown; message?: unknown };
-  const error = payload.error;
-  if (typeof error === 'string') return isBlockedPreviewAssetResponse(error);
-  if (error && typeof error === 'object') {
-    const detail = error as { code?: unknown; message?: unknown };
-    if (detail.code === 'BAD_REQUEST' && isBlockedPreviewAssetResponse(detail.message)) return true;
-    return isBlockedPreviewAssetResponse(detail.message);
-  }
-  return isBlockedPreviewAssetResponse(payload.message);
-}
-
-async function readPreviewAssetResponseBody(resp: Response): Promise<unknown> {
-  const contentType = resp.headers.get('Content-Type') ?? '';
-  if (/json/i.test(contentType)) {
-    try {
-      return await resp.json();
-    } catch {
-      return '';
-    }
-  }
-  try {
-    return await resp.text();
-  } catch {
-    return '';
-  }
 }
 
 const PREVIEW_VIEWPORT_PRESETS: PreviewViewportPreset[] = [
@@ -6717,7 +6679,7 @@ export function fileViewerSourceAuthorizationScopeKey(
     ?? (workspaceContextLoading ? 'pending' : workspaceContext ? 'workspace' : 'local');
   if (authority === 'local') return 'local';
   if (authority === 'workspace' && workspaceContext) {
-    return `workspace:${workspaceIdentityCacheKey(workspaceContext)}`;
+    return 'local';
   }
   return null;
 }
@@ -6824,42 +6786,15 @@ function HtmlViewer({
   // the user switches back; activation itself must not promote a stale
   // snapshot and start a visible navigation.
   const {
-    workspaceContext: observedWorkspaceContext,
+    workspaceContext,
     workspaceContextLoading,
     projectResourceAuthority,
   } = useProjectCollabContext();
-  const observedSourceAuthorizationScopeKey = fileViewerSourceAuthorizationScopeKey(
+  const sourceAuthorizationScopeKey = fileViewerSourceAuthorizationScopeKey(
     workspaceContextLoading,
-    observedWorkspaceContext,
+    workspaceContext,
     projectResourceAuthority,
   );
-  // Project context providers may re-materialize an equivalent object while
-  // ambient focus settles. Requests are scoped by the fields encoded
-  // in this key, so preserve the existing object until that wire identity
-  // actually changes. Otherwise every provider refresh retriggers raw/file-list
-  // effects and reloads a byte-identical preview.
-  const stableWorkspaceContextRef = useRef<{
-    key: string | null;
-    value: WorkspaceCollabContext | null;
-  }>({
-    key: observedSourceAuthorizationScopeKey,
-    value: observedSourceAuthorizationScopeKey?.startsWith('workspace:')
-      ? observedWorkspaceContext
-      : null,
-  });
-  // ProjectView turns transient scope loading into `workspace` only when an
-  // exact persisted-project/caller witness remains valid. Pending and denied
-  // states deliberately replace a prior key with null, clearing old content.
-  if (stableWorkspaceContextRef.current.key !== observedSourceAuthorizationScopeKey) {
-    stableWorkspaceContextRef.current = {
-      key: observedSourceAuthorizationScopeKey,
-      value: observedSourceAuthorizationScopeKey?.startsWith('workspace:')
-        ? observedWorkspaceContext
-        : null,
-    };
-  }
-  const workspaceContext = stableWorkspaceContextRef.current.value;
-  const sourceAuthorizationScopeKey = stableWorkspaceContextRef.current.key;
   const projectResourceReadBlocked =
     sourceAuthorizationScopeKey === null;
   // File-watch pulses are debounced by the URL refresh effect below. Consume
@@ -7233,22 +7168,6 @@ function HtmlViewer({
   const [routingSourceIdentity, setRoutingSourceIdentity] = useState<string | null>(
     initialSource !== null ? currentSourceIdentity : null,
   );
-  const [scopedSrcDocPreviewBase, setScopedSrcDocPreviewBase] = useState<{
-    identity: string;
-    scope: ProjectPreviewBaseScope;
-  } | null>(null);
-  const activeSrcDocPreviewBaseRef = useRef<{
-    identity: string;
-    scope: ProjectPreviewBaseScope;
-  } | null>(null);
-  const effectiveScopedSrcDocPreviewBase =
-    scopedSrcDocPreviewBase?.identity === srcDocPreviewBaseIdentity
-      ? scopedSrcDocPreviewBase.scope
-      : null;
-  const [auxiliarySrcDocPreviewBase, setAuxiliarySrcDocPreviewBase] = useState<{
-    identity: string;
-    href: string;
-  } | null>(null);
   const [urlLoadedPreviewBase, setUrlLoadedPreviewBase] = useState<{
     identity: string;
     scope: ProjectPreviewBaseScope;
@@ -7258,7 +7177,6 @@ function HtmlViewer({
     scope: ProjectPreviewBaseScope;
   } | null>(null);
   const [serverPoweredPreviewRequired, setServerPoweredPreviewRequired] = useState(false);
-  const [previewAssetWarning, setPreviewAssetWarning] = useState<PreviewAssetWarning | null>(null);
   const [inlinedSource, setInlinedSource] = useState<string | null>(null);
   const fileViewportKey = previewViewportStateKey(projectId, file);
   // Content width is valid only for this exact file revision/authorization
@@ -8838,7 +8756,7 @@ function HtmlViewer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, file.name, deployProviderId, workspaceActive, workspaceContext]);
+  }, [projectId, file.name, deployProviderId, workspaceActive]);
 
   // A retained HtmlViewer stays mounted while the user visits Design Files and
   // comes back, so its initial deployment snapshot can legitimately be older
@@ -8860,7 +8778,7 @@ function HtmlViewer({
     return () => {
       cancelled = true;
     };
-  }, [deployMenuOpen, projectId, file.name, deployProviderId, workspaceContext]);
+  }, [deployMenuOpen, projectId, file.name, deployProviderId]);
 
   const routingHtmlSource = source ?? routingSource ?? lastGoodSourceForRoutingRef.current;
   const passiveLargeHtmlPreview = shouldDeferPassivePreviewSource && source === null;
@@ -9011,21 +8929,7 @@ function HtmlViewer({
     if (!effectiveDeck || source == null) return source;
     return normalizeDeckVisualSource(removeSpeakerNotesFromHtml(source));
   }, [effectiveDeck, source]);
-  const relativeProjectAssetRefs = useMemo(
-    () => source != null && htmlHasRelativeProjectAssetRefs(source, file.name, null),
-    [source, file.name],
-  );
-  // Browser-owned iframe subresource requests cannot attach Workspace headers,
-  // and URL resolution does not inherit the query string from the document's
-  // scoped raw URL. Hold the Team preview until every confirmed relative asset
-  // has been rewritten to its own scoped raw URL; otherwise the first srcDoc
-  // paint can leak an unscoped font/image request before the async rewrite
-  // finishes.
-  const scopedRelativeAssetRefs =
-    workspaceContext?.workspaceType === 'team' && relativeProjectAssetRefs;
-  const livePreviewSource = scopedRelativeAssetRefs && inlinedSource === null
-    ? null
-    : (inlinedSource ?? deckVisualSource);
+  const livePreviewSource = inlinedSource ?? deckVisualSource;
   const assetInliningSource = effectiveDeck ? deckVisualSource : source;
   // Annotation modes that should hold the preview still while open. Manual
   // Edit is handled by its own freeze just below; these are the non-edit
@@ -9136,10 +9040,8 @@ function HtmlViewer({
     // (`sharedCancellableGet`): a read that stalls (a request queued behind
     // saturated connections neither resolves nor rejects — every failure path
     // resolves `[]`) then survives unmount forever, and every later viewer
-    // mount for the same project + workspace identity silently rejoins the
-    // same dead promise. For a workspace-scoped deck that hold keeps
-    // `previewSource` at null, i.e. a bare white stage on every return to the
-    // project. Aborting on cleanup lets a fresh mount issue a fresh read.
+    // mount for the same project silently rejoins the same dead promise.
+    // Aborting on cleanup lets a fresh mount issue a fresh read.
     const controller = new AbortController();
     setProjectFilePathSet(null);
     void fetchProjectFiles(projectId, { signal: controller.signal })
@@ -9155,73 +9057,11 @@ function HtmlViewer({
     return () => {
       controller.abort();
     };
-  }, [projectId, file.mtime, filesRefreshKey, reloadKey, workspaceContext]);
+  }, [projectId, file.mtime, filesRefreshKey, reloadKey]);
   const projectRootAssetRefs = useMemo(
     () => source != null && htmlHasRootRelativeProjectAssetRefs(source, projectFilePathSet),
     [source, projectFilePathSet],
   );
-  useEffect(() => {
-    if (!workspaceActive) return;
-    setPreviewAssetWarning(null);
-    // Personal/local project resources do not need Team authorization
-    // headers, so the iframe's own subresource requests are the source of
-    // truth. Probing
-    // the same paths here duplicates every image/font read before first paint
-    // (large landing pages can exceed 20 MB) and competes with Chromium's
-    // renderer for the exact files it is already loading. Team previews keep
-    // the preflight because browser-owned iframe requests cannot surface the
-    // daemon's scoped raw-route refusal safely to the host UI.
-    if (workspaceContext?.workspaceType !== 'team') return;
-    if (mode !== 'preview' || effectiveDeck) return;
-    const s = routingHtmlSource;
-    if (!s) return;
-    const assetPaths = collectPreviewAssetPaths(s, file.name, projectFilePathSet)
-      .filter((assetPath) => assetPath !== file.name)
-      .slice(0, HTML_PREVIEW_ASSET_PREFLIGHT_LIMIT);
-    if (assetPaths.length === 0) return;
-
-    let cancelled = false;
-    const cacheBust = `${Math.round(file.mtime)}-${reloadKey}-${filesRefreshKey}`;
-    void (async () => {
-      for (const assetPath of assetPaths) {
-        if (cancelled) return;
-        try {
-          const resp = await fetch(appendResourceQuery(
-            projectRawUrl(projectId, assetPath),
-            `previewAssetCheck=${encodeURIComponent(cacheBust)}`,
-          ));
-          if (cancelled) return;
-          if (resp.ok || resp.status === 404) continue;
-          const body = await readPreviewAssetResponseBody(resp);
-          if (cancelled) return;
-          if (isBlockedPreviewAssetResponse(body)) {
-            if (!cancelled) setPreviewAssetWarning({ filePath: assetPath });
-            return;
-          }
-        } catch {
-          // Network/daemon reachability errors are already represented by the
-          // normal preview loading path. This preflight is only for clear raw
-          // route security blocks hidden inside iframe subresource loads.
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    effectiveDeck,
-    file.mtime,
-    file.name,
-    filesRefreshKey,
-    mode,
-    projectFilePathSet,
-    projectId,
-    reloadKey,
-    routingHtmlSource,
-    workspaceActive,
-    workspaceContext,
-  ]);
   // A real WebGL/Worker/WASM/SharedArrayBuffer artifact needs the "powered
   // preview" path — a cross-origin-isolated iframe with allow-same-origin —
   // which the opaque preview sandbox cannot provide (issue #724). Powered mode
@@ -9268,7 +9108,7 @@ function HtmlViewer({
     urlFocusGuard: urlDocumentGuardsAvailable,
     needsRedirectGuard: needsRedirectGuard && !needsPowered,
     urlRedirectGuard: urlDocumentGuardsAvailable,
-    projectRootAssetRefs: projectRootAssetRefs || scopedRelativeAssetRefs,
+    projectRootAssetRefs,
   };
   const urlLoadPreviewSupported = shouldUrlLoadHtmlPreview({
     ...urlLoadDecision,
@@ -9313,39 +9153,6 @@ function HtmlViewer({
     ),
     [currentSourceIdentity, routingHtmlSource, routingSourceIdentity],
   );
-  useEffect(() => {
-    if (
-      workspaceContext?.workspaceType !== 'team'
-      ||
-      useUrlLoadPreview
-      || authoredSrcDocBase !== false
-      || effectiveScopedSrcDocPreviewBase
-      || !workspaceActive
-      || projectResourceReadBlocked
-    ) return;
-    let cancelled = false;
-    const identity = srcDocPreviewBaseIdentity;
-    void fetchProjectPreviewBaseHref(projectId, file.name).then((scope) => {
-      if (cancelled || !scope) return;
-      const next = { identity, scope };
-      activeSrcDocPreviewBaseRef.current = next;
-      setScopedSrcDocPreviewBase(next);
-      setAuxiliarySrcDocPreviewBase({ identity, href: scope.href });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    authoredSrcDocBase,
-    effectiveScopedSrcDocPreviewBase,
-    file.name,
-    projectId,
-    projectResourceReadBlocked,
-    srcDocPreviewBaseIdentity,
-    useUrlLoadPreview,
-    workspaceActive,
-    workspaceContext,
-  ]);
   const urlPreviewBaseIdentity = `url\0${srcDocPreviewBaseIdentity}`;
   const effectiveUrlLoadedPreviewBase =
     urlLoadedPreviewBase?.identity === urlPreviewBaseIdentity
@@ -9401,21 +9208,14 @@ function HtmlViewer({
     }
   }, []);
   useEffect(() => {
-    let renewableScope: ProjectPreviewBaseScope | null = null;
-    if (useUrlLoadPreview) {
-      renewableScope = effectiveUrlLoadedPreviewBase;
-    } else if (authoredSrcDocBase === false) {
-      renewableScope = effectiveScopedSrcDocPreviewBase;
-    }
+    const renewableScope = useUrlLoadPreview ? effectiveUrlLoadedPreviewBase : null;
     if (
       !workspaceActive
       || mode !== 'preview'
       || !renewableScope
       || projectResourceReadBlocked
     ) return;
-    const identity = useUrlLoadPreview
-      ? urlPreviewBaseIdentity
-      : srcDocPreviewBaseIdentity;
+    const identity = urlPreviewBaseIdentity;
     let cancelled = false;
     let timeout: number | null = null;
 
@@ -9431,11 +9231,7 @@ function HtmlViewer({
       if (cancelled) return;
       if (renewedExpiresAt !== null) {
         const renewed = { href: scope.href, expiresAt: renewedExpiresAt };
-        if (useUrlLoadPreview) {
-          urlLoadedPreviewBaseRef.current = { identity, scope: renewed };
-        } else {
-          activeSrcDocPreviewBaseRef.current = { identity, scope: renewed };
-        }
+        urlLoadedPreviewBaseRef.current = { identity, scope: renewed };
         schedule(renewed);
         return;
       }
@@ -9448,34 +9244,24 @@ function HtmlViewer({
         schedule(scope, true);
         return;
       }
-      if (useUrlLoadPreview) {
-        urlLoadedPreviewBaseRef.current = { identity, scope: replacement };
-      } else {
-        activeSrcDocPreviewBaseRef.current = { identity, scope: replacement };
-        setAuxiliarySrcDocPreviewBase({ identity, href: replacement.href });
-      }
+      urlLoadedPreviewBaseRef.current = { identity, scope: replacement };
       postPreviewBaseUpdate(replacement.href);
       schedule(replacement);
     };
 
-    const active = useUrlLoadPreview
-      ? urlLoadedPreviewBaseRef.current
-      : activeSrcDocPreviewBaseRef.current;
+    const active = urlLoadedPreviewBaseRef.current;
     schedule(active?.identity === identity ? active.scope : renewableScope);
     return () => {
       cancelled = true;
       if (timeout !== null) window.clearTimeout(timeout);
     };
   }, [
-    authoredSrcDocBase,
-    effectiveScopedSrcDocPreviewBase,
     effectiveUrlLoadedPreviewBase,
     file.name,
     mode,
     postPreviewBaseUpdate,
     projectId,
     projectResourceReadBlocked,
-    srcDocPreviewBaseIdentity,
     useUrlLoadPreview,
     urlPreviewBaseIdentity,
     workspaceActive,
@@ -9485,7 +9271,7 @@ function HtmlViewer({
       projectRawUrl(projectId, file.name),
       `v=${Math.round(file.mtime)}&r=${reloadKey}&${previewBridgeQuery}`,
     ),
-    [projectId, file.name, file.mtime, previewBridgeQuery, reloadKey, workspaceContext],
+    [projectId, file.name, file.mtime, previewBridgeQuery, reloadKey],
   );
   const [previewSrcUrl, setPreviewSrcUrl] = useState(basePreviewSrcUrl);
   // Hold the iframe URL still (it carries file.mtime) while the user is mid
@@ -9790,29 +9576,20 @@ function HtmlViewer({
     setInlinedSource(null);
     if (useUrlLoadPreview) return;
     if (!assetInliningSource) return;
-    // Personal-project srcDoc previews already have a stable raw-file base,
-    // so Chromium can resolve ordinary relative assets itself. Re-fetching
-    // and inlining every stylesheet/script here replaces an already-visible
-    // document after asynchronous file discovery settles. Team previews are
-    // different: iframe subresource requests cannot carry workspace auth, so
-    // they still require per-asset materialization. Personal root-relative
-    // refs also keep this pass because they first need project-file-list
-    // normalization before the stable base can resolve them correctly.
-    const requiresAssetMaterialization =
-      workspaceContext?.workspaceType === 'team' || projectRootAssetRefs;
-    if (!requiresAssetMaterialization) return;
+    // The stable raw-file base resolves ordinary relative assets directly.
+    // Root-relative project references still need the confirmed file list so
+    // they can be normalized before the browser resolves them.
+    if (!projectRootAssetRefs) return;
     // Root-relative project asset refs need the confirmed file list before
     // they can be normalized; wait for it rather than inlining a half-fixed
     // document (the effect re-runs when the set lands).
-    if ((projectRootAssetRefs || scopedRelativeAssetRefs) && projectFilePathSet === null) return;
-    if (!relativeProjectAssetRefs && !projectRootAssetRefs) return;
+    if (projectFilePathSet === null) return;
     let cancelled = false;
     void inlineRelativeAssets(
       assetInliningSource,
       projectId,
       file.name,
       projectFilePathSet,
-      workspaceContext,
     ).then((next) => {
       if (!cancelled) setInlinedSource(next);
     });
@@ -9826,14 +9603,10 @@ function HtmlViewer({
     reloadKey,
     useUrlLoadPreview,
     projectRootAssetRefs,
-    relativeProjectAssetRefs,
-    scopedRelativeAssetRefs,
     projectFilePathSet,
-    workspaceContext,
   ]);
 
-  const srcDocBaseSeedHref = effectiveScopedSrcDocPreviewBase?.href
-    ?? previewRuntimeUrl(projectRawUrl(projectId, baseDirFor(file.name)));
+  const srcDocBaseSeedHref = previewRuntimeUrl(projectRawUrl(projectId, baseDirFor(file.name)));
   const srcDocBaseSelectionIdentity = [
     srcDocPreviewBaseIdentity,
     sourceSnapshotRefreshKey,
@@ -9845,22 +9618,16 @@ function HtmlViewer({
   ].join('\0');
   const srcDocBaseSelectionRef = useRef({ identity: '', href: srcDocBaseSeedHref });
   if (srcDocBaseSelectionRef.current.identity !== srcDocBaseSelectionIdentity) {
-    const active = activeSrcDocPreviewBaseRef.current;
     srcDocBaseSelectionRef.current = {
       identity: srcDocBaseSelectionIdentity,
-      href: active?.identity === srcDocPreviewBaseIdentity
-        ? active.scope.href
-        : srcDocBaseSeedHref,
+      href: srcDocBaseSeedHref,
     };
   }
   // A replacement capability updates the already-running document through
   // postMessage. Pinning this build-time value prevents unrelated React
   // renders (slide state, toolbar state, comments) from changing srcdoc.
   const srcDocBaseHref = srcDocBaseSelectionRef.current.href;
-  const latestSrcDocPreviewBaseHref =
-    auxiliarySrcDocPreviewBase?.identity === srcDocPreviewBaseIdentity
-      ? auxiliarySrcDocPreviewBase.href
-      : srcDocBaseHref;
+  const latestSrcDocPreviewBaseHref = srcDocBaseHref;
   const srcDocTransportIdentity = [
     srcDocPreviewBaseIdentity,
     transportSourceSnapshotRefreshKey,
@@ -16435,16 +16202,10 @@ function HtmlViewer({
                       ) : null}
                       {!useUrlLoadPreview && previewSource === null ? (
                         // srcDoc-path twin of the cover above: while the
-                        // preview content is still PENDING — the scoped-asset
-                        // rewrite waiting on the project file list (deck on a
-                        // workspace-scoped project), or a Reload's synchronous
-                        // clear before its re-fetch lands — the active iframe
-                        // is a blank document and the pane reads as a dead
-                        // white screen without this cover. Both hold states
-                        // are exactly `previewSource === null`; a loaded
-                        // zero-byte file is `previewSource === ''` (empty
-                        // srcDoc with nothing in flight), so keying on srcDoc
-                        // emptiness alone would pin this loader forever over
+                        // Preview content is still pending after a reload's
+                        // synchronous clear and before its fetch lands. A
+                        // loaded zero-byte file is `previewSource === ''`, so
+                        // keying on srcDoc emptiness would pin this loader over
                         // a legitimately empty document.
                         <div
                           className="artifact-preview-first-load"
@@ -16458,14 +16219,6 @@ function HtmlViewer({
                       ) : null}
                     </div>
                   </PreviewDrawOverlay>
-                  {previewAssetWarning ? (
-                    <div className="preview-asset-warning" role="alert" data-testid="preview-asset-warning">
-                      <strong>{t('fileViewer.previewAssetBlockedTitle')}</strong>
-                      <span>
-                        {t('fileViewer.previewAssetBlockedDetail', { filePath: previewAssetWarning.filePath })}
-                      </span>
-                    </div>
-                  ) : null}
                 </div>
               </div>
               {boardMode ? (
@@ -17456,7 +17209,6 @@ async function inlineRelativeAssets(
   projectId: string,
   fileName: string,
   projectFilePaths: ReadonlySet<string> | null = null,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string> {
   const toRawUrl = (projectPath: string) =>
     projectRawUrl(projectId, projectPath);
@@ -17474,7 +17226,7 @@ async function inlineRelativeAssets(
     const href = readHtmlAttr(tag, 'href');
     if (!rel || !/\bstylesheet\b/i.test(rel) || !href) continue;
     replacements.push(
-      fetchProjectRelativeText(projectId, fileName, href, workspaceContext).then((asset) =>
+      fetchProjectRelativeText(projectId, fileName, href).then((asset) =>
         asset == null
           ? null
           : {
@@ -17493,7 +17245,7 @@ async function inlineRelativeAssets(
     const src = readHtmlAttr(tag, 'src');
     if (!src) continue;
     replacements.push(
-      fetchProjectRelativeText(projectId, fileName, src, workspaceContext).then((asset) => {
+      fetchProjectRelativeText(projectId, fileName, src).then((asset) => {
         if (asset == null) return null;
         const js = projectFilePaths
           ? rewriteInlinedScriptAssetRefs(asset.text, asset.filePath, projectFilePaths, toRawUrl)
@@ -17514,20 +17266,16 @@ async function inlineRelativeAssets(
   const resolved = (await Promise.all(replacements)).filter(
     (item): item is { from: string; to: string } => item !== null,
   );
-  const inlined = resolved.reduce(
+  return resolved.reduce(
     (next, { from, to }) => next.replace(from, () => to),
     normalized,
   );
-  return workspaceContext?.workspaceType === 'team' && projectFilePaths
-    ? rewriteProjectAssetRefsToRawUrls(inlined, fileName, projectFilePaths, toRawUrl)
-    : inlined;
 }
 
 async function fetchProjectRelativeText(
   projectId: string,
   ownerFileName: string,
   assetRef: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ filePath: string; text: string } | null> {
   const filePath = resolveProjectRelativePath(ownerFileName, assetRef);
   if (!filePath) return null;

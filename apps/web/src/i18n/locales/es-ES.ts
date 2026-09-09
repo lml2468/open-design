@@ -2887,8 +2887,6 @@ export const esES: Dict = {
   'fileViewer.speakerNotesSaved': 'Guardado',
   'fileViewer.speakerNotesSaveFailed': 'No se pudieron guardar las notas del orador.',
   'fileViewer.speakerNotesPlaceholder': 'Añade notas del orador para esta diapositiva…',
-  'fileViewer.previewAssetBlockedTitle': 'Recurso de vista previa bloqueado',
-  'fileViewer.previewAssetBlockedDetail': 'No se pudo cargar {filePath}. Sustituye los enlaces simbólicos externos por archivos dentro de este proyecto.',
   'fileViewer.presenterReset': 'Restablecer',
   'fileViewer.present': 'Presentar',
   'fileViewer.presentInTab': 'En esta pestaña',

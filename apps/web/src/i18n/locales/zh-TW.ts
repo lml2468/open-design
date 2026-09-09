@@ -3062,8 +3062,6 @@ export const zhTW: Dict = {
   "fileViewer.speakerNotesSaved": "已儲存",
   "fileViewer.speakerNotesSaveFailed": "無法儲存演講者備註。",
   "fileViewer.speakerNotesPlaceholder": "為這一頁新增演講者備註...",
-  "fileViewer.previewAssetBlockedTitle": "預覽資源已被阻止",
-  "fileViewer.previewAssetBlockedDetail": "無法載入 {filePath}。請將外部符號連結替換為此專案內的檔案。",
   "fileViewer.presenterReset": "重設",
   "fileViewer.present": "簡報",
   "fileViewer.presentInTab": "在當前分頁",
