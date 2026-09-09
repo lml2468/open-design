@@ -138,7 +138,7 @@ function RegistryDesignSystemKitPreview({
     const read = beginWorkspaceResourceScopedRead(resourceReadIdentityRef.current);
     setDetail(null);
     setDetailResolved(false);
-    void fetchDesignSystem(system.id, read.context)
+    void fetchDesignSystem(system.id)
       .then((next) => {
         if (cancelled || !read.isStillCurrent(resourceReadIdentityRef.current)) return;
         setDetail(next);

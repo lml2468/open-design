@@ -1,7 +1,6 @@
-// Design-system catalog/create are data-plane operations. They must resolve
-// their Workspace from the request identity, not from the daemon's mutable
-// active/current Workspace. Otherwise two tabs can cross: an A request that
-// lands after a B switch is listed/stamped as B.
+// Design-system catalog/create are daemon-local operations. Workspace identity
+// may be present for neighboring collaboration calls, but it must not filter,
+// claim, or deny local design-system resources.
 
 import type http from 'node:http';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -56,7 +55,7 @@ function workspaceHeaders(context: typeof CONTEXT_WS1 | typeof CONTEXT_WS2): Rec
   };
 }
 
-describe('GET/POST /api/design-systems — explicit request scope is isolated from daemon current Workspace', () => {
+describe('GET/POST /api/design-systems — daemon-local catalog', () => {
   let server: http.Server;
   let baseUrl: string;
   let shutdown: (() => Promise<void> | void) | undefined;
@@ -73,7 +72,7 @@ describe('GET/POST /api/design-systems — explicit request scope is isolated fr
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('keeps the completely headerless signed-out/local lane unbound', async () => {
+  it('returns the same local system with or without Workspace headers', async () => {
     const title = `local unbound ${Date.now()}`;
     const createdResponse = await fetch(`${baseUrl}/api/design-systems`, {
       method: 'POST',
@@ -101,29 +100,29 @@ describe('GET/POST /api/design-systems — explicit request scope is isolated fr
     const scoped = (await scopedResponse.json()) as {
       designSystems: Array<{ id: string }>;
     };
-    expect(scoped.designSystems.some((item) => item.id === created.id)).toBe(false);
+    expect(scoped.designSystems.some((item) => item.id === created.id)).toBe(true);
 
     const scopedDetailResponse = await fetch(
       `${baseUrl}/api/design-systems/${encodeURIComponent(created.id)}`,
       { headers: workspaceHeaders(CONTEXT_WS1) },
     );
-    expect(scopedDetailResponse.status).toBe(403);
+    expect(scopedDetailResponse.status).toBe(200);
 
     const scopedFilesResponse = await fetch(
       `${baseUrl}/api/design-systems/${encodeURIComponent(created.id)}/files`,
       { headers: workspaceHeaders(CONTEXT_WS1) },
     );
-    expect(scopedFilesResponse.status).toBe(403);
+    expect(scopedFilesResponse.status).toBe(200);
   });
 
-  it('rejects a half-specified Workspace identity instead of treating it as local', async () => {
+  it('ignores a half-specified Workspace identity on catalog reads', async () => {
     const response = await fetch(`${baseUrl}/api/design-systems`, {
       headers: { 'x-od-workspace-id': 'ws-switch-one' },
     });
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(200);
   });
 
-  it('keeps an A request on A after a legacy context write without creating ambient authority', async () => {
+  it('keeps catalog contents stable across Workspace context changes', async () => {
     await setContext(baseUrl, CONTEXT_WS2);
 
     const createResp1 = await fetch(`${baseUrl}/api/design-systems`, {
@@ -136,7 +135,7 @@ describe('GET/POST /api/design-systems — explicit request scope is isolated fr
     });
     expect(createResp1.status).toBe(201);
     const createdInWs1 = (await createResp1.json()) as { id: string; workspaceId?: string };
-    expect(createdInWs1.workspaceId).toBe('ws-switch-one');
+    expect(createdInWs1.workspaceId).toBeUndefined();
 
     const workspaceResp = await fetch(
       `${baseUrl}/api/design-systems/${encodeURIComponent(createdInWs1.id)}/workspace`,
@@ -184,18 +183,18 @@ describe('GET/POST /api/design-systems — explicit request scope is isolated fr
     });
     expect(createResp2.status).toBe(201);
     const createdInWs2 = (await createResp2.json()) as { id: string; workspaceId?: string };
-    expect(createdInWs2.workspaceId).toBe('ws-switch-two');
+    expect(createdInWs2.workspaceId).toBeUndefined();
 
     const listWs1Resp = await fetch(`${baseUrl}/api/design-systems`, {
       headers: workspaceHeaders(CONTEXT_WS1),
     });
     const listWs1Body = (await listWs1Resp.json()) as { designSystems: Array<{ id: string }> };
     expect(listWs1Body.designSystems.some((d) => d.id === createdInWs1.id)).toBe(true);
-    expect(listWs1Body.designSystems.some((d) => d.id === createdInWs2.id)).toBe(false);
+    expect(listWs1Body.designSystems.some((d) => d.id === createdInWs2.id)).toBe(true);
   });
 });
 
-describe('resolveDesignSystemWorkspaceScope — stale local pins are never data-plane authority', () => {
+describe('historical Design System Workspace metadata', () => {
   // This function's session-liveness gate (`collab.workspaceContext.lastKnown()`)
   // is untouched by the TTL-cache fix above — this suite exists to prove
   // removing that cache did not also disturb the gate. A fresh server
@@ -237,15 +236,15 @@ describe('resolveDesignSystemWorkspaceScope — stale local pins are never data-
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('ignores a stale pin when an explicit request names another Workspace', async () => {
+  it('ignores a stale pin and exposes the local system', async () => {
     const resp = await fetch(`${baseUrl}/api/design-systems`, {
       headers: workspaceHeaders(CONTEXT_WS2),
     });
     const body = (await resp.json()) as { designSystems: Array<{ id: string }> };
-    expect(body.designSystems.some((d) => d.id === 'user:pinned-claim')).toBe(false);
+    expect(body.designSystems.some((d) => d.id === 'user:pinned-claim')).toBe(true);
   });
 
-  it('quarantines a metadata-only claim without an exact member ownership envelope', async () => {
+  it('ignores historical metadata workspaceId fields', async () => {
     const resp = await fetch(`${baseUrl}/api/design-systems`, {
       headers: workspaceHeaders({
         ...CONTEXT_WS1,
@@ -253,6 +252,8 @@ describe('resolveDesignSystemWorkspaceScope — stale local pins are never data-
       }),
     });
     const body = (await resp.json()) as { designSystems: Array<{ id: string }> };
-    expect(body.designSystems.some((d) => d.id === 'user:pinned-claim')).toBe(false);
+    const designSystem = body.designSystems.find((d) => d.id === 'user:pinned-claim');
+    expect(designSystem).toBeDefined();
+    expect(designSystem).not.toHaveProperty('workspaceId');
   });
 });

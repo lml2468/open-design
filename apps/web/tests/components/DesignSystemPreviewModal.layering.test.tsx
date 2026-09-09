@@ -139,7 +139,7 @@ describe('DesignSystemPreviewModal layering', () => {
     );
 
     await waitFor(() => {
-      expect(fetchDesignSystemMock).toHaveBeenCalledWith('claymorphism', PROJECT_WORKSPACE_CONTEXT);
+      expect(fetchDesignSystemMock).toHaveBeenCalledWith('claymorphism');
       expect(projectRawUrlMock).toHaveBeenCalledWith(
         'project-clay',
         'logos/mark.svg',
@@ -165,7 +165,7 @@ describe('DesignSystemPreviewModal layering', () => {
     );
 
     await waitFor(() => {
-      expect(fetchDesignSystemMock).toHaveBeenCalledWith('claymorphism', PROJECT_WORKSPACE_CONTEXT);
+      expect(fetchDesignSystemMock).toHaveBeenCalledWith('claymorphism');
     });
   });
 
@@ -197,7 +197,7 @@ describe('DesignSystemPreviewModal layering', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Showcase' }));
 
     await waitFor(() => {
-      expect(fetchDesignSystemShowcaseMock).toHaveBeenCalledWith('claymorphism', null);
+      expect(fetchDesignSystemShowcaseMock).toHaveBeenCalledWith('claymorphism');
     });
     expect(screen.getByRole('tab', { name: 'Showcase' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('button', { name: 'Share' })).toBeTruthy();

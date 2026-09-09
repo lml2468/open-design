@@ -936,13 +936,9 @@ export async function _listMcpResources(
     'list_resources',
     {},
     async (baseUrl) => {
-      // Skills are daemon-local; Design Systems still use the active Workspace
-      // during their migration batch.
-      const workspaceContext = await resolveMcpWorkspaceContext(baseUrl);
-      const headers = workspaceContext?.headers;
       const [skillsData, dsData] = await Promise.all([
         getJson<SkillsPayload>(`${baseUrl}/api/skills`).catch((): SkillsPayload => ({ skills: [] })),
-        getJson<DesignSystemsPayload>(`${baseUrl}/api/design-systems`, headers).catch((): DesignSystemsPayload => ({ designSystems: [] })),
+        getJson<DesignSystemsPayload>(`${baseUrl}/api/design-systems`).catch((): DesignSystemsPayload => ({ designSystems: [] })),
       ]);
       return ok({ skillsData, dsData });
     },
@@ -1019,20 +1015,11 @@ export async function _readMcpResource(
   }
   const [, kind, id] = m as [string, 'skills' | 'design-systems', string, string];
   const route = kind === 'skills' ? 'skills' : 'design-systems';
-  // Reading a `od://design-systems/<id>/DESIGN.md` resource resolves the
-  // bound Personal design system. The daemon treats a headerless read as a
-  // NO-SCOPE caller, so the design-system route returns 404 for a Personal
-  // system that the workspace actually owns. Forward the same workspace
-  // headers as the project/run tools (#6569) so the resource read lands on
-  // the binding instead of returning `404 design system not found`. See #6770.
-  const result = await daemonTarget.call('read_resource', {}, async (baseUrl) => {
-    const workspaceContext = await resolveMcpWorkspaceContext(baseUrl);
-    const headers = workspaceContext?.headers;
-    return ok(await getJson<ResourcePayload>(
+  const result = await daemonTarget.call('read_resource', {}, async (baseUrl) =>
+    ok(await getJson<ResourcePayload>(
       `${baseUrl}/api/${route}/${encodeURIComponent(decodeURIComponent(id))}`,
-      headers,
-    ));
-  });
+    )),
+  );
   if (result.isError === true) throw new Error(result.content[0]?.text);
   const data = parseMcpResult(result) as ResourcePayload | null;
   const text =

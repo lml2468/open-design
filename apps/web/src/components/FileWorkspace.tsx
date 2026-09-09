@@ -4626,7 +4626,6 @@ function DesignSystemProjectPanel({
     const updated = await updateDesignSystemDraft(
       system.id,
       { body: nextBody },
-      workspaceContext,
     );
     if (!updated) throw new Error(t('ds.actionFailed'));
     const file = await writeProjectTextFile(projectId, 'DESIGN.md', nextBody, undefined, workspaceContext);
@@ -4663,7 +4662,6 @@ function DesignSystemProjectPanel({
         const job = await startDesignSystemTokenContractRebuildJob(
           system.id,
           { force: true },
-          workspaceContext,
         );
         if (!job) throw new Error(t('ds.actionFailed'));
         await refreshKitDependencies();
@@ -4729,7 +4727,7 @@ function DesignSystemProjectPanel({
         setKitActionBusy(null);
         return;
       }
-      await deleteDesignSystemDraft(system.id, workspaceContext);
+      await deleteDesignSystemDraft(system.id);
       await onDesignSystemsRefresh?.();
     } catch {
       notifyKit('error', t('ds.actionFailed'));
@@ -4911,7 +4909,6 @@ function DesignSystemProjectPanel({
       const updated = await updateDesignSystemDraft(
         system.id,
         { status: nextStatus },
-        workspaceContext,
       );
       if (!updated) throw new Error(t('ds.actionFailed'));
       setStatus(updated.status ?? nextStatus);

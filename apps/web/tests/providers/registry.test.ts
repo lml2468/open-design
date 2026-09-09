@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installMockOpenDesignHost } from '@open-design/host/testing';
-import { advanceWorkspaceAccountGeneration } from '../../src/collab/workspace-identity';
 import {
   buildWorkspacePermissions,
   buildWorkspaceSeatSummary,
@@ -142,31 +141,24 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-describe('design-system Workspace scope', () => {
+describe('daemon-local design-system catalog', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it('attaches the captured Workspace/member identity to catalog reads', async () => {
+  it('reads the catalog without Workspace identity headers', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ designSystems: [] }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
-    const context = personalWorkspaceContext();
-
-    await expect(fetchDesignSystemsResult(context)).resolves.toEqual({
+    await expect(fetchDesignSystemsResult()).resolves.toEqual({
       ok: true,
       designSystems: [],
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/design-systems', {
-      headers: expect.objectContaining({
-        'x-od-workspace-id': context.workspaceId,
-        'x-od-workspace-member-id': context.workspaceMemberId,
-      }),
-    });
+    expect(fetchMock).toHaveBeenCalledWith('/api/design-systems');
   });
 
   it('preserves the permission code from a denied design-system delete', async () => {
@@ -174,9 +166,7 @@ describe('design-system Workspace scope', () => {
       error: 'WORKSPACE_RESOURCE_MANAGE_DENIED',
     }), { status: 403, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
-    const context = teamWorkspaceContext();
-
-    await expect(deleteDesignSystemDraft('user:team-brand', context)).rejects.toEqual(
+    await expect(deleteDesignSystemDraft('user:team-brand')).rejects.toEqual(
       expect.objectContaining<Partial<DesignSystemDeleteError>>({
         name: 'DesignSystemDeleteError',
         status: 403,
@@ -185,14 +175,10 @@ describe('design-system Workspace scope', () => {
     );
     expect(fetchMock).toHaveBeenCalledWith('/api/design-systems/user%3Ateam-brand', {
       method: 'DELETE',
-      headers: expect.objectContaining({
-        'x-od-workspace-id': context.workspaceId,
-        'x-od-workspace-member-id': context.workspaceMemberId,
-      }),
     });
   });
 
-  it('attaches the same identity to design-system creation', async () => {
+  it('creates a design system without Workspace identity headers', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({
         designSystem: {
@@ -209,16 +195,11 @@ describe('design-system Workspace scope', () => {
         },
       }), { status: 201 }));
     vi.stubGlobal('fetch', fetchMock);
-    const context = personalWorkspaceContext();
-
-    await createDesignSystemDraft({ title: 'Brand A' }, context);
+    await createDesignSystemDraft({ title: 'Brand A' });
 
     expect(fetchMock).toHaveBeenCalledWith('/api/design-systems', expect.objectContaining({
       method: 'POST',
-      headers: expect.objectContaining({
-        'x-od-workspace-id': context.workspaceId,
-        'x-od-workspace-member-id': context.workspaceMemberId,
-      }),
+      headers: { 'Content-Type': 'application/json' },
     }));
   });
 
@@ -228,7 +209,6 @@ describe('design-system Workspace scope', () => {
     // DesignSystemsSection / DesignSystemSwitchPicker each read it again as
     // they mount. Every one of those owns its own latest-wins bookkeeping, so
     // none can drop its read — but on the wire they are one request.
-    const context = personalWorkspaceContext();
     const gate = deferred<Response>();
     let catalogReads = 0;
     vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL) => {
@@ -237,9 +217,9 @@ describe('design-system Workspace scope', () => {
     }));
 
     const reads = [
-      fetchDesignSystemsResult(context),
-      fetchDesignSystemsResult(context),
-      fetchDesignSystemsResult(context),
+      fetchDesignSystemsResult(),
+      fetchDesignSystemsResult(),
+      fetchDesignSystemsResult(),
     ];
     await vi.waitFor(() => expect(catalogReads).toBeGreaterThan(0));
     expect(catalogReads).toBe(1);
@@ -261,15 +241,14 @@ describe('design-system Workspace scope', () => {
     // change that just happened out of band — returning home re-reads so an
     // in-project brand extraction shows up. Sharing a settled answer for even
     // a second would hand those reads the state they were fired to replace.
-    const context = personalWorkspaceContext();
     let catalogReads = 0;
     vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL) => {
       catalogReads += 1;
       return Promise.resolve(new Response(JSON.stringify({ designSystems: [] }), { status: 200 }));
     }));
 
-    await fetchDesignSystemsResult(context);
-    await fetchDesignSystemsResult(context);
+    await fetchDesignSystemsResult();
+    await fetchDesignSystemsResult();
     expect(catalogReads).toBe(2);
   });
 
@@ -280,7 +259,6 @@ describe('design-system Workspace scope', () => {
     // join a GET issued before the mutation: `ttl = 0` stops settled-result
     // reuse, not in-flight joining, so the tab would commit the pre-mutation
     // rows and leave the deleted system on screen.
-    const context = personalWorkspaceContext();
     const pending = deferred<Response>();
     let rows = [{ id: 'user:doomed', title: 'Doomed', source: 'user', status: 'published' }];
     let catalogGets = 0;
@@ -294,11 +272,11 @@ describe('design-system Workspace scope', () => {
       return Promise.resolve(new Response(JSON.stringify({ designSystems: rows }), { status: 200 }));
     }));
 
-    const inFlightBeforeMutation = fetchDesignSystemsResult(context);
+    const inFlightBeforeMutation = fetchDesignSystemsResult();
     await vi.waitFor(() => expect(catalogGets).toBe(1));
-    await expect(deleteDesignSystemDraft('user:doomed', context)).resolves.toBeTruthy();
+    await expect(deleteDesignSystemDraft('user:doomed')).resolves.toBeTruthy();
 
-    const afterMutation = fetchDesignSystemsResult(context);
+    const afterMutation = fetchDesignSystemsResult();
     pending.resolve(new Response(
       JSON.stringify({ designSystems: [{ id: 'user:doomed', title: 'Doomed', source: 'user', status: 'published' }] }),
       { status: 200 },
@@ -318,7 +296,6 @@ describe('design-system Workspace scope', () => {
     // before checking `resp.ok`, so an empty success body threw straight into
     // the catch and the success path — and therefore any bump placed on it —
     // was unreachable.
-    const context = personalWorkspaceContext();
     const pending = deferred<Response>();
     let rows = [{ id: 'user:installed', title: 'Installed', source: 'user', status: 'published' }];
     let catalogGets = 0;
@@ -332,11 +309,11 @@ describe('design-system Workspace scope', () => {
       return Promise.resolve(new Response(JSON.stringify({ designSystems: rows }), { status: 200 }));
     }));
 
-    const inFlightBeforeMutation = fetchDesignSystemsResult(context);
+    const inFlightBeforeMutation = fetchDesignSystemsResult();
     await vi.waitFor(() => expect(catalogGets).toBe(1));
-    await expect(uninstallDesignSystem('user:installed', context)).resolves.toEqual({ ok: true });
+    await expect(uninstallDesignSystem('user:installed')).resolves.toEqual({ ok: true });
 
-    const afterMutation = fetchDesignSystemsResult(context);
+    const afterMutation = fetchDesignSystemsResult();
     pending.resolve(new Response(
       JSON.stringify({ designSystems: [{ id: 'user:installed', title: 'Installed', source: 'user', status: 'published' }] }),
       { status: 200 },
@@ -346,67 +323,20 @@ describe('design-system Workspace scope', () => {
     await inFlightBeforeMutation;
   });
 
-  it('never lets a pre-account-boundary catalog read answer a post-boundary one', async () => {
-    // A sign-out/sign-in cycle can leave every context field identical while the
-    // authority behind them has changed — that is exactly why the app keys the
-    // catalog on [accountGeneration, workspaceIdentity] and the team-project
-    // catalog carries a request generation. `ttl = 0` does not cover this: it
-    // disables settled-result reuse, but a post-boundary reader could still JOIN
-    // the promise of a request issued before the boundary and adopt its answer.
-    const context = personalWorkspaceContext();
-    const gates: Array<ReturnType<typeof deferred<Response>>> = [];
+  it('keeps one in-flight catalog request across account changes', async () => {
+    const gate = deferred<Response>();
     let catalogReads = 0;
-    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL) => {
+    vi.stubGlobal('fetch', vi.fn(() => {
       catalogReads += 1;
-      const gate = deferred<Response>();
-      gates.push(gate);
       return gate.promise;
     }));
 
-    const beforeBoundary = fetchDesignSystemsResult(context);
+    const first = fetchDesignSystemsResult();
+    const second = fetchDesignSystemsResult();
     await vi.waitFor(() => expect(catalogReads).toBe(1));
 
-    advanceWorkspaceAccountGeneration('account-boundary');
-
-    const afterBoundary = fetchDesignSystemsResult(context);
-    await vi.waitFor(() => expect(catalogReads).toBe(2));
-
-    for (const gate of gates) {
-      gate.resolve(new Response(JSON.stringify({ designSystems: [] }), { status: 200 }));
-    }
-    await Promise.all([beforeBoundary, afterBoundary]);
-  });
-
-  it('never lets a headerless catalog read answer a Workspace-scoped one', async () => {
-    // A read issued before `/api/workspace/context` settles carries no identity
-    // headers, and `/api/design-systems` is fail-closed on a missing scope — it
-    // is a different, smaller catalog, not a cheaper copy of the scoped answer.
-    const context = personalWorkspaceContext();
-    const scopedIds: string[] = [];
-    let headerlessReads = 0;
-    // Each read gets its own Response: a shared body can only be read once, so
-    // reusing one would hide a join behind a parse error instead of a count.
-    const gates: Array<ReturnType<typeof deferred<Response>>> = [];
-    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
-      const headers = (init?.headers ?? {}) as Record<string, string>;
-      const workspaceId = headers['x-od-workspace-id'];
-      if (workspaceId) scopedIds.push(workspaceId);
-      else headerlessReads += 1;
-      const gate = deferred<Response>();
-      gates.push(gate);
-      return gate.promise;
-    }));
-
-    const headerless = fetchDesignSystemsResult(null);
-    const scoped = fetchDesignSystemsResult(context);
-    await vi.waitFor(() => expect(headerlessReads + scopedIds.length).toBe(2));
-    expect(headerlessReads).toBe(1);
-    expect(scopedIds).toEqual([context.workspaceId]);
-
-    for (const gate of gates) {
-      gate.resolve(new Response(JSON.stringify({ designSystems: [] }), { status: 200 }));
-    }
-    await Promise.all([headerless, scoped]);
+    gate.resolve(new Response(JSON.stringify({ designSystems: [] }), { status: 200 }));
+    await Promise.all([first, second]);
   });
 
 });

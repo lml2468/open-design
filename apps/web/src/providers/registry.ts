@@ -510,10 +510,8 @@ export async function fetchSkill(
   }
 }
 
-export async function fetchDesignSystems(
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<DesignSystemSummary[]> {
-  const result = await fetchDesignSystemsResult(workspaceContext);
+export async function fetchDesignSystems(): Promise<DesignSystemSummary[]> {
+  const result = await fetchDesignSystemsResult();
   return result.ok ? result.designSystems : [];
 }
 
@@ -575,25 +573,10 @@ function noteDesignSystemCatalogMutation(): void {
 }
 
 async function readDesignSystemCatalog(
-  workspaceContext: WorkspaceCollabContext | null | undefined,
-  accountGeneration: number,
 ): Promise<DesignSystemSummary[]> {
-  // Keyed by the exact identity the request will carry, PLUS the account
-  // boundary it was captured under — the same two-part identity the app uses
-  // for this catalog and the team-project catalog carries as its request
-  // generation. `/api/design-systems` is fail-closed on a missing scope, so a
-  // headerless read is a different, smaller catalog and never an answer a
-  // Workspace-scoped read may join. The generation is load-bearing on its own:
-  // a sign-out/sign-in cycle can leave every context field identical while the
-  // authority behind them has changed, and ttl 0 would not catch it — it stops
-  // settled-result reuse, not a post-boundary reader joining a request issued
-  // before the boundary.
-  const cacheKey = `design-system-catalog:${designSystemCatalogMutationGeneration}`
-    + `:${workspaceAccountScopedCacheKey(workspaceContext, accountGeneration)}`;
+  const cacheKey = `design-system-catalog:${designSystemCatalogMutationGeneration}`;
   return coalescedGet(cacheKey, async () => {
-    const resp = await fetch('/api/design-systems', {
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
-    });
+    const resp = await fetch('/api/design-systems');
     // Throw rather than return a sentinel: `coalescedGet` never caches a
     // failure, so the next reader retries instead of joining a dead entry.
     if (!resp.ok) throw new Error(`design-systems ${resp.status}`);
@@ -602,15 +585,9 @@ async function readDesignSystemCatalog(
   }, CATALOG_SINGLE_FLIGHT_ONLY_MS);
 }
 
-export async function fetchDesignSystemsResult(
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<DesignSystemsResult> {
-  const accountGeneration = currentWorkspaceAccountGeneration();
+export async function fetchDesignSystemsResult(): Promise<DesignSystemsResult> {
   try {
-    const designSystems = await readDesignSystemCatalog(
-      workspaceContext,
-      accountGeneration,
-    );
+    const designSystems = await readDesignSystemCatalog();
     return { ok: true, designSystems };
   } catch {
     return { ok: false };
@@ -619,14 +596,12 @@ export async function fetchDesignSystemsResult(
 
 export async function fetchDesignSystem(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemDetail | null> {
   try {
     // no-store so edits made elsewhere (the in-project Design System tab) are
     // reflected the next time the manager / a consumer re-reads the system.
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}`, {
       cache: 'no-store',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     if (!resp.ok) return null;
     return parseDesignSystemDetail(await resp.json());
@@ -637,12 +612,10 @@ export async function fetchDesignSystem(
 
 export async function fetchDesignSystemFiles(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemFileSummary[]> {
   try {
     const resp = await fetch(
       `/api/design-systems/${encodeURIComponent(id)}/files`,
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
     );
     if (!resp.ok) return [];
     const json = (await resp.json()) as { files: DesignSystemFileSummary[] };
@@ -655,12 +628,10 @@ export async function fetchDesignSystemFiles(
 export async function fetchDesignSystemFile(
   id: string,
   filePath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemFileDetail | null> {
   try {
     const resp = await fetch(
       `/api/design-systems/${encodeURIComponent(id)}/file?path=${encodeURIComponent(filePath)}`,
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
     );
     if (!resp.ok) return null;
     const json = (await resp.json()) as { file?: DesignSystemFileDetail };
@@ -672,12 +643,10 @@ export async function fetchDesignSystemFile(
 
 export async function ensureDesignSystemWorkspace(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ project: Project; files: ProjectFile[] } | null> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/workspace`, {
       method: 'POST',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     if (!resp.ok) return null;
     return (await resp.json()) as { project: Project; files: ProjectFile[] };
@@ -706,14 +675,12 @@ export interface DesignSystemDraftInput {
 
 export async function createDesignSystemDraft(
   input: DesignSystemDraftInput,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemDetail | null> {
   try {
     const resp = await fetch('/api/design-systems', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -727,14 +694,12 @@ export async function createDesignSystemDraft(
 
 export async function startDesignSystemGenerationJob(
   input: DesignSystemDraftInput,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemGenerationJob | null> {
   try {
     const resp = await fetch('/api/design-systems/generation-jobs', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -748,13 +713,10 @@ export async function startDesignSystemGenerationJob(
 
 export async function fetchDesignSystemGenerationJob(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemGenerationJob | null> {
   try {
     const url = `/api/design-systems/generation-jobs/${encodeURIComponent(id)}`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) return null;
     const json = (await resp.json()) as { job?: DesignSystemGenerationJob };
     return json.job ?? null;
@@ -785,13 +747,10 @@ export async function fetchProjectDesignSystemPackageAudit(
 
 export async function fetchDesignSystemRevisions(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemRevision[]> {
   try {
     const url = `/api/design-systems/${encodeURIComponent(id)}/revisions`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) return [];
     const json = (await resp.json()) as { revisions?: DesignSystemRevision[] };
     return json.revisions ?? [];
@@ -804,7 +763,6 @@ export async function updateDesignSystemRevisionStatus(
   id: string,
   revisionId: string,
   status: Extract<DesignSystemRevisionStatus, 'accepted' | 'rejected'>,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemRevision | null> {
   try {
     const resp = await fetch(
@@ -813,7 +771,6 @@ export async function updateDesignSystemRevisionStatus(
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
         },
         body: JSON.stringify({ status }),
       },
@@ -830,14 +787,12 @@ export async function updateDesignSystemRevisionStatus(
 export async function startDesignSystemRevisionJob(
   id: string,
   input: DesignSystemRevisionJobRequest,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemGenerationJob | null> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/revision-jobs`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -852,14 +807,12 @@ export async function startDesignSystemRevisionJob(
 export async function startDesignSystemTokenContractRebuildJob(
   id: string,
   input: DesignSystemTokenContractRebuildJobRequest = {},
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemTokenContractRebuildJobResponse | null> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/token-contract/rebuild-jobs`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -873,14 +826,12 @@ export async function startDesignSystemTokenContractRebuildJob(
 export async function updateDesignSystemDraft(
   id: string,
   input: Partial<DesignSystemDraftInput>,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemDetail | null> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -898,18 +849,15 @@ export async function updateDesignSystemDraft(
 // design-system directory stops shipping a stale placeholder logo. No file bytes
 // cross the browser: the daemon locates the workspace project itself and
 // copies file contents straight through on its own side of the data-
-// directory boundary. See `workspaceProjectHeaders`; the workspace identity
-// headers must ride along with this mutating request.
+// directory boundary.
 export async function syncDesignSystemAssetsFromWorkspace(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ synced: string[] } | null> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/sync-assets`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
     });
     if (!resp.ok) return null;
@@ -933,17 +881,11 @@ export class DesignSystemDeleteError extends Error {
 
 export async function deleteDesignSystemDraft(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<boolean> {
   try {
     const resp = await fetch(
       `/api/design-systems/${encodeURIComponent(id)}`,
-      {
-        method: 'DELETE',
-        ...(workspaceContext
-          ? { headers: workspaceProjectHeaders(workspaceContext) }
-          : {}),
-      },
+      { method: 'DELETE' },
     );
     if (!resp.ok && resp.status === 403) {
       const errorBody = await readApiErrorBody(resp);
@@ -2869,12 +2811,8 @@ export function projectRawUrl(
 export function designSystemStaticUrl(
   designSystemId: string,
   filePath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
-  return workspaceResourceUrl(
-    `/api/design-systems/${encodeURIComponent(designSystemId)}/static?path=${encodeURIComponent(filePath)}`,
-    workspaceContext,
-  );
+  return `/api/design-systems/${encodeURIComponent(designSystemId)}/static?path=${encodeURIComponent(filePath)}`;
 }
 
 function looksLikeImage(name: string): boolean {
@@ -3076,16 +3014,9 @@ export async function openProjectInEditor(
 
 export async function fetchDesignSystemPreview(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string | null> {
   try {
-    const resp = await fetch(
-      workspaceResourceUrl(
-        `/api/design-systems/${encodeURIComponent(id)}/preview`,
-        workspaceContext,
-      ),
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
-    );
+    const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/preview`);
     if (!resp.ok) return null;
     return await resp.text();
   } catch {
@@ -3095,16 +3026,9 @@ export async function fetchDesignSystemPreview(
 
 export async function fetchDesignSystemShowcase(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string | null> {
   try {
-    const resp = await fetch(
-      workspaceResourceUrl(
-        `/api/design-systems/${encodeURIComponent(id)}/showcase`,
-        workspaceContext,
-      ),
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
-    );
+    const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/showcase`);
     if (!resp.ok) return null;
     return await resp.text();
   } catch {
@@ -3245,14 +3169,10 @@ export async function installDesignSystem(
 
 export async function uninstallDesignSystem(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ ok: true } | { error: string }> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-      ...(workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : {}),
     });
     // Success is decided by the status, not by a parsed body: this route can
     // answer an empty 204, and parsing first threw straight into the catch —

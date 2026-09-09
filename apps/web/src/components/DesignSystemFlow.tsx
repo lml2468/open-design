@@ -308,9 +308,8 @@ function readRememberedGenerationJob(designSystemId: string): string | null {
 
 async function resolveDesignSystemWorkspaceProject(
   system: Pick<DesignSystemDetail, 'id' | 'projectId'>,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ResolvedDesignSystemWorkspaceProject | null> {
-  const workspace = await ensureDesignSystemWorkspace(system.id, workspaceContext);
+  const workspace = await ensureDesignSystemWorkspace(system.id);
   if (workspace) {
     return {
       projectId: workspace.project.id,
@@ -320,12 +319,7 @@ async function resolveDesignSystemWorkspaceProject(
   if (!system.projectId) return null;
   const fallbackProject = await getProject(system.projectId);
   if (!fallbackProject) return null;
-  const files = workspaceContext
-    ? await fetchProjectFiles(system.projectId, {
-        workspaceContext,
-        requireAuthoritative: true,
-      })
-    : await fetchProjectFiles(system.projectId, { requireAuthoritative: true });
+  const files = await fetchProjectFiles(system.projectId, { requireAuthoritative: true });
   return {
     projectId: system.projectId,
     files,
@@ -678,7 +672,7 @@ export function DesignSystemCreationFlow({
     }
 
     setReferenceDesignSystemLoading(true);
-    void fetchDesignSystem(id, workspaceContext)
+    void fetchDesignSystem(id)
       .then((detail) => {
         if (referenceDesignSystemRequestRef.current !== requestId) return;
         if (!detail) {
@@ -1663,7 +1657,7 @@ export function DesignSystemDetailView({
   const workspaceProjectFilesRef = useRef<ProjectFile[]>([]);
   const [workspaceFilesGeneration, setWorkspaceFilesGeneration] = useState(0);
   const workspaceFilesGenerationRef = useRef(0);
-  const workspaceFilesScopeKey = `${id}:${workspaceIdentityCacheKey(workspaceContext)}`;
+  const workspaceFilesScopeKey = id;
   const workspaceFilesScopeKeyRef = useRef(workspaceFilesScopeKey);
   workspaceFilesScopeKeyRef.current = workspaceFilesScopeKey;
   const workspaceFilesRequestSeqRef = useRef(0);
@@ -1743,19 +1737,19 @@ export function DesignSystemDetailView({
     workspaceTabsLoadedRef.current = false;
     suppressedInitialConversationProjectIdsRef.current.clear();
     pendingWorkspaceFileWritesRef.current.clear();
-    void fetchDesignSystem(id, workspaceContext).then((detail) => {
+    void fetchDesignSystem(id).then((detail) => {
       if (cancelled) return;
       setSystem(detail);
       setBody(detail?.body ?? '');
     });
-    void fetchDesignSystemRevisions(id, workspaceContext).then((next) => {
+    void fetchDesignSystemRevisions(id).then((next) => {
       if (cancelled) return;
       setRevisions(next);
     });
     return () => {
       cancelled = true;
     };
-  }, [id, workspaceContext, workspaceFilesScopeKey]);
+  }, [id, workspaceFilesScopeKey]);
 
   useEffect(() => {
     if (!initialRevisionJob?.id) return;
@@ -1777,7 +1771,7 @@ export function DesignSystemDetailView({
       setWorkspaceLoadError(null);
       let resolved: ResolvedDesignSystemWorkspaceProject | null;
       try {
-        resolved = await resolveDesignSystemWorkspaceProject(currentSystem, workspaceContext);
+        resolved = await resolveDesignSystemWorkspaceProject(currentSystem);
       } catch {
         if (!cancelled && workspaceFilesScopeKeyRef.current === requestScopeKey) {
           setWorkspaceLoadError(t('dsFlow.workspaceOpenFailed'));
@@ -1808,7 +1802,7 @@ export function DesignSystemDetailView({
     return () => {
       cancelled = true;
     };
-  }, [onOpenProject, onProjectsRefresh, system, t, workspaceContext, workspaceFilesScopeKey]);
+  }, [onOpenProject, onProjectsRefresh, system, t, workspaceFilesScopeKey]);
 
   useEffect(() => {
     if (!workspaceProjectId) return undefined;
@@ -1905,10 +1899,7 @@ export function DesignSystemDetailView({
     let timeoutId: number | undefined;
 
     async function pollGenerationJob() {
-      const next = await fetchDesignSystemGenerationJob(
-        generationJobId,
-        workspaceContext,
-      );
+      const next = await fetchDesignSystemGenerationJob(generationJobId);
       if (cancelled) return;
       if (!next) {
         clearRememberedGenerationJob(id);
@@ -1918,7 +1909,7 @@ export function DesignSystemDetailView({
       setGenerationJob(next);
       if (next.status === 'succeeded') {
         clearRememberedGenerationJob(id);
-        const detail = await fetchDesignSystem(id, workspaceContext);
+        const detail = await fetchDesignSystem(id);
         if (cancelled) return;
         if (detail) {
           setSystem(detail);
@@ -1959,7 +1950,7 @@ export function DesignSystemDetailView({
     let timeoutId: number | undefined;
 
     async function pollRevisionJob() {
-      const next = await fetchDesignSystemGenerationJob(jobId, workspaceContext);
+      const next = await fetchDesignSystemGenerationJob(jobId);
       if (cancelled) return;
       if (!next) {
         setStatusLine(t('dsFlow.revisionProgressUnavailable'));
@@ -1967,7 +1958,7 @@ export function DesignSystemDetailView({
       }
       setRevisionJob(next);
       if (next.status === 'succeeded') {
-        const nextRevisions = await fetchDesignSystemRevisions(id, workspaceContext);
+        const nextRevisions = await fetchDesignSystemRevisions(id);
         if (cancelled) return;
         setRevisions(nextRevisions);
         await onSystemsRefresh?.();
@@ -2086,7 +2077,6 @@ export function DesignSystemDetailView({
       const updated = await updateDesignSystemDraft(
         system.id,
         input,
-        workspaceContext,
       );
       if (updated) {
         setSystem(updated);
@@ -2188,7 +2178,7 @@ export function DesignSystemDetailView({
     const requestScopeKey = workspaceFilesScopeKey;
     let resolved: ResolvedDesignSystemWorkspaceProject | null;
     try {
-      resolved = await resolveDesignSystemWorkspaceProject(system, workspaceContext);
+      resolved = await resolveDesignSystemWorkspaceProject(system);
     } catch {
       if (workspaceFilesScopeKeyRef.current === requestScopeKey) {
         setWorkspaceLoadError(t('dsFlow.workspaceOpenFailed'));
@@ -2266,7 +2256,6 @@ export function DesignSystemDetailView({
     const updated = await updateDesignSystemDraft(
       system.id,
       { body: nextBody },
-      workspaceContext,
     );
     if (!updated) return false;
     setSystem(updated);
@@ -2284,7 +2273,7 @@ export function DesignSystemDetailView({
   // architecture rule that only the daemon may touch the data directory.
   const syncDesignSystemAssetsFromWorkspace = useCallback(async () => {
     if (!system || !editable) return false;
-    const result = await syncDesignSystemAssetsFromWorkspaceRequest(system.id, workspaceContext);
+    const result = await syncDesignSystemAssetsFromWorkspaceRequest(system.id);
     return Boolean(result && result.synced.length > 0);
   }, [editable, system, workspaceContext]);
 
@@ -2739,7 +2728,6 @@ export function DesignSystemDetailView({
         system.id,
         revision.id,
         status,
-        workspaceContext,
       );
       if (!updatedRevision) {
         setStatusLine(
@@ -2750,8 +2738,8 @@ export function DesignSystemDetailView({
         return;
       }
       const [detail, nextRevisions] = await Promise.all([
-        fetchDesignSystem(system.id, workspaceContext),
-        fetchDesignSystemRevisions(system.id, workspaceContext),
+        fetchDesignSystem(system.id),
+        fetchDesignSystemRevisions(system.id),
       ]);
       if (detail) {
         setSystem(detail);
@@ -2773,7 +2761,6 @@ export function DesignSystemDetailView({
       const result = await startDesignSystemTokenContractRebuildJob(
         system.id,
         { force },
-        workspaceContext,
       );
       if (!result) {
         setStatusLine(t('dsFlow.tokenRebuildStartFailed'));

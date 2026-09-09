@@ -539,11 +539,10 @@ export function parsedToKit(parsed: ParsedDesignMd, opts: ParsedKitOptions): Des
     samples: [],
   };
   const staticUrl = !opts.editable && opts.designSystemId && opts.packageInfo?.manifest
-    ? (rel: string): string => designSystemStaticUrl(
-        opts.designSystemId!,
-        rel,
-        opts.workspaceContext,
-      )
+      ? (rel: string): string => designSystemStaticUrl(
+          opts.designSystemId!,
+          rel,
+        )
     : null;
   const manifestFiles = opts.packageInfo?.manifest?.files;
   const kitPath = staticUrl

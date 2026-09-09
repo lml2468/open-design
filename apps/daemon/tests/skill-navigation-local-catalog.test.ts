@@ -57,7 +57,6 @@ async function fixture() {
     USER_SKILLS_DIR: path.join(root, 'user-skills'),
   };
   registerStaticResourceRoutes(app, {
-    db: {} as never,
     http: {
       createSseResponse: () => undefined,
       getPublicBaseUrl: () => '',
@@ -76,7 +75,6 @@ async function fixture() {
     paths,
     resources: {
       listAllDesignSystems: async () => [],
-      resolveWorkspaceScope: async () => null,
       listAllSkills: async () => [],
       listAllDesignTemplates: async () => [],
       listAllSkillLikeEntries: async () => [entry as never],

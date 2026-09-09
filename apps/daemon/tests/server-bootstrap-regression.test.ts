@@ -450,13 +450,6 @@ describe('bootstrap route regressions', () => {
       paths,
       projectFiles: {} as never,
       projectStore: {} as never,
-      verifyWorkspaceRequestAuthority: async () => {
-        throw new Error('unbound fixture must not verify Workspace authority');
-      },
-      workspaceResources: {
-        getWorkspaceResource: () => undefined,
-        getWorkspaceResourceByResourceId: () => undefined,
-      },
       designSystems: {
         buildUserDesignSystemArchive: async () => null,
         createUserDesignSystem: async () => designSystemSummary as never,
@@ -487,9 +480,6 @@ describe('bootstrap route regressions', () => {
       },
     });
     registerStaticResourceRoutes(app, {
-      // Not exercised: this smoke test only hits GET example/asset routes,
-      // none of which touch daemon-local skill mutation paths that read it.
-      db: {} as any,
       http: httpDeps,
       paths,
       resources: {

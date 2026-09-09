@@ -107,11 +107,11 @@ export function PluginDesignSystemDetail({
       if (!dsRef) return;
       if (viewId === 'showcase' && showcaseHtml === undefined) {
         setShowcaseHtml(null);
-        void fetchDesignSystemShowcase(dsRef, workspaceContext).then((html) => setShowcaseHtml(html));
+        void fetchDesignSystemShowcase(dsRef).then((html) => setShowcaseHtml(html));
       }
       if (viewId === 'tokens' && tokensHtml === undefined) {
         setTokensHtml(null);
-        void fetchDesignSystemPreview(dsRef, workspaceContext).then((html) => setTokensHtml(html));
+        void fetchDesignSystemPreview(dsRef).then((html) => setTokensHtml(html));
       }
     },
     [dsRef, showcaseHtml, tokensHtml, workspaceContext],

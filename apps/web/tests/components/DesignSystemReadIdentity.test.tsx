@@ -121,7 +121,7 @@ afterEach(() => {
 });
 
 describe('design-system resource read identity', () => {
-  it('re-reads modal detail and project assets when only the generation changes and drops late A', async () => {
+  it('re-reads modal detail and project assets when only the generation changes and keeps catalog reads local', async () => {
     const generationADetails: Array<ReturnType<typeof deferred<DesignSystemDetail | null>>> = [];
     const generationAAssets: Array<ReturnType<typeof deferred<string | null>>> = [];
     let issuingGeneration = 'generation-a';
@@ -180,7 +180,7 @@ describe('design-system resource read identity', () => {
     expect(screen.getAllByText('B detail won').length).toBeGreaterThan(0);
     expect(screen.queryByText('A detail arrived late')).toBeNull();
     expect(screen.queryByText('A project asset arrived late')).toBeNull();
-    expect(registryMocks.fetchDesignSystem.mock.calls.every((call) => call[1] === CONTEXT)).toBe(true);
+    expect(registryMocks.fetchDesignSystem.mock.calls.every((call) => call.length === 1)).toBe(true);
   });
 
   it('re-reads tab detail and row logo on generation change and keeps the late A logo out', async () => {
@@ -319,7 +319,7 @@ describe('design-system resource read identity', () => {
     expect(view.container.querySelector('img')?.getAttribute('src')).toBe('/same-logo.svg');
   });
 
-  it('keeps mutations on verified context instead of the provisional read identity', async () => {
+  it('keeps design-system mutations and reads independent of Workspace identity', async () => {
     const verifiedContext = workspaceContextFixture({
       workspaceId: 'ws-verified',
       workspaceMemberId: 'member-verified',
@@ -340,8 +340,7 @@ describe('design-system resource read identity', () => {
     expect(registryMocks.updateDesignSystemDraft).toHaveBeenCalledWith(
       SYSTEM.id,
       { status: 'published' },
-      verifiedContext,
     );
-    expect(registryMocks.fetchDesignSystem).toHaveBeenCalledWith(SYSTEM.id, provisionalContext);
+    expect(registryMocks.fetchDesignSystem).toHaveBeenCalledWith(SYSTEM.id);
   });
 });

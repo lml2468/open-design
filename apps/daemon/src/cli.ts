@@ -213,6 +213,7 @@ const LIBRARY_STRING_FLAGS = new Set([
   'daemon-url', 'query', 'tag', 'workspace', 'workspace-member',
 ]);
 const SKILL_STRING_FLAGS = new Set(['daemon-url', 'query', 'tag']);
+const DESIGN_SYSTEM_STRING_FLAGS = new Set(['daemon-url', 'query', 'tag']);
 const LIBRARY_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 // `od library …` (OD Library asset registry). Hoisted so the dispatcher can
 // parse flags without hitting a temporal-dead-zone on these sets.
@@ -2695,15 +2696,9 @@ Exit codes:
   if (!flags['no-daemon']) {
     const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
     try {
-      const designSystemWorkspaceHeaders =
-        workspaceHeadersFromExplicitFlags(flags);
       const [skillsResp, dsResp, atomsResp] = await Promise.all([
         fetch(`${base}/api/skills`).catch(() => null),
-        fetch(`${base}/api/design-systems`, {
-          ...(designSystemWorkspaceHeaders
-            ? { headers: designSystemWorkspaceHeaders }
-            : {}),
-        }).catch(() => null),
+        fetch(`${base}/api/design-systems`).catch(() => null),
         fetch(`${base}/api/atoms`).catch(() => null),
       ]);
       const skills = (skillsResp?.ok ? (await skillsResp.json())?.skills : []) ?? [];
@@ -9135,19 +9130,16 @@ async function runLibraryList(name, args) {
   const sub = args[0];
   const rest = args.slice(1);
   const apiPath = name === 'design-systems' ? '/api/design-systems' : `/api/${name}`;
-  const stringFlags = name === 'skills' ? SKILL_STRING_FLAGS : LIBRARY_STRING_FLAGS;
+  const stringFlags = name === 'skills'
+    ? SKILL_STRING_FLAGS
+    : name === 'design-systems'
+      ? DESIGN_SYSTEM_STRING_FLAGS
+      : LIBRARY_STRING_FLAGS;
   const flags = parseFlags(rest, { string: stringFlags, boolean: LIBRARY_BOOLEAN_FLAGS });
   const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
-  const designSystemWorkspaceHeaders = name === 'design-systems'
-    ? workspaceHeadersFromExplicitFlags(flags) ?? {}
-    : undefined;
   switch (sub) {
     case 'list': {
-      const resp = await fetch(`${base}${apiPath}`, {
-        ...(designSystemWorkspaceHeaders
-          ? { headers: designSystemWorkspaceHeaders }
-          : {}),
-      });
+      const resp = await fetch(`${base}${apiPath}`);
       if (!resp.ok) return structuredHttpFailure(resp);
       const data = await resp.json();
       if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
@@ -9159,16 +9151,12 @@ async function runLibraryList(name, args) {
       return;
     }
     case 'show': {
-      const id = positionalArgs(rest, LIBRARY_STRING_FLAGS)[0];
+      const id = positionalArgs(rest, stringFlags)[0];
       if (!id) {
         console.error(`Usage: od ${name} show <id>`);
         process.exit(2);
       }
-      const resp = await fetch(`${base}${apiPath}/${encodeURIComponent(id)}`, {
-        ...(designSystemWorkspaceHeaders
-          ? { headers: designSystemWorkspaceHeaders }
-          : {}),
-      });
+      const resp = await fetch(`${base}${apiPath}/${encodeURIComponent(id)}`);
       if (!resp.ok) return structuredHttpFailure(resp);
       const data = await resp.json();
       process.stdout.write(JSON.stringify(data, null, 2) + '\n');
@@ -9300,9 +9288,8 @@ generated SKILLS.md usage guide).
   --out <path>           Write the .zip here (defaults to the brand's name).`);
     process.exit(args.length === 0 ? 2 : 0);
   }
-  const stringFlags = new Set([...LIBRARY_STRING_FLAGS, 'out']);
+  const stringFlags = new Set([...DESIGN_SYSTEM_STRING_FLAGS, 'out']);
   const flags = parseFlags(args, { string: stringFlags, boolean: LIBRARY_BOOLEAN_FLAGS });
-  const workspaceHeaders = workspaceHeadersFromExplicitFlags(flags) ?? {};
   const id = positionalArgs(args, stringFlags)[0];
   if (!id) {
     console.error('Usage: od design-systems download <id> [--out <path>]');
@@ -9311,9 +9298,7 @@ generated SKILLS.md usage guide).
   const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
   let resp;
   try {
-    resp = await fetch(`${base}/api/design-systems/${encodeURIComponent(id)}/archive`, {
-      headers: workspaceHeaders,
-    });
+    resp = await fetch(`${base}/api/design-systems/${encodeURIComponent(id)}/archive`);
   } catch (err) {
     surfaceFetchError(err, base);
     process.exit(3);
@@ -9367,7 +9352,7 @@ Imports a local project directory as an editable OpenDesign design system.
   --craft <slugs>        Comma-separated craft sections to apply (e.g. color,type).`);
     process.exit(args.length === 0 ? 2 : 0);
   }
-  const stringFlags = new Set([...LIBRARY_STRING_FLAGS, 'path', 'name', 'import-mode', 'craft']);
+  const stringFlags = new Set([...DESIGN_SYSTEM_STRING_FLAGS, 'path', 'name', 'import-mode', 'craft']);
   const flags = parseFlags(args, { string: stringFlags, boolean: LIBRARY_BOOLEAN_FLAGS });
   const localPath = typeof flags.path === 'string' ? flags.path : positionalArgs(args, stringFlags)[0];
   if (!localPath) {
@@ -9399,7 +9384,7 @@ Imports a public GitHub repository as an editable OpenDesign design system.
   --craft <slugs>        Comma-separated craft sections to apply (e.g. color,type).`);
     process.exit(args.length === 0 ? 2 : 0);
   }
-  const stringFlags = new Set([...LIBRARY_STRING_FLAGS, 'url', 'branch', 'name', 'import-mode', 'craft']);
+  const stringFlags = new Set([...DESIGN_SYSTEM_STRING_FLAGS, 'url', 'branch', 'name', 'import-mode', 'craft']);
   const flags = parseFlags(args, { string: stringFlags, boolean: LIBRARY_BOOLEAN_FLAGS });
   const url = typeof flags.url === 'string' ? flags.url : positionalArgs(args, stringFlags)[0];
   if (!url) {
@@ -9428,10 +9413,9 @@ function designSystemImportRequestBody(flags, baseBody) {
 
 async function postDesignSystemImport(flags, endpoint, body) {
   const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
-  const workspaceHeaders = workspaceHeadersFromExplicitFlags(flags) ?? {};
   const resp = await fetch(`${base}${endpoint}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...workspaceHeaders },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!resp.ok) return structuredHttpFailure(resp);
@@ -9463,19 +9447,18 @@ Starts a review-gated TOKEN_SCHEMA token contract rebuild for an editable import
     process.exit(args.length === 0 ? 2 : 0);
   }
   const flags = parseFlags(args, {
-    string: LIBRARY_STRING_FLAGS,
+    string: DESIGN_SYSTEM_STRING_FLAGS,
     boolean: new Set([...LIBRARY_BOOLEAN_FLAGS, 'force']),
   });
-  const id = positionalArgs(args, LIBRARY_STRING_FLAGS)[0];
+  const id = positionalArgs(args, DESIGN_SYSTEM_STRING_FLAGS)[0];
   if (!id) {
     console.error('Usage: od design-systems rebuild-token-contract <id>');
     process.exit(2);
   }
   const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
-  const workspaceHeaders = workspaceHeadersFromExplicitFlags(flags) ?? {};
   const resp = await fetch(`${base}/api/design-systems/${encodeURIComponent(id)}/token-contract/rebuild-jobs`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...workspaceHeaders },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ force: flags.force === true }),
   });
   if (!resp.ok) return structuredHttpFailure(resp);
@@ -9511,7 +9494,7 @@ Imports a shadcn registry item as an OpenDesign design system.
   --craft <slugs>        Comma-separated craft sections to apply (e.g. color,type).`);
     process.exit(args.length === 0 ? 2 : 0);
   }
-  const stringFlags = new Set([...LIBRARY_STRING_FLAGS, 'name', 'import-mode', 'craft']);
+  const stringFlags = new Set([...DESIGN_SYSTEM_STRING_FLAGS, 'name', 'import-mode', 'craft']);
   const flags = parseFlags(args, { string: stringFlags, boolean: LIBRARY_BOOLEAN_FLAGS });
   const reference = positionalArgs(args, stringFlags)[0];
   if (!reference) {
@@ -9542,14 +9525,13 @@ Renames an editable (user-created) design system. Built-in systems are read-only
     process.exit(2);
   }
   const flags = parseFlags(args, {
-    string: new Set([...LIBRARY_STRING_FLAGS, 'title']),
+    string: new Set([...DESIGN_SYSTEM_STRING_FLAGS, 'title']),
     boolean: LIBRARY_BOOLEAN_FLAGS,
   });
   const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
-  const workspaceHeaders = workspaceHeadersFromExplicitFlags(flags) ?? {};
   const resp = await fetch(`${base}/api/design-systems/${encodeURIComponent(parsed.id)}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...workspaceHeaders },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: parsed.title }),
   });
   if (!resp.ok) return structuredHttpFailure(resp);

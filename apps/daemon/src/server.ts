@@ -303,7 +303,6 @@ import {
   resolveSandboxRuntimeConfig,
 } from './sandbox-mode.js';
 import {
-  backfillDesignSystemWorkspaceResources,
   buildUserDesignSystemArchive,
   createUserDesignSystem,
   deleteUserDesignSystem,
@@ -323,12 +322,7 @@ import {
   syncUserDesignSystemAssetsFromFiles,
   updateUserDesignSystem,
   updateUserDesignSystemRevisionStatus,
-  type UserDesignSystemInput,
 } from './design-systems/index.js';
-import {
-  createWorkspaceOwnedDesignSystem as persistWorkspaceOwnedDesignSystem,
-  deleteWorkspaceOwnedDesignSystem as removeWorkspaceOwnedDesignSystem,
-} from './design-systems/workspace-owned-create.js';
 import { createDesignSystemGenerationJobStore } from './design-systems/generation-jobs.js';
 import { createDesignSystemServerServices } from './design-systems/server-services.js';
 import { prepareDesignTokenContractRebuild } from './design-systems/token-contract-rebuild.js';
@@ -2574,9 +2568,6 @@ export async function startServer({
   }
 
   const designSystemServices = createDesignSystemServerServices({
-    // `db` (below) is not initialized yet at this point in `startServer`.
-    // Design-system catalog scoping resolves it lazily after startup.
-    getDb: () => db,
     roots: { SKILL_ROOTS, DESIGN_TEMPLATE_ROOTS, ALL_SKILL_LIKE_ROOTS },
     paths: { PROJECTS_DIR, DESIGN_SYSTEMS_DIR, USER_DESIGN_SYSTEMS_DIR },
     skills: { listSkills, findSkillById },
@@ -2601,31 +2592,6 @@ export async function startServer({
       listFiles,
       resolveProjectDir,
       isSafeId,
-    },
-    bindProjectToWorkspace: (projectId, createdAt, designSystem) => {
-      const workspaceId = designSystem.workspaceId?.trim();
-      if (!workspaceId) return;
-      const binding = getWorkspaceResource(
-        db,
-        'design_system',
-        workspaceId,
-        designSystem.id,
-      );
-      const memberId = binding?.createdByWorkspaceMemberId?.trim();
-      if (!memberId) return;
-      ensureWorkspaceProject(db, {
-        projectId,
-        workspaceId,
-        visibility: 'personal',
-        resourceState: 'active',
-        createdByWorkspaceMemberId: memberId,
-        updatedByWorkspaceMemberId: memberId,
-        syncState: 'local_only',
-        resourceHubResourceId: null,
-        cloudTombstonedAt: null,
-        createdAt,
-        updatedAt: createdAt,
-      });
     },
   });
   const {
@@ -3121,88 +3087,6 @@ export async function startServer({
       ? workspaceContextFromDirectoryItem(membership, configuredAmrEnv())
       : null;
   };
-  /**
-   * Resolve design-system ownership/filtering from this exact request.
-   *
-   * Catalog and create are data-plane operations. Daemon-global active/current
-   * state can change between two tabs, so it is not authority for deciding
-   * which Workspace a request reads or writes.
-   */
-  async function resolveDesignSystemWorkspaceContext(
-    req: any,
-  ): Promise<import('./collab/workspace-resource-mutation.js').WorkspaceResourceContext | null> {
-    const claimed = workspaceResourceContextFromRequest(req);
-    // A completely headerless local/signed-out request is the explicit legacy
-    // lane: built-ins plus unclaimed local resources, and new resources remain
-    // unbound. A half-specified identity is never that lane and is rejected by
-    // the verifier below.
-    if (claimed === null) return null;
-    const verified = await verifyExplicitWorkspaceRequestContext({ req });
-    if (!verified.ok) {
-      throw Object.assign(new Error(verified.message), {
-        status: verified.status,
-        code: verified.code,
-        ...(verified.retryable ? { retryable: true } : {}),
-      });
-    }
-    return verified.context;
-  }
-
-  async function resolveDesignSystemWorkspaceScope(req: any): Promise<string | null> {
-    const context = await resolveDesignSystemWorkspaceContext(req);
-    return context?.workspaceId.trim() || null;
-  }
-
-  /**
-   * Create a user design system CLAIMED by the workspace it was authored in.
-   *
-   * User design systems share one flat directory, so the claim written here is
-   * the only thing that lets `GET /api/design-systems` keep one workspace's
-   * library out of another's (#145). Stamping at creation is deliberate: it is
-   * the one moment the authoring workspace is unambiguous, whereas deciding
-   * ownership later (at read time, from whatever workspace happens to be
-   * active) would re-home a system every time the user switched.
-   *
-   * Envelope double-write (spec 9.2): `metadata.json` stays the only thing
-   * `listDesignSystems`'s filter reads, but a claimed system also gets a row
-   * in the generic `workspace_resources` table. Both writes happen from this
-   * single call site, so they can never drift apart.
-   */
-  const reservedDesignSystemResourceIds = (): Set<string> => {
-    const rows = db.prepare(
-      `SELECT resource_id AS resourceId
-         FROM workspace_resources
-        WHERE resource_type = 'design_system'`,
-    ).all() as Array<{ resourceId?: string }>;
-    return new Set(rows.flatMap((row) => {
-      const resourceId = row.resourceId?.trim();
-      return resourceId ? [resourceId] : [];
-    }));
-  };
-  const createWorkspaceOwnedDesignSystemForContext = (
-    root: string,
-    input: UserDesignSystemInput,
-    context: import('./collab/workspace-resource-mutation.js').WorkspaceResourceContext | null,
-  ) => persistWorkspaceOwnedDesignSystem(root, input, context, {
-    listReservedResourceIds: reservedDesignSystemResourceIds,
-    ensureWorkspaceResource: (resourceType, workspaceId, resourceId, envelope) => {
-      // The filesystem allocation awaited above, so another request could
-      // have claimed this logical id in the meantime. Fail before reusing its
-      // envelope; the wrapper removes only the directory it just allocated.
-      if (reservedDesignSystemResourceIds().has(resourceId)) {
-        throw new Error('DESIGN_SYSTEM_ID_CONFLICT');
-      }
-      return ensureWorkspaceResource(db, resourceType, workspaceId, resourceId, envelope);
-    },
-  });
-  const createWorkspaceOwnedDesignSystem = async (
-    root: string,
-    input: UserDesignSystemInput,
-    req: any,
-  ) => {
-    const context = await resolveDesignSystemWorkspaceContext(req);
-    return createWorkspaceOwnedDesignSystemForContext(root, input, context);
-  };
   // Preserve the legacy observation API for compatibility tests and dev
   // tooling. Production data-plane routes never read current/lastKnown; they
   // verify the exact Workspace/member carried by each request.
@@ -3241,15 +3125,6 @@ export async function startServer({
     refreshWorkspaceAccountIdentity();
     return verifyWorkspaceReadAuthority(req);
   };
-  // Spec 9.2 one-time backfill: claim every pre-existing user design system
-  // whose metadata.json already names a workspace into the generic
-  // `workspace_resources` table too. Idempotent (see
-  // `backfillDesignSystemWorkspaceResources`'s own doc comment), so running
-  // it unconditionally on every startup is deliberate, same as
-  // `reconcileImpossibleTeamShares` just above.
-  void backfillDesignSystemWorkspaceResources(db, USER_DESIGN_SYSTEMS_DIR).catch((error) => {
-    console.warn('[od] design-system workspace-resource backfill failed:', error);
-  });
   const verifyProjectWorkspaceContextForRequest = async (
     req: any,
     projectId?: string,
@@ -4058,7 +3933,7 @@ export async function startServer({
     verifyPersonalProjectDeleteLeaseAuthority,
     fetchWorkspaceDirectory,
     configuredEnv: configuredAmrEnv,
-    createWorkspaceOwnedDesignSystem,
+    createUserDesignSystem,
     pluginScope: {
       loadRegistry: loadPluginRegistryView,
       getPlugin: (id) => getInstalledPlugin(db, id),
@@ -4133,17 +4008,13 @@ export async function startServer({
 
   // Resource catalog
   registerStaticResourceRoutes(app, {
-    db,
     http: httpDeps,
     paths: pathDeps,
-    verifyWorkspaceReadAuthority,
-    verifyWorkspaceRequestAuthority,
     resources: {
       listAllSkills,
       listAllDesignTemplates,
       listAllSkillLikeEntries,
       listAllDesignSystems,
-      resolveWorkspaceScope: resolveDesignSystemWorkspaceScope,
       mimeFor,
     },
     tokenContractRebuild: {
@@ -4167,11 +4038,9 @@ export async function startServer({
     paths: pathDeps,
     projectStore: projectStoreDeps,
     projectFiles: projectFileDeps,
-    verifyWorkspaceRequestAuthority,
-    workspaceResources: { getWorkspaceResource, getWorkspaceResourceByResourceId },
     designSystems: {
       buildUserDesignSystemArchive,
-      createUserDesignSystem: createWorkspaceOwnedDesignSystem,
+      createUserDesignSystem,
       deleteUserDesignSystem,
       ensureUserDesignSystemWorkspaceProject,
       listAllDesignSystems,
@@ -4194,18 +4063,7 @@ export async function startServer({
   registerBrandRoutes(app, {
     brandsRoot: BRANDS_DIR,
     userDesignSystemsRoot: USER_DESIGN_SYSTEMS_DIR,
-    resolveDesignSystemWorkspaceId: resolveDesignSystemWorkspaceScope,
-    authorizeDesignSystemRead: designSystemRouteServices.authorizeDesignSystemRead,
     deleteDesignSystemForRequest: designSystemRouteServices.deleteDesignSystemForRequest,
-    isDesignSystemWorkspaceBound: (designSystemId) =>
-      Boolean(getWorkspaceResourceByResourceId(db, 'design_system', designSystemId)),
-    createWorkspaceOwnedDesignSystem,
-    deleteWorkspaceOwnedDesignSystem: (root, designSystemId) =>
-      removeWorkspaceOwnedDesignSystem(root, designSystemId, {
-        deleteUserDesignSystem,
-        deleteWorkspaceResourceByResourceId: (resourceType, resourceId) =>
-          deleteWorkspaceResourceByResourceId(db, resourceType, resourceId),
-      }),
     projectsRoot: PROJECTS_DIR,
     skillsRoot: SKILLS_DIR,
     dataDir: RUNTIME_DATA_DIR,

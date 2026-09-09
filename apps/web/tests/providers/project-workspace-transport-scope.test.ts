@@ -437,14 +437,13 @@ describe('persisted project Workspace transport scope', () => {
       'rendered',
       workspaceA,
     );
-    const staticUrlA = designSystemStaticUrl('ds-1', 'system/kit.html', workspaceA);
+    const staticUrlA = designSystemStaticUrl('ds-1', 'system/kit.html');
     liveArtifactPreviewUrl('project-1', 'artifact-1', 'rendered', workspaceB);
-    designSystemStaticUrl('ds-1', 'system/kit.html', workspaceB);
-    for (const url of [previewUrlA, staticUrlA]) {
-      const parsed = new URL(url, 'https://od.local');
-      expect(parsed.searchParams.get('workspaceId')).toBe('workspace-a');
-      expect(parsed.searchParams.get('workspaceMemberId')).toBe('member-a');
-    }
+    designSystemStaticUrl('ds-1', 'system/kit.html');
+    const previewParsed = new URL(previewUrlA, 'https://od.local');
+    expect(previewParsed.searchParams.get('workspaceId')).toBe('workspace-a');
+    expect(previewParsed.searchParams.get('workspaceMemberId')).toBe('member-a');
+    expect(new URL(staticUrlA, 'https://od.local').searchParams.get('workspaceId')).toBeNull();
 
     await fetchLiveArtifacts('p1-live-list', { workspaceContext: workspaceA });
     await fetchLiveArtifact('project-1', 'artifact-1', workspaceA);
@@ -465,39 +464,36 @@ describe('persisted project Workspace transport scope', () => {
     await openProjectInEditor('project-1', 'vscode', workspaceA);
     await fetchSkill('skill-1');
     await fetchSkillFiles('skill-1');
-    await fetchDesignSystem('ds-1', workspaceA);
-    await fetchDesignSystemFiles('ds-1', workspaceA);
-    await fetchDesignSystemFile('ds-1', 'DESIGN.md', workspaceA);
-    await ensureDesignSystemWorkspace('ds-1', workspaceA);
-    await fetchDesignSystemPreview('ds-1', workspaceA);
-    await fetchDesignSystemShowcase('ds-1', workspaceA);
-    await startDesignSystemGenerationJob({ title: 'DS' }, workspaceA);
-    await fetchDesignSystemGenerationJob('job-1', workspaceA);
-    await fetchDesignSystemRevisions('ds-1', workspaceA);
+    await fetchDesignSystem('ds-1');
+    await fetchDesignSystemFiles('ds-1');
+    await fetchDesignSystemFile('ds-1', 'DESIGN.md');
+    await ensureDesignSystemWorkspace('ds-1');
+    await fetchDesignSystemPreview('ds-1');
+    await fetchDesignSystemShowcase('ds-1');
+    await startDesignSystemGenerationJob({ title: 'DS' });
+    await fetchDesignSystemGenerationJob('job-1');
+    await fetchDesignSystemRevisions('ds-1');
     await updateDesignSystemRevisionStatus(
       'ds-1',
       'revision-1',
       'accepted',
-      workspaceA,
     );
     await startDesignSystemRevisionJob(
       'ds-1',
       { feedback: 'adjust' },
-      workspaceA,
     );
     await startDesignSystemTokenContractRebuildJob(
       'ds-1',
       { force: true },
-      workspaceA,
     );
-    await updateDesignSystemDraft('ds-1', { title: 'Updated' }, workspaceA);
-    await syncDesignSystemAssetsFromWorkspace('ds-1', workspaceA);
-    await deleteDesignSystemDraft('ds-1', workspaceA);
+    await updateDesignSystemDraft('ds-1', { title: 'Updated' });
+    await syncDesignSystemAssetsFromWorkspace('ds-1');
+    await deleteDesignSystemDraft('ds-1');
 
     expect(fetchMock).toHaveBeenCalledTimes(27);
     for (const [input, init] of fetchMock.mock.calls) {
       const url = String(input);
-      if (url.startsWith('/api/skills/')) {
+      if (url.startsWith('/api/skills/') || url.startsWith('/api/design-systems/')) {
         expect(requestScope(init)).toEqual([null, null]);
       } else {
         expect(requestScope(init)).toEqual(['workspace-a', 'member-a']);

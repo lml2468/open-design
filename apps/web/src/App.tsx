@@ -433,6 +433,8 @@ interface SettingsReturnTarget {
   identityScopeKey: string;
 }
 
+const DESIGN_SYSTEM_CATALOG_IDENTITY = 'daemon-local';
+
 /**
  * The project route must never use `!activeProject` as an unbounded loading
  * condition. Once the initial list is complete, every absent-project path is
@@ -478,17 +480,7 @@ function AppInner() {
     context: workspaceContext,
     loading: workspaceContextLoading,
   } = workspaceContextState;
-  const currentWorkspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
   const workspaceAccountGeneration = currentWorkspaceAccountGeneration();
-  // Catalog display state is account-scoped in addition to Workspace-scoped.
-  // During an unseeded identity transition the hook intentionally retains the
-  // previous context while the replacement account is resolved; a pending
-  // sentinel makes that retained context unusable for display immediately.
-  const currentWorkspaceCatalogIdentity = JSON.stringify(
-    workspaceContextState.identityChangePending
-      ? ['pending-account', workspaceAccountGeneration]
-      : ['workspace-account', workspaceAccountGeneration, currentWorkspaceIdentity],
-  );
   const workspaceContextRef = useRef<WorkspaceCollabContext | null>(null);
   const workspaceContextStateRef = useRef(workspaceContextState);
   workspaceContextRef.current = workspaceContext;
@@ -610,20 +602,12 @@ function AppInner() {
     identity: string;
     items: DesignSystemSummary[];
   }>(() => ({
-    identity: currentWorkspaceCatalogIdentity,
+    identity: DESIGN_SYSTEM_CATALOG_IDENTITY,
     items: [],
   }));
-  // Like skills and projects, a design-system catalog belongs to one exact
-  // Workspace membership. Effects refresh after React commits, so merely
-  // guarding late responses is not enough: without this render-time identity
-  // check, switching A -> B paints A's systems under B until B's request
-  // finishes. Fail closed during that gap; opening the picker still reuses the
-  // already-loaded list instantly when the identity has not changed.
-  const designSystems = workspaceDesignSystems.identity === currentWorkspaceCatalogIdentity
-    ? workspaceDesignSystems.items
-    : [];
+  const designSystems = workspaceDesignSystems.items;
   const skillsRequestGenerationRef = useRef(0);
-  const designSystemsRequestGenerationRef = useRef<Map<string, number>>(new Map());
+  const designSystemsRequestGenerationRef = useRef(0);
   const [pendingDesignSystemRevisionJobs, setPendingDesignSystemRevisionJobs] = useState<
     Record<string, DesignSystemGenerationJob>
   >({});
@@ -1087,32 +1071,11 @@ function AppInner() {
         markSkillRegistryReady('templates');
       });
 
-      const designSystemsContext = workspaceContextRef.current;
-      const designSystemsWorkspaceIdentity = workspaceIdentityCacheKey(designSystemsContext);
-      const designSystemsAccountGeneration = currentWorkspaceAccountGeneration();
-      const designSystemsCatalogIdentity = JSON.stringify([
-        'workspace-account',
-        designSystemsAccountGeneration,
-        designSystemsWorkspaceIdentity,
-      ]);
-      const designSystemsRequestGeneration =
-        (designSystemsRequestGenerationRef.current.get(designSystemsCatalogIdentity) ?? 0) + 1;
-      designSystemsRequestGenerationRef.current.set(
-        designSystemsCatalogIdentity,
-        designSystemsRequestGeneration,
-      );
-      void fetchDesignSystems(designSystemsContext).then((list) => {
-        if (
-          cancelled ||
-          workspaceContextStateRef.current.identityChangePending ||
-          designSystemsRequestGenerationRef.current.get(designSystemsCatalogIdentity)
-            !== designSystemsRequestGeneration ||
-          currentWorkspaceAccountGeneration() !== designSystemsAccountGeneration ||
-          workspaceIdentityCacheKey(workspaceContextRef.current)
-            !== designSystemsWorkspaceIdentity
-        ) return;
+      const designSystemsRequestGeneration = ++designSystemsRequestGenerationRef.current;
+      void fetchDesignSystems().then((list) => {
+        if (cancelled || designSystemsRequestGenerationRef.current !== designSystemsRequestGeneration) return;
         setWorkspaceDesignSystems({
-          identity: designSystemsCatalogIdentity,
+          identity: DESIGN_SYSTEM_CATALOG_IDENTITY,
           items: list,
         });
         setDsLoading(false);
@@ -1341,49 +1304,12 @@ function AppInner() {
   }, [beginProjectListRequest, listLocalProjects, reconcileFetchedProjects]);
 
   const refreshDesignSystems = useCallback(async () => {
-    // Carry the captured Workspace/member identity on the request. The daemon
-    // verifies that exact membership instead of consulting mutable ambient
-    // Workspace state, and the same identity key prevents an A response from
-    // committing after the UI has moved to B.
-    if (workspaceContextStateRef.current.identityChangePending) return;
-    const issuedContext = workspaceContextRef.current;
-    const issuedIdentity = workspaceIdentityCacheKey(issuedContext);
-    const issuedAccountGeneration = currentWorkspaceAccountGeneration();
-    const issuedCatalogIdentity = JSON.stringify([
-      'workspace-account',
-      issuedAccountGeneration,
-      issuedIdentity,
-    ]);
-    const requestGeneration =
-      (designSystemsRequestGenerationRef.current.get(issuedCatalogIdentity) ?? 0) + 1;
-    designSystemsRequestGenerationRef.current.set(issuedCatalogIdentity, requestGeneration);
-    const list = await fetchDesignSystems(issuedContext);
-    if (
-      workspaceContextStateRef.current.identityChangePending
-      || designSystemsRequestGenerationRef.current.get(issuedCatalogIdentity)
-        !== requestGeneration
-      || currentWorkspaceAccountGeneration() !== issuedAccountGeneration
-      || workspaceIdentityCacheKey(workspaceContextRef.current) !== issuedIdentity
-    ) return;
-    setWorkspaceDesignSystems({ identity: issuedCatalogIdentity, items: list });
-    // Bootstrap and this workspace-scoped refresh can overlap on launch.
-    // Either response is a complete catalog for the active daemon identity,
-    // so do not leave a successful refresh hidden behind bootstrap's loader
-    // when that duplicate request is cancelled or stalls.
+    const requestGeneration = ++designSystemsRequestGenerationRef.current;
+    const list = await fetchDesignSystems();
+    if (designSystemsRequestGenerationRef.current !== requestGeneration) return;
+    setWorkspaceDesignSystems({ identity: DESIGN_SYSTEM_CATALOG_IDENTITY, items: list });
     setDsLoading(false);
   }, []);
-
-  // The design-system catalog is verified against the exact Workspace/member
-  // identity. Re-read whenever either half changes; a role replacement can
-  // reuse the Workspace id while changing the authoritative membership.
-  useEffect(() => {
-    if (workspaceContextState.identityChangePending) return;
-    void refreshDesignSystems();
-  }, [
-    currentWorkspaceCatalogIdentity,
-    refreshDesignSystems,
-    workspaceContextState.identityChangePending,
-  ]);
 
   const refreshSkills = useCallback(async () => {
     const requestGeneration = ++skillsRequestGenerationRef.current;
@@ -3287,9 +3213,7 @@ function AppInner() {
         onSkillsChanged={handleSkillsChanged}
         onRefreshAgents={refreshAgents}
         skillsLoading={skillsLoading}
-        designSystemsLoading={
-          workspaceDesignSystems.identity !== currentWorkspaceCatalogIdentity || dsLoading
-        }
+        designSystemsLoading={dsLoading}
         projectsLoading={projectsLoading}
         promptTemplatesLoading={promptTemplatesLoading}
         onCreateProject={handleCreateProject}

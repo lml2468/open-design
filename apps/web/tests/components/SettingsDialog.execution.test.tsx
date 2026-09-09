@@ -4301,7 +4301,7 @@ describe('SettingsDialog design systems section', () => {
 
     fireEvent.click(screen.getByText('Signal Green'));
     await waitFor(() => {
-      expect(fetchDesignSystemMock).toHaveBeenCalledWith('signal-green', null);
+      expect(fetchDesignSystemMock).toHaveBeenCalledWith('signal-green');
       expect(screen.getByText('design system body for signal-green')).toBeTruthy();
     });
 

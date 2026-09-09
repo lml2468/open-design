@@ -44,16 +44,8 @@ export interface PathDeps {
 
 export interface ResourceDeps {
   FIRST_PARTY_ATOMS?: Array<any>;
-  // `workspaceId` scopes the user half of the catalog to one workspace (#145).
-  // Omit it to resolve a design system by id from anywhere.
-  listAllDesignSystems: (options?: {
-    workspaceId?: string | null;
-    workspaceMemberId?: string | null;
-  }) => Promise<Array<DesignSystemSummary & { source?: string }>>;
-  // The workspace a catalog read should be scoped to (#145). Data-plane reads
-  // resolve it from this exact request's explicit Workspace/member identity,
-  // never from a daemon-global active/current Workspace.
-  resolveWorkspaceScope?: (req: any) => Promise<string | null>;
+  /** Design systems are installed in one daemon-local catalog. */
+  listAllDesignSystems: () => Promise<Array<DesignSystemSummary & { source?: string }>>;
   // Functional skills are installed in one daemon-local catalog. Workspace
   // membership governs Collaboration Server projects, not local skill files.
   listAllSkills: () => Promise<Array<SkillInfo & { source?: string }>>;

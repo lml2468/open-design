@@ -234,16 +234,10 @@ export interface RegisterProjectRoutesDeps extends RouteDeps<'db' | 'design' | '
   fetchWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
   /** Current settings-backed AMR environment for synthesized project contexts. */
   configuredEnv?: () => Record<string, string>;
-  /**
-   * Persist a design system and its Workspace ownership envelope from the
-   * request's complete local attribution. Production injects the shared
-   * design-system creation service; the optional shape preserves isolated
-   * route harnesses and headerless/local compatibility.
-   */
-  createWorkspaceOwnedDesignSystem?: (
+  /** Persist a design system in the daemon-local catalog. */
+  createUserDesignSystem?: (
     root: string,
     input: UserDesignSystemInput,
-    req: Request,
   ) => Promise<DesignSystemSummary>;
   /**
    * What the daemon has learned about each workspace's type, used to refuse a
@@ -2972,7 +2966,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       let createdDesignSystemId: string | null = null;
       let insertedProject = false;
       try {
-        const createDesignSystem = ctx.createWorkspaceOwnedDesignSystem
+        const createDesignSystem = ctx.createUserDesignSystem
           ?? ((root: string, input: UserDesignSystemInput) =>
             createUserDesignSystem(root, input));
         const designSystem = await createDesignSystem(USER_DESIGN_SYSTEMS_DIR, {
@@ -2987,7 +2981,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
             notes: sourceNotes,
             sourceNotes,
           },
-        }, req);
+        });
         createdDesignSystemId = designSystem.id;
 
         const metadata = {

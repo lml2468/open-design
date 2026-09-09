@@ -25,7 +25,6 @@ import {
   listProjectsAwaitingInput,
   type insertProject,
 } from './db.js';
-import type { DesignSystemSummary, UserDesignSystemInput } from './design-systems/index.js';
 import { resolveProjectDir } from './projects.js';
 import {
   continueBrandExtraction,
@@ -50,30 +49,6 @@ export interface BrandRoutesDeps {
    *  `user:<id>` design system, so selecting a brand in the composer reuses
    *  the existing design-system apply flow. */
   userDesignSystemsRoot: string;
-  /** The workspace an extracted brand's design system should be claimed by
-   *  (#145), resolved from the exact request's explicit identity. */
-  resolveDesignSystemWorkspaceId?: (req: Request) => Promise<string | null>;
-  /** Exact-scope creator owned by server.ts; keeps metadata and the generic
-   * workspace_resources envelope in one operation. */
-  createWorkspaceOwnedDesignSystem?: (
-    root: string,
-    input: UserDesignSystemInput,
-    req: Request,
-  ) => Promise<DesignSystemSummary>;
-  /** Roll back both the filesystem record and its generic envelope. */
-  deleteWorkspaceOwnedDesignSystem?: (
-    root: string,
-    designSystemId: string,
-  ) => Promise<boolean>;
-  /** Exact read gate shared with the design-system data plane. */
-  authorizeDesignSystemRead?: (
-    req: Request,
-    res: Response,
-    designSystemId: string,
-    allowNavigationQuery?: boolean,
-  ) => Promise<boolean>;
-  /** Whether this logical design-system id has a persisted Workspace owner. */
-  isDesignSystemWorkspaceBound?: (designSystemId: string) => boolean;
   /** Canonical design-system deletion gate shared with its own DELETE route. */
   deleteDesignSystemForRequest?: (
     req: Request,
@@ -129,25 +104,6 @@ type ProgrammaticExtractionAbortResult = 'none' | 'settled' | 'timeout';
 export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): void {
   const { brandsRoot, userDesignSystemsRoot, projectsRoot, skillsRoot, dataDir, db, randomId } = deps;
   const activeProgrammaticBrandExtractions = new Map<string, ActiveProgrammaticBrandExtraction>();
-  const sendWorkspaceScopeError = (res: Response, error: unknown): boolean => {
-    if (
-      !error
-      || typeof error !== 'object'
-      || !('status' in error)
-      || (error.status !== 400 && error.status !== 403 && error.status !== 503)
-      || !('code' in error)
-      || typeof error.code !== 'string'
-    ) {
-      return false;
-    }
-    res.status(error.status).json({
-      error: error.code,
-      message: error instanceof Error ? error.message : String(error.code),
-      ...('retryable' in error && error.retryable === true ? { retryable: true } : {}),
-    });
-    return true;
-  };
-
   function trackProgrammaticBrandExtraction(
     brandId: string,
     controller: AbortController,
@@ -288,20 +244,12 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
         // returning, then harvests + synthesizes + finalizes the design system
         // in the background.
         userDesignSystemsRoot,
-        designSystemWorkspaceId: (await deps.resolveDesignSystemWorkspaceId?.(req)) ?? null,
         dataDir,
         programmaticAbortSignal: programmaticAbortController.signal,
         onBackgroundExtraction: (settled) => {
           backgroundExtractionRef.current = settled;
         },
       };
-      if (deps.createWorkspaceOwnedDesignSystem) {
-        startOptions.createUserDesignSystem = (root, input) =>
-          deps.createWorkspaceOwnedDesignSystem!(root, input, req);
-      }
-      if (deps.deleteWorkspaceOwnedDesignSystem) {
-        startOptions.deleteUserDesignSystem = deps.deleteWorkspaceOwnedDesignSystem;
-      }
       if (url.trim()) startOptions.url = url;
       if (description.trim()) startOptions.description = description;
       if (designMd.trim()) startOptions.designMd = designMd;
@@ -317,7 +265,6 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
       trackProgrammaticBrandExtraction(result.id, programmaticAbortController, backgroundExtraction);
       res.json(result);
     } catch (err) {
-      if (sendWorkspaceScopeError(res, err)) return;
       const message = err instanceof Error ? err.message : String(err);
       // A bad URL is the only expected throw; everything else is a 500.
       const status = /valid http/i.test(message) ? 400 : 500;
@@ -470,7 +417,6 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
         id,
         brandsRoot,
         userDesignSystemsRoot,
-        designSystemWorkspaceId: (await deps.resolveDesignSystemWorkspaceId?.(req)) ?? null,
         projectsRoot,
         skillsRoot,
         dataDir,
@@ -482,7 +428,6 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
       const result = await finalizeBrand(finalizeOptions);
       res.json(result);
     } catch (err) {
-      if (sendWorkspaceScopeError(res, err)) return;
       const message = err instanceof Error ? err.message : String(err);
       const status = /not found/i.test(message) ? 404 : 422;
       res.status(status).json({ error: message });
@@ -589,7 +534,7 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
         id,
         detail?.meta.designSystemId && deps.deleteDesignSystemForRequest
           ? async () => true
-          : deps.deleteWorkspaceOwnedDesignSystem,
+          : undefined,
       );
       res.json({ ok: true });
     } catch (err) {
@@ -604,18 +549,6 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
       const detail = readBrandDetail(brandsRoot, id);
       const brandLogoPath = resolveBrandLogoPath(brandsRoot, id);
       let logoPath = brandLogoPath;
-      const designSystemId = detail?.meta.designSystemId;
-      const designSystemBound = designSystemId
-        ? (deps.isDesignSystemWorkspaceBound?.(designSystemId) ?? true)
-        : false;
-      if (brandLogoPath && designSystemId && designSystemBound && deps.authorizeDesignSystemRead) {
-        if (!(await deps.authorizeDesignSystemRead(
-          req,
-          res,
-          designSystemId,
-          true,
-        ))) return;
-      }
       if (!logoPath) {
         logoPath = resolveBackingProjectLogoPath({ brandsRoot, projectsRoot, db }, id);
       }

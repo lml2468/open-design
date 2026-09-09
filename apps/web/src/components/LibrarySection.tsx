@@ -52,8 +52,6 @@ import { LibraryPreviewModal } from './LibraryPreviewModal';
 import { LibraryUploadModal } from './LibraryUploadModal';
 import styles from './LibrarySection.module.css';
 import { useT } from '../i18n';
-import { useWorkspaceContext } from '../collab/useWorkspaceContext';
-import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
 
 type Translate = ReturnType<typeof useT>;
 
@@ -497,8 +495,6 @@ const LibraryCard = memo(function LibraryCard({
 
 export function LibrarySection({ active, onOpenProject }: Props) {
   const t = useT();
-  const { context: workspaceContext } = useWorkspaceContext();
-  const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
   const [assets, setAssets] = useState<LibraryAsset[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -738,23 +734,18 @@ export function LibrarySection({ active, onOpenProject }: Props) {
 
   // --- multi-select → design system ---------------------------------------
 
-  useEffect(() => {
-    dsLoadedRef.current = false;
-    setDsList([]);
-  }, [workspaceIdentity]);
-
   // Lazily load the user's own (editable) design systems the first time the
   // "Use in design system" menu opens — these are the ones that can be refined.
   useEffect(() => {
     if (!dsMenuOpen || dsLoadedRef.current) return;
     dsLoadedRef.current = true;
     let cancelled = false;
-    void fetchDesignSystems(workspaceContext).then((list) =>
+    void fetchDesignSystems().then((list) =>
       !cancelled && setDsList(list.filter((d) => d.source === 'user')));
     return () => {
       cancelled = true;
     };
-  }, [dsMenuOpen, workspaceIdentity]);
+  }, [dsMenuOpen]);
 
   // Dismiss the menu on outside click / Escape. Deliberately NOT a full-screen
   // backdrop element: a stray bare overlay can paint opaque (e.g. UA button
@@ -826,10 +817,9 @@ export function LibrarySection({ active, onOpenProject }: Props) {
       if (!chosen.length) return;
       setDsBusy(true);
       try {
-        const mutationWorkspaceContext = workspaceContext;
         let projectId = ds.projectId;
         if (!projectId) {
-          const detail = await fetchDesignSystem(ds.id, mutationWorkspaceContext);
+          const detail = await fetchDesignSystem(ds.id);
           projectId = detail?.projectId;
         }
         if (!projectId) {
@@ -875,7 +865,7 @@ export function LibrarySection({ active, onOpenProject }: Props) {
         setDsBusy(false);
       }
     },
-    [assets, onOpenProject, selectedIds, workspaceIdentity],
+    [assets, onOpenProject, selectedIds],
   );
 
   const toggleOne = useCallback((id: string, index: number) => {

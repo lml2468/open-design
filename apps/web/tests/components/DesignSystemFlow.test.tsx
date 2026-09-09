@@ -2753,9 +2753,7 @@ describe('DesignSystemDetailView', () => {
     expect(workspace.getAttribute('data-files-generation')).toBe(generationBeforeFailure);
   });
 
-  it.each(['system', 'workspace'] as const)(
-    'ignores an in-flight file refresh after the %s identity changes',
-    async (switchKind) => {
+  it('ignores an in-flight file refresh after the design-system identity changes', async () => {
       const makeSystem = (suffix: string): DesignSystemDetail => ({
         id: `user:scope-${suffix}`,
         title: `Scope ${suffix}`,
@@ -2790,20 +2788,16 @@ describe('DesignSystemDetailView', () => {
       };
       const fileB: ProjectFile = { ...fileA, name: 'scope-b.html', mtime: 2 };
       const staleFile: ProjectFile = { ...fileA, name: 'late-scope-a.html', mtime: 3 };
-      const contextA = { ...teamContext(), workspaceId: 'workspace-a', teamId: 'team-a' };
-      const contextB = { ...teamContext(), workspaceId: 'workspace-b', teamId: 'team-b' };
       let resolveStale!: (files: ProjectFile[]) => void;
       const staleRefresh = new Promise<ProjectFile[]>((resolve) => { resolveStale = resolve; });
 
-      workspaceContextState.context = switchKind === 'workspace' ? contextA : null;
       mocks.fetchDesignSystem.mockImplementation(async (systemId: string) => (
         systemId === systemB.id ? systemB : systemA
       ));
       mocks.ensureDesignSystemWorkspace.mockImplementation(async (
         systemId: string,
-        context: WorkspaceCollabContext | null,
       ) => {
-        const useB = systemId === systemB.id || context?.workspaceId === contextB.workspaceId;
+        const useB = systemId === systemB.id;
         return useB
           ? { project: projectB, files: [fileB] }
           : { project: projectA, files: [fileA] };
@@ -2827,8 +2821,7 @@ describe('DesignSystemDetailView', () => {
       fireEvent.click(screen.getByTestId('refresh-design-system-files'));
       await waitFor(() => expect(mocks.fetchProjectFiles).toHaveBeenCalledTimes(1));
 
-      if (switchKind === 'workspace') workspaceContextState.context = contextB;
-      rerender(renderDetail(switchKind === 'system' ? systemB.id : systemA.id));
+      rerender(renderDetail(systemB.id));
       workspace = await screen.findByTestId('design-system-files');
       await waitFor(() => expect(workspace.getAttribute('data-file-names')).toBe('scope-b.html'));
       const generationAfterSwitch = workspace.getAttribute('data-files-generation');
@@ -2839,8 +2832,7 @@ describe('DesignSystemDetailView', () => {
 
       expect(workspace.getAttribute('data-file-names')).toBe('scope-b.html');
       expect(workspace.getAttribute('data-files-generation')).toBe(generationAfterSwitch);
-    },
-  );
+    });
 
   it('opens chat file links through the Files tab workspace (#5611 round 9)', async () => {
     // The design-system chat must thread the workspace's known-file set and
@@ -3133,7 +3125,7 @@ describe('DesignSystemDetailView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Design Files' }));
 
     await waitFor(() =>
-      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id, null),
+      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id),
     );
     await waitFor(() => expect(screen.getByTestId('design-system-files')).toBeTruthy());
     expect(screen.queryByText('Opening the design system workspace...')).toBeNull();
@@ -3207,11 +3199,10 @@ describe('DesignSystemDetailView', () => {
     );
 
     await waitFor(() =>
-      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id, workspaceContext),
+      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id),
     );
     await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith(project.id));
     expect(mocks.fetchProjectFiles).toHaveBeenCalledWith(project.id, {
-      workspaceContext,
       requireAuthoritative: true,
     });
     expect(onProjectsRefresh).toHaveBeenCalledTimes(1);
@@ -3262,7 +3253,7 @@ describe('DesignSystemDetailView', () => {
     );
 
     await waitFor(() =>
-      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id, null),
+      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id),
     );
     await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith(system.projectId));
     expect(mocks.fetchProjectFiles).not.toHaveBeenCalled();
@@ -3462,7 +3453,7 @@ describe('DesignSystemDetailView', () => {
     fireEvent.click(button);
 
     await waitFor(() =>
-      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id, null),
+      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id),
     );
     await waitFor(() =>
       expect(mocks.createConversation).toHaveBeenCalledWith(project.id, 'Design system'),

@@ -340,7 +340,7 @@ export function DesignSystemsTab({
     try {
       const updated = await updateDesignSystemDraft(system.id, {
         status: willPublish ? 'published' : 'draft',
-      }, workspaceContext);
+      });
       succeeded = Boolean(updated);
       if (!succeeded) errorCode = 'DS_STATUS_UPDATE_RETURNED_NULL';
       if (succeeded) {
@@ -404,7 +404,7 @@ export function DesignSystemsTab({
     let succeeded = false;
     let errorCode: string | undefined;
     try {
-      const deleted = await deleteDesignSystemDraft(system.id, workspaceContext);
+      const deleted = await deleteDesignSystemDraft(system.id);
       succeeded = Boolean(deleted);
       if (!succeeded) errorCode = 'DS_DELETE_RETURNED_FALSE';
       if (succeeded && selectedId === system.id) {
@@ -1137,7 +1137,7 @@ function DesignSystemDetail({
     } else {
       setReloadKey((k) => k + 1);
     }
-    void fetchDesignSystem(system.id, read.context).then((d) => {
+    void fetchDesignSystem(system.id).then((d) => {
       if (cancelled || !read.isStillCurrent(resourceReadIdentityRef.current)) return;
       if (d) setDetail(d);
       setDetailResolved(true);
