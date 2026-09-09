@@ -6,7 +6,6 @@ import type {
   ConnectorStatusResponse,
   DesignSystemSummary,
   LibraryAsset,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { streamViaDaemon } from '../providers/daemon';
 import {
@@ -131,7 +130,6 @@ import type {
   TrackingDesignSystemsEntryFrom,
 } from '@open-design/contracts/analytics';
 import { useI18n } from '../i18n';
-import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 
 // Source counts the embedded DS creation flow can report back to its
 // wrapper at Generate-click time. OnboardingView uses this to emit the
@@ -346,7 +344,6 @@ export function DesignSystemCreationFlow({
   designSystems = [],
 }: CreationProps) {
   const { t } = useI18n();
-  const { context: workspaceContext } = useWorkspaceContext();
   const [step, setStep] = useState<SetupStep>('setup');
   // A Library "create design system from selection" hand-off pre-fills the
   // source material with the chosen assets (single-shot; cleared on read).
@@ -972,7 +969,6 @@ export function DesignSystemCreationFlow({
           state,
           composioConfigured,
           githubConnector,
-          workspaceContext,
           onProjectPrepared: (preparedProject) => {
             projectForCreated = preparedProject;
             onProjectPrepared?.(preparedProject);
@@ -1636,7 +1632,6 @@ export function DesignSystemDetailView({
   onInitialRevisionJobConsumed,
 }: DetailProps) {
   const { locale, t } = useI18n();
-  const { context: workspaceContext } = useWorkspaceContext();
   const [system, setSystem] = useState<DesignSystemDetail | null>(null);
   const [body, setBody] = useState('');
   const [tab, setTab] = useState<ReviewTab>('system');
@@ -1685,7 +1680,7 @@ export function DesignSystemDetailView({
     return () => {
       cancelled = true;
     };
-  }, [workspaceContext, workspaceProjectId]);
+  }, [workspaceProjectId]);
   const [workspaceLoadError, setWorkspaceLoadError] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -1828,7 +1823,7 @@ export function DesignSystemDetailView({
     return () => {
       cancelled = true;
     };
-  }, [workspaceContext, workspaceProjectId]);
+  }, [workspaceProjectId]);
 
   useEffect(() => {
     if (!workspaceProjectId) return undefined;
@@ -1876,7 +1871,7 @@ export function DesignSystemDetailView({
     return () => {
       cancelled = true;
     };
-  }, [activeConversationId, workspaceContext, workspaceProjectId]);
+  }, [activeConversationId, workspaceProjectId]);
 
   useEffect(() => {
     return () => {
@@ -1933,7 +1928,7 @@ export function DesignSystemDetailView({
       cancelled = true;
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
-  }, [id, onSystemsRefresh, t, workspaceContext]);
+  }, [id, onSystemsRefresh, t]);
 
   useEffect(() => {
     if (
@@ -1979,7 +1974,7 @@ export function DesignSystemDetailView({
       cancelled = true;
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
-  }, [id, onSystemsRefresh, revisionJob?.id, revisionJob?.status, t, workspaceContext]);
+  }, [id, onSystemsRefresh, revisionJob?.id, revisionJob?.status, t]);
 
   const sections = useMemo(() => parseDesignSystemSections(body, t), [body, t]);
   const published = system?.status === 'published';
@@ -2217,15 +2212,10 @@ export function DesignSystemDetailView({
     };
     let next: ProjectFile[];
     try {
-      next = workspaceContext
-        ? await fetchProjectFiles(projectId, {
-            fresh: options?.fresh,
-            requireAuthoritative: true,
-          })
-        : await fetchProjectFiles(projectId, {
-            fresh: options?.fresh,
-            requireAuthoritative: true,
-          });
+      next = await fetchProjectFiles(projectId, {
+        fresh: options?.fresh,
+        requireAuthoritative: true,
+      });
     } catch {
       // A failed read says nothing about deletion. Preserve the current
       // snapshot and generation for the active lifetime; a stale lifetime
@@ -2240,14 +2230,13 @@ export function DesignSystemDetailView({
     setWorkspaceFilesGeneration(acceptedGeneration);
     onAcceptedGeneration?.(acceptedGeneration);
     return next;
-  }, [workspaceContext, workspaceFilesScopeKey]);
+  }, [workspaceFilesScopeKey]);
 
   const syncDesignSystemBodyFromWorkspace = useCallback(async (projectId: string) => {
     if (!system || !editable) return false;
     const nextBody = await fetchProjectFileText(projectId, 'DESIGN.md', {
       cache: 'no-store',
       cacheBustKey: Date.now(),
-      ...(workspaceContext ? { workspaceContext } : {}),
     });
     if (!nextBody || nextBody === body) return false;
     const updated = await updateDesignSystemDraft(
@@ -2259,7 +2248,7 @@ export function DesignSystemDetailView({
     setBody(updated.body);
     await onSystemsRefresh?.();
     return true;
-  }, [body, editable, onSystemsRefresh, system, workspaceContext]);
+  }, [body, editable, onSystemsRefresh, system]);
 
   // Asset counterpart of syncDesignSystemBodyFromWorkspace (spec 04 §9.3,
   // recvqb1t4FrckM): the text sync above PATCHes DESIGN.md content through
@@ -2272,7 +2261,7 @@ export function DesignSystemDetailView({
     if (!system || !editable) return false;
     const result = await syncDesignSystemAssetsFromWorkspaceRequest(system.id);
     return Boolean(result && result.synced.length > 0);
-  }, [editable, system, workspaceContext]);
+  }, [editable, system]);
 
   const refreshDesignSystemWorkspace = useCallback(async (
     projectId: string,
@@ -4358,7 +4347,6 @@ async function prepareCreatedDesignSystemProject({
   state,
   composioConfigured,
   githubConnector,
-  workspaceContext,
   onProjectPrepared,
   onSystemsRefresh,
   analyticsTrack,
@@ -4369,7 +4357,6 @@ async function prepareCreatedDesignSystemProject({
   state: SetupState;
   composioConfigured: boolean;
   githubConnector: ConnectorDetail | null;
-  workspaceContext?: WorkspaceCollabContext | null;
   onProjectPrepared?: (project: Project) => void;
   onSystemsRefresh?: () => Promise<void> | void;
   analyticsTrack: (
@@ -4404,7 +4391,7 @@ async function prepareCreatedDesignSystemProject({
       });
     }
     const localStart = performance.now();
-    const stagedLocalCode = await stageLocalCodeFiles(project.id, state.codeFileObjects, workspaceContext);
+    const stagedLocalCode = await stageLocalCodeFiles(project.id, state.codeFileObjects);
     if (state.codeFileObjects.length > 0 || state.codeFolders.length > 0) {
       emitSourceIngestResult(analyticsTrack, {
         sourceType: 'local_code',
@@ -4430,11 +4417,7 @@ async function prepareCreatedDesignSystemProject({
       });
     }
     const figStart = performance.now();
-    const stagedFigma = await stageFigmaFiles(
-      project.id,
-      state.figFileObjects,
-      workspaceContext,
-    );
+    const stagedFigma = await stageFigmaFiles(project.id, state.figFileObjects);
     if (state.figFileObjects.length > 0) {
       emitSourceIngestResult(analyticsTrack, {
         sourceType: 'fig',
@@ -4460,7 +4443,7 @@ async function prepareCreatedDesignSystemProject({
       });
     }
     const assetStart = performance.now();
-    const stagedAssets = await stageAssetFiles(project.id, state.assetFileObjects, workspaceContext);
+    const stagedAssets = await stageAssetFiles(project.id, state.assetFileObjects);
     if (state.assetFileObjects.length > 0) {
       emitSourceIngestResult(analyticsTrack, {
         sourceType: 'assets',
@@ -5265,7 +5248,6 @@ function mergeLinkedCodeFolders(metadata: ProjectMetadata | undefined, codeFolde
 async function stageLocalCodeFiles(
   projectId: string,
   files: File[],
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<StagedLocalCodeContext> {
   if (files.length === 0) return { uploadedPaths: [], skippedCount: 0 };
   const selected = selectLocalCodeFiles(files);
@@ -5286,7 +5268,6 @@ async function stageLocalCodeFiles(
 async function stageFigmaFiles(
   projectId: string,
   files: File[],
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<StagedFigmaContext> {
   if (files.length === 0) return { summaryPaths: [], skippedCount: 0 };
   const selected = selectFigmaFiles(files);
@@ -5320,7 +5301,6 @@ async function stageFigmaFiles(
 async function stageAssetFiles(
   projectId: string,
   files: File[],
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<StagedAssetContext> {
   if (files.length === 0) return { uploadedPaths: [], skippedCount: 0 };
   const selected = selectAssetFiles(files);

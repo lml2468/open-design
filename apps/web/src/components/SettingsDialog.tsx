@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import { Button, VisuallyHidden } from '@open-design/components';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { validateBaseUrl } from '@open-design/contracts/api/connectionTest';
 import {
   agentIdToTracking,
@@ -136,7 +135,6 @@ import { DesignSystemsSection } from './DesignSystemsSection';
 import { PrivacySection } from './PrivacySection';
 import { ProjectLocationsSection } from './ProjectLocationsSection';
 import { RoutinesSection } from './RoutinesSection';
-import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import { ConnectorsBrowser } from './ConnectorsBrowser';
 import { MemoryModelInline } from './MemoryModelInline';
 import { MemorySection } from './MemorySection';
@@ -1464,7 +1462,6 @@ export function SettingsDialog({
       : {},
   );
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => normalizeSettingsSection(initialSection));
-  const { context: workspaceContext } = useWorkspaceContext();
   const [settingsSidebarCollapsed, setSettingsSidebarCollapsed] = useState(false);
   const [settingsFullscreen, setSettingsFullscreen] = useState(true);
   // Scroll the right-hand content pane back to the top whenever the user
@@ -5066,7 +5063,6 @@ export function SettingsDialog({
               composioApiKeyConfigured={Boolean(cfg.composio?.apiKeyConfigured)}
               daemonMediaProviders={daemonMediaProviders}
               daemonMediaProvidersFetchState={daemonMediaProvidersFetchState}
-              workspaceContext={workspaceContext}
               onOpenComposioSection={() => setActiveSection('composio')}
               onLeaveForOrbitProject={(runConfig) => {
                 // Persist any in-flight Orbit edits (toggle / time) before
@@ -5937,7 +5933,6 @@ interface OrbitRunStartResponse {
 export function orbitLiveArtifactHref(
   projectId: string,
   artifactId: string,
-  workspaceContext: WorkspaceCollabContext | null,
 ): string {
   return liveArtifactPreviewUrl(projectId, artifactId, 'rendered');
 }
@@ -6005,7 +6000,6 @@ function OrbitSection({
   composioApiKeyConfigured,
   daemonMediaProviders,
   daemonMediaProvidersFetchState,
-  workspaceContext,
   onOpenComposioSection,
   onLeaveForOrbitProject,
 }: {
@@ -6018,7 +6012,6 @@ function OrbitSection({
   composioApiKeyConfigured: boolean;
   daemonMediaProviders?: AppConfig['mediaProviders'] | null;
   daemonMediaProvidersFetchState?: 'idle' | 'ok' | 'error';
-  workspaceContext: WorkspaceCollabContext | null;
   /** Switch the parent settings dialog to the Connectors (Composio) tab.
    *  Used by the Orbit gate's primary CTA so the user can fix the
    *  prerequisite without leaving the dialog. */
@@ -6229,7 +6222,6 @@ function OrbitSection({
     ? orbitLiveArtifactHref(
         lastRun.artifactProjectId,
         lastRun.artifactId,
-        workspaceContext,
       )
     : null;
   const isBusy = running || Boolean(status?.running);

@@ -25,7 +25,6 @@ import {
 import { deriveUpdaterModel } from '../../src/lib/updater';
 import type { OpenDesignHostUpdaterStatusSnapshot } from '@open-design/host';
 import type { AppConfig, AppVersionInfo, ConnectionTestResponse } from '../../src/types';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 const originalFetch = globalThis.fetch;
 
@@ -78,27 +77,8 @@ afterEach(() => {
 });
 
 describe('SettingsDialog Orbit artifact scope', () => {
-  const context = {
-    workspaceId: 'workspace-team',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-1',
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    permissions: {
-      canShareProjects: false,
-      canWriteSyncedFiles: false,
-    },
-  } as WorkspaceCollabContext;
-
-  it('ignores legacy Workspace context for local artifact navigation', () => {
-    expect(orbitLiveArtifactHref('project-1', 'artifact-1', context)).toBe(
-      '/api/live-artifacts/artifact-1/preview?projectId=project-1',
-    );
-  });
-
-  it('preserves the unscoped local artifact URL for legacy projects', () => {
-    expect(orbitLiveArtifactHref('project-1', 'artifact-1', null)).toBe(
+  it('builds a local artifact URL', () => {
+    expect(orbitLiveArtifactHref('project-1', 'artifact-1')).toBe(
       '/api/live-artifacts/artifact-1/preview?projectId=project-1',
     );
   });

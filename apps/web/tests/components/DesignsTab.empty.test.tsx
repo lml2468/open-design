@@ -6,44 +6,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { DesignsTab } from '../../src/components/DesignsTab';
 import { fetchLiveArtifacts, fetchProjectFiles } from '../../src/providers/registry';
 
-const designsWorkspaceState = vi.hoisted(() => ({
-	loading: false,
-  context: {
-    workspaceId: 'workspace-designs',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-designs',
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    permissions: {},
-  },
-}));
-
 vi.mock('../../src/providers/registry', () => ({
   deleteLiveArtifact: vi.fn(),
   fetchLiveArtifacts: vi.fn(async () => []),
   fetchProjectFiles: vi.fn(async () => []),
   liveArtifactPreviewUrl: (projectId: string, artifactId: string) =>
     `/api/projects/${projectId}/live-artifacts/${artifactId}/preview`,
-  projectFileUrl: (
-    projectId: string,
-    fileName: string,
-    workspaceContext?: { workspaceId: string; workspaceMemberId: string } | null,
-  ) => {
-    const base = `/api/projects/${projectId}/files/${fileName}`;
-    return workspaceContext
-      ? `${base}?workspaceId=${workspaceContext.workspaceId}&workspaceMemberId=${workspaceContext.workspaceMemberId}`
-      : base;
-  },
-}));
-
-vi.mock('../../src/collab/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => ({
-    context: designsWorkspaceState.context,
-		loading: designsWorkspaceState.loading,
-    failure: null,
-    refresh: vi.fn(),
-  }),
+  projectFileUrl: (projectId: string, fileName: string) =>
+    `/api/projects/${projectId}/files/${fileName}`,
 }));
 
 describe('DesignsTab empty state', () => {
@@ -62,7 +32,6 @@ describe('DesignsTab empty state', () => {
   });
 
   beforeEach(() => {
-		designsWorkspaceState.loading = false;
     window.localStorage.clear();
     vi.mocked(fetchLiveArtifacts).mockReset().mockResolvedValue([]);
     vi.mocked(fetchProjectFiles).mockReset().mockResolvedValue([]);
@@ -242,11 +211,10 @@ describe('DesignsTab empty state', () => {
     expect(filesSignal?.aborted).toBe(true);
   });
 
-	it('waits for the Workspace authority before reading project metadata', async () => {
-		designsWorkspaceState.loading = true;
+	it('reads local project metadata without Workspace authority', async () => {
 		const project = {
-			id: 'project-authority-loading',
-			name: 'Authority loading',
+			id: 'project-local-metadata',
+			name: 'Local metadata',
 			skillId: null,
 			designSystemId: null,
 			createdAt: 1,
@@ -262,13 +230,7 @@ describe('DesignsTab empty state', () => {
 			onDelete: vi.fn(),
 			onRename: vi.fn(),
 		};
-		const { rerender } = render(<DesignsTab {...props} />);
-
-		expect(fetchLiveArtifacts).not.toHaveBeenCalled();
-		expect(fetchProjectFiles).not.toHaveBeenCalled();
-
-		designsWorkspaceState.loading = false;
-		rerender(<DesignsTab {...props} />);
+		render(<DesignsTab {...props} />);
 		await vi.waitFor(() => {
 			expect(fetchLiveArtifacts).toHaveBeenCalledTimes(1);
 			expect(fetchProjectFiles).toHaveBeenCalledTimes(1);

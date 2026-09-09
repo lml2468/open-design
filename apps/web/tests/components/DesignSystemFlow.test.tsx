@@ -2,12 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type ConnectorDetail,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
+import type { ConnectorDetail } from '@open-design/contracts';
 
 import {
   buildDesignSystemPackageAuditRepairPrompt,
@@ -53,17 +48,6 @@ const mocks = vi.hoisted(() => ({
   streamViaDaemon: vi.fn(),
   uploadProjectFile: vi.fn(),
   writeProjectTextFile: vi.fn(),
-}));
-
-const workspaceContextState = vi.hoisted(() => ({
-  context: null as WorkspaceCollabContext | null,
-}));
-
-vi.mock('../../src/collab/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => ({
-    context: workspaceContextState.context,
-    loading: false,
-  }),
 }));
 
 vi.mock('../../src/components/ChatPane', () => ({
@@ -225,7 +209,6 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  workspaceContextState.context = null;
   mocks.connectConnector.mockResolvedValue({ connector: null });
   mocks.disconnectConnector.mockResolvedValue(null);
   mocks.fetchDesignSystem.mockResolvedValue(null);
@@ -258,23 +241,6 @@ beforeEach(() => {
     mime: 'text/markdown',
   }));
 });
-
-function teamContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'workspace-a',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-a',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    teamId: 'team-a',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-  };
-}
 
 function continueToGeneration() {
   fireEvent.click(screen.getByRole('button', { name: /^(continue to generation|generate)$/i }));
@@ -3111,8 +3077,6 @@ describe('DesignSystemDetailView', () => {
   });
 
   it('opens the existing project fallback when workspace creation returns null', async () => {
-    const workspaceContext = teamContext();
-    workspaceContextState.context = workspaceContext;
     const system: DesignSystemDetail = {
       id: 'user:acme-design-system',
       title: 'Acme Design System',
