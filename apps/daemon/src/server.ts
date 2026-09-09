@@ -31,7 +31,6 @@ import {
   resolveOdNextDeckFrameworkMode,
 } from '@open-design/contracts';
 import { isTodoWriteToolName, stopReasonIsTruncation, todoItemsFromTodoWriteInput } from '@open-design/contracts';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import {
   detectOdNextDevicePlatformFromText,
   resolveOdNextDevicePlatform,
@@ -756,24 +755,6 @@ import { registerSocialShareRoutes } from './routes/social-share.js';
 import { registerOpenDesignPublicMetadataRoutes } from './routes/open-design-public-metadata.js';
 import { registerWhatsNewRoutes } from './routes/whats-new.js';
 import { registerMemoryRoutes } from './routes/memory.js';
-import { registerCollabContextRoutes } from './routes/collab-context.js';
-import {
-  createActiveWorkspaceSelectionStore,
-} from './collab/active-workspace-selection.js';
-import { withLastKnownWorkspaceContext } from './collab/workspace-context.js';
-import { resolveWorkspaceScope } from './collab/workspace-scope.js';
-import {
-  createWorkspaceDirectoryAuthorityBroker,
-  createWorkspaceContextProviderFromEnv,
-  fetchVelaWorkspaceDirectory,
-  velaWorkspaceDirectoryIdentity,
-  workspaceContextFromDirectoryItem,
-} from './collab/vela-workspace-context.js';
-import {
-  verifyWorkspaceRequestContext,
-  workspaceRequestContextFromRequest,
-} from './collab/request-workspace-context.js';
-import { readVelaControlApiContext } from './integrations/vela.js';
 import { registerTelemetryRoutes } from './routes/telemetry.js';
 import {
   assembleExample,
@@ -2923,189 +2904,6 @@ export async function startServer({
   // ---- Projects (DB-backed) -------------------------------------------------
 
 
-  // Team collaboration subsystem: author-side publish scheduler.
-  // Product team workspaces publish and pull through the login-backed Vela CLI;
-  // non-Vela local modes retain the in-memory adapter for isolated development.
-  const describeCollabProject = (projectId: string) => {
-    const project = getProject(db, projectId);
-    if (!project) return null;
-    return {
-      name: project.name,
-      skillId: project.skillId ?? null,
-      designSystemId: project.designSystemId ?? null,
-      createdAt: project.createdAt,
-      updatedAt: project.updatedAt,
-      ...(project.metadata ? { metadata: project.metadata } : {}),
-    };
-  };
-  const activeWorkspace = createActiveWorkspaceSelectionStore(RUNTIME_DATA_DIR);
-  const configuredAmrEnv = () =>
-    agentCliEnvForAgent(readAppConfigSync(RUNTIME_DATA_DIR).agentCliEnv, 'amr');
-  const workspaceDirectoryAuthority = createWorkspaceDirectoryAuthorityBroker({
-    fetchDirectory: async () => {
-      const result = await fetchVelaWorkspaceDirectory({
-        configuredEnv: configuredAmrEnv(),
-      });
-      return result;
-    },
-    identityKey: () => velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    ),
-  });
-  const fetchWorkspaceDirectory = workspaceDirectoryAuthority.read;
-  const fetchFreshMutationWorkspaceDirectory =
-    workspaceDirectoryAuthority.fresh;
-  const verifyExplicitWorkspaceRequestContext = async (input: {
-    req: any;
-    requireTeam?: boolean;
-  }, options: { fresh?: boolean } = {}) => {
-    if (process.env.OD_WORKSPACE_CONTEXT_SOURCE?.trim() === 'vela') {
-      const fetchDirectory = options.fresh === false
-        ? fetchWorkspaceDirectory
-        : fetchFreshMutationWorkspaceDirectory;
-      return verifyWorkspaceRequestContext({
-        ...input,
-        fetchWorkspaceDirectory: fetchDirectory,
-        configuredEnv: configuredAmrEnv(),
-      });
-    }
-    // Local/dev has no signed membership directory. Its explicit request
-    // headers are the complete, static authority; still never consult the
-    // daemon's mutable active-workspace context.
-    const claimed = workspaceRequestContextFromRequest(input.req);
-    if (claimed === null) {
-      return {
-        ok: false as const,
-        status: 400 as const,
-        code: 'WORKSPACE_CONTEXT_REQUIRED' as const,
-        message: 'an explicit workspace context is required',
-      };
-    }
-    if (claimed === 'missing') {
-      return {
-        ok: false as const,
-        status: 400 as const,
-        code: 'WORKSPACE_CONTEXT_INCOMPLETE' as const,
-        message: 'both workspace and member identity are required',
-      };
-    }
-    if (
-      claimed.memberStatus !== 'active'
-      || claimed.lifecycleState === 'deleted'
-      || (input.requireTeam && claimed.workspaceType !== 'team')
-    ) {
-      return {
-        ok: false as const,
-        status: 403 as const,
-        code: 'WORKSPACE_ACCESS_DENIED' as const,
-        message: 'the requested workspace is not available to this member',
-      };
-    }
-    return {
-      ok: true as const,
-      context: workspaceContextFromDirectoryItem({
-        workspaceId: claimed.workspaceId,
-        workspaceName: claimed.workspaceId,
-        workspaceType: claimed.workspaceType,
-        workspaceMemberId: claimed.workspaceMemberId,
-        role: claimed.role,
-        memberStatus: claimed.memberStatus,
-        lifecycleState: claimed.lifecycleState,
-      }, configuredAmrEnv()),
-    };
-  };
-  const verifyWorkspaceReadAuthority = (req: unknown) =>
-    verifyExplicitWorkspaceRequestContext({ req }, { fresh: false });
-  const listWorkspaceDirectory = async () => {
-    const result = await fetchWorkspaceDirectory();
-    return result.items;
-  };
-  const resolveAuthoritativeTeamWorkspaceContext = async (
-    workspaceId: string | null | undefined,
-    options: { fresh?: boolean } = {},
-  ): Promise<WorkspaceCollabContext | null> => {
-    const requestedWorkspaceId = workspaceId?.trim() ?? '';
-    if (!requestedWorkspaceId) return null;
-    let fetchDirectory = fetchWorkspaceDirectory;
-    if (options.fresh) fetchDirectory = fetchFreshMutationWorkspaceDirectory;
-    const directory = await fetchDirectory().catch(() => ({
-      ok: false as const,
-      items: [],
-    }));
-    if (!directory.ok) return null;
-    const membership = directory.items.find(
-      (item) =>
-        item.workspaceId === requestedWorkspaceId
-        && item.workspaceType === 'team'
-        && item.memberStatus === 'active'
-        && item.lifecycleState === 'active',
-    );
-    return membership
-      ? workspaceContextFromDirectoryItem(membership, configuredAmrEnv())
-      : null;
-  };
-  // Preserve the legacy observation API for compatibility tests and dev
-  // tooling. Production data-plane routes never read current/lastKnown; they
-  // verify the exact Workspace/member carried by each request.
-  const workspaceContextProvider = withLastKnownWorkspaceContext(
-    createWorkspaceContextProviderFromEnv(process.env, {
-      configuredEnv: configuredAmrEnv,
-      fetchWorkspaceDirectory,
-      getActiveWorkspaceId: () => activeWorkspace.get(),
-      // The expected value keeps a directory-derived bootstrap/recovery write
-      // from overwriting a newer user switch queued by another tab.
-      replaceLocalSelection: (expectedWorkspaceId, workspaceId) =>
-        activeWorkspace.replaceIf(expectedWorkspaceId, workspaceId),
-    }),
-  );
-  let workspaceAccountIdentity = velaWorkspaceDirectoryIdentity(
-    readVelaControlApiContext,
-    configuredAmrEnv(),
-  );
-  const resetWorkspaceDirectoryIdentity = (): void => {
-    workspaceDirectoryAuthority.resetIdentity();
-  };
-  const refreshWorkspaceAccountIdentity = (): void => {
-    const currentIdentity = velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    );
-    if (currentIdentity === workspaceAccountIdentity) return;
-    workspaceAccountIdentity = currentIdentity;
-    resetWorkspaceDirectoryIdentity();
-  };
-  const fetchWorkspaceDirectoryForAccountSurface = () => {
-    refreshWorkspaceAccountIdentity();
-    return fetchWorkspaceDirectory();
-  };
-  const verifyWorkspaceContextReadAuthority = (req: unknown) => {
-    refreshWorkspaceAccountIdentity();
-    return verifyWorkspaceReadAuthority(req);
-  };
-  let workspaceAnalyticsService: AnalyticsService | null = null;
-  registerCollabContextRoutes(app, {
-    workspaceContext: workspaceContextProvider,
-    configuredEnv: configuredAmrEnv,
-    verifyWorkspaceReadAuthority: verifyWorkspaceContextReadAuthority,
-    activeWorkspace,
-    // Same directory read the route would have made on its own, wrapped so every
-    // workspace type it carries is memoized for the team-share invariant.
-    listWorkspaceDirectory,
-    fetchWorkspaceDirectory: fetchWorkspaceDirectoryForAccountSurface,
-    observeWorkspace: async (req, context, properties) => {
-      const service = workspaceAnalyticsService;
-      const analyticsContext = readAnalyticsContext(req);
-      if (!service || !analyticsContext) return;
-      await service.identifyGroup({
-        context: analyticsContext,
-        groupType: 'workspace',
-        groupKey: context.workspaceId,
-        properties: properties ?? {},
-      });
-    },
-  });
-
   registerMemoryRoutes(app, {
     http: { createSseResponse, requireLocalDaemonRequest },
     paths: { RUNTIME_DATA_DIR, PROJECT_ROOT, PROJECTS_DIR },
@@ -3166,7 +2964,6 @@ export async function startServer({
       readAppConfig: () => readAppConfigSync(RUNTIME_DATA_DIR),
     });
   };
-  workspaceAnalyticsService = analyticsService;
   console.info(
     '[telemetry] effective run sink',
     describeRunTelemetrySink(
@@ -3687,10 +3484,6 @@ export async function startServer({
     readAppConfig,
     writeAppConfig,
     onAppConfigWritten: () => {
-      // AMR credentials may be overridden through Settings. Observe every
-      // completed write so even an A -> B -> A transition with no intervening
-      // directory/status read fences exact authority from the old A session.
-      refreshWorkspaceAccountIdentity();
       void attributionService.processPending().catch((err: unknown) => {
         console.warn('[attribution] pending claim failed', err);
       });
@@ -3864,16 +3657,6 @@ export async function startServer({
           appVersion: currentAppVersion(),
           properties,
           insertId: newInsertId(),
-        });
-      },
-      identifyWorkspaceGroup: async (req, workspaceId, properties) => {
-        const analyticsContext = readAnalyticsContext(req);
-        if (!analyticsContext) return;
-        await analyticsService.identifyGroup({
-          context: analyticsContext,
-          groupType: 'workspace',
-          groupKey: workspaceId,
-          properties,
         });
       },
     },

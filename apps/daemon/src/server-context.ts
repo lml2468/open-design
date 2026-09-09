@@ -120,12 +120,6 @@ export interface TelemetryDeps {
     eventName: string,
     properties: Record<string, unknown>,
   ) => Promise<void> | void;
-  /** Update one PostHog Workspace group from an authoritative read. */
-  identifyWorkspaceGroup?: (
-    req: any,
-    workspaceId: string,
-    properties: Record<string, unknown>,
-  ) => Promise<void> | void;
 }
 
 export interface ServerContext {

@@ -1,24 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { handleMcpToolCall } from '../src/mcp.js';
-import { _resetMcpWorkspaceContextCacheForTests } from '../src/mcp-workspace-context.js';
 
 const originalFetch = globalThis.fetch;
-
-// Non-vela directory: the bridge falls back to headerless behavior, which is
-// what this suite exercised before #6569. Wrapping the per-test fetch mock
-// keeps the directory bootstrap out of each test's call-count/index
-// assertions while still exercising the real resolveMcpWorkspaceContext path.
-function withDirectory(
-  fn: (url: string, init?: RequestInit) => Promise<Response>,
-): (url: string, init?: RequestInit) => Promise<Response> {
-  return async (url: string, init?: RequestInit) => {
-    if (String(url).endsWith('/api/workspace/directory')) {
-      return new Response(JSON.stringify({ items: [], activeWorkspaceId: null }), { status: 200 });
-    }
-    return fn(url, init);
-  };
-}
 
 function firstText(result: { content: Array<{ text: string }> }): string {
   const item = result.content[0];
@@ -46,7 +30,6 @@ function nextBaseUrl(): string {
 
 describe('public MCP write_file', () => {
   afterEach(() => {
-    _resetMcpWorkspaceContextCacheForTests();
     vi.unstubAllGlobals();
     globalThis.fetch = originalFetch;
   });
@@ -65,7 +48,7 @@ describe('public MCP write_file', () => {
         { status: 200 },
       );
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await handleMcpToolCall(base, 'write_file', {
       project: 'Demo',
@@ -104,7 +87,7 @@ describe('public MCP write_file', () => {
       }
       return new Response(JSON.stringify({ file: { name: 'logo.png' } }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     await handleMcpToolCall(base, 'write_file', {
       project: 'P',
@@ -128,7 +111,7 @@ describe('public MCP write_file', () => {
       }
       return new Response(JSON.stringify({ file: { name: 'index.html' } }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await handleMcpToolCall(base, 'write_file', {
       path: 'index.html',
@@ -152,7 +135,7 @@ describe('public MCP write_file', () => {
       }
       return new Response('{}', { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const missingPath = await handleMcpToolCall(base, 'write_file', {
       project: 'P',
@@ -176,7 +159,6 @@ describe('public MCP write_file', () => {
 
 describe('public MCP delete_file', () => {
   afterEach(() => {
-    _resetMcpWorkspaceContextCacheForTests();
     vi.unstubAllGlobals();
     globalThis.fetch = originalFetch;
   });
@@ -193,7 +175,7 @@ describe('public MCP delete_file', () => {
       expect(init?.method).toBe('DELETE');
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await handleMcpToolCall(base, 'delete_file', {
       project: 'Demo',
@@ -213,7 +195,7 @@ describe('public MCP delete_file', () => {
         ? new Response(JSON.stringify({ projects: [{ id: 'p1', name: 'Demo' }] }), { status: 200 })
         : new Response('{}', { status: 200 }),
     );
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await handleMcpToolCall(base, 'delete_file', {
       project: 'Demo',
@@ -227,7 +209,6 @@ describe('public MCP delete_file', () => {
 
 describe('public MCP delete_project', () => {
   afterEach(() => {
-    _resetMcpWorkspaceContextCacheForTests();
     vi.unstubAllGlobals();
     globalThis.fetch = originalFetch;
   });
@@ -244,7 +225,7 @@ describe('public MCP delete_project', () => {
       expect(init?.method).toBe('DELETE');
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await handleMcpToolCall(base, 'delete_project', {
       project: 'Demo',
@@ -262,7 +243,7 @@ describe('public MCP delete_project', () => {
         ? new Response(JSON.stringify({ projects: [{ id: 'p1', name: 'Demo' }] }), { status: 200 })
         : new Response('{}', { status: 200 }),
     );
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const missing = await handleMcpToolCall(base, 'delete_project', {
       project: 'Demo',
@@ -294,7 +275,7 @@ describe('public MCP delete_project', () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       new Response('{}', { status: 200 }),
     );
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await handleMcpToolCall(base, 'delete_project', {
       confirm: true,
@@ -316,7 +297,7 @@ describe('public MCP delete_project', () => {
       expect(init?.method).toBe('DELETE');
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     // 'throwaway' is a substring of 'Throwaway demo' — the tool accepts
     // substrings per inputSchema, so the response must carry
@@ -336,7 +317,6 @@ describe('public MCP delete_project', () => {
 
 describe('formatDaemonError (shared error mapper)', () => {
   afterEach(() => {
-    _resetMcpWorkspaceContextCacheForTests();
     vi.unstubAllGlobals();
     globalThis.fetch = originalFetch;
   });
@@ -351,7 +331,7 @@ describe('formatDaemonError (shared error mapper)', () => {
             { status: 404 },
           ),
     );
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await handleMcpToolCall(base, 'delete_file', {
       project: 'Demo',
@@ -373,7 +353,7 @@ describe('formatDaemonError (shared error mapper)', () => {
         ? new Response(JSON.stringify({ projects: [{ id: 'p1', name: 'Demo' }] }), { status: 200 })
         : new Response('upstream boom', { status: 502 }),
     );
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await handleMcpToolCall(base, 'delete_file', {
       project: 'Demo',
@@ -404,7 +384,7 @@ describe('formatDaemonError (shared error mapper)', () => {
         { status: 409 },
       );
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await handleMcpToolCall(base, 'delete_project', {
       project: 'Demo',

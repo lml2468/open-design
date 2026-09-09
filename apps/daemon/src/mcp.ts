@@ -38,7 +38,6 @@ import {
 import { randomUUID } from 'node:crypto';
 
 import { postCreateArtifactRequest } from './artifacts/create.js';
-import { resolveMcpWorkspaceContext } from './mcp-workspace-context.js';
 import {
   createLocalMcpBriefStore as createBriefStore,
   localMcpBriefResponseCopy,
@@ -1968,26 +1967,6 @@ function containsMcpCredentialField(value: unknown, depth = 0): boolean {
   );
 }
 
-// Tools that address projects or runs are workspace-scoped after 0.18.0:
-// bound projects are invisible to a headerless caller and bound-project reads
-// 400 with WORKSPACE_CONTEXT_REQUIRED (#6569). These resolve the signed-in
-// workspace and send x-od-workspace-* headers on every daemon call.
-const PROJECT_OR_RUN_TOOLS = new Set([
-  'get_project',
-  'get_file',
-  'list_files',
-  'search_files',
-  'get_artifact',
-  'write_file',
-  'delete_file',
-  'delete_project',
-  'create_project',
-  'create_artifact',
-  'start_run',
-  'get_run',
-  'cancel_run',
-]);
-
 async function handleMcpToolCall(
   baseUrl: string,
   name: unknown,
@@ -1995,11 +1974,7 @@ async function handleMcpToolCall(
   options: HandleMcpToolCallOptions = {},
 ): Promise<McpToolCallResult> {
   try {
-    const workspaceContext = PROJECT_OR_RUN_TOOLS.has(String(name))
-      ? await resolveMcpWorkspaceContext(baseUrl)
-      : null;
-    const headers = workspaceContext?.headers;
-    const workspaceId = workspaceContext?.workspaceId;
+    const headers = undefined;
     switch (name) {
       case 'collect_brief': {
         const collected = (options.briefStore ?? createLocalMcpBriefStore())

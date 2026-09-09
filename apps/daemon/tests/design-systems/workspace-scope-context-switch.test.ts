@@ -32,18 +32,6 @@ const CONTEXT_WS2 = {
   lifecycleState: 'active',
 };
 
-// The dev/demo seam (`workspaceContext.set`), NOT `PUT /api/workspace/active`:
-// this is deliberately the same shape as a Vela-Web-driven switch — the
-// daemon's notion of "current" context changes, but no local pin is written.
-async function setContext(baseUrl: string, context: unknown): Promise<void> {
-  const resp = await fetch(`${baseUrl}/api/workspace/context`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(context),
-  });
-  expect(resp.ok).toBe(true);
-}
-
 function workspaceHeaders(context: typeof CONTEXT_WS1 | typeof CONTEXT_WS2): Record<string, string> {
   return {
     'x-od-workspace-id': context.workspaceId,
@@ -122,9 +110,7 @@ describe('GET/POST /api/design-systems — daemon-local catalog', () => {
     expect(response.status).toBe(200);
   });
 
-  it('keeps catalog contents stable across Workspace context changes', async () => {
-    await setContext(baseUrl, CONTEXT_WS2);
-
+  it('keeps catalog contents stable across explicit Workspace request headers', async () => {
     const createResp1 = await fetch(`${baseUrl}/api/design-systems`, {
       method: 'POST',
       headers: {
@@ -159,12 +145,6 @@ describe('GET/POST /api/design-systems — daemon-local catalog', () => {
       projectsBody.projects.find((project) => project.id === workspaceBody.project.id),
     ).toMatchObject({ id: workspaceBody.project.id });
 
-    // The compatibility write no longer creates daemon-global data-plane
-    // authority. Each tab's following request must remain self-contained.
-    const ctxResp = await fetch(`${baseUrl}/api/workspace/context`);
-    const ctxBody = (await ctxResp.json()) as { context: { workspaceId: string } | null };
-    expect(ctxBody.context?.workspaceId).toBeUndefined();
-
     const listResp = await fetch(`${baseUrl}/api/design-systems`, {
       headers: workspaceHeaders(CONTEXT_WS1),
     });
@@ -195,28 +175,12 @@ describe('GET/POST /api/design-systems — daemon-local catalog', () => {
 });
 
 describe('historical Design System Workspace metadata', () => {
-  // This function's session-liveness gate (`collab.workspaceContext.lastKnown()`)
-  // is untouched by the TTL-cache fix above — this suite exists to prove
-  // removing that cache did not also disturb the gate. A fresh server
-  // instance is used (rather than reusing the suite above) so its
-  // `activeWorkspace` pin-file reader starts with an empty in-memory cache and
-  // performs its first disk read AFTER the stale pin below is written —
-  // mirroring a real daemon restart finding a leftover pin file on disk.
   let server: http.Server;
   let baseUrl: string;
   let shutdown: (() => Promise<void> | void) | undefined;
 
   beforeAll(async () => {
-    // A stale local pin exactly like a real leftover from a previous identity
-    // — `velaLogout` never clears this file (only a CONFIRMED member-removal
-    // does; see `resolvePinnedWorkspace` in vela-workspace-context.ts).
     const dataDir = process.env.OD_DATA_DIR!;
-    writeFileSync(
-      path.join(dataDir, 'workspace-selection.json'),
-      `${JSON.stringify({ workspaceId: 'ws-stale-pin' }, null, 2)}\n`,
-    );
-    // A design system claimed by the pinned workspace, seeded directly on
-    // disk so this suite is independent of the other describe block's state.
     const dsDir = path.join(dataDir, 'design-systems', 'pinned-claim');
     mkdirSync(dsDir, { recursive: true });
     writeFileSync(path.join(dsDir, 'DESIGN.md'), '# Pinned claim\n\nSeeded directly on disk.\n');
@@ -236,7 +200,7 @@ describe('historical Design System Workspace metadata', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('ignores a stale pin and exposes the local system', async () => {
+  it('exposes a local system carrying historical Workspace metadata', async () => {
     const resp = await fetch(`${baseUrl}/api/design-systems`, {
       headers: workspaceHeaders(CONTEXT_WS2),
     });

@@ -44,7 +44,6 @@ import {
   type ProjectMetadata,
   type RestoreProjectAutomaticScenarioRequest,
   type RestoreProjectAutomaticScenarioResponse,
-  type WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { readMeta as readBrandMeta } from '../../brands/store.js';
 import { createProjectArtifactFile } from '../../artifacts/create.js';
