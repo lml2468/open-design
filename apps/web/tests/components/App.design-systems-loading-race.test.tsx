@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import type { DesignSystemSummary, WorkspaceCollabContext } from '@open-design/contracts';
+import type { DesignSystemSummary } from '@open-design/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/App';
@@ -24,12 +24,7 @@ import {
 } from '../../src/state/config';
 import { listProjects, listTemplates } from '../../src/state/projects';
 import type { AppConfig } from '../../src/types';
-import {
-  notifyWorkspaceContextRefresh,
-  resetWorkspaceContextCache,
-} from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
-import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 
 vi.mock('../../src/router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/router')>()),
@@ -145,32 +140,6 @@ const readySystem: DesignSystemSummary = {
   isEditable: true,
 };
 
-function workspaceContext(workspaceId: string): WorkspaceCollabContext {
-  return {
-    workspaceId,
-    workspaceType: 'team',
-    workspaceMemberId: `member-${workspaceId}`,
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: { seatLimit: 5, usedSeats: 1, availableSeats: 4, isSeatFull: false },
-    permissions: {
-      canManageMembers: false,
-      canManageBilling: false,
-      canInviteMembers: false,
-      canManageAutoRecharge: false,
-      canShareProjects: true,
-      canWriteSyncedFiles: true,
-      canViewWorkspaceSettings: false,
-      canManageSharedResources: false,
-    },
-    displayName: workspaceId,
-  };
-}
-
 function designSystem(id: string): DesignSystemSummary {
   return {
     ...readySystem,
@@ -188,7 +157,6 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
-  resetWorkspaceContextCache();
   resetCoalescedGet();
   vi.mocked(daemonIsLive).mockResolvedValue(true);
   vi.mocked(fetchAgentsStream).mockResolvedValue([]);
@@ -217,7 +185,6 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
-  resetWorkspaceContextCache();
   resetCoalescedGet();
 });
 
@@ -246,20 +213,7 @@ describe('App design-system catalog loading race', () => {
     expect(screen.getByTestId('design-systems-state').dataset.loading).toBe('false');
   });
 
-  it('keeps the daemon-local catalog visible across Workspace identity changes', async () => {
-    let activeContext = workspaceContext('ws-a');
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const pathname = new URL(String(input), 'http://d.local').pathname;
-        return {
-          ok: true,
-          json: async () => pathname.endsWith('/workspace/context')
-            ? { context: activeContext }
-            : {},
-        } as Response;
-      }),
-    );
+  it('keeps the daemon-local catalog visible after initial load', async () => {
     vi.mocked(fetchDesignSystems).mockResolvedValue([
       designSystem('daemon-local-system'),
     ]);
@@ -268,11 +222,7 @@ describe('App design-system catalog loading race', () => {
     await waitFor(() => expect(screen.getByText('daemon-local-system')).toBeTruthy());
     const readsBeforeSwitch = vi.mocked(fetchDesignSystems).mock.calls.length;
 
-    activeContext = workspaceContext('ws-b');
-    await act(async () => {
-      notifyWorkspaceContextRefresh({ context: activeContext });
-      await Promise.resolve();
-    });
+    await act(async () => Promise.resolve());
 
     expect(screen.getByText('daemon-local-system')).toBeTruthy();
     expect(screen.getByTestId('design-systems-state').dataset.loading).toBe('false');

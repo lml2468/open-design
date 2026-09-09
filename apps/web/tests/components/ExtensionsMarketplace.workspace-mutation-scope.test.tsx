@@ -2,29 +2,14 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  InstalledPluginRecord,
-  WorkspaceCollabContext,
-} from '@open-design/contracts';
+import type { InstalledPluginRecord } from '@open-design/contracts';
 
 import { ExtensionsMarketplace } from '../../src/components/PluginsView';
 import { I18nProvider } from '../../src/i18n';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 vi.mock('../../src/analytics/provider', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/analytics/provider')>()),
   useAnalytics: () => ({ track: vi.fn() }),
-}));
-
-let workspaceContext: WorkspaceCollabContext | null;
-let workspaceContextLoading: boolean;
-
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({
-    context: workspaceContext,
-    loading: workspaceContextLoading,
-  }),
 }));
 
 const USER_PLUGIN: InstalledPluginRecord = {
@@ -63,30 +48,6 @@ const MARKETPLACE = {
   },
 };
 
-const CONTEXTS = [
-  ['team owner', workspaceContextFixture({
-    workspaceId: 'team-owner',
-    workspaceMemberId: 'member-owner',
-    role: 'owner',
-  })],
-  ['team admin', workspaceContextFixture({
-    workspaceId: 'team-admin',
-    workspaceMemberId: 'member-admin',
-    role: 'admin',
-  })],
-  ['team member', workspaceContextFixture({
-    workspaceId: 'team-member',
-    workspaceMemberId: 'member-member',
-    role: 'member',
-  })],
-  ['Personal owner', workspaceContextFixture({
-    workspaceId: 'personal-owner',
-    workspaceMemberId: 'member-personal',
-    workspaceType: 'personal',
-    role: 'owner',
-  })],
-] as const;
-
 let mutationRequests: Array<{ url: string; headers: Headers }>;
 
 function jsonResponse(body: unknown): Response {
@@ -108,8 +69,6 @@ function installSuccess(): Response {
 }
 
 beforeEach(() => {
-  workspaceContext = CONTEXTS[0][1];
-  workspaceContextLoading = false;
   mutationRequests = [];
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -148,8 +107,7 @@ function expectNoWorkspaceHeaders(actual: Headers): void {
 }
 
 describe('ExtensionsMarketplace daemon-local plugin mutations', () => {
-  it.each(CONTEXTS)('does not send %s Workspace headers when installing', async (_label, context) => {
-    workspaceContext = context;
+  it('does not send Workspace headers when installing', async () => {
     renderMarketplace();
 
     const install = await screen.findByRole('button', { name: 'Install' });
@@ -160,8 +118,7 @@ describe('ExtensionsMarketplace daemon-local plugin mutations', () => {
     expectNoWorkspaceHeaders(mutationRequests[0]!.headers);
   });
 
-  it.each(CONTEXTS)('does not send %s Workspace headers when uninstalling', async (_label, context) => {
-    workspaceContext = context;
+  it('does not send Workspace headers when uninstalling', async () => {
     renderMarketplace();
 
     fireEvent.click(await screen.findByTestId('plugins-tab-installed'));
@@ -175,36 +132,16 @@ describe('ExtensionsMarketplace daemon-local plugin mutations', () => {
     expectNoWorkspaceHeaders(mutationRequests[0]!.headers);
   });
 
-  it('keeps visible plugin install and uninstall actions enabled while identity is loading', async () => {
-    const view = renderMarketplace();
+  it('keeps visible plugin install and uninstall actions enabled', async () => {
+    renderMarketplace();
     const install = await screen.findByRole('button', { name: 'Install' }) as HTMLButtonElement;
-
-    workspaceContextLoading = true;
-    view.rerender(
-      <I18nProvider initial="en">
-        <ExtensionsMarketplace onUsePlugin={vi.fn()} />
-      </I18nProvider>,
-    );
     expect(install.disabled).toBe(false);
-
-    workspaceContextLoading = false;
-    view.rerender(
-      <I18nProvider initial="en">
-        <ExtensionsMarketplace onUsePlugin={vi.fn()} />
-      </I18nProvider>,
-    );
     fireEvent.click(await screen.findByTestId('plugins-tab-installed'));
     fireEvent.click(await screen.findByTestId('plugins-card-more-user-plugin'));
     const uninstall = await screen.findByTestId(
       'plugins-card-uninstall-user-plugin',
     ) as HTMLButtonElement;
 
-    workspaceContextLoading = true;
-    view.rerender(
-      <I18nProvider initial="en">
-        <ExtensionsMarketplace onUsePlugin={vi.fn()} />
-      </I18nProvider>,
-    );
     expect(uninstall.disabled).toBe(false);
     expect(mutationRequests).toEqual([]);
   });

@@ -98,7 +98,6 @@ import { emptyManualEditStyles } from '../../src/edit-mode/types';
 import { __resetPreviewIsolationCache } from '../../src/runtime/powered-preview';
 import { installPreviewIframeMessageObserver } from '../../src/observability/iframe-error';
 import { readExpandedIndexCss } from '../helpers/read-expanded-css';
-import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
 import {
   CollabProvider,
   type CollabContextValue,
@@ -171,10 +170,6 @@ const TEST_SNAPSHOT_DATA_URL = 'data:image/png;base64,c25hcHNob3Q=';
 afterEach(() => {
   cleanup();
   __resetPreviewIsolationCache();
-  // `useWorkspaceContext` caches the last resolved context at module scope so a
-  // remount does not flash the signed-out state. Left alone, a test that signs
-  // into a team would silently sign the NEXT test in too.
-  resetWorkspaceContextCache();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   analyticsTrackMock.mockReset();

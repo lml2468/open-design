@@ -2,9 +2,8 @@
 // network request.
 //
 // Why this exists: many workspace surfaces independently fetch the same read
-// endpoint on mount/navigation — the project grid, the recents strip, the
-// design-files panel, and every separately-mounted `useWorkspaceContext`
-// consumer. Returning to the home view fired ~118 concurrent requests, of which
+// endpoint on mount/navigation — the project grid, the recents strip, and the
+// design-files panel. Returning to the home view fired ~118 concurrent requests, of which
 // the same 8 projects' `/files` appeared 4-6× each and every project's
 // `/live-artifacts` twice. With the browser's ~6-connections-per-host cap the
 // tail of that burst sat in the connection queue for seconds — measured as
@@ -89,10 +88,8 @@ export function evictCoalescedGet(key: string): void {
 // the same way as `entries`. See `forceCoalescedGet` for why this exists.
 const forcedAt = new Map<string, number>();
 
-// A broadcast identity-change event (sign-in success) is heard by every
-// mounted consumer of a hook in the SAME synchronous `dispatchEvent` pass —
-// e.g. `useWorkspaceContext()` is called from a dozen components that can all
-// be mounted at once, and multiple account controls can listen and react.
+// A broadcast refresh event can be heard by every mounted consumer in the
+// SAME synchronous `dispatchEvent` pass.
 // Two calls to `forceCoalescedGet` for the same key inside this
 // window are the same burst, not two independent identity changes; the
 // second must join the first's fetch rather than evict it. Measured in a

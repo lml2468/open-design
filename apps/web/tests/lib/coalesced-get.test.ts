@@ -73,10 +73,9 @@ describe('coalescedGet', () => {
 });
 
 describe('forceCoalescedGet', () => {
-  // Multiple mounted consumers reacting to the SAME broadcast identity-change
-  // event (e.g. every mounted `useWorkspaceContext()` instance hearing one
-  // `notifyWorkspaceContextRefresh()`) call this back-to-back in the same
-  // synchronous dispatch pass. That whole burst must collapse to one real
+  // Multiple mounted consumers reacting to the SAME broadcast refresh event
+  // call this back-to-back in the same synchronous dispatch pass. That whole
+  // burst must collapse to one real
   // fetch — the exact scenario a naive evictCoalescedGet()+coalescedGet() at
   // each call site gets wrong (each eviction destroys the fetch the previous
   // call in the burst just started).

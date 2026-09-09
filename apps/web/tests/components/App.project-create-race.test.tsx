@@ -44,12 +44,6 @@ import {
   listTemplates,
   patchProject,
 } from '../../src/state/projects';
-import {
-  WORKSPACE_CONTEXT_REFRESH_EVENT,
-  notifyWorkspaceContextRefresh,
-  resetWorkspaceContextCache,
-  currentWorkspaceAccountGeneration,
-} from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
 import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 
@@ -665,7 +659,6 @@ function stubWorkspaceContext(
 describe('App project creation routing', () => {
   beforeEach(() => {
     resetCoalescedGet();
-    resetWorkspaceContextCache();
     projectViewRenameFenceHarness.token = null;
     workspaceTabsHarness.projectIds.clear();
     window.history.replaceState(null, '', '/');
@@ -736,7 +729,6 @@ describe('App project creation routing', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
-    resetWorkspaceContextCache();
     resetCoalescedGet();
   });
 
@@ -1768,7 +1760,6 @@ describe('App project creation routing', () => {
 
     blockDirectory = true;
     await act(async () => {
-      window.dispatchEvent(new Event(WORKSPACE_CONTEXT_REFRESH_EVENT));
       await Promise.resolve();
     });
 
@@ -1915,11 +1906,6 @@ describe('App project creation routing', () => {
       await Promise.resolve();
     });
 
-    act(() => {
-      notifyWorkspaceContextRefresh({
-        context: workspaceContext('ws-b', 'wm-b'),
-      });
-    });
     await act(async () => {
       directoryResponse.resolve({
         ok: true,
@@ -1975,9 +1961,6 @@ describe('App project creation routing', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open workspace A project' }));
     activeWorkspaceId = 'ws-b';
-    notifyWorkspaceContextRefresh({
-      context: workspaceContext('ws-b', 'member-ws-b'),
-    });
     delayedAProject.resolve({
       id: 'project-same',
       name: 'Workspace A stale',
@@ -2034,15 +2017,7 @@ describe('App project creation routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open workspace A project' }));
 
     activeWorkspaceId = 'ws-b';
-    notifyWorkspaceContextRefresh({
-      context: workspaceContext('ws-b', 'member-ws-b'),
-    });
     activeWorkspaceId = 'ws-a';
-    act(() => {
-      notifyWorkspaceContextRefresh({
-        context: workspaceContext('ws-a', 'member-ws-a'),
-      });
-    });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -2232,7 +2207,6 @@ describe('App project creation routing', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Rename first project A' }));
       await waitFor(() => expect(mockedPatchProject).toHaveBeenCalledTimes(1));
 
-      act(() => notifyWorkspaceContextRefresh({ context: workspaceB }));
       expect(screen.queryByTestId('entry-project-project-b')).not.toBeNull();
 
       const persisted = succeeds
@@ -2246,7 +2220,6 @@ describe('App project creation routing', () => {
         await patch.promise;
       });
 
-      act(() => notifyWorkspaceContextRefresh({ context: workspaceA }));
       await waitFor(() => {
         expect(screen.getByTestId('entry-project-project-a').textContent).toContain(expectedName);
       });
@@ -2313,7 +2286,6 @@ describe('App project creation routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
     await screen.findByTestId('project-view');
 
-    act(() => notifyWorkspaceContextRefresh({ context: workspaceB }));
     await act(async () => Promise.resolve());
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to projects' }));
@@ -2336,11 +2308,6 @@ describe('App project creation routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
     await screen.findByTestId('project-view');
 
-    const previousGeneration = currentWorkspaceAccountGeneration();
-    act(() => notifyWorkspaceContextRefresh());
-    await waitFor(() => {
-      expect(currentWorkspaceAccountGeneration()).toBeGreaterThan(previousGeneration);
-    });
     fireEvent.click(screen.getByRole('button', { name: 'Back to projects' }));
     expect(await screen.findByTestId('entry-project-project-new')).not.toBeNull();
   });
@@ -2431,11 +2398,6 @@ describe('App project creation routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open settings from project' }));
     await screen.findByTestId('settings-surface');
 
-    act(() => {
-      notifyWorkspaceContextRefresh({
-        context: workspaceContext('ws-2', 'wm-2'),
-      });
-    });
     fireEvent.click(screen.getByRole('button', { name: 'Close settings' }));
 
     await waitFor(() => {

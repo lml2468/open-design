@@ -27,7 +27,6 @@ import {
   fetchSkills,
 } from '../../src/providers/registry';
 import { listProjects, listTemplates } from '../../src/state/projects';
-import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
 
 const PROJECT_ROUTE: Route = {
   kind: 'project' as const,
@@ -178,7 +177,6 @@ function stubFetchByUrl() {
 
 describe('project route — local top-right controls', () => {
   beforeEach(() => {
-    resetWorkspaceContextCache();
     useRouteMock.mockReturnValue(PROJECT_ROUTE);
     vi.mocked(daemonIsLive).mockResolvedValue(true);
     vi.mocked(fetchAgents).mockResolvedValue([]);
@@ -202,7 +200,6 @@ describe('project route — local top-right controls', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
-    resetWorkspaceContextCache();
   });
 
   it('keeps GitHub controls mounted on an open project without an account avatar', async () => {

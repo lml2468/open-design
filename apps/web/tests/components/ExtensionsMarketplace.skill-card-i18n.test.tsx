@@ -21,12 +21,6 @@ vi.mock('../../src/analytics/provider', async (importOriginal) => {
   return { ...actual, useAnalytics: () => ({ track: vi.fn() }) };
 });
 
-// Spread the real module — see the note in ExtensionsMarketplace.team-scope.test.tsx.
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({ context: null, loading: false, refresh: vi.fn() }),
-}));
-
 // Mirrors `skills/article-magazine/SKILL.md`, the card in the OPEND-2250
 // screenshot: it carries `zh_name` / `zh_description` frontmatter, which the
 // daemon projects onto `displayName` / `descriptionI18n` (apps/daemon/src/skills.ts).

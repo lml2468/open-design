@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import type { SkillSummary, WorkspaceCollabContext } from '@open-design/contracts';
+import { cleanup, render, screen } from '@testing-library/react';
+import type { SkillSummary } from '@open-design/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/App';
@@ -22,12 +22,7 @@ import {
   fetchSkills,
 } from '../../src/providers/registry';
 import { listProjects, listTemplates } from '../../src/state/projects';
-import {
-  notifyWorkspaceContextRefresh,
-  resetWorkspaceContextCache,
-} from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
-import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 
 vi.mock('../../src/components/EntryView', () => ({
   EntryView: ({ skills, skillsLoading }: { skills: Array<{ id: string }>; skillsLoading: boolean }) => (
@@ -115,32 +110,6 @@ const baseConfig: AppConfig = {
   agentCliEnv: {},
 };
 
-function workspaceContext(workspaceId: string): WorkspaceCollabContext {
-  return {
-    workspaceId,
-    workspaceType: 'team',
-    workspaceMemberId: `member-${workspaceId}`,
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: { seatLimit: 5, usedSeats: 1, availableSeats: 4, isSeatFull: false },
-    permissions: {
-      canManageMembers: false,
-      canManageBilling: false,
-      canInviteMembers: false,
-      canManageAutoRecharge: false,
-      canShareProjects: true,
-      canWriteSyncedFiles: true,
-      canViewWorkspaceSettings: false,
-      canManageSharedResources: false,
-    },
-    displayName: workspaceId,
-  };
-}
-
 const localSkill = {
   id: 'local-skill',
   name: 'local-skill',
@@ -153,7 +122,6 @@ const projects: Project[] = [];
 
 describe('App skills list — daemon-local catalog', () => {
   beforeEach(() => {
-    resetWorkspaceContextCache();
     resetCoalescedGet();
     window.history.replaceState(null, '', '/');
     vi.mocked(daemonIsLive).mockResolvedValue(true);
@@ -169,16 +137,10 @@ describe('App skills list — daemon-local catalog', () => {
     vi.mocked(fetchComposioConfigFromDaemon).mockResolvedValue(null);
     vi.mocked(mergeDaemonConfig).mockImplementation((local) => local);
     vi.mocked(loadConfig).mockReturnValue({ ...baseConfig });
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const pathname = new URL(String(input), 'http://d.local').pathname;
-      const context = workspaceContext('workspace-a');
+    vi.stubGlobal('fetch', vi.fn(async () => {
       return {
         ok: true,
-        json: async () => pathname.endsWith('/workspace/directory')
-          ? workspaceDirectoryFixture([context])
-          : pathname.endsWith('/workspace/context')
-            ? { context }
-            : {},
+        json: async () => ({}),
       } as Response;
     }));
   });
@@ -187,24 +149,15 @@ describe('App skills list — daemon-local catalog', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
-    resetWorkspaceContextCache();
     resetCoalescedGet();
   });
 
-  it('loads once without Workspace arguments and remains stable across a Workspace switch', async () => {
+  it('loads the daemon-local catalog once without Workspace arguments', async () => {
     render(<App />);
 
     expect(await screen.findByTestId('entry-skill-local-skill')).toBeTruthy();
     expect(screen.getByTestId('entry-skills-loading').textContent).toBe('false');
     expect(fetchSkills).toHaveBeenCalledTimes(1);
     expect(vi.mocked(fetchSkills).mock.calls[0]).toEqual([]);
-
-    await act(async () => {
-      notifyWorkspaceContextRefresh({ context: workspaceContext('workspace-b') });
-      await Promise.resolve();
-    });
-
-    await waitFor(() => expect(screen.getByTestId('entry-skill-local-skill')).toBeTruthy());
-    expect(fetchSkills).toHaveBeenCalledTimes(1);
   });
 });

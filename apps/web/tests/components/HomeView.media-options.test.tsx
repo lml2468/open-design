@@ -3,27 +3,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const workspaceContextMock = vi.hoisted(() => ({
-  state: {
-    context: null,
-    resourceReadIdentity: null,
-    loading: false,
-    identityChangePending: false,
-    failure: 'unsupported' as 'unsupported' | 'unavailable' | undefined,
-  },
-}));
-
 vi.mock('../../src/components/home-hero/PlaceholderCarousel', () => ({
   PlaceholderCarousel: () => null,
 }));
-
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>();
-  return {
-    ...actual,
-    useWorkspaceContext: () => workspaceContextMock.state,
-  };
-});
 
 import { HomeView } from '../../src/components/HomeView';
 import { HOME_APPLY_TEMPLATE_EVENT } from '../../src/components/home-hero/chips';
@@ -76,13 +58,6 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
   window.sessionStorage.clear();
-  workspaceContextMock.state = {
-    context: null,
-    resourceReadIdentity: null,
-    loading: false,
-    identityChangePending: false,
-    failure: 'unsupported',
-  };
 });
 
 describe('HomeView media composer options', () => {
@@ -471,7 +446,7 @@ describe('HomeView media composer options', () => {
     })));
   });
 
-  it('does not wait for rich Workspace context after a local plugin was selected', async () => {
+  it('submits after a selected local plugin survives a parent rerender', async () => {
     const fetchMock = stubFetch({ localMediaPlugin: true });
     const onSubmit = vi.fn();
     const props = homeProps({ onSubmit });
@@ -479,13 +454,6 @@ describe('HomeView media composer options', () => {
 
     await clickHomeRailChip('video');
     await setHomePrompt('Create a directory-scoped launch teaser.');
-    workspaceContextMock.state = {
-      context: null,
-      resourceReadIdentity: null,
-      loading: true,
-      identityChangePending: false,
-      failure: undefined,
-    };
     view.rerender(<HomeView {...props} />);
     await submitHome();
 
@@ -498,7 +466,7 @@ describe('HomeView media composer options', () => {
     expect(new Headers(localApply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
   });
 
-  it('keeps bundled plugins usable when identity is pending and the directory is empty', async () => {
+  it('keeps bundled plugins usable when the catalog directory is empty', async () => {
     const fetchMock = stubFetch({ emptyWorkspaceDirectory: true });
     const onSubmit = vi.fn();
     const props = homeProps({ onSubmit });
@@ -509,13 +477,6 @@ describe('HomeView media composer options', () => {
     const applyCountBeforeSubmit = fetchMock.mock.calls.filter(([url]) => (
       typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
     )).length;
-    workspaceContextMock.state = {
-      context: null,
-      resourceReadIdentity: null,
-      loading: false,
-      identityChangePending: true,
-      failure: undefined,
-    };
     view.rerender(<HomeView {...props} />);
     await submitHome();
 
@@ -530,7 +491,7 @@ describe('HomeView media composer options', () => {
     expect(new Headers(submittedApply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
   });
 
-  it('does not wait for directory discovery when applying a bundled plugin', async () => {
+  it('does not wait for unrelated directory discovery when applying a bundled plugin', async () => {
     const fetchMock = stubFetch({ workspaceDirectoryStatus: 503 });
     const onSubmit = vi.fn();
     const props = homeProps({ onSubmit });
@@ -538,13 +499,6 @@ describe('HomeView media composer options', () => {
 
     await clickHomeRailChip('video');
     await setHomePrompt('Create a local launch teaser while identity is unavailable.');
-    workspaceContextMock.state = {
-      context: null,
-      resourceReadIdentity: null,
-      loading: true,
-      identityChangePending: true,
-      failure: 'unavailable',
-    };
     view.rerender(<HomeView {...props} />);
     const directoryReadsBeforeSubmit = fetchMock.mock.calls.filter(([url]) => (
       typeof url === 'string' && url === '/api/workspace/directory'
@@ -568,13 +522,6 @@ describe('HomeView media composer options', () => {
       localMediaPlugin: true,
     });
     const onSubmit = vi.fn();
-    workspaceContextMock.state = {
-      context: null,
-      resourceReadIdentity: null,
-      loading: false,
-      identityChangePending: false,
-      failure: undefined,
-    };
     renderHome({ onSubmit });
 
     await clickHomeRailChip('video');

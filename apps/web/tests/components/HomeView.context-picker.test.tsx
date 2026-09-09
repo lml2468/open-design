@@ -3,48 +3,17 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
   DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID,
   type DesignSystemSummary,
   type InstalledPluginRecord,
   type ConnectorDetail,
   type McpServerConfig,
   type SkillSummary,
-  type WorkspaceCollabContext,
 } from '@open-design/contracts';
-
-const workspaceA: WorkspaceCollabContext = {
-  workspaceId: 'workspace-a',
-  workspaceType: 'team',
-  workspaceMemberId: 'member-a',
-  role: 'member',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  billingState: 'active',
-  planId: 'team_plus',
-  providerMode: 'platform_credits',
-  seatSummary: buildWorkspaceSeatSummary({ seatLimit: 5, usedSeats: 1 }),
-  permissions: buildWorkspacePermissions({ role: 'member', lifecycleState: 'active' }),
-};
-let workspaceContextState: {
-  context: WorkspaceCollabContext | null;
-  loading: boolean;
-  failure?: 'unsupported';
-  identityChangePending?: boolean;
-} = { context: workspaceA, loading: false };
 
 vi.mock('../../src/components/home-hero/PlaceholderCarousel', () => ({
   PlaceholderCarousel: () => null,
 }));
-
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>();
-  return {
-    ...actual,
-    useWorkspaceContext: () => workspaceContextState,
-  };
-});
 
 import { HomeView } from '../../src/components/HomeView';
 import { HOME_APPLY_TEMPLATE_EVENT } from '../../src/components/home-hero/chips';
@@ -149,7 +118,6 @@ function makePlugin(id: string, title: string): InstalledPluginRecord {
 }
 
 afterEach(() => {
-  workspaceContextState = { context: workspaceA, loading: false };
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -185,7 +153,7 @@ async function pickHomeTemplate(id: string) {
 }
 
 describe('HomeView context picker', () => {
-  it('keeps selected local resources while Workspace identity transitions', async () => {
+  it('keeps selected local resources while catalogs refresh', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (url) => {
       if (typeof url === 'string' && url === '/api/plugins') {
         return new Response(JSON.stringify({ plugins: [] }), {
@@ -225,11 +193,6 @@ describe('HomeView context picker', () => {
     fireEvent.mouseDown(await screen.findByRole('option', { name: /prototype lab/i }));
     await waitFor(() => expect(screen.getByTestId('home-hero-active-skill')).toBeTruthy());
 
-    workspaceContextState = {
-      context: null,
-      loading: true,
-      identityChangePending: true,
-    };
     view.rerender(
       <HomeView
         projects={[]}

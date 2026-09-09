@@ -203,9 +203,9 @@ describe('daemon-local design-system catalog', () => {
     }));
   });
 
-  it('collapses concurrent catalog reads for one identity into a single request', async () => {
-    // Bootstrap, the workspace-identity effect and the home-route effect all
-    // want the catalog on the same launch pass, and LibrarySection /
+  it('collapses concurrent catalog reads into a single request', async () => {
+    // Bootstrap and the home-route effect both want the catalog on the same
+    // launch pass, and LibrarySection /
     // DesignSystemsSection / DesignSystemSwitchPicker each read it again as
     // they mount. Every one of those owns its own latest-wins bookkeeping, so
     // none can drop its read — but on the wire they are one request.

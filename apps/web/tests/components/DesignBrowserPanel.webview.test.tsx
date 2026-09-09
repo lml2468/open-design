@@ -358,13 +358,7 @@ describe('DesignBrowserPanel <webview> navigation', () => {
     });
 
     // The listed image is never fetched, and the manifest records no resources.
-    // (`/api/workspace/context` is the unrelated workspace-identity read every
-    // mounted DesignBrowserPanel now fires via useWorkspaceContext — filtered
-    // out here since it isn't a page asset.)
-    const assetFetchCalls = fetchMock.mock.calls.filter(
-      ([url]) => url !== '/api/workspace/context',
-    );
-    expect(assetFetchCalls).toEqual([]);
+    expect(fetchMock.mock.calls).toEqual([]);
     expect(writes.find((w) => w.name.endsWith('/page.html'))?.content).toContain('Example');
     expect(writes.find((w) => w.name.endsWith('/styles.css'))?.content).toContain('#111');
     const manifestWrite = writes.find((w) => w.name.endsWith('/manifest.json'));

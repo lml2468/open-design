@@ -32,7 +32,6 @@ import {
   fetchSkills,
 } from '../../src/providers/registry';
 import { listProjects, listTemplates } from '../../src/state/projects';
-import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
 import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 
@@ -170,7 +169,6 @@ describe('design-system create page — Back destination', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/');
     resetCoalescedGet();
-    resetWorkspaceContextCache();
     vi.mocked(daemonIsLive).mockResolvedValue(true);
     vi.mocked(fetchAgentsStream).mockResolvedValue([]);
     vi.mocked(fetchSkills).mockResolvedValue([]);
@@ -199,7 +197,6 @@ describe('design-system create page — Back destination', () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     resetCoalescedGet();
-    resetWorkspaceContextCache();
     window.history.replaceState(null, '', '/');
   });
 

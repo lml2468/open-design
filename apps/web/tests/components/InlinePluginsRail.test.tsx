@@ -11,26 +11,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-const workspaceContextState = vi.hoisted(() => ({
-  current: {
-    context: null,
-    loading: false,
-    failure: 'unsupported' as const,
-  } as {
-    context: null;
-    loading: boolean;
-    failure?: 'unsupported' | 'unavailable';
-  },
-}));
-
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>();
-  return {
-    ...actual,
-    useWorkspaceContext: () => workspaceContextState.current,
-  };
-});
-
 import { InlinePluginsRail } from '../../src/components/InlinePluginsRail';
 
 const PLUGIN_ROW = {
@@ -81,11 +61,6 @@ const APPLY_RESULT = {
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  workspaceContextState.current = {
-    context: null,
-    loading: false,
-    failure: 'unsupported',
-  };
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -96,12 +71,7 @@ afterEach(() => {
 });
 
 describe('InlinePluginsRail', () => {
-  it('issues a daemon-local read while Workspace identity is unresolved', async () => {
-    workspaceContextState.current = {
-      context: null,
-      loading: true,
-    };
-
+  it('issues a daemon-local catalog read on mount', async () => {
     expect(() =>
       render(<InlinePluginsRail onApplied={() => undefined} />),
     ).not.toThrow();
