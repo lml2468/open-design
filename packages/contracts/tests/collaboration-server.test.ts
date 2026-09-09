@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   CollaborationProjectBindingStateSchema,
+  CollaborationConfirmedReviewCommentBatchSchema,
+  CollaborationPendingReviewCommentBatchResultSchema,
+  CollaborationPendingReviewCommentBatchesSchema,
   CollaborationPublishCandidateSchema,
   CollaborationReviewCommentBatchSchema,
   CollaborationReviewSnapshotSchema,
@@ -158,9 +161,32 @@ describe('collaboration server contracts', () => {
       attachmentIds: [],
     };
     expect(CollaborationReviewCommentBatchSchema.safeParse({ comments: [comment] }).success).toBe(false);
+    const agentComment = {
+      ...comment,
+      agent: { name: 'Reviewer Agent', model: 'review-model' },
+    };
+    expect(CollaborationReviewCommentBatchSchema.safeParse({ comments: [agentComment] }).success).toBe(true);
     expect(CollaborationReviewCommentBatchSchema.safeParse({
-      comments: [{ ...comment, agent: { name: 'Reviewer Agent', model: 'review-model' } }],
-    }).success).toBe(true);
+      comments: [{ ...agentComment, source: 'human', agent: undefined }],
+    }).success).toBe(false);
+    expect(CollaborationReviewCommentBatchSchema.safeParse({
+      comments: [agentComment, { ...agentComment, versionId: 'ver_2' }],
+    }).success).toBe(false);
+
+    const pendingBatch = {
+      id: 'batch-1',
+      remoteProjectId: 'project-1',
+      versionId: 'ver_1',
+      comments: [agentComment],
+      createdAt: '2026-09-09T00:00:00.000Z',
+      expiresAt: '2026-09-10T00:00:00.000Z',
+    };
+    expect(CollaborationPendingReviewCommentBatchResultSchema.parse({ batch: pendingBatch }))
+      .toEqual({ batch: pendingBatch });
+    expect(CollaborationPendingReviewCommentBatchesSchema.parse({ batches: [pendingBatch] }))
+      .toEqual({ batches: [pendingBatch] });
+    expect(CollaborationConfirmedReviewCommentBatchSchema.parse({ comments: [] }))
+      .toEqual({ comments: [] });
   });
 
   it('requires a unique non-empty Owner selection when projecting review comments', () => {

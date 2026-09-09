@@ -1264,14 +1264,18 @@ function printReviewHelp() {
   od review read-file <remoteProjectId> --version <id> --path <bundle-path>
   od review comments <remoteProjectId> [--version <id>] [--json]
   od review submit-comments <remoteProjectId> --input <path|-> [--json]
+  od review pending-comments <remoteProjectId> [--version <id>] [--json]
+  od review confirm-comments <remoteProjectId> <batchId> [--json]
+  od review discard-comments <remoteProjectId> <batchId> [--json]
   od review comment-status <remoteProjectId> <commentId>
             --status <addressed|resolved|reopened> --expected-revision <n>
             [--addressed-in-version <id>] [--json]
 
 Review immutable Collaboration Server versions through the local daemon. The
 CLI never receives the Server token. submit-comments accepts either a JSON
-array or {"comments": [...]} and preserves human/Agent provenance declared by
-each comment.
+array or {"comments": [...]} of Agent comments and stages them locally. A
+person must run confirm-comments in this Desktop session before they are sent
+to the Collaboration Server.
 
 Options:
   --version <id>              Fixed Review Version; defaults to published head.
@@ -1400,7 +1404,48 @@ async function runReview(args) {
       `${projectRoute}/review-comments/batch`,
       payload,
     );
+    return emit(result, () => {
+      console.log(`Pending batch\t${result.batch?.id ?? 'unknown'}`);
+      console.log(`Awaiting confirmation\t${result.batch?.comments?.length ?? 0} comments`);
+    });
+  }
+
+  if (subcommand === 'pending-comments' && !commentId) {
+    const query = typeof flags.version === 'string'
+      ? `?${new URLSearchParams({ versionId: flags.version })}`
+      : '';
+    const result = await collaborationDaemonRequest(
+      base,
+      'GET',
+      `${projectRoute}/review-comments/batches${query}`,
+    );
+    return emit(result, () => {
+      if (!Array.isArray(result?.batches) || result.batches.length === 0) {
+        console.log('No pending Agent comment batches');
+        return;
+      }
+      for (const batch of result.batches) {
+        console.log(`${batch.id}\t${batch.versionId}\t${batch.comments.length} comments\t${batch.expiresAt}`);
+      }
+    });
+  }
+
+  if (subcommand === 'confirm-comments' && commentId) {
+    const result = await collaborationDaemonRequest(
+      base,
+      'POST',
+      `${projectRoute}/review-comments/batches/${encodeURIComponent(commentId)}/confirm`,
+    );
     return emit(result, () => console.log(`Submitted\t${result.comments?.length ?? 0} comments`));
+  }
+
+  if (subcommand === 'discard-comments' && commentId) {
+    await collaborationDaemonRequest(
+      base,
+      'DELETE',
+      `${projectRoute}/review-comments/batches/${encodeURIComponent(commentId)}`,
+    );
+    return emit({ ok: true }, () => console.log(`Discarded\t${commentId}`));
   }
 
   if (subcommand === 'comment-status' && commentId) {

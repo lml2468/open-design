@@ -549,28 +549,32 @@ export type ProjectCollaborationReviewComments = z.infer<
   typeof ProjectCollaborationReviewCommentsSchema
 >;
 
-export const CollaborationReviewCommentBatchSchema = z
-  .object({ comments: z.array(CreateCollaborationReviewCommentSchema).min(1).max(100) })
-  .strict()
-  .superRefine((value, context) => {
-    const versionIds = new Set(value.comments.map((comment) => comment.versionId));
+const CollaborationAgentReviewCommentsSchema = z
+  .array(CreateCollaborationReviewCommentSchema)
+  .min(1)
+  .max(100)
+  .superRefine((comments, context) => {
+    const versionIds = new Set(comments.map((comment) => comment.versionId));
     if (versionIds.size !== 1) {
       context.addIssue({
         code: 'custom',
-        path: ['comments'],
         message: 'all comments in a batch must target the same version',
       });
     }
-    value.comments.forEach((comment, index) => {
+    comments.forEach((comment, index) => {
       if (comment.source !== 'agent') {
         context.addIssue({
           code: 'custom',
-          path: ['comments', index, 'source'],
+          path: [index, 'source'],
           message: 'batch review comments must come from an agent',
         });
       }
     });
   });
+
+export const CollaborationReviewCommentBatchSchema = z
+  .object({ comments: CollaborationAgentReviewCommentsSchema })
+  .strict();
 export type CollaborationReviewCommentBatch = z.infer<
   typeof CollaborationReviewCommentBatchSchema
 >;
@@ -580,7 +584,7 @@ export const CollaborationPendingReviewCommentBatchSchema = z
     id: z.string().min(1).max(200),
     remoteProjectId: z.string().min(1).max(200),
     versionId: z.string().min(1).max(128),
-    comments: z.array(CreateCollaborationReviewCommentSchema).min(1).max(100),
+    comments: CollaborationAgentReviewCommentsSchema,
     createdAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
   })

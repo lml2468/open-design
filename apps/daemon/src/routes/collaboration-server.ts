@@ -23,6 +23,10 @@ import {
   CollaborationProjectBindingStore,
 } from '../collaboration/project-binding.js';
 import {
+  CollaborationReviewCommentBatchStore,
+  type CollaborationReviewCommentBatchScope,
+} from '../collaboration/review-comment-batches.js';
+import {
   buildCollaborationPublishCandidate,
   buildCollaborationReviewBundle,
   CollaborationBundleError,
@@ -77,6 +81,7 @@ export function registerCollaborationServerRoutes(
   const profiles = new CollaborationServerProfileStore(deps.runtimeDataDir);
   const bindings = new CollaborationProjectBindingStore(deps.runtimeDataDir);
   const snapshots = new CollaborationReviewSnapshotStore(deps.runtimeDataDir);
+  const reviewCommentBatches = new CollaborationReviewCommentBatchStore(deps.runtimeDataDir);
   const now = deps.now ?? (() => new Date());
   const clientFor = (origin: string) =>
     new CollaborationServerClient(origin, deps.fetchImpl);
@@ -213,6 +218,9 @@ export function registerCollaborationServerRoutes(
         await clientFor(stored.profile.origin)
           .logout(stored.session.accessToken)
           .catch(() => undefined);
+      }
+      if (stored.profile && stored.session) {
+        await reviewCommentBatches.clearSession(reviewBatchScope(stored));
       }
       await profiles.clearSession();
       return res.status(204).end();
@@ -370,6 +378,14 @@ export function registerCollaborationServerRoutes(
       if (!parsed.success) {
         return deps.sendApiError(res, 400, 'BAD_REQUEST', 'Review comment is invalid');
       }
+      if (parsed.data.source === 'agent') {
+        return deps.sendApiError(
+          res,
+          409,
+          'CONFLICT',
+          'Agent review comments must be staged and confirmed by a person before submission',
+        );
+      }
       try {
         const idempotencyKey = randomUUID();
         const result = await withAuthenticatedClient(profiles, clientFor, now, (client, accessToken) =>
@@ -397,29 +413,131 @@ export function registerCollaborationServerRoutes(
         return deps.sendApiError(res, 400, 'BAD_REQUEST', 'Review comment batch is invalid');
       }
       try {
-        const requests = parsed.data.comments.map((comment) => ({
-          comment,
-          idempotencyKey: randomUUID(),
-        }));
-        const comments = await withAuthenticatedClient(
-          profiles,
-          clientFor,
-          now,
-          async (client, accessToken) => {
-            const created = [];
-            for (const request of requests) {
-              created.push(await client.createComment(
-                accessToken,
-                remoteProjectIdParam(req),
-                request.comment,
-                request.idempotencyKey,
-              ));
+        const stored = await profiles.readCredentials();
+        const batch = await reviewCommentBatches.stage({
+          scope: reviewBatchScope(stored),
+          remoteProjectId: remoteProjectIdParam(req),
+          batch: parsed.data,
+          now: now(),
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(202).json({ batch });
+      } catch (error) {
+        return sendCollaborationError(res, deps, error);
+      }
+    },
+  );
+
+  app.get(
+    '/api/collaboration/projects/:remoteProjectId/review-comments/batches',
+    deps.requireLocalDaemonRequest,
+    async (req, res) => {
+      const versionId = typeof req.query.versionId === 'string' ? req.query.versionId : undefined;
+      if (versionId !== undefined && (versionId.length < 1 || versionId.length > 128)) {
+        return deps.sendApiError(res, 400, 'BAD_REQUEST', 'Review Version id is invalid');
+      }
+      try {
+        const stored = await profiles.readCredentials();
+        const batches = await reviewCommentBatches.list({
+          scope: reviewBatchScope(stored),
+          remoteProjectId: remoteProjectIdParam(req),
+          ...(versionId ? { versionId } : {}),
+          now: now(),
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        return res.json({ batches });
+      } catch (error) {
+        return sendCollaborationError(res, deps, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/collaboration/projects/:remoteProjectId/review-comments/batches/:batchId/confirm',
+    deps.requireLocalDaemonRequest,
+    async (req, res) => {
+      const remoteProjectId = remoteProjectIdParam(req);
+      const batchId = routeParam(req, 'batchId');
+      try {
+        const result = await withProjectOperation(
+          reviewOperations,
+          `review-comment-batch:${batchId}`,
+          async () => {
+            const stored = await profiles.readCredentials();
+            const scope = reviewBatchScope(stored);
+            const batch = await reviewCommentBatches.read({
+              scope,
+              remoteProjectId,
+              batchId,
+              now: now(),
+            });
+            if (!batch) {
+              throw new CollaborationServerRequestError(
+                404,
+                'COLLABORATION_REVIEW_BATCH_NOT_FOUND',
+                'Pending review comment batch was not found',
+              );
             }
-            return created;
+            if (batch.status === 'confirmed') {
+              return batch.comments.map(({ result: comment }) => comment!);
+            }
+            await withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+              for (const [index, pendingComment] of batch.comments.entries()) {
+                if (pendingComment.result) continue;
+                const comment = await client.createComment(
+                  accessToken,
+                  remoteProjectId,
+                  pendingComment.input,
+                  pendingComment.idempotencyKey,
+                );
+                pendingComment.result = comment;
+                await reviewCommentBatches.recordSubmitted({
+                  scope,
+                  remoteProjectId,
+                  batchId,
+                  commentIndex: index,
+                  result: comment,
+                  now: now(),
+                });
+              }
+            });
+            return reviewCommentBatches.markConfirmed({
+              scope,
+              remoteProjectId,
+              batchId,
+              now: now(),
+            });
           },
         );
         res.setHeader('Cache-Control', 'no-store');
-        return res.status(201).json({ comments });
+        return res.json({ comments: result });
+      } catch (error) {
+        return sendCollaborationError(res, deps, error);
+      }
+    },
+  );
+
+  app.delete(
+    '/api/collaboration/projects/:remoteProjectId/review-comments/batches/:batchId',
+    deps.requireLocalDaemonRequest,
+    async (req, res) => {
+      try {
+        const stored = await profiles.readCredentials();
+        const discarded = await reviewCommentBatches.discard({
+          scope: reviewBatchScope(stored),
+          remoteProjectId: remoteProjectIdParam(req),
+          batchId: routeParam(req, 'batchId'),
+          now: now(),
+        });
+        if (!discarded) {
+          return deps.sendApiError(
+            res,
+            404,
+            'NOT_FOUND',
+            'Pending review comment batch was not found',
+          );
+        }
+        return res.status(204).end();
       } catch (error) {
         return sendCollaborationError(res, deps, error);
       }
@@ -998,6 +1116,31 @@ function validateRemoteBindingProject(
       'Remote Project is not an active local-authoritative match for this local Project',
     );
   }
+}
+
+function reviewBatchScope(stored: {
+  profile?: { origin: string };
+  session?: { sessionId: string; user: { id: string } };
+}): CollaborationReviewCommentBatchScope {
+  if (!stored.profile) {
+    throw new CollaborationServerRequestError(
+      409,
+      'COLLABORATION_SERVER_NOT_CONFIGURED',
+      'Configure a Collaboration Server first',
+    );
+  }
+  if (!stored.session) {
+    throw new CollaborationServerRequestError(
+      401,
+      'COLLABORATION_AUTH_REQUIRED',
+      'Sign in to the Collaboration Server first',
+    );
+  }
+  return {
+    serverOrigin: stored.profile.origin,
+    sessionId: stored.session.sessionId,
+    userId: stored.session.user.id,
+  };
 }
 
 async function withAuthenticatedClient<T>(

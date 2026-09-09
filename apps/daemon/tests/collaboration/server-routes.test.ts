@@ -459,7 +459,7 @@ describe('Collaboration Server routes', () => {
     expect(requests.some(({ path }) => path.endsWith('/members/reviewer-1'))).toBe(true);
   });
 
-  it('materializes a verified reviewer Snapshot and relays human or Agent comments', async () => {
+  it('materializes a verified reviewer Snapshot and relays human comments', async () => {
     const html = Buffer.from('<!doctype html><h1>Review</h1>');
     const version = {
       id: 'version-1',
@@ -584,6 +584,181 @@ describe('Collaboration Server routes', () => {
     );
     expect(commentRequest?.headers.get('authorization')).toBe(`Bearer ${session.accessToken}`);
     expect(commentRequest?.headers.get('idempotency-key')).toBeTruthy();
+  });
+
+  it('stages Agent comments for human confirmation and retries partial submission idempotently', async () => {
+    const postAttempts: Array<{ note: string; idempotencyKey: string }> = [];
+    let secondCommentAttempts = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(input.toString());
+      const method = init?.method ?? 'GET';
+      if (url.pathname.endsWith('/capabilities')) return Response.json(capabilities);
+      if (url.pathname.endsWith('/auth/session') && method === 'POST') return Response.json(session);
+      if (url.pathname.endsWith('/auth/session') && method === 'DELETE') {
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname.endsWith('/comments') && method === 'POST') {
+        const body = JSON.parse(String(init?.body)) as {
+          versionId: string;
+          target: unknown;
+          note: string;
+          source: 'agent';
+          agent: unknown;
+        };
+        const idempotencyKey = new Headers(init?.headers).get('idempotency-key') ?? '';
+        postAttempts.push({ note: body.note, idempotencyKey });
+        if (body.note === 'Second Agent review') {
+          secondCommentAttempts += 1;
+          if (secondCommentAttempts === 1) {
+            return Response.json({ title: 'Temporarily unavailable' }, { status: 503 });
+          }
+        }
+        return Response.json({
+          id: body.note.startsWith('First') ? 'comment-agent-1' : 'comment-agent-2',
+          projectId: 'project-1',
+          versionId: body.versionId,
+          target: body.target,
+          note: body.note,
+          source: body.source,
+          agent: body.agent,
+          attachments: [],
+          authorUserId: 'user-1',
+          status: 'open',
+          addressedInVersionId: null,
+          revision: 1,
+          createdAt: '2026-09-06T00:02:00.000Z',
+          updatedAt: '2026-09-06T00:02:00.000Z',
+        }, { status: 201 });
+      }
+      return Response.json({ title: 'Not found' }, { status: 404 });
+    });
+    const baseUrl = await startRoutes(fetchImpl);
+    await jsonRequest(baseUrl, '/api/collaboration/server', {
+      method: 'PUT', body: JSON.stringify({ origin: 'https://design.example.test' }),
+    });
+    await jsonRequest(baseUrl, '/api/collaboration/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: user.email, password: 'a-long-secret-password', deviceName: 'Reviewer Mac',
+      }),
+    });
+
+    const agentComment = {
+      versionId: 'version-1',
+      target: {
+        filePath: 'preview/index.html',
+        selectionKind: 'visual',
+        position: { x: 0.4, y: 0.2, width: 0, height: 0 },
+      },
+      note: 'First Agent review',
+      source: 'agent',
+      agent: { name: 'Review Bot', model: 'review-model' },
+      attachmentIds: [],
+    };
+    const direct = await jsonRequest(
+      baseUrl,
+      '/api/collaboration/projects/project-1/review-comments',
+      { method: 'POST', body: JSON.stringify(agentComment) },
+    );
+    expect(direct).toMatchObject({ status: 409, body: { error: { code: 'CONFLICT' } } });
+    expect(postAttempts).toHaveLength(0);
+
+    const staged = await jsonRequest(
+      baseUrl,
+      '/api/collaboration/projects/project-1/review-comments/batch',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          comments: [agentComment, { ...agentComment, note: 'Second Agent review' }],
+        }),
+      },
+    );
+    expect(staged).toMatchObject({
+      status: 202,
+      body: { batch: { remoteProjectId: 'project-1', versionId: 'version-1' } },
+    });
+    expect(postAttempts).toHaveLength(0);
+    const batchId = (staged.body as { batch: { id: string } }).batch.id;
+
+    const listed = await jsonRequest(
+      baseUrl,
+      '/api/collaboration/projects/project-1/review-comments/batches?versionId=version-1',
+    );
+    expect(listed.status).toBe(200);
+    expect((listed.body as { batches: Array<{ id: string; comments: unknown[] }> }).batches[0])
+      .toMatchObject({ id: batchId, comments: expect.arrayContaining([
+        expect.objectContaining({ note: 'First Agent review' }),
+      ]) });
+
+    const firstConfirmation = await jsonRequest(
+      baseUrl,
+      `/api/collaboration/projects/project-1/review-comments/batches/${batchId}/confirm`,
+      { method: 'POST' },
+    );
+    expect(firstConfirmation.status).toBe(503);
+    expect(postAttempts.map(({ note }) => note)).toEqual([
+      'First Agent review',
+      'Second Agent review',
+    ]);
+
+    const confirmed = await jsonRequest(
+      baseUrl,
+      `/api/collaboration/projects/project-1/review-comments/batches/${batchId}/confirm`,
+      { method: 'POST' },
+    );
+    expect(confirmed).toMatchObject({
+      status: 200,
+      body: { comments: [{ id: 'comment-agent-1' }, { id: 'comment-agent-2' }] },
+    });
+    expect(postAttempts.map(({ note }) => note)).toEqual([
+      'First Agent review',
+      'Second Agent review',
+      'Second Agent review',
+    ]);
+    expect(postAttempts[1]!.idempotencyKey).toBe(postAttempts[2]!.idempotencyKey);
+    expect(postAttempts[0]!.idempotencyKey).not.toBe(postAttempts[1]!.idempotencyKey);
+
+    const repeated = await jsonRequest(
+      baseUrl,
+      `/api/collaboration/projects/project-1/review-comments/batches/${batchId}/confirm`,
+      { method: 'POST' },
+    );
+    expect(repeated).toEqual(confirmed);
+    expect(postAttempts).toHaveLength(3);
+    expect(await jsonRequest(
+      baseUrl,
+      '/api/collaboration/projects/project-1/review-comments/batches?versionId=version-1',
+    )).toEqual({ status: 200, body: { batches: [] } });
+
+    const discarded = await jsonRequest(
+      baseUrl,
+      '/api/collaboration/projects/project-1/review-comments/batch',
+      { method: 'POST', body: JSON.stringify({ comments: [agentComment] }) },
+    );
+    const discardedBatchId = (discarded.body as { batch: { id: string } }).batch.id;
+    expect(await jsonRequest(
+      baseUrl,
+      `/api/collaboration/projects/project-1/review-comments/batches/${discardedBatchId}`,
+      { method: 'DELETE' },
+    )).toEqual({ status: 204, body: null });
+
+    await jsonRequest(
+      baseUrl,
+      '/api/collaboration/projects/project-1/review-comments/batch',
+      { method: 'POST', body: JSON.stringify({ comments: [agentComment] }) },
+    );
+    expect(await jsonRequest(baseUrl, '/api/collaboration/session', { method: 'DELETE' }))
+      .toEqual({ status: 204, body: null });
+    await jsonRequest(baseUrl, '/api/collaboration/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: user.email, password: 'a-long-secret-password', deviceName: 'Reviewer Mac',
+      }),
+    });
+    expect(await jsonRequest(
+      baseUrl,
+      '/api/collaboration/projects/project-1/review-comments/batches?versionId=version-1',
+    )).toEqual({ status: 200, body: { batches: [] } });
   });
 
   it('lets the bound Owner idempotently project selected remote feedback into a local conversation', async () => {

@@ -2176,7 +2176,8 @@ button.agent-group-rescan-btn:hover:not(:disabled) {
   max-height: min(760px, calc(100vh - 48px));
   flex-direction: column;
   gap: 18px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -2184,6 +2185,10 @@ button.agent-group-rescan-btn:hover:not(:disabled) {
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
   color: var(--text);
   text-align: left;
+}
+
+.project-collaboration-dialog > * {
+  flex-shrink: 0;
 }
 
 .project-collaboration-dialog__header,
@@ -2746,6 +2751,85 @@ button.agent-group-rescan-btn:hover:not(:disabled) {
 .collaboration-review-dialog__comments-head span {
   color: var(--text-muted);
   font-size: 11px;
+}
+
+.collaboration-review-dialog__pending-batches {
+  max-height: 44%;
+  padding: 12px 14px;
+  overflow: auto;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--accent-soft);
+}
+
+.collaboration-review-dialog__pending-head h4,
+.collaboration-review-dialog__pending-head p {
+  margin: 0;
+}
+
+.collaboration-review-dialog__pending-head h4 {
+  font-size: 12px;
+}
+
+.collaboration-review-dialog__pending-head p,
+.collaboration-review-dialog__pending-batch > small,
+.collaboration-review-dialog__pending-comments small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.collaboration-review-dialog__pending-head p {
+  margin-top: 3px;
+}
+
+.collaboration-review-dialog__pending-batch {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+}
+
+.collaboration-review-dialog__pending-comments {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.collaboration-review-dialog__pending-comments > div {
+  min-width: 0;
+}
+
+.collaboration-review-dialog__pending-comments strong {
+  margin-right: 6px;
+  font-size: 11px;
+}
+
+.collaboration-review-dialog__pending-comments p {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.collaboration-review-dialog__pending-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.collaboration-review-dialog__pending-actions > button:first-child {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.collaboration-review-dialog__pending-actions button:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .collaboration-review-dialog__composer {

@@ -162,7 +162,7 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
       });
     });
 
-    const agentComment = await test.step('submit a provenance-bearing comment through the Reviewer Agent boundary', async () => {
+    const agentComment = await test.step('review and confirm a provenance-bearing Agent comment before upload', async () => {
       const response = await reviewer.page.request.post(
         `/api/collaboration/projects/${encodeURIComponent(remoteProjectId)}/review-comments/batch`,
         {
@@ -188,13 +188,34 @@ test('[P0] real self-hosted Server closes the Owner and Reviewer Desktop review 
         },
       );
       expect(response.ok(), await response.text()).toBeTruthy();
-      const body = await response.json() as { comments: Array<{ id: string }> };
-      expect(body.comments).toHaveLength(1);
+      expect(response.status()).toBe(202);
+      const body = await response.json() as { batch: { id: string; comments: unknown[] } };
+      expect(body.batch.comments).toHaveLength(1);
+
+      const beforeConfirmation = await reviewer.page.request.get(
+        `/api/collaboration/projects/${encodeURIComponent(remoteProjectId)}/review-comments?versionId=${encodeURIComponent(versionOneId)}`,
+      );
+      expect(beforeConfirmation.ok(), await beforeConfirmation.text()).toBeTruthy();
+      const commentsBefore = await beforeConfirmation.json() as { comments: Array<{ note: string }> };
+      expect(commentsBefore.comments.some(({ note }) => note === AGENT_COMMENT)).toBe(false);
+
       const dialog = reviewer.page.getByRole('dialog', { name: PROJECT_NAME });
       await dialog.getByRole('button', { name: 'Refresh comments' }).click();
+      await expect(dialog.getByText('Agent comments awaiting approval')).toBeVisible();
       await expect(dialog.getByText(AGENT_COMMENT)).toBeVisible();
       await expect(dialog.getByText('Reviewer Agent', { exact: true })).toBeVisible();
-      return body.comments[0]!;
+      await dialog.getByRole('button', { name: 'Confirm and submit 1' }).click();
+      await expect(dialog.getByText('Agent comments awaiting approval')).not.toBeVisible();
+      await expect(dialog.getByText(AGENT_COMMENT)).toBeVisible();
+
+      const afterConfirmation = await reviewer.page.request.get(
+        `/api/collaboration/projects/${encodeURIComponent(remoteProjectId)}/review-comments?versionId=${encodeURIComponent(versionOneId)}`,
+      );
+      expect(afterConfirmation.ok(), await afterConfirmation.text()).toBeTruthy();
+      const commentsAfter = await afterConfirmation.json() as {
+        comments: Array<{ id: string; note: string }>;
+      };
+      return commentsAfter.comments.find(({ note }) => note === AGENT_COMMENT)!;
     });
     expect(agentComment.id).toBeTruthy();
 
@@ -351,21 +372,77 @@ async function publishCurrentProject(
 ): Promise<{ remoteProjectId: string; versionId: string }> {
   const dialog = await openPublishDialog(page);
   const unbound = dialog.getByRole('button', { name: 'Create collaboration Project' });
-  if (await unbound.isVisible().catch(() => false)) {
-    await unbound.click();
-    await expect(dialog.getByText('Remote Project', { exact: true })).toBeVisible({ timeout: T.long });
-  }
-  await dialog.getByRole('button', { name: 'Review Publish files' }).click();
+  const prepareButton = dialog.getByRole('button', { name: 'Review Publish files' });
   const confirmation = dialog.getByRole('checkbox');
-  await expect(confirmation).toBeVisible({ timeout: T.long });
+  await expect(async () => {
+    if (await unbound.isVisible().catch(() => false)) {
+      await expect(unbound).toBeEnabled({ timeout: T.short });
+      const bindResponse = await Promise.all([
+        page.waitForResponse((response) => {
+          const url = new URL(response.url());
+          return /\/api\/projects\/[^/]+\/collaboration$/.test(url.pathname)
+            && response.request().method() === 'POST';
+        }, { timeout: T.short }),
+        unbound.click({ timeout: T.short }),
+      ]).then(([response]) => response);
+      expect(bindResponse.ok(), await bindResponse.text()).toBeTruthy();
+    }
+
+    await expect(prepareButton).toBeEnabled({ timeout: T.short });
+    const candidateResponse = await Promise.all([
+      page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname.endsWith('/collaboration/publish-candidate')
+          && response.request().method() === 'POST';
+      }, { timeout: T.short }),
+      prepareButton.click({ timeout: T.short }),
+    ]).then(([response]) => response);
+    expect(candidateResponse.ok(), await candidateResponse.text()).toBeTruthy();
+    await expect(confirmation).toBeVisible({ timeout: T.short });
+  }).toPass({ timeout: T.long });
   await confirmation.check();
-  const publishResponse = page.waitForResponse((response) => {
+  const publishButton = dialog.getByRole('button', { name: 'Publish version' });
+  await expect(publishButton).toBeEnabled({ timeout: T.long });
+  let requestSent = false;
+  const onRequest = (request: Request) => {
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/collaboration/publish') && request.method() === 'POST') {
+      requestSent = true;
+    }
+  };
+  page.on('request', onRequest);
+  const isPublishResponse = (response: Response) => {
     const url = new URL(response.url());
     return url.pathname.endsWith('/collaboration/publish')
       && response.request().method() === 'POST';
-  }, { timeout: T.long });
-  await dialog.getByRole('button', { name: 'Publish version' }).click();
-  const response = await publishResponse;
+  };
+  let response: Response | undefined;
+  let lastError: unknown;
+  try {
+    for (let attempt = 0; attempt < 3 && !response; attempt += 1) {
+      requestSent = false;
+      try {
+        await expect(publishButton).toBeEnabled({ timeout: T.short });
+        response = await Promise.all([
+          page.waitForResponse(isPublishResponse, { timeout: T.short }),
+          publishButton.click({ timeout: T.short }),
+        ]).then(([result]) => result);
+      } catch (error) {
+        lastError = error;
+        if (requestSent) {
+          throw new Error('Publish request was sent but no response arrived', { cause: error });
+        }
+      }
+    }
+  } finally {
+    page.off('request', onRequest);
+  }
+  if (!response) {
+    throw new Error(
+      'Publish did not complete (request not sent after 3 actionable clicks)',
+      { cause: lastError },
+    );
+  }
   expect(response.ok(), await response.text()).toBeTruthy();
   const body = await response.json() as {
     binding: { remoteProjectId: string };

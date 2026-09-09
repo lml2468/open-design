@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type MouseEv
 import { createPortal } from 'react-dom';
 import { Button } from '@open-design/components';
 import type {
+  CollaborationConfirmedReviewCommentBatch,
+  CollaborationPendingReviewCommentBatch,
+  CollaborationPendingReviewCommentBatches,
   CollaborationProject,
   CollaborationReviewComment,
   CollaborationReviewComments,
@@ -14,6 +17,7 @@ import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 
 type PendingAction = 'snapshot' | 'comments' | 'submit' | 'transition' | null;
+type PendingBatchAction = { batchId: string; action: 'confirm' | 'discard' } | null;
 
 async function daemonJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -58,37 +62,52 @@ export function CollaborationReviewDialog({
   );
   const [snapshot, setSnapshot] = useState<CollaborationReviewSnapshot | null>(null);
   const [comments, setComments] = useState<CollaborationReviewComment[]>([]);
+  const [pendingBatches, setPendingBatches] = useState<CollaborationPendingReviewCommentBatch[]>([]);
   const [commentRevision, setCommentRevision] = useState(0);
   const [note, setNote] = useState('');
   const [placing, setPlacing] = useState(false);
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
   const [pending, setPending] = useState<PendingAction>('snapshot');
+  const [pendingBatchAction, setPendingBatchAction] = useState<PendingBatchAction>(null);
   const [error, setError] = useState<string | null>(null);
 
   const route = `/api/collaboration/projects/${encodeURIComponent(project.id)}`;
 
   const loadComments = useCallback(async (versionId: string) => {
     setPending('comments');
+    const query = new URLSearchParams({ versionId });
+    const result = await daemonJson<CollaborationReviewComments>(
+      `${route}/review-comments?${query}`,
+    );
+    setComments(result.comments);
+    setCommentRevision(result.commentRevision);
+  }, [route]);
+
+  const loadPendingBatches = useCallback(async (versionId: string) => {
+    const query = new URLSearchParams({ versionId });
+    const result = await daemonJson<CollaborationPendingReviewCommentBatches>(
+      `${route}/review-comments/batches?${query}`,
+    );
+    setPendingBatches(result.batches);
+  }, [route]);
+
+  const refreshReviewData = useCallback(async (versionId: string) => {
+    setError(null);
     try {
-      const query = new URLSearchParams({ versionId });
-      const result = await daemonJson<CollaborationReviewComments>(
-        `${route}/review-comments?${query}`,
-      );
-      setComments(result.comments);
-      setCommentRevision(result.commentRevision);
-      setError(null);
+      await Promise.all([loadComments(versionId), loadPendingBatches(versionId)]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setPending(null);
     }
-  }, [route]);
+  }, [loadComments, loadPendingBatches]);
 
   const loadSnapshot = useCallback(async (versionId?: string) => {
     setPending('snapshot');
     setError(null);
     setSnapshot(null);
     setComments([]);
+    setPendingBatches([]);
     setPoint(null);
     setPlacing(false);
     try {
@@ -101,12 +120,12 @@ export function CollaborationReviewDialog({
       );
       setSnapshot(next);
       setSelectedVersionId(next.version.id);
-      await loadComments(next.version.id);
+      await refreshReviewData(next.version.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setPending(null);
     }
-  }, [loadComments, route]);
+  }, [refreshReviewData, route]);
 
   useEffect(() => {
     let cancelled = false;
@@ -216,6 +235,38 @@ export function CollaborationReviewDialog({
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setPending(null);
+    }
+  };
+
+  const confirmPendingBatch = async (batch: CollaborationPendingReviewCommentBatch) => {
+    setPendingBatchAction({ batchId: batch.id, action: 'confirm' });
+    setError(null);
+    try {
+      await daemonJson<CollaborationConfirmedReviewCommentBatch>(
+        `${route}/review-comments/batches/${encodeURIComponent(batch.id)}/confirm`,
+        { method: 'POST' },
+      );
+      await refreshReviewData(batch.versionId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPendingBatchAction(null);
+    }
+  };
+
+  const discardPendingBatch = async (batch: CollaborationPendingReviewCommentBatch) => {
+    setPendingBatchAction({ batchId: batch.id, action: 'discard' });
+    setError(null);
+    try {
+      await daemonJson<null>(
+        `${route}/review-comments/batches/${encodeURIComponent(batch.id)}`,
+        { method: 'DELETE' },
+      );
+      setPendingBatches((current) => current.filter(({ id }) => id !== batch.id));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPendingBatchAction(null);
     }
   };
 
@@ -344,11 +395,66 @@ export function CollaborationReviewDialog({
                 type="button"
                 aria-label={t('collaboration.review.refreshComments')}
                 disabled={!snapshot || pending === 'comments'}
-                onClick={() => snapshot && void loadComments(snapshot.version.id)}
+                onClick={() => snapshot && void refreshReviewData(snapshot.version.id)}
               >
                 <Icon name={pending === 'comments' ? 'spinner' : 'refresh'} size={15} className={pending === 'comments' ? 'icon-spin' : undefined} />
               </button>
             </div>
+
+            {pendingBatches.length > 0 ? (
+              <section
+                className="collaboration-review-dialog__pending-batches"
+                aria-label={t('collaboration.review.pendingAgentTitle')}
+              >
+                <div className="collaboration-review-dialog__pending-head">
+                  <h4>{t('collaboration.review.pendingAgentTitle')}</h4>
+                  <p>{t('collaboration.review.pendingAgentDescription')}</p>
+                </div>
+                {pendingBatches.map((batch) => {
+                  const activeAction = pendingBatchAction?.batchId === batch.id
+                    ? pendingBatchAction.action
+                    : null;
+                  return (
+                    <article key={batch.id} className="collaboration-review-dialog__pending-batch">
+                      <small>{t('collaboration.review.pendingAgentCount', {
+                        count: batch.comments.length,
+                      })}</small>
+                      <div className="collaboration-review-dialog__pending-comments">
+                        {batch.comments.map((comment, index) => (
+                          <div key={`${batch.id}-${index}`}>
+                            <strong>{comment.agent?.name ?? t('collaboration.review.agent')}</strong>
+                            {comment.agent?.model ? <small>{comment.agent.model}</small> : null}
+                            <p>{comment.note}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="collaboration-review-dialog__pending-actions">
+                        <button
+                          type="button"
+                          disabled={pendingBatchAction !== null}
+                          onClick={() => void discardPendingBatch(batch)}
+                        >
+                          {activeAction === 'discard'
+                            ? t('collaboration.review.discardingAgentComments')
+                            : t('collaboration.review.discardAgentComments')}
+                        </button>
+                        <Button
+                          type="button"
+                          disabled={pendingBatchAction !== null}
+                          onClick={() => void confirmPendingBatch(batch)}
+                        >
+                          {activeAction === 'confirm'
+                            ? t('collaboration.review.confirmingAgentComments')
+                            : t('collaboration.review.confirmAgentComments', {
+                              count: batch.comments.length,
+                            })}
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            ) : null}
 
             <form className="collaboration-review-dialog__composer" onSubmit={submitComment}>
               <p>{point

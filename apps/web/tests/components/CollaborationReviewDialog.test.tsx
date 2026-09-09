@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CollaborationReviewDialog } from '../../src/components/collaboration/CollaborationReviewDialog';
 import { I18nProvider } from '../../src/i18n';
@@ -75,6 +75,9 @@ describe('CollaborationReviewDialog', () => {
           cachedAt: '2026-09-06T00:02:00.000Z',
         });
       }
+      if (url.includes('/review-comments/batches?')) {
+        return Response.json({ batches: [] });
+      }
       if (url.includes('/review-comments?')) {
         return Response.json({ comments: [], commentRevision: 0 });
       }
@@ -148,5 +151,129 @@ describe('CollaborationReviewDialog', () => {
       },
     });
     expect(requests.every(({ url }) => url.startsWith('/api/collaboration/'))).toBe(true);
+  });
+
+  it('shows Agent suggestions locally and requires confirm or discard before submission', async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    let confirmed = false;
+    let discarded = false;
+    const agentComment = {
+      versionId: version.id,
+      target: {
+        filePath: 'preview/index.html',
+        selectionKind: 'visual' as const,
+        position: { x: 0.4, y: 0.25, width: 0, height: 0 },
+      },
+      note: 'Increase the primary CTA contrast',
+      source: 'agent' as const,
+      agent: { name: 'Review Bot', model: 'review-model' },
+      attachmentIds: [],
+    };
+    const batch = (id: string, note: string) => ({
+      id,
+      remoteProjectId: project.id,
+      versionId: version.id,
+      comments: [{ ...agentComment, note }],
+      createdAt: '2026-09-09T00:00:00.000Z',
+      expiresAt: '2026-09-10T00:00:00.000Z',
+    });
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      requests.push({ url, method });
+      if (url.endsWith('/versions')) return Response.json({ versions: [version] });
+      if (url.endsWith('/review-snapshot')) {
+        return Response.json({
+          snapshotId: 'f'.repeat(64),
+          project,
+          version,
+          manifest: {
+            schemaVersion: 1,
+            mode: 'preview-only',
+            project: { sourceProjectId: 'local-project-1', name: project.name },
+            createdAt: version.createdAt,
+            entrypoint: 'preview/index.html',
+            files: [{
+              path: 'preview/index.html',
+              role: 'preview',
+              sha256: 'c'.repeat(64),
+              size: 42,
+              mimeType: 'text/html',
+            }],
+          },
+          entrypointUrl: `/api/collaboration/review-snapshots/${'f'.repeat(64)}/files/preview/index.html`,
+          cachedAt: '2026-09-09T00:00:00.000Z',
+        });
+      }
+      if (url.includes('/review-comments/batches?')) {
+        return Response.json({
+          batches: [
+            ...(confirmed ? [] : [batch('batch-confirm', agentComment.note)]),
+            ...(discarded ? [] : [batch('batch-discard', 'Remove the secondary border')]),
+          ],
+        });
+      }
+      if (url.includes('/review-comments?')) {
+        return Response.json({
+          comments: confirmed ? [{
+            id: 'comment-agent-1',
+            projectId: project.id,
+            ...agentComment,
+            attachments: [],
+            authorUserId: 'reviewer-1',
+            status: 'open',
+            addressedInVersionId: null,
+            revision: 1,
+            createdAt: '2026-09-09T00:01:00.000Z',
+            updatedAt: '2026-09-09T00:01:00.000Z',
+          }] : [],
+          commentRevision: confirmed ? 1 : 0,
+        });
+      }
+      if (url.endsWith('/review-comments/batches/batch-confirm/confirm') && method === 'POST') {
+        confirmed = true;
+        return Response.json({ comments: [] });
+      }
+      if (url.endsWith('/review-comments/batches/batch-discard') && method === 'DELETE') {
+        discarded = true;
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ error: { message: 'unexpected request' } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <I18nProvider initial="en">
+        <CollaborationReviewDialog
+          project={project}
+          session={{
+            sessionId: 'session-1',
+            user: { id: 'reviewer-1', email: 'reviewer@example.test', displayName: 'Reviewer' },
+          }}
+          onClose={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText('Agent comments awaiting approval')).toBeTruthy();
+    expect(screen.getAllByText('Review Bot')).toHaveLength(2);
+    expect(screen.getAllByText('review-model')).toHaveLength(2);
+    expect(screen.getByText(agentComment.note)).toBeTruthy();
+    expect(requests.some(({ url, method }) =>
+      url.endsWith('/review-comments') && method === 'POST')).toBe(false);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Discard' })[1]!);
+    await waitFor(() => expect(screen.queryByText('Remove the secondary border')).toBeNull());
+    expect(requests).toContainEqual({
+      url: '/api/collaboration/projects/project-1/review-comments/batches/batch-discard',
+      method: 'DELETE',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and submit 1' }));
+    await waitFor(() => expect(screen.queryByText('Agent comments awaiting approval')).toBeNull());
+    expect(await screen.findByText(agentComment.note)).toBeTruthy();
+    expect(requests).toContainEqual({
+      url: '/api/collaboration/projects/project-1/review-comments/batches/batch-confirm/confirm',
+      method: 'POST',
+    });
   });
 });

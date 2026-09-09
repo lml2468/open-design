@@ -374,26 +374,61 @@ describe('od collaboration CLI', () => {
     expect(JSON.parse(stub.requests[2]!.body)).toEqual({ email: 'next@example.test' });
   });
 
-  it('lets a local Reviewer Agent inspect comments and submit provenance-tagged feedback', async () => {
+  it('lets a local Reviewer Agent stage feedback for explicit human confirmation', async () => {
     stub.setResponder((request) => {
+      if (request.method === 'GET' && request.url.startsWith('/api/collaboration/projects/p1/review-comments/batches')) {
+        return {
+          status: 200,
+          body: {
+            batches: [{
+              id: 'batch-1',
+              remoteProjectId: 'p1',
+              versionId: 'v1',
+              comments: [{ note: 'Increase contrast', source: 'agent' }],
+              expiresAt: '2026-09-10T00:00:00.000Z',
+            }],
+          },
+        };
+      }
       if (request.method === 'GET' && request.url.startsWith('/api/collaboration/projects/p1/review-comments')) {
         return { status: 200, body: { comments: [], commentRevision: 0 } };
       }
       if (request.method === 'POST' && request.url.endsWith('/review-comments/batch')) {
         const payload = JSON.parse(request.body);
         return {
-          status: 201,
+          status: 202,
           body: {
-            comments: payload.comments.map((comment: Record<string, unknown>, index: number) => ({
-              id: `c${index + 1}`,
+            batch: {
+              id: 'batch-1',
+              remoteProjectId: 'p1',
+              versionId: 'v1',
+              comments: payload.comments,
+              createdAt: '2026-09-09T00:00:00.000Z',
+              expiresAt: '2026-09-10T00:00:00.000Z',
+            },
+          },
+        };
+      }
+      if (request.method === 'POST' && request.url.endsWith('/review-comments/batches/batch-1/confirm')) {
+        return {
+          status: 200,
+          body: {
+            comments: [{
+              id: 'c1',
               projectId: 'p1',
-              ...comment,
+              versionId: 'v1',
+              note: 'Increase contrast',
+              source: 'agent',
+              agent: { name: 'Review Bot', model: 'review-model' },
               authorUserId: 'reviewer-1',
               status: 'open',
               revision: 1,
-            })),
+            }],
           },
         };
+      }
+      if (request.method === 'DELETE' && request.url.endsWith('/review-comments/batches/batch-1')) {
+        return { status: 204, body: null };
       }
       return { status: 404, body: { error: { code: 'NOT_FOUND', message: 'unexpected' } } };
     });
@@ -420,13 +455,47 @@ describe('od collaboration CLI', () => {
       'review', 'submit-comments', 'p1', '--input', '-', '--json', '--daemon-url', stub.baseUrl,
     ], input);
     expect(submitted.code).toBe(0);
-    expect(JSON.parse(submitted.stdout).comments[0]).toMatchObject({
+    expect(JSON.parse(submitted.stdout).batch.comments[0]).toMatchObject({
       source: 'agent',
       agent: { name: 'Review Bot', model: 'review-model' },
     });
     expect(JSON.parse(stub.requests.at(-1)!.body)).toMatchObject({
       comments: [{ source: 'agent', agent: { name: 'Review Bot' } }],
     });
+
+    const pending = await runCli([
+      'review', 'pending-comments', 'p1', '--version', 'v1', '--json', '--daemon-url', stub.baseUrl,
+    ]);
+    expect(pending.code).toBe(0);
+    expect(JSON.parse(pending.stdout).batches[0]).toMatchObject({ id: 'batch-1', versionId: 'v1' });
+
+    const confirmed = await runCli([
+      'review', 'confirm-comments', 'p1', 'batch-1', '--json', '--daemon-url', stub.baseUrl,
+    ]);
+    expect(confirmed.code).toBe(0);
+    expect(JSON.parse(confirmed.stdout).comments[0]).toMatchObject({
+      id: 'c1',
+      source: 'agent',
+    });
+
+    const discarded = await runCli([
+      'review', 'discard-comments', 'p1', 'batch-1', '--json', '--daemon-url', stub.baseUrl,
+    ]);
+    expect(discarded).toMatchObject({ code: 0, stdout: '{\n  "ok": true\n}\n' });
+    expect(stub.requests.slice(-3).map(({ method, url }) => ({ method, url }))).toEqual([
+      {
+        method: 'GET',
+        url: '/api/collaboration/projects/p1/review-comments/batches?versionId=v1',
+      },
+      {
+        method: 'POST',
+        url: '/api/collaboration/projects/p1/review-comments/batches/batch-1/confirm',
+      },
+      {
+        method: 'DELETE',
+        url: '/api/collaboration/projects/p1/review-comments/batches/batch-1',
+      },
+    ]);
   });
 
   it('lets the Owner list and attach selected review feedback through the local daemon', async () => {
