@@ -551,16 +551,63 @@ export type ProjectCollaborationReviewComments = z.infer<
 
 export const CollaborationReviewCommentBatchSchema = z
   .object({ comments: z.array(CreateCollaborationReviewCommentSchema).min(1).max(100) })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const versionIds = new Set(value.comments.map((comment) => comment.versionId));
+    if (versionIds.size !== 1) {
+      context.addIssue({
+        code: 'custom',
+        path: ['comments'],
+        message: 'all comments in a batch must target the same version',
+      });
+    }
+    value.comments.forEach((comment, index) => {
+      if (comment.source !== 'agent') {
+        context.addIssue({
+          code: 'custom',
+          path: ['comments', index, 'source'],
+          message: 'batch review comments must come from an agent',
+        });
+      }
+    });
+  });
 export type CollaborationReviewCommentBatch = z.infer<
   typeof CollaborationReviewCommentBatchSchema
 >;
 
-export const CollaborationReviewCommentBatchResultSchema = z
+export const CollaborationPendingReviewCommentBatchSchema = z
+  .object({
+    id: z.string().min(1).max(200),
+    remoteProjectId: z.string().min(1).max(200),
+    versionId: z.string().min(1).max(128),
+    comments: z.array(CreateCollaborationReviewCommentSchema).min(1).max(100),
+    createdAt: z.string().datetime(),
+    expiresAt: z.string().datetime(),
+  })
+  .strict();
+export type CollaborationPendingReviewCommentBatch = z.infer<
+  typeof CollaborationPendingReviewCommentBatchSchema
+>;
+
+export const CollaborationPendingReviewCommentBatchResultSchema = z
+  .object({ batch: CollaborationPendingReviewCommentBatchSchema })
+  .strict();
+export type CollaborationPendingReviewCommentBatchResult = z.infer<
+  typeof CollaborationPendingReviewCommentBatchResultSchema
+>;
+
+export const CollaborationPendingReviewCommentBatchesSchema = z
+  .object({ batches: z.array(CollaborationPendingReviewCommentBatchSchema) })
+  .strict();
+export type CollaborationPendingReviewCommentBatches = z.infer<
+  typeof CollaborationPendingReviewCommentBatchesSchema
+>;
+
+export const CollaborationConfirmedReviewCommentBatchSchema = z
   .object({ comments: z.array(CollaborationReviewCommentSchema) })
   .strict();
-export type CollaborationReviewCommentBatchResult = z.infer<
-  typeof CollaborationReviewCommentBatchResultSchema
+export type CollaborationConfirmedReviewCommentBatch = z.infer<
+  typeof CollaborationConfirmedReviewCommentBatchSchema
 >;
 
 export const ProjectCollaborationCommentProjectionRequestSchema = z
