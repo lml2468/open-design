@@ -433,12 +433,6 @@ describe('FileWorkspace design-system project surface', () => {
       if (url.includes('/raw/fonts/') || url.includes('/raw/system/tokens.')) {
         return new Response(null, { status: 404 });
       }
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
       events.push(url);
       return new Response(JSON.stringify({ id: 'brand-acme' }), {
         status: 200,
@@ -553,12 +547,6 @@ describe('FileWorkspace design-system project surface', () => {
       if (url.includes('/raw/fonts/') || url.includes('/raw/system/tokens.')) {
         return new Response(null, { status: 404 });
       }
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
       events.push(url);
       return new Response(JSON.stringify({ id: 'brand-acme' }), {
         status: 200,
@@ -644,12 +632,6 @@ describe('FileWorkspace design-system project surface', () => {
       }
       if (url.includes('/raw/fonts/') || url.includes('/raw/system/tokens.')) {
         return new Response(null, { status: 404 });
-      }
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
       }
       events.push(url);
       if (url === '/api/brands/brand-acme/finalize') {

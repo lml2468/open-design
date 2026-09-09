@@ -127,7 +127,7 @@ describe('project design system route gates', () => {
     const draft = await createUserDesignSystem('draft');
 
     const workspaceResp = await fetch(
-      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/workspace`,
+      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/project`,
       { method: 'POST' },
     );
     expect(workspaceResp.status).toBe(201);
@@ -147,7 +147,7 @@ describe('project design system route gates', () => {
     expect(patchResp.status).toBe(200);
 
     const reopenedResp = await fetch(
-      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/workspace`,
+      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/project`,
       { method: 'POST' },
     );
     expect(reopenedResp.status).toBe(201);
@@ -198,7 +198,7 @@ describe('project design system route gates', () => {
     const draft = await createUserDesignSystem('draft');
 
     const workspaceResp = await fetch(
-      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/workspace`,
+      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/project`,
       { method: 'POST' },
     );
     expect(workspaceResp.status).toBe(201);
@@ -225,7 +225,7 @@ describe('project design system route gates', () => {
     );
 
     const reopenedResp = await fetch(
-      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/workspace`,
+      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/project`,
       { method: 'POST' },
     );
     expect(reopenedResp.status).toBe(201);
@@ -250,7 +250,7 @@ describe('project design system route gates', () => {
     const draft = await createUserDesignSystem('draft');
 
     const workspaceResp = await fetch(
-      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/workspace`,
+      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/project`,
       { method: 'POST' },
     );
     expect(workspaceResp.status).toBe(201);
@@ -272,7 +272,7 @@ describe('project design system route gates', () => {
     );
 
     const reopenedResp = await fetch(
-      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/workspace`,
+      `${baseUrl}/api/design-systems/${encodeURIComponent(draft.id)}/project`,
       { method: 'POST' },
     );
     expect(reopenedResp.status).toBe(201);

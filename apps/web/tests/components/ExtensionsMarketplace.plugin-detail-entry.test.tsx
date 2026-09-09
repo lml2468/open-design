@@ -124,9 +124,6 @@ beforeEach(() => {
       return jsonResponse({ marketplaces: MARKETPLACES });
     }
     if (url === '/api/skills') return jsonResponse({ skills: [] });
-    if (url.includes('/api/workspace/')) {
-      return jsonResponse({ ids: [], resources: [] });
-    }
     return jsonResponse({});
   }) as typeof fetch;
 });

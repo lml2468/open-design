@@ -57,7 +57,6 @@ beforeEach(() => {
     if (url === '/api/skills') return jsonResponse({ skills: [LOCALIZED_SKILL] });
     if (url.startsWith('/api/plugins')) return jsonResponse({ plugins: [] });
     if (url.startsWith('/api/marketplaces')) return jsonResponse({ marketplaces: [] });
-    if (url.includes('/api/workspace/')) return jsonResponse({ ids: [], resources: [] });
     return jsonResponse({});
   }) as typeof fetch;
 });

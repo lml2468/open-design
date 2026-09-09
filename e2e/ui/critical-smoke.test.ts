@@ -9,10 +9,6 @@ test.describe.configure({ timeout: T.xlong });
 
 test.beforeEach(async ({ page }) => {
   await applyStandardMocks(page);
-  // This file is the compact Personal/local capability lane. Pin Cloud to a
-  await page.route('**/api/workspace/directory', async (route) => {
-    await route.fulfill({ json: { items: [] } });
-  });
 });
 
 test('[P0] @critical home loads with the primary entry controls', async ({ page }) => {

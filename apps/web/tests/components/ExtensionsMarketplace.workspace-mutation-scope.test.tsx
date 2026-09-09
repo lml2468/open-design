@@ -83,7 +83,6 @@ beforeEach(() => {
     if (url === '/api/plugins') return jsonResponse({ plugins: [USER_PLUGIN] });
     if (url === '/api/skills') return jsonResponse({ skills: [] });
     if (url === '/api/marketplaces') return jsonResponse({ marketplaces: [MARKETPLACE] });
-    if (url.includes('/api/workspace/')) return jsonResponse({ ids: [], resources: [] });
     return jsonResponse({});
   }) as typeof fetch;
 });

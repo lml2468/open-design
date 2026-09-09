@@ -21,7 +21,7 @@ import type { Project, ProjectFile } from '@open-design/contracts';
 
 type DbHandle = ReturnType<typeof openDatabase>;
 
-type DesignSystemWorkspaceProject = {
+type DesignSystemEditorProject = {
   project: Project;
   files: ProjectFile[];
 };
@@ -43,7 +43,7 @@ export interface RegisterDesignSystemRoutesDeps extends RouteDeps<'db' | 'paths'
     ensureUserDesignSystemProject: (
       db: DbHandle,
       id: string,
-    ) => Promise<DesignSystemWorkspaceProject | null>;
+    ) => Promise<DesignSystemEditorProject | null>;
     listAllDesignSystems: () => Promise<AvailableDesignSystemSummary[]>;
     listUserDesignSystemFiles: (root: string, id: string) => Promise<DesignSystemFileSummary[] | null>;
     listUserDesignSystemRevisions: (root: string, id: string) => Promise<DesignSystemRevision[] | null>;
@@ -333,7 +333,7 @@ export function registerDesignSystemRoutes(
     }
   });
 
-  app.post('/api/design-systems/:id/workspace', async (req, res) => {
+  app.post('/api/design-systems/:id/project', async (req, res) => {
     try {
       const project = await ensureUserDesignSystemProject(
         db,

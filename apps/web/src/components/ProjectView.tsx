@@ -7127,27 +7127,27 @@ export function ProjectView({
           handlers.onError(new Error(BYOK_OPENCODE_UNAVAILABLE_MESSAGE));
           return true;
         }
-        // v2 analytics: when the active project is a DS workspace
+        // v2 analytics: when the active project is a Design System Project
         // (created by `prepareCreatedDesignSystemProject`, identifiable
         // by `metadata.importedFrom === 'design-system'`), every run
         // started from this composer is a DS-variant run. Pass
         // analyticsHints so the daemon emits run_created /
         // run_finished under `page_name=design_system_project`,
         // `area=design_system_generation`, `project_kind=design_system`.
-        // The first-ever message into a DS workspace is the auto-sent
+        // The first-ever message into a Design System Project is the auto-sent
         // generation kickoff (entry_from=`onboarding_design_system` is
         // the doc's name for "DS create flow handed off to the agent");
         // subsequent messages are review-driven regenerations
         // (`regenerate_from_review`). Use `messages.length === 0` —
         // truer than autoSendFirstMessageRef which races StrictMode
         // remounts + sessionStorage clears.
-        const isDesignSystemWorkspaceProject =
+        const isDesignSystemProject =
           project.metadata?.importedFrom === 'design-system';
         const dsEntryFrom: 'onboarding_design_system' | 'regenerate_from_review' =
           messages.length === 0
             ? 'onboarding_design_system'
             : 'regenerate_from_review';
-        const dsAnalyticsHints = isDesignSystemWorkspaceProject
+        const dsAnalyticsHints = isDesignSystemProject
           ? {
               entryFrom: dsEntryFrom,
               projectKind: 'design_system' as const,

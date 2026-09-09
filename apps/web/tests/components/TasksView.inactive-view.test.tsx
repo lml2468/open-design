@@ -44,9 +44,7 @@ describe('TasksView inactive view', () => {
     // `EntryShell` keeps every entry view mounted and hides the inactive ones
     // with `display: none` + `inert`, so Automations loads its catalog, its
     // proposals, its routines and the project picker on every Home launch —
-    // for a tab the user has not opened. Worse, the whole set runs twice,
-    // because `tasksWorkspaceIdentity` changes when `/api/workspace/context`
-    // resolves and `refresh` is keyed on it.
+    // for a tab the user has not opened.
     const seen: string[] = [];
     globalThis.fetch = trackedFetch(seen);
 

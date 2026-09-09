@@ -163,13 +163,9 @@ function stubFetchByUrl() {
     vi.fn(async (input: RequestInfo | URL) => {
       const url =
         typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      const body = url.includes('/api/workspace/directory')
-        ? { items: [] }
-        : url.includes('/api/workspace/context')
-          ? { context: null }
-          : url.includes('/api/github/open-design')
-            ? { stargazers_count: 40_000 }
-            : {};
+      const body = url.includes('/api/github/open-design')
+        ? { stargazers_count: 40_000 }
+        : {};
       return new Response(JSON.stringify(body), { status: 200 });
     }),
   );
@@ -210,7 +206,7 @@ describe('project route — local top-right controls', () => {
     expect(screen.queryByTestId('entry-nav-account')).toBeNull();
   });
 
-  it('keeps local controls independent while workspace identity is unavailable', async () => {
+  it('keeps local controls available when optional metadata requests return empty', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(JSON.stringify({}), { status: 200 })),

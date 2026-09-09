@@ -33,16 +33,6 @@ const FOLLOW_UP_FILE = 'follow-up-daemon-smoke.html';
 const OD_NEXT_CANARY_FILE = 'od-next-active-canary.html';
 const DECK_DIRECT_NAVIGATION_BUDGET_MS = 2_500;
 const MEDIA_ONLY_FILE = 'media-only.png';
-const SERVER_DERIVED_WORKSPACE_HEADERS = {
-  'x-od-workspace-id': 'e2e-server-derived-workspace',
-  'x-od-workspace-type': 'personal',
-  'x-od-workspace-member-id': 'e2e-server-derived-member',
-  'x-od-workspace-role': 'owner',
-  'x-od-workspace-member-status': 'active',
-  'x-od-workspace-lifecycle-state': 'active',
-  'x-od-workspace-can-share-projects': 'true',
-  'x-od-workspace-can-write-synced-files': 'true',
-} as const;
 let fakeRuntimes: Awaited<ReturnType<typeof createFakeAgentRuntimes>>;
 let fakeAcpHandshakeRuntime: FakeAcpHandshakeRuntime;
 
@@ -453,47 +443,6 @@ test('[P1] delivered artifact opens the one-time experience survey and accepts a
   await page.reload({ waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
   await expect(survey).toHaveCount(0);
-});
-
-test('[P0] bound project reads derive Workspace authority without browser query scope', async ({ page }) => {
-  const projectId = `server-derived-raw-${Date.now()}`;
-  const { conversationId } = await createProjectViaApi(
-    page,
-    projectId,
-    'Server-derived raw authority',
-    undefined,
-    SERVER_DERIVED_WORKSPACE_HEADERS,
-  );
-
-  expect(conversationId).toBeTruthy();
-  const conversationsResponse = await page.request.get(
-    `/api/projects/${projectId}/conversations`,
-  );
-  expect(
-    conversationsResponse.ok(),
-    await conversationsResponse.text(),
-  ).toBeTruthy();
-  const messagesResponse = await page.request.get(
-    `/api/projects/${projectId}/conversations/${conversationId}/messages`,
-  );
-  expect(messagesResponse.ok(), await messagesResponse.text()).toBeTruthy();
-
-  const writeResponse = await page.request.post(`/api/projects/${projectId}/files`, {
-    headers: SERVER_DERIVED_WORKSPACE_HEADERS,
-    data: {
-      name: GENERATED_FILE,
-      content: `<!doctype html><html><body><h1>${GENERATED_HEADING}</h1></body></html>`,
-    },
-  });
-  expect(writeResponse.ok(), await writeResponse.text()).toBeTruthy();
-
-  const rawPath = `/api/projects/${projectId}/raw/${GENERATED_FILE}`;
-  const response = await page.goto(rawPath, { waitUntil: 'domcontentloaded' });
-  expect(response?.ok(), await response?.text()).toBeTruthy();
-  expect(new URL(page.url()).searchParams.has('workspaceId')).toBe(false);
-  expect(new URL(page.url()).searchParams.has('workspaceMemberId')).toBe(false);
-  await expect(page.getByRole('heading', { name: GENERATED_HEADING })).toBeVisible();
-  await expect(page.locator('body')).not.toContainText('WORKSPACE_CONTEXT_REQUIRED');
 });
 
 test('[P0] real daemon run persists an artifact streamed across multiple chunks', async ({ page }) => {

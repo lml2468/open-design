@@ -12,7 +12,7 @@ import {
   connectConnector,
   createDesignSystemDraft,
   disconnectConnector,
-  ensureDesignSystemWorkspace,
+  ensureDesignSystemProject,
   fetchDesignSystemGenerationJob,
   fetchDesignSystem,
   fetchConnectorStatuses,
@@ -205,7 +205,7 @@ type ReviewTab = 'system' | 'files';
 type DesignMdMode = 'edit' | 'preview';
 type DesignMdPreviewTheme = 'light' | 'dark';
 
-interface ResolvedDesignSystemWorkspaceProject {
+interface ResolvedDesignSystemProject {
   projectId: string;
   files: ProjectFile[];
 }
@@ -303,14 +303,14 @@ function readRememberedGenerationJob(designSystemId: string): string | null {
   }
 }
 
-async function resolveDesignSystemWorkspaceProject(
+async function resolveDesignSystemProject(
   system: Pick<DesignSystemDetail, 'id' | 'projectId'>,
-): Promise<ResolvedDesignSystemWorkspaceProject | null> {
-  const workspace = await ensureDesignSystemWorkspace(system.id);
-  if (workspace) {
+): Promise<ResolvedDesignSystemProject | null> {
+  const editorProject = await ensureDesignSystemProject(system.id);
+  if (editorProject) {
     return {
-      projectId: workspace.project.id,
-      files: workspace.files,
+      projectId: editorProject.project.id,
+      files: editorProject.files,
     };
   }
   if (!system.projectId) return null;
@@ -1762,9 +1762,9 @@ export function DesignSystemDetailView({
     let cancelled = false;
     async function syncWorkspaceProject() {
       setWorkspaceLoadError(null);
-      let resolved: ResolvedDesignSystemWorkspaceProject | null;
+      let resolved: ResolvedDesignSystemProject | null;
       try {
-        resolved = await resolveDesignSystemWorkspaceProject(currentSystem);
+        resolved = await resolveDesignSystemProject(currentSystem);
       } catch {
         if (!cancelled && workspaceFilesScopeKeyRef.current === requestScopeKey) {
           setWorkspaceLoadError(t('dsFlow.workspaceOpenFailed'));
@@ -2169,9 +2169,9 @@ export function DesignSystemDetailView({
     if (!system) return workspaceProjectId;
     if (workspaceProjectId) return workspaceProjectId;
     const requestScopeKey = workspaceFilesScopeKey;
-    let resolved: ResolvedDesignSystemWorkspaceProject | null;
+    let resolved: ResolvedDesignSystemProject | null;
     try {
-      resolved = await resolveDesignSystemWorkspaceProject(system);
+      resolved = await resolveDesignSystemProject(system);
     } catch {
       if (workspaceFilesScopeKeyRef.current === requestScopeKey) {
         setWorkspaceLoadError(t('dsFlow.workspaceOpenFailed'));

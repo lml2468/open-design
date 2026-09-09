@@ -520,8 +520,8 @@ export type DesignSystemsResult =
  * Read the unified catalog once per burst of identical concurrent readers.
  *
  * Several independent surfaces want this catalog on the same launch or
- * navigation pass: bootstrap, the Workspace-identity effect, the home-route
- * effect, plus LibrarySection, DesignSystemsSection and DesignSystemSwitchPicker
+ * navigation pass: bootstrap, the home-route effect, plus LibrarySection,
+ * DesignSystemsSection and DesignSystemSwitchPicker
  * as they mount. None of them can drop its read — each owns its own latest-wins
  * bookkeeping and must settle its own loading state — but on the wire they are
  * one request, and the browser's ~6-connections-per-host cap makes the extra
@@ -554,7 +554,7 @@ const CATALOG_SINGLE_FLIGHT_ONLY_MS = 0;
  *     `startDesignSystemRevisionJob`,
  *     `startDesignSystemTokenContractRebuildJob`) — nothing has changed when they
  *     return; the finished job arrives through the invalidation path;
- *   - `ensureDesignSystemWorkspace` — it materializes an editing workspace and
+ *   - `ensureDesignSystemProject` — it materializes an editable local Project and
  *     leaves the catalog rows alone.
  *
  */
@@ -633,11 +633,11 @@ export async function fetchDesignSystemFile(
   }
 }
 
-export async function ensureDesignSystemWorkspace(
+export async function ensureDesignSystemProject(
   id: string,
 ): Promise<{ project: Project; files: ProjectFile[] } | null> {
   try {
-    const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/workspace`, {
+    const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/project`, {
       method: 'POST',
     });
     if (!resp.ok) return null;

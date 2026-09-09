@@ -184,7 +184,7 @@ describe('server route inventory', () => {
       'GET /api/design-systems/:id',
       'GET /api/design-systems/:id/preview',
       'GET /api/design-systems/:id/showcase',
-      'POST /api/design-systems/:id/workspace',
+      'POST /api/design-systems/:id/project',
       'GET /api/design-systems/:id/files',
       'GET /api/design-systems/:id/file',
       'PATCH /api/design-systems/:id',
@@ -556,10 +556,10 @@ describe('static SPA fallback classification', () => {
   });
 
   it('requires a GET or HEAD request with an HTML-compatible Accept header', () => {
-    expect(isStaticSpaFallbackRequest(makeReq('/workspace') as never)).toBe(true);
-    expect(isStaticSpaFallbackRequest(makeReq('/workspace', 'HEAD') as never)).toBe(true);
-    expect(isStaticSpaFallbackRequest(makeReq('/workspace', 'POST') as never)).toBe(false);
-    expect(isStaticSpaFallbackRequest(makeReq('/workspace', 'GET', 'application/json') as never)).toBe(false);
+    expect(isStaticSpaFallbackRequest(makeReq('/project') as never)).toBe(true);
+    expect(isStaticSpaFallbackRequest(makeReq('/project', 'HEAD') as never)).toBe(true);
+    expect(isStaticSpaFallbackRequest(makeReq('/project', 'POST') as never)).toBe(false);
+    expect(isStaticSpaFallbackRequest(makeReq('/project', 'GET', 'application/json') as never)).toBe(false);
   });
 });
 

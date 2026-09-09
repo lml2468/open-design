@@ -1288,7 +1288,7 @@ export async function updateUserDesignSystem(
 // Renames on these projects must instead be written through to the
 // design-system title — the sync then carries the new name back onto the
 // project and both records agree.
-export function workspaceRenameDesignSystemId(project: {
+export function linkedDesignSystemIdForProject(project: {
   designSystemId?: string | null;
   metadata?: unknown;
 }): string | null {
@@ -1302,27 +1302,27 @@ export function workspaceRenameDesignSystemId(project: {
   return importedFrom === 'design-system' ? id : null;
 }
 
-// 'not-applicable': the project is not a design-system workspace (or the
+// 'not-applicable': the project is not linked to a design system (or the
 // name is blank) — the rename does not involve a design system at all.
 // 'propagated': the bound design system's title now matches the new name.
 // 'failed': the project IS bound to a user design system but the title
 // could not be written through (e.g. the entry is missing on disk).
 // Callers must not persist the project-row rename on 'failed' — doing so
 // recreates the silent revert this write-through exists to prevent.
-export type WorkspaceRenamePropagation = 'not-applicable' | 'propagated' | 'failed';
+export type ProjectRenamePropagation = 'not-applicable' | 'propagated' | 'failed';
 
-export function resolveWorkspaceProjectDesignSystemRoot(
+export function resolveProjectDesignSystemRoot(
   canonicalRoot: string,
 ): string {
   return canonicalRoot;
 }
 
-export async function propagateWorkspaceProjectRename(
+export async function propagateProjectDesignSystemRename(
   root: string,
   project: { designSystemId?: string | null; metadata?: unknown },
   name: unknown,
-): Promise<WorkspaceRenamePropagation> {
-  const id = workspaceRenameDesignSystemId(project);
+): Promise<ProjectRenamePropagation> {
+  const id = linkedDesignSystemIdForProject(project);
   if (!id) return 'not-applicable';
   const title = typeof name === 'string' ? name.trim() : '';
   if (!title) return 'not-applicable';

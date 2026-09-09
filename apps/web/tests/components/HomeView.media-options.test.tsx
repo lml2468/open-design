@@ -463,11 +463,10 @@ describe('HomeView media composer options', () => {
       && url.includes('/api/plugins/od-media-generation/apply')
     )).at(-1);
     expect(localApply).toBeTruthy();
-    expect(new Headers(localApply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
   });
 
-  it('keeps bundled plugins usable when the catalog directory is empty', async () => {
-    const fetchMock = stubFetch({ emptyWorkspaceDirectory: true });
+  it('keeps bundled plugins usable across a parent rerender', async () => {
+    const fetchMock = stubFetch();
     const onSubmit = vi.fn();
     const props = homeProps({ onSubmit });
     const view = render(<HomeView {...props} />);
@@ -488,51 +487,7 @@ describe('HomeView media composer options', () => {
     const submittedApply = fetchMock.mock.calls.filter(([url]) => (
       typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
     )).at(-1);
-    expect(new Headers(submittedApply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
-  });
-
-  it('does not wait for unrelated directory discovery when applying a bundled plugin', async () => {
-    const fetchMock = stubFetch({ workspaceDirectoryStatus: 503 });
-    const onSubmit = vi.fn();
-    const props = homeProps({ onSubmit });
-    const view = render(<HomeView {...props} />);
-
-    await clickHomeRailChip('video');
-    await setHomePrompt('Create a local launch teaser while identity is unavailable.');
-    view.rerender(<HomeView {...props} />);
-    const directoryReadsBeforeSubmit = fetchMock.mock.calls.filter(([url]) => (
-      typeof url === 'string' && url === '/api/workspace/directory'
-    )).length;
-    await submitHome();
-
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    const directoryReadsAfterSubmit = fetchMock.mock.calls.filter(([url]) => (
-      typeof url === 'string' && url === '/api/workspace/directory'
-    )).length;
-    expect(directoryReadsAfterSubmit).toBe(directoryReadsBeforeSubmit);
-    const submittedApply = fetchMock.mock.calls.filter(([url]) => (
-      typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
-    )).at(-1);
-    expect(new Headers(submittedApply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
-  });
-
-  it('keeps a locally catalogued plugin usable until local reconciliation removes it', async () => {
-    const fetchMock = stubFetch({
-      emptyWorkspaceDirectory: true,
-      localMediaPlugin: true,
-    });
-    const onSubmit = vi.fn();
-    renderHome({ onSubmit });
-
-    await clickHomeRailChip('video');
-    await setHomePrompt('Create a launch teaser.');
-    await submitHome();
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    const apply = fetchMock.mock.calls.find(([url]) => (
-      typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
-    ));
-    expect(apply).toBeTruthy();
-    expect(new Headers(apply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
+    expect(submittedApply).toBeTruthy();
   });
 
   it('preserves od-media-generation required inputs when submitting media chips', async () => {
@@ -581,10 +536,8 @@ function homeProps(overrides: Partial<React.ComponentProps<typeof HomeView>> = {
 function stubFetch(options: {
   elevenLabsVoices?: Array<{ voiceId: string; name: string; category?: string }>;
   elevenLabsVoiceError?: string;
-  emptyWorkspaceDirectory?: boolean;
   mediaApplyResponse?: Promise<Response>;
   localMediaPlugin?: boolean;
-  workspaceDirectoryStatus?: number;
 } = {}) {
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
     cb(0);
@@ -599,25 +552,6 @@ function stubFetch(options: {
     }
     if (typeof url === 'string' && url === '/api/mcp/servers') {
       return json({ servers: [], templates: [] });
-    }
-    if (typeof url === 'string' && url === '/api/workspace/directory') {
-      if (options.workspaceDirectoryStatus) {
-        return json({ error: 'workspace_unavailable' }, options.workspaceDirectoryStatus);
-      }
-      return json({
-        items: options.emptyWorkspaceDirectory
-          ? []
-          : [{
-              workspaceId: 'workspace-cold',
-              workspaceName: 'Cold workspace',
-              workspaceType: 'team',
-              workspaceMemberId: 'member-cold',
-              role: 'member',
-              memberStatus: 'active',
-              lifecycleState: 'active',
-            }],
-        activeWorkspaceId: null,
-      });
     }
     if (typeof url === 'string' && url.includes('/apply')) {
       const pluginId = url.split('/api/plugins/')[1]?.split('/apply')[0] ?? 'od-media-generation';

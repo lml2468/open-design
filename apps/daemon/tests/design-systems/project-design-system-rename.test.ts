@@ -5,9 +5,9 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
-  propagateWorkspaceProjectRename,
-  resolveWorkspaceProjectDesignSystemRoot,
-  workspaceRenameDesignSystemId,
+  propagateProjectDesignSystemRename,
+  resolveProjectDesignSystemRoot,
+  linkedDesignSystemIdForProject,
 } from '../../src/design-systems/index.js';
 
 // Renaming a design-system backing Project used to revert silently:
@@ -20,46 +20,46 @@ import {
 const DIR_ID = 'trip-journal-design-system';
 const DS_ID = `user:${DIR_ID}`;
 
-describe('workspaceRenameDesignSystemId', () => {
+describe('linkedDesignSystemIdForProject', () => {
   const workspaceProject = {
     designSystemId: DS_ID,
     metadata: { importedFrom: 'design-system' },
   };
 
   it('returns the design-system id for a workspace project', () => {
-    expect(workspaceRenameDesignSystemId(workspaceProject)).toBe(DS_ID);
+    expect(linkedDesignSystemIdForProject(workspaceProject)).toBe(DS_ID);
   });
 
   it('ignores projects bound to non-user design systems', () => {
     expect(
-      workspaceRenameDesignSystemId({ ...workspaceProject, designSystemId: 'agentic' }),
+      linkedDesignSystemIdForProject({ ...workspaceProject, designSystemId: 'agentic' }),
     ).toBeNull();
   });
 
   it('ignores projects that are not design-system workspaces', () => {
     expect(
-      workspaceRenameDesignSystemId({ ...workspaceProject, metadata: { importedFrom: 'folder' } }),
+      linkedDesignSystemIdForProject({ ...workspaceProject, metadata: { importedFrom: 'folder' } }),
     ).toBeNull();
     expect(
-      workspaceRenameDesignSystemId({ ...workspaceProject, metadata: undefined }),
+      linkedDesignSystemIdForProject({ ...workspaceProject, metadata: undefined }),
     ).toBeNull();
   });
 
   it('ignores projects without a design-system binding', () => {
     expect(
-      workspaceRenameDesignSystemId({ designSystemId: null, metadata: { importedFrom: 'design-system' } }),
+      linkedDesignSystemIdForProject({ designSystemId: null, metadata: { importedFrom: 'design-system' } }),
     ).toBeNull();
   });
 });
 
-describe('resolveWorkspaceProjectDesignSystemRoot', () => {
+describe('resolveProjectDesignSystemRoot', () => {
   it('always selects the canonical local design-system root', () => {
     const canonicalRoot = '/runtime/design-systems';
-    expect(resolveWorkspaceProjectDesignSystemRoot(canonicalRoot)).toBe(canonicalRoot);
+    expect(resolveProjectDesignSystemRoot(canonicalRoot)).toBe(canonicalRoot);
   });
 });
 
-describe('propagateWorkspaceProjectRename', () => {
+describe('propagateProjectDesignSystemRename', () => {
   let root = '';
   const project = {
     designSystemId: DS_ID,
@@ -98,7 +98,7 @@ describe('propagateWorkspaceProjectRename', () => {
   });
 
   it('writes the new name through to the design-system title and heading', async () => {
-    const propagated = await propagateWorkspaceProjectRename(root, project, 'Earth Postcard');
+    const propagated = await propagateProjectDesignSystemRename(root, project, 'Earth Postcard');
     expect(propagated).toBe('propagated');
 
     const metadata = JSON.parse(
@@ -113,7 +113,7 @@ describe('propagateWorkspaceProjectRename', () => {
   });
 
   it('trims the propagated name', async () => {
-    expect(await propagateWorkspaceProjectRename(root, project, '  Earth Postcard  ')).toBe(
+    expect(await propagateProjectDesignSystemRename(root, project, '  Earth Postcard  ')).toBe(
       'propagated',
     );
     const metadata = JSON.parse(
@@ -123,10 +123,10 @@ describe('propagateWorkspaceProjectRename', () => {
   });
 
   it('is not applicable for blank names or non-workspace projects', async () => {
-    expect(await propagateWorkspaceProjectRename(root, project, '   ')).toBe('not-applicable');
-    expect(await propagateWorkspaceProjectRename(root, project, undefined)).toBe('not-applicable');
+    expect(await propagateProjectDesignSystemRename(root, project, '   ')).toBe('not-applicable');
+    expect(await propagateProjectDesignSystemRename(root, project, undefined)).toBe('not-applicable');
     expect(
-      await propagateWorkspaceProjectRename(
+      await propagateProjectDesignSystemRename(
         root,
         { designSystemId: DS_ID, metadata: { importedFrom: 'folder' } },
         'Earth Postcard',
@@ -141,7 +141,7 @@ describe('propagateWorkspaceProjectRename', () => {
 
   it("fails (not 'not-applicable') when the bound design-system entry does not exist", async () => {
     expect(
-      await propagateWorkspaceProjectRename(
+      await propagateProjectDesignSystemRename(
         root,
         { designSystemId: 'user:missing-entry', metadata: { importedFrom: 'design-system' } },
         'Earth Postcard',
@@ -178,7 +178,7 @@ describe('PATCH /api/projects/:id design-system rename write-through', () => {
     return new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  async function createWorkspaceProject(title: string): Promise<{
+  async function createDesignSystemProject(title: string): Promise<{
     designSystemId: string;
     projectId: string;
   }> {
@@ -192,7 +192,7 @@ describe('PATCH /api/projects/:id design-system rename write-through', () => {
     const designSystemId = created.designSystem.id;
 
     const workspaceResp = await fetch(
-      `${baseUrl}/api/design-systems/${encodeURIComponent(designSystemId)}/workspace`,
+      `${baseUrl}/api/design-systems/${encodeURIComponent(designSystemId)}/project`,
       { method: 'POST' },
     );
     expect(workspaceResp.status).toBe(201);
@@ -210,7 +210,7 @@ describe('PATCH /api/projects/:id design-system rename write-through', () => {
   }
 
   it('a rename survives the next workspace ensure (the original bug)', async () => {
-    const { designSystemId, projectId } = await createWorkspaceProject('Rename Survives');
+    const { designSystemId, projectId } = await createDesignSystemProject('Rename Survives');
 
     const patchResp = await fetch(`${baseUrl}/api/projects/${projectId}`, {
       method: 'PATCH',
@@ -223,7 +223,7 @@ describe('PATCH /api/projects/:id design-system rename write-through', () => {
     // Re-open the workspace: the ensure-sync must reinforce the rename,
     // not re-stamp the stale title over it.
     const ensureResp = await fetch(
-      `${baseUrl}/api/design-systems/${encodeURIComponent(designSystemId)}/workspace`,
+      `${baseUrl}/api/design-systems/${encodeURIComponent(designSystemId)}/project`,
       { method: 'POST' },
     );
     expect(ensureResp.status).toBe(201);
@@ -232,7 +232,7 @@ describe('PATCH /api/projects/:id design-system rename write-through', () => {
   });
 
   it('does not rename a design system the same PATCH detaches from', async () => {
-    const { designSystemId, projectId } = await createWorkspaceProject('Detach Keeps Title');
+    const { designSystemId, projectId } = await createDesignSystemProject('Detach Keeps Title');
 
     const patchResp = await fetch(`${baseUrl}/api/projects/${projectId}`, {
       method: 'PATCH',
@@ -251,8 +251,8 @@ describe('PATCH /api/projects/:id design-system rename write-through', () => {
   });
 
   it('does not rename the design system a PATCH is switching away from', async () => {
-    const { designSystemId: oldId, projectId } = await createWorkspaceProject('Old Binding');
-    const { designSystemId: newId } = await createWorkspaceProject('New Binding');
+    const { designSystemId: oldId, projectId } = await createDesignSystemProject('Old Binding');
+    const { designSystemId: newId } = await createDesignSystemProject('New Binding');
 
     // Draft design systems cannot be bound to projects; publish the target
     // so the rebind passes validateProjectDesignSystemId.
@@ -279,7 +279,7 @@ describe('PATCH /api/projects/:id design-system rename write-through', () => {
   });
 
   it('aborts the PATCH when the write-through fails, leaving the project row unchanged', async () => {
-    const { projectId } = await createWorkspaceProject('Broken Binding');
+    const { projectId } = await createDesignSystemProject('Broken Binding');
 
     const dataDir = process.env.OD_DATA_DIR;
     if (!dataDir) throw new Error('OD_DATA_DIR is required for daemon route tests');

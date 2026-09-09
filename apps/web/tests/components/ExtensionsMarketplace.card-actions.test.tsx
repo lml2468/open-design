@@ -146,7 +146,6 @@ beforeEach(() => {
     }
     if (url.startsWith('/api/plugins')) return jsonResponse({ plugins: [] });
     if (url.startsWith('/api/marketplaces')) return jsonResponse({ marketplaces: [MARKETPLACE] });
-    if (url.includes('/api/workspace/')) return jsonResponse({ ids: [], resources: [] });
     return jsonResponse({});
   }) as typeof fetch;
 });

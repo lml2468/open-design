@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
   connectConnector: vi.fn(),
   createDesignSystemDraft: vi.fn(),
   disconnectConnector: vi.fn(),
-  ensureDesignSystemWorkspace: vi.fn(),
+  ensureDesignSystemProject: vi.fn(),
   fetchConnectorStatuses: vi.fn(),
   fetchDesignSystem: vi.fn(),
   fetchDesignSystemRevisions: vi.fn(),
@@ -170,7 +170,7 @@ vi.mock('../../src/providers/registry', async () => {
     connectConnector: mocks.connectConnector,
     createDesignSystemDraft: mocks.createDesignSystemDraft,
     disconnectConnector: mocks.disconnectConnector,
-    ensureDesignSystemWorkspace: mocks.ensureDesignSystemWorkspace,
+    ensureDesignSystemProject: mocks.ensureDesignSystemProject,
     fetchDesignSystem: mocks.fetchDesignSystem,
     fetchDesignSystemRevisions: mocks.fetchDesignSystemRevisions,
     fetchProjectDesignSystemPackageAudit: mocks.fetchProjectDesignSystemPackageAudit,
@@ -395,7 +395,7 @@ describe('design system package audit helpers', () => {
 
 describe('DesignSystemCreationFlow', () => {
   // The unified flow (commit a05e3a29d) replaces the legacy 5-step generation
-  // pipeline (createDesignSystemDraft → ensureDesignSystemWorkspace → source
+  // pipeline (createDesignSystemDraft → ensureDesignSystemProject → source
   // manifest → prepare) with a two-phase brand extraction: submitting a website
   // POSTs /api/brands, which creates the backing project + conversation
   // immediately and lets the programmatic extraction register user:<id> in the
@@ -468,7 +468,7 @@ describe('DesignSystemCreationFlow', () => {
     expect(onSystemsRefresh).toHaveBeenCalled();
     // The legacy 5-step pipeline must no longer run.
     expect(mocks.createDesignSystemDraft).not.toHaveBeenCalled();
-    expect(mocks.ensureDesignSystemWorkspace).not.toHaveBeenCalled();
+    expect(mocks.ensureDesignSystemProject).not.toHaveBeenCalled();
   });
 
   it('keeps GitHub-only source links out of website brand extraction', async () => {
@@ -801,7 +801,7 @@ describe('DesignSystemCreationFlow', () => {
       resolveManifestWrite = resolve;
     }));
     mocks.createDesignSystemDraft.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [] });
     mocks.patchProject.mockResolvedValue({ ...project, pendingPrompt: 'Create this project as a design system.' });
     const onCreated = vi.fn();
     const onProjectPrepared = vi.fn();
@@ -880,7 +880,7 @@ describe('DesignSystemCreationFlow', () => {
       },
     };
     mocks.createDesignSystemDraft.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [] });
     mocks.patchProject.mockResolvedValue({ ...project, pendingPrompt: 'Create this project as a design system.' });
 
     const onCreated = vi.fn();
@@ -912,7 +912,7 @@ describe('DesignSystemCreationFlow', () => {
         artifactMode: 'agent-managed',
       }),
     );
-    expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id);
+    expect(mocks.ensureDesignSystemProject).toHaveBeenCalledWith(system.id);
     await waitFor(() => expect(mocks.writeProjectTextFile).toHaveBeenCalled());
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
@@ -1970,7 +1970,7 @@ describe('DesignSystemCreationFlow', () => {
       },
     };
     mocks.createDesignSystemDraft.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [] });
     mocks.patchProject.mockResolvedValue({ ...project, pendingPrompt: 'Create this project as a design system.' });
 
     render(
@@ -2043,7 +2043,7 @@ describe('DesignSystemCreationFlow', () => {
     };
     const onBeforeGenerate = vi.fn();
     mocks.createDesignSystemDraft.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [] });
     mocks.patchProject.mockResolvedValue({ ...project, pendingPrompt: 'Create this project as a design system.' });
 
     render(
@@ -2591,7 +2591,7 @@ describe('DesignSystemDetailView', () => {
     const r2 = new Promise<ProjectFile[]>((resolve) => { resolveR2 = resolve; });
 
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [initialFile] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [initialFile] });
     mocks.fetchProjectFiles
       .mockImplementationOnce(() => r1)
       .mockImplementationOnce(() => r2);
@@ -2664,7 +2664,7 @@ describe('DesignSystemDetailView', () => {
       mime: 'text/html',
     };
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [file] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [file] });
     mocks.fetchProjectFiles.mockRejectedValueOnce(new Error('files unavailable'));
 
     render(
@@ -2739,7 +2739,7 @@ describe('DesignSystemDetailView', () => {
       mocks.fetchDesignSystem.mockImplementation(async (systemId: string) => (
         systemId === systemB.id ? systemB : systemA
       ));
-      mocks.ensureDesignSystemWorkspace.mockImplementation(async (
+      mocks.ensureDesignSystemProject.mockImplementation(async (
         systemId: string,
       ) => {
         const useB = systemId === systemB.id;
@@ -2833,7 +2833,7 @@ describe('DesignSystemDetailView', () => {
     };
 
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [workspaceFile] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [workspaceFile] });
     mocks.listConversations.mockResolvedValue([
       { id: 'conv-design-system', projectId: project.id, title: 'Design system', createdAt: 1, updatedAt: 1 },
     ]);
@@ -2904,7 +2904,7 @@ describe('DesignSystemDetailView', () => {
     };
 
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [] });
 
     render(
       <DesignSystemDetailView
@@ -2963,7 +2963,7 @@ describe('DesignSystemDetailView', () => {
     };
 
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [] });
     mocks.listConversations.mockResolvedValue([
       { id: 'conv-design-system', projectId: project.id, title: 'Design system', createdAt: 1, updatedAt: 1 },
     ]);
@@ -3051,7 +3051,7 @@ describe('DesignSystemDetailView', () => {
     };
 
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [] });
     mocks.listConversations.mockResolvedValue([
       { id: 'conv-design-system', projectId: project.id, title: 'Design system', createdAt: 1, updatedAt: 1 },
     ]);
@@ -3070,7 +3070,7 @@ describe('DesignSystemDetailView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Design Files' }));
 
     await waitFor(() =>
-      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id),
+      expect(mocks.ensureDesignSystemProject).toHaveBeenCalledWith(system.id),
     );
     await waitFor(() => expect(screen.getByTestId('design-system-files')).toBeTruthy());
     expect(screen.queryByText('Opening the design system workspace...')).toBeNull();
@@ -3121,7 +3121,7 @@ describe('DesignSystemDetailView', () => {
     const onProjectsRefresh = vi.fn();
 
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue(null);
+    mocks.ensureDesignSystemProject.mockResolvedValue(null);
     mocks.getProject.mockResolvedValue(project);
     mocks.fetchProjectFiles.mockResolvedValue(files);
     mocks.listConversations.mockResolvedValue([
@@ -3142,7 +3142,7 @@ describe('DesignSystemDetailView', () => {
     );
 
     await waitFor(() =>
-      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id),
+      expect(mocks.ensureDesignSystemProject).toHaveBeenCalledWith(system.id),
     );
     await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith(project.id));
     expect(mocks.fetchProjectFiles).toHaveBeenCalledWith(project.id, {
@@ -3180,7 +3180,7 @@ describe('DesignSystemDetailView', () => {
     const onOpenProject = vi.fn();
 
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue(null);
+    mocks.ensureDesignSystemProject.mockResolvedValue(null);
     mocks.getProject.mockResolvedValue(null);
 
     render(
@@ -3196,7 +3196,7 @@ describe('DesignSystemDetailView', () => {
     );
 
     await waitFor(() =>
-      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id),
+      expect(mocks.ensureDesignSystemProject).toHaveBeenCalledWith(system.id),
     );
     await waitFor(() => expect(mocks.getProject).toHaveBeenCalledWith(system.projectId));
     expect(mocks.fetchProjectFiles).not.toHaveBeenCalled();
@@ -3230,7 +3230,7 @@ describe('DesignSystemDetailView', () => {
       updatedAt: 1,
     };
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue(null);
+    mocks.ensureDesignSystemProject.mockResolvedValue(null);
     mocks.getProject.mockResolvedValue(project);
     mocks.fetchProjectFiles.mockRejectedValue(new Error('files unavailable'));
 
@@ -3303,7 +3303,7 @@ describe('DesignSystemDetailView', () => {
     };
 
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace
+    mocks.ensureDesignSystemProject
       .mockImplementationOnce(() => new Promise(() => {}))
       .mockResolvedValue(null);
     mocks.getProject.mockResolvedValue(project);
@@ -3321,10 +3321,10 @@ describe('DesignSystemDetailView', () => {
       />,
     );
 
-    await waitFor(() => expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.ensureDesignSystemProject).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByTestId('design-system-chat-send'));
 
-    await waitFor(() => expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.ensureDesignSystemProject).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(mocks.streamViaDaemon).toHaveBeenCalledTimes(1));
     expect(mocks.getProject).toHaveBeenCalledWith(project.id);
     expect(mocks.fetchProjectFiles).toHaveBeenCalledWith(project.id, {
@@ -3376,7 +3376,7 @@ describe('DesignSystemDetailView', () => {
       updatedAt: 1,
     };
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace
+    mocks.ensureDesignSystemProject
       .mockImplementationOnce(() => new Promise(() => {}))
       .mockResolvedValue({ project, files: [] });
     mocks.createConversation.mockResolvedValue(fresh);
@@ -3396,7 +3396,7 @@ describe('DesignSystemDetailView', () => {
     fireEvent.click(button);
 
     await waitFor(() =>
-      expect(mocks.ensureDesignSystemWorkspace).toHaveBeenCalledWith(system.id),
+      expect(mocks.ensureDesignSystemProject).toHaveBeenCalledWith(system.id),
     );
     await waitFor(() =>
       expect(mocks.createConversation).toHaveBeenCalledWith(project.id, 'Design system'),
@@ -3452,7 +3452,7 @@ describe('DesignSystemDetailView', () => {
     };
 
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [] });
     mocks.listConversations.mockResolvedValue([previousConversation, otherConversation]);
     mocks.listMessages
       .mockResolvedValueOnce([previousMessage])
@@ -3517,7 +3517,7 @@ describe('DesignSystemDetailView', () => {
       updatedAt: 1,
     };
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace
+    mocks.ensureDesignSystemProject
       .mockImplementationOnce(() => new Promise(() => {}))
       .mockResolvedValue({ project, files: [] });
     mocks.createConversation
@@ -3591,7 +3591,7 @@ describe('DesignSystemDetailView', () => {
     };
 
     mocks.fetchDesignSystem.mockResolvedValue(system);
-    mocks.ensureDesignSystemWorkspace.mockResolvedValue({ project, files: [] });
+    mocks.ensureDesignSystemProject.mockResolvedValue({ project, files: [] });
     mocks.listConversations.mockResolvedValue([
       { id: 'conv-design-system', projectId: project.id, title: 'Design system', createdAt: 1, updatedAt: 1 },
     ]);
