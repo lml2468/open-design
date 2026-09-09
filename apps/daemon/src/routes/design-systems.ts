@@ -16,16 +16,7 @@ import type {
   DesignSystemRevisionInput,
   DesignSystemTokenContractRebuildInput,
 } from '../design-systems/generation-jobs.js';
-import { deleteWorkspaceResourceByResourceId, type openDatabase } from '../db.js';
-import {
-  enforceVerifiedWorkspaceResourceMutation,
-  enforceVerifiedWorkspaceResourceRead,
-  headerValue,
-  requestWithWorkspaceNavigationScope,
-  resolveOptionalLocalWorkspaceRequestAuthority,
-  type VerifyWorkspaceRequestAuthority,
-  type WorkspaceResourceAccessInput,
-} from '../collab/workspace-resource-mutation.js';
+import type { openDatabase } from '../db.js';
 import type { Project, ProjectFile } from '@open-design/contracts';
 
 type DbHandle = ReturnType<typeof openDatabase>;
@@ -42,76 +33,26 @@ type AvailableDesignSystemSummary = DesignSystemSummary & {
 const PACKAGED_SHOWCASE_PATH = 'system/kit.html';
 
 export interface RegisterDesignSystemRoutesDeps extends RouteDeps<'db' | 'paths' | 'projectFiles' | 'projectStore'> {
-  verifyWorkspaceRequestAuthority: VerifyWorkspaceRequestAuthority;
-  workspaceResources: {
-    getWorkspaceResource: (
-      db: DbHandle,
-      resourceType: string,
-      workspaceId: string,
-      resourceId: string,
-    ) => WorkspaceResourceAccessInput | null | undefined;
-    getWorkspaceResourceByResourceId: (
-      db: DbHandle,
-      resourceType: string,
-      resourceId: string,
-    ) => WorkspaceResourceAccessInput | null | undefined;
-  };
   designSystems: {
     buildUserDesignSystemArchive: (
       root: string,
       id: string,
     ) => Promise<{ buffer: Buffer; baseName: string; title: string } | null>;
-    /**
-     * Whether the caller may mutate (edit / publish-toggle / delete) `id`.
-     * Always true for a system the caller authored themselves. For a system
-     * materialized locally from a teammate's team share, true only when the
-     * caller can manage that share — the original sharer, or a workspace
-     * owner/admin (see `canManageSharedResource` in
-     * `collab/team-resource-share.ts`) — mirroring the "who can unshare"
-     * rule exactly. Without this gate, a plain member with a synced local
-     * copy could PATCH/DELETE a design system that was never theirs
-     * (recvqb6mfyqXLD): the UI hides the affordances, but nothing stopped a
-     * direct API call.
-     *
-     * `req` (spec 9.2) lets the implementation also refuse when the caller's
-     * own workspace is locked/deleted (billing lapse, deletion in progress)
-     * — a check design system never had, unlike project/plugin.
-     */
-    createUserDesignSystem: (
-      root: string,
-      input: UserDesignSystemInput,
-      req: any,
-    ) => Promise<DesignSystemSummary>;
+    createUserDesignSystem: (root: string, input: UserDesignSystemInput) => Promise<DesignSystemSummary>;
     deleteUserDesignSystem: (root: string, id: string) => Promise<boolean>;
     ensureUserDesignSystemWorkspaceProject: (
       db: DbHandle,
       id: string,
-      options?: {
-        workspaceId?: string | null;
-        workspaceMemberId?: string | null;
-        exactTeam?: boolean;
-      },
     ) => Promise<DesignSystemWorkspaceProject | null>;
-    listAllDesignSystems: (options?: {
-      workspaceId?: string | null;
-      workspaceMemberId?: string | null;
-      exactTeam?: boolean;
-    }) => Promise<AvailableDesignSystemSummary[]>;
+    listAllDesignSystems: () => Promise<AvailableDesignSystemSummary[]>;
     listUserDesignSystemFiles: (root: string, id: string) => Promise<DesignSystemFileSummary[] | null>;
     listUserDesignSystemRevisions: (root: string, id: string) => Promise<DesignSystemRevision[] | null>;
     prepareDesignTokenContractRebuild: (root: string, id: string, options?: { force?: boolean }) => Promise<DesignTokenContractRebuildPreparation>;
-    readAvailableDesignSystem: (
-      id: string,
-      options?: { workspaceId?: string | null; workspaceMemberId?: string | null; exactTeam?: boolean },
-    ) => Promise<string | null>;
-    readAvailableDesignSystemPackageInfo: (
-      id: string,
-      options?: { workspaceId?: string | null; workspaceMemberId?: string | null; exactTeam?: boolean },
-    ) => Promise<DesignSystemPackageInfo | null>;
+    readAvailableDesignSystem: (id: string) => Promise<string | null>;
+    readAvailableDesignSystemPackageInfo: (id: string) => Promise<DesignSystemPackageInfo | null>;
     readAvailableDesignSystemStaticFile: (
       id: string,
       filePath: string,
-      options?: { workspaceId?: string | null; workspaceMemberId?: string | null; exactTeam?: boolean },
     ) => Promise<{
       bytes: Buffer;
       contentType: string;
@@ -132,11 +73,6 @@ export interface RegisterDesignSystemRoutesDeps extends RouteDeps<'db' | 'paths'
     syncUserDesignSystemAssetsFromWorkspace: (
       db: DbHandle,
       id: string,
-      options?: {
-        workspaceId?: string | null;
-        workspaceMemberId?: string | null;
-        exactTeam?: boolean;
-      },
     ) => Promise<{ ok: true; synced: string[] } | { ok: false; reason: 'not-found' | 'no-workspace-project' }>;
     updateUserDesignSystem: (root: string, id: string, input: UserDesignSystemInput) => Promise<DesignSystemSummary | null>;
     updateUserDesignSystemRevisionStatus: (root: string, id: string, revisionId: string, status: 'accepted' | 'rejected') => Promise<DesignSystemRevision | null>;
@@ -167,12 +103,6 @@ function sanitizeArchiveFilename(raw: string): string {
 }
 
 export interface DesignSystemRouteServices {
-  authorizeDesignSystemRead: (
-    req: any,
-    res: Response,
-    id: string,
-    allowNavigationQuery?: boolean,
-  ) => Promise<boolean>;
   deleteDesignSystemForRequest: (
     req: Request,
     res: Response,
@@ -208,239 +138,12 @@ export function registerDesignSystemRoutes(
     updateUserDesignSystemRevisionStatus,
   } = ctx.designSystems;
   const designSystemGenerationJobs = ctx.generationJobs;
-  const generationJobScopes = new Map<
-    string,
-    { workspaceId: string; workspaceMemberId: string } | null
-  >();
-
-  const getBoundDesignSystem = (
-    dbHandle: unknown,
-    workspaceId: string,
-    resourceId: string,
-  ) => ctx.workspaceResources.getWorkspaceResource(
-    dbHandle as DbHandle,
-    'design_system',
-    workspaceId,
-    resourceId,
-  );
-  const getDesignSystemBinding = (
-    dbHandle: unknown,
-    resourceId: string,
-  ) => ctx.workspaceResources.getWorkspaceResourceByResourceId(
-    dbHandle as DbHandle,
-    'design_system',
-    resourceId,
-  );
-
   function resolveDesignSystemStorage(
     _req: any,
     id: string,
     _allowNavigationQuery = false,
-  ): { root: string; bindingResourceId: string; exactTeam: boolean } {
-    return { root: USER_DESIGN_SYSTEMS_DIR, bindingResourceId: id, exactTeam: false };
-  }
-
-  async function authorizeDesignSystemRead(
-    req: any,
-    res: Response,
-    id: string,
-    allowNavigationQuery = false,
-  ): Promise<boolean> {
-    const scopedRequest = allowNavigationQuery
-      ? requestWithWorkspaceNavigationScope(req)
-      : req;
-    if (scopedRequest === 'conflict') {
-      res.status(400).json({
-        error: 'WORKSPACE_CONTEXT_CONFLICT',
-        message: 'workspace header and navigation scope must match',
-      });
-      return false;
-    }
-    const resolution = resolveOptionalLocalWorkspaceRequestAuthority(scopedRequest);
-    if (!resolution.ok) {
-      res.status(resolution.status).json({
-        error: resolution.code,
-        message: resolution.message,
-        ...(resolution.retryable ? { retryable: true } : {}),
-      });
-      return false;
-    }
-    const bindingResourceId = id;
-    let binding = getDesignSystemBinding(db, id);
-    if (resolution.context) {
-      binding = getBoundDesignSystem(
-        db,
-        resolution.context.workspaceId,
-        id,
-      );
-    }
-    const isPublicBuiltIn = resolution.context && !binding
-      ? (await listAllDesignSystems({
-          workspaceId: resolution.context.workspaceId,
-        })).some((system) => system.id === id && system.source === 'built-in')
-      : false;
-    // Explicit Workspace requests never inherit ownerless legacy resources.
-    // A Personal design system is private to its exact persisted creator even
-    // when the caller is an owner/admin in the same Workspace. Team resources
-    // remain readable by every verified active member through the shared gate.
-    if (resolution.context && (
-      (!binding && !isPublicBuiltIn)
-      || (
-        binding
-        && binding.createdByWorkspaceMemberId !== resolution.context.workspaceMemberId
-      )
-    )) {
-      res.status(403).json({
-        error: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED',
-        message: 'workspace design_system read is not allowed',
-      });
-      return false;
-    }
-    if (binding && !resolution.context) {
-      res.status(400).json({
-        error: 'WORKSPACE_CONTEXT_REQUIRED',
-        message: 'an explicit workspace context is required',
-      });
-      return false;
-    }
-    return enforceVerifiedWorkspaceResourceRead(
-      'design_system',
-      req,
-      res,
-      (_res, status, code, message, details) =>
-        res.status(status).json({ error: code, message, ...details }),
-      getBoundDesignSystem,
-      getDesignSystemBinding,
-      db,
-      bindingResourceId,
-      resolution.context
-        ? async () => ({ ok: true as const, context: resolution.context! })
-        : ctx.verifyWorkspaceRequestAuthority,
-      { allowNavigationQuery },
-    );
-  }
-
-  async function authorizeDesignSystemMutation(
-    req: any,
-    res: Response,
-    id: string,
-  ): Promise<boolean> {
-    const resolution = resolveOptionalLocalWorkspaceRequestAuthority(req);
-    if (!resolution.ok) {
-      res.status(resolution.status).json({
-        error: resolution.code,
-        message: resolution.message,
-        ...(resolution.retryable ? { retryable: true } : {}),
-      });
-      return false;
-    }
-    const bindingResourceId = id;
-    let binding = getDesignSystemBinding(db, id);
-    if (resolution.context) {
-      binding = getBoundDesignSystem(
-        db,
-        resolution.context.workspaceId,
-        id,
-      );
-    }
-    if (resolution.context && (
-      !binding
-      || (
-        binding.createdByWorkspaceMemberId !== resolution.context.workspaceMemberId
-      )
-    )) {
-      res.status(403).json({
-        error: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED',
-        message: 'workspace design_system mutation is not allowed',
-      });
-      return false;
-    }
-    if (binding && !resolution.context) {
-      res.status(400).json({
-        error: 'WORKSPACE_CONTEXT_REQUIRED',
-        message: 'an explicit workspace context is required',
-      });
-      return false;
-    }
-    return enforceVerifiedWorkspaceResourceMutation(
-      'design_system',
-      req,
-      res,
-      (_res, status, code, message) =>
-        res.status(status).json({ error: code, message }),
-      getBoundDesignSystem,
-      getDesignSystemBinding,
-      db,
-      bindingResourceId,
-      'writeFiles',
-      resolution.context
-        ? async () => ({ ok: true as const, context: resolution.context! })
-        : ctx.verifyWorkspaceRequestAuthority,
-    );
-  }
-
-  async function resolveGenerationJobScope(
-    req: any,
-    res: Response,
-  ): Promise<{ workspaceId: string; workspaceMemberId: string } | null | 'denied'> {
-    const resolution = resolveOptionalLocalWorkspaceRequestAuthority(req);
-    if (!resolution.ok) {
-      res.status(resolution.status).json({
-        error: resolution.code,
-        message: resolution.message,
-        ...(resolution.retryable ? { retryable: true } : {}),
-      });
-      return 'denied';
-    }
-    return resolution.context
-      ? {
-          workspaceId: resolution.context.workspaceId,
-          workspaceMemberId: resolution.context.workspaceMemberId,
-        }
-      : null;
-  }
-
-  async function authorizeGenerationJobRead(
-    req: any,
-    res: Response,
-    job: DesignSystemGenerationJob,
-  ): Promise<boolean> {
-    const scope = generationJobScopes.get(job.id);
-    if (scope) {
-      const resolution = await resolveGenerationJobScope(req, res);
-      if (resolution === 'denied') return false;
-      if (
-        !resolution
-        || resolution.workspaceId !== scope.workspaceId
-        || resolution.workspaceMemberId !== scope.workspaceMemberId
-      ) {
-        res.status(403).json({ error: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED' });
-        return false;
-      }
-      return true;
-    }
-    return job.designSystemId
-      ? authorizeDesignSystemRead(req, res, job.designSystemId)
-      : true;
-  }
-
-  function sendWorkspaceScopeError(res: Response, error: unknown): boolean {
-    if (
-      !error ||
-      typeof error !== 'object' ||
-      !('status' in error) ||
-      (error.status !== 400 && error.status !== 403 && error.status !== 503) ||
-      !('code' in error) ||
-      typeof error.code !== 'string'
-    ) {
-      return false;
-    }
-    res.status(error.status).json({
-      error: error.code,
-      message: error instanceof Error ? error.message : String(error.code),
-      ...('retryable' in error && error.retryable === true ? { retryable: true } : {}),
-    });
-    return true;
+  ): { root: string } {
+    return { root: USER_DESIGN_SYSTEMS_DIR };
   }
 
   app.post('/api/design-systems', async (req, res) => {
@@ -448,24 +151,19 @@ export function registerDesignSystemRoutes(
       const created = await createUserDesignSystem(
         USER_DESIGN_SYSTEMS_DIR,
         req.body || {},
-        req,
       );
       res.status(201).json({ ...created as object, designSystem: created });
     } catch (err) {
-      if (sendWorkspaceScopeError(res, err)) return;
       res.status(400).json({ error: String(err) });
     }
   });
 
   app.post('/api/design-systems/generation-jobs', async (req, res) => {
     try {
-      const scope = await resolveGenerationJobScope(req, res);
-      if (scope === 'denied') return;
       const job = designSystemGenerationJobs.start(
         req.body || {},
-        (root, input) => createUserDesignSystem(root, input, req),
+        (root, input) => createUserDesignSystem(root, input),
       );
-      generationJobScopes.set(job.id, scope);
       res.status(202).json({ job });
     } catch (err) {
       res.status(400).json({ error: String(err) });
@@ -478,7 +176,6 @@ export function registerDesignSystemRoutes(
       if (!job) {
         return res.status(404).json({ error: 'design system generation job not found' });
       }
-      if (!(await authorizeGenerationJobRead(req, res, job))) return;
       res.json({ job });
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -487,9 +184,6 @@ export function registerDesignSystemRoutes(
 
   app.post('/api/design-systems/:id/revision-jobs', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemMutation(req, res, req.params.id))) return;
-      const scope = await resolveGenerationJobScope(req, res);
-      if (scope === 'denied') return;
       const storage = resolveDesignSystemStorage(req, req.params.id);
       const feedback = typeof req.body?.feedback === 'string' ? req.body.feedback : '';
       if (!feedback.trim()) return res.status(400).json({ error: 'feedback is required' });
@@ -500,7 +194,6 @@ export function registerDesignSystemRoutes(
         sectionTitle: typeof req.body?.sectionTitle === 'string' ? req.body.sectionTitle : undefined,
         body: typeof req.body?.body === 'string' ? req.body.body : undefined,
       });
-      generationJobScopes.set(job.id, scope);
       res.status(202).json({ job });
     } catch (err) {
       res.status(400).json({ error: String(err) });
@@ -509,9 +202,6 @@ export function registerDesignSystemRoutes(
 
   app.post('/api/design-systems/:id/token-contract/rebuild-jobs', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemMutation(req, res, req.params.id))) return;
-      const scope = await resolveGenerationJobScope(req, res);
-      if (scope === 'denied') return;
       const storage = resolveDesignSystemStorage(req, req.params.id);
       const preparation = await prepareDesignTokenContractRebuild(
         storage.root,
@@ -530,7 +220,6 @@ export function registerDesignSystemRoutes(
         decision: preparation.decision,
         ...preparation.revision,
       });
-      generationJobScopes.set(job.id, scope);
       res.status(202).json({ decision: preparation.decision, job });
     } catch (err) {
       res.status(400).json({ error: String(err) });
@@ -539,7 +228,6 @@ export function registerDesignSystemRoutes(
 
   app.get('/api/design-systems/:id/revisions', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemRead(req, res, req.params.id))) return;
       const storage = resolveDesignSystemStorage(req, req.params.id);
       const revisions = await listUserDesignSystemRevisions(
         storage.root,
@@ -556,7 +244,6 @@ export function registerDesignSystemRoutes(
 
   app.patch('/api/design-systems/:id/revisions/:revisionId', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemMutation(req, res, req.params.id))) return;
       // Accepting a revision commits its proposed body onto the canonical
       // design system, so it uses the same mutation gate as PATCH/DELETE.
       const storage = resolveDesignSystemStorage(req, req.params.id);
@@ -581,30 +268,14 @@ export function registerDesignSystemRoutes(
 
   app.get('/api/design-systems/:id', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemRead(req, res, req.params.id))) return;
-      const workspaceId = headerValue(req, 'x-od-workspace-id');
-      const workspaceMemberId = headerValue(req, 'x-od-workspace-member-id');
-      const storage = resolveDesignSystemStorage(req, req.params.id);
-      const systems = await listAllDesignSystems({
-        workspaceId,
-        workspaceMemberId,
-        exactTeam: storage.exactTeam,
-      });
+      const systems = await listAllDesignSystems();
       const summary = systems.find((s) => s.id === req.params.id);
       const projectBody = await readDesignSystemWorkspaceTextFile(db, summary, 'DESIGN.md');
-      const body = projectBody ?? await readAvailableDesignSystem(req.params.id, {
-        workspaceId,
-        workspaceMemberId,
-        exactTeam: storage.exactTeam,
-      });
+      const body = projectBody ?? await readAvailableDesignSystem(req.params.id);
       if (body === null || !summary) {
         return res.status(404).json({ error: 'design system not found' });
       }
-      const packageInfo = await readAvailableDesignSystemPackageInfo(req.params.id, {
-        workspaceId,
-        workspaceMemberId,
-        exactTeam: storage.exactTeam,
-      });
+      const packageInfo = await readAvailableDesignSystemPackageInfo(req.params.id);
       const detail = { ...summary, body, ...(packageInfo ? { packageInfo } : {}) };
       res.json({ ...detail, designSystem: detail });
     } catch (err) {
@@ -614,21 +285,7 @@ export function registerDesignSystemRoutes(
 
   app.get('/api/design-systems/:id/preview', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemRead(req, res, req.params.id, true))) return;
-      const workspaceId =
-        headerValue(req, 'x-od-workspace-id')
-        ?? designSystemNavigationWorkspaceQuery(req)?.workspaceId
-        ?? null;
-      const workspaceMemberId =
-        headerValue(req, 'x-od-workspace-member-id')
-        ?? designSystemNavigationWorkspaceQuery(req)?.workspaceMemberId
-        ?? null;
-      const storage = resolveDesignSystemStorage(req, req.params.id, true);
-      const body = await readAvailableDesignSystem(req.params.id, {
-        workspaceId,
-        workspaceMemberId,
-        exactTeam: storage.exactTeam,
-      });
+      const body = await readAvailableDesignSystem(req.params.id);
       if (body === null) return res.status(404).type('text/plain').send('not found');
       const html = renderDesignSystemPreview(req.params.id, body);
       res.type('text/html').send(html);
@@ -639,23 +296,11 @@ export function registerDesignSystemRoutes(
 
   app.get('/api/design-systems/:id/showcase', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemRead(req, res, req.params.id, true))) return;
-      const workspaceId =
-        headerValue(req, 'x-od-workspace-id')
-        ?? designSystemNavigationWorkspaceQuery(req)?.workspaceId
-        ?? null;
-      const workspaceMemberId =
-        headerValue(req, 'x-od-workspace-member-id')
-        ?? designSystemNavigationWorkspaceQuery(req)?.workspaceMemberId
-        ?? null;
-      const storage = resolveDesignSystemStorage(req, req.params.id, true);
       const packaged = await readAvailableDesignSystemStaticFile(
         req.params.id,
         PACKAGED_SHOWCASE_PATH,
-        { workspaceId, workspaceMemberId, exactTeam: storage.exactTeam },
       );
       if (packaged?.contentType.startsWith('text/html')) {
-        const workspaceQuery = designSystemNavigationWorkspaceQuery(req);
         res.setHeader('Cache-Control', 'no-store');
         res.setHeader('Last-Modified', packaged.updatedAt);
         return res.type('text/html').send(
@@ -663,15 +308,10 @@ export function registerDesignSystemRoutes(
             packaged.bytes.toString('utf8'),
             req.params.id,
             path.posix.dirname(PACKAGED_SHOWCASE_PATH),
-            workspaceQuery,
           ),
         );
       }
-      const body = await readAvailableDesignSystem(req.params.id, {
-        workspaceId,
-        workspaceMemberId,
-        exactTeam: storage.exactTeam,
-      });
+      const body = await readAvailableDesignSystem(req.params.id);
       if (body === null) return res.status(404).type('text/plain').send('not found');
       const html = renderDesignSystemShowcase(req.params.id, body);
       res.type('text/html').send(html);
@@ -682,21 +322,10 @@ export function registerDesignSystemRoutes(
 
   app.get('/api/design-systems/:id/static', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemRead(req, res, req.params.id, true))) return;
-      const workspaceId =
-        headerValue(req, 'x-od-workspace-id')
-        ?? designSystemNavigationWorkspaceQuery(req)?.workspaceId
-        ?? null;
-      const workspaceMemberId =
-        headerValue(req, 'x-od-workspace-member-id')
-        ?? designSystemNavigationWorkspaceQuery(req)?.workspaceMemberId
-        ?? null;
-      const storage = resolveDesignSystemStorage(req, req.params.id, true);
       const requestedPath = typeof req.query.path === 'string' ? req.query.path : '';
       const file = await readAvailableDesignSystemStaticFile(
         req.params.id,
         requestedPath,
-        { workspaceId, workspaceMemberId, exactTeam: storage.exactTeam },
       );
       if (!file) return res.status(404).type('text/plain').send('not found');
       res.setHeader('Cache-Control', 'no-store');
@@ -709,16 +338,9 @@ export function registerDesignSystemRoutes(
 
   app.post('/api/design-systems/:id/workspace', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemMutation(req, res, req.params.id))) return;
-      const workspaceId = headerValue(req, 'x-od-workspace-id');
-      const workspaceMemberId = headerValue(req, 'x-od-workspace-member-id');
-      const storage = resolveDesignSystemStorage(req, req.params.id);
       const workspace = await ensureUserDesignSystemWorkspaceProject(
         db,
         req.params.id,
-        workspaceId || workspaceMemberId
-          ? { workspaceId, workspaceMemberId, exactTeam: storage.exactTeam }
-          : undefined,
       );
       if (!workspace) {
         return res.status(404).json({ error: 'editable design system not found' });
@@ -731,7 +353,6 @@ export function registerDesignSystemRoutes(
 
   app.get('/api/design-systems/:id/files', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemRead(req, res, req.params.id))) return;
       const storage = resolveDesignSystemStorage(req, req.params.id);
       const files = await listUserDesignSystemFiles(storage.root, req.params.id);
       if (!files) {
@@ -745,7 +366,6 @@ export function registerDesignSystemRoutes(
 
   app.get('/api/design-systems/:id/file', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemRead(req, res, req.params.id, true))) return;
       const storage = resolveDesignSystemStorage(req, req.params.id, true);
       const requestedPath = typeof req.query.path === 'string' ? req.query.path : '';
       const file = await readUserDesignSystemFile(
@@ -767,7 +387,6 @@ export function registerDesignSystemRoutes(
   // null and surface as 404.
   app.get('/api/design-systems/:id/archive', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemRead(req, res, req.params.id, true))) return;
       const storage = resolveDesignSystemStorage(req, req.params.id, true);
       const archive = await buildUserDesignSystemArchive(storage.root, req.params.id);
       if (!archive) {
@@ -792,7 +411,6 @@ export function registerDesignSystemRoutes(
 
   app.patch('/api/design-systems/:id', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemMutation(req, res, req.params.id))) return;
       const storage = resolveDesignSystemStorage(req, req.params.id);
       const updated = await updateUserDesignSystem(
         storage.root,
@@ -814,21 +432,12 @@ export function registerDesignSystemRoutes(
   // `ensureUserDesignSystemWorkspaceProject` uses) and copies real files
   // under that project's `assets/` directory into the canonical design
   // system directory, entirely on the daemon side of the data-directory
-  // boundary. Gated the same way as PATCH/DELETE: a locked workspace or a
-  // caller who cannot manage the design system may
-  // not trigger a write to canonical.
+  // boundary.
   app.post('/api/design-systems/:id/sync-assets', async (req, res) => {
     try {
-      if (!(await authorizeDesignSystemMutation(req, res, req.params.id))) return;
-      const storage = resolveDesignSystemStorage(req, req.params.id);
-      const workspaceId = headerValue(req, 'x-od-workspace-id');
-      const workspaceMemberId = headerValue(req, 'x-od-workspace-member-id');
       const outcome = await syncUserDesignSystemAssetsFromWorkspace(
         db,
         req.params.id,
-        workspaceId || workspaceMemberId
-          ? { workspaceId, workspaceMemberId, exactTeam: storage.exactTeam }
-          : undefined,
       );
       if (!outcome.ok) {
         if (outcome.reason === 'not-found') {
@@ -852,7 +461,6 @@ export function registerDesignSystemRoutes(
     options: { beforeDelete?: () => Promise<boolean> } = {},
   ): Promise<boolean> {
     try {
-      if (!(await authorizeDesignSystemMutation(req, res, id))) return false;
       const storage = resolveDesignSystemStorage(req, id);
       if (options.beforeDelete && !(await options.beforeDelete())) return false;
       const ok = await deleteUserDesignSystem(storage.root, id);
@@ -860,15 +468,8 @@ export function registerDesignSystemRoutes(
         res.status(404).json({ error: 'editable design system not found' });
         return false;
       }
-      // Envelope cleanup (spec 9.2): drop the `workspace_resources` binding
-      // row too, mirroring skill's DELETE route (routes/static-resource.ts)
-      // and plugin uninstall (plugins/installer.ts) — the generic table has
-      // no ON DELETE CASCADE, so skipping this leaves an orphan row pointing
-      // at a design system that no longer exists on disk.
-      deleteWorkspaceResourceByResourceId(db, 'design_system', storage.bindingResourceId);
       return true;
     } catch (err) {
-      if (sendWorkspaceScopeError(res, err)) return false;
       res.status(500).json({ error: String(err) });
       return false;
     }
@@ -933,14 +534,13 @@ export function registerDesignSystemRoutes(
     }
   });
 
-  return { authorizeDesignSystemRead, deleteDesignSystemForRequest };
+  return { deleteDesignSystemForRequest };
 }
 
 export function rewriteDesignSystemShowcaseAssetUrls(
   html: string,
   designSystemId: string,
   baseDir: string,
-  workspaceQuery?: { workspaceId: string; workspaceMemberId: string } | null,
 ): string {
   if (!html) return html;
   return html
@@ -949,7 +549,6 @@ export function rewriteDesignSystemShowcaseAssetUrls(
         raw,
         designSystemId,
         baseDir,
-        workspaceQuery,
       );
       return rewritten === raw ? match : `${attr}=${quote}${rewritten}${quote}`;
     })
@@ -958,7 +557,6 @@ export function rewriteDesignSystemShowcaseAssetUrls(
         raw,
         designSystemId,
         baseDir,
-        workspaceQuery,
       );
       return rewritten === raw ? match : `url(${quote}${rewritten}${quote})`;
     });
@@ -968,7 +566,6 @@ function rewriteDesignSystemShowcaseAssetUrl(
   rawUrl: string,
   designSystemId: string,
   baseDir: string,
-  workspaceQuery?: { workspaceId: string; workspaceMemberId: string } | null,
 ): string {
   const value = rawUrl.trim();
   if (
@@ -995,25 +592,7 @@ function rewriteDesignSystemShowcaseAssetUrl(
 
   const staticUrl =
     `/api/design-systems/${encodeURIComponent(designSystemId)}/static`
-    + `?path=${encodeURIComponent(relativePath)}`
-    + (workspaceQuery
-      ? `&workspaceId=${encodeURIComponent(workspaceQuery.workspaceId)}`
-        + `&workspaceMemberId=${encodeURIComponent(workspaceQuery.workspaceMemberId)}`
-      : '');
+    + `?path=${encodeURIComponent(relativePath)}`;
   if (suffix.startsWith('?')) return `${staticUrl}&${suffix.slice(1)}`;
   return `${staticUrl}${suffix}`;
-}
-
-function designSystemNavigationWorkspaceQuery(
-  req: any,
-): { workspaceId: string; workspaceMemberId: string } | null {
-  const workspaceId =
-    typeof req.query?.workspaceId === 'string' ? req.query.workspaceId.trim() : '';
-  const workspaceMemberId =
-    typeof req.query?.workspaceMemberId === 'string'
-      ? req.query.workspaceMemberId.trim()
-      : '';
-  return workspaceId && workspaceMemberId
-    ? { workspaceId, workspaceMemberId }
-    : null;
 }

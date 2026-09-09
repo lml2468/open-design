@@ -1,11 +1,8 @@
-import type { Express, Response } from 'express';
+import type { Express } from 'express';
 import type Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
-import type {
-  DesignSystemTokenContractRebuildJobResponse,
-  WorkspaceCollabContext,
-} from '@open-design/contracts';
+import type { DesignSystemTokenContractRebuildJobResponse } from '@open-design/contracts';
 import { detectAgents, detectAgentsStream } from '../agents.js';
 import {
   SkillImportError,
@@ -16,20 +13,9 @@ import {
   splitDerivedSkillId,
   updateUserSkill,
 } from '../skills.js';
-import {
-  ensureWorkspaceResource,
-  getWorkspaceResourceByResourceId,
-} from '../db.js';
-import {
-  resolveOptionalLocalWorkspaceRequestAuthority,
-  type VerifyWorkspaceRequestAuthority,
-} from '../collab/workspace-resource-mutation.js';
 import { listCodexPets, readCodexPetSpritesheet } from '../codex-pets.js';
 import { syncCommunityPets } from '../community-pets-sync.js';
-import {
-  readDesignSystem,
-  writeUserDesignSystemWorkspaceClaim,
-} from '../design-systems/index.js';
+import { readDesignSystem } from '../design-systems/index.js';
 import {
   LocalDesignSystemImportError,
   importLocalDesignSystemProject,
@@ -42,7 +28,6 @@ import { listPromptTemplates, readPromptTemplate } from '../media/prompt-templat
 import { readAppConfig } from '../app-config.js';
 import {
   installFromTarget,
-  sanitizeRepoName,
   uninstallById,
 } from '../library-install.js';
 import {
@@ -57,11 +42,7 @@ export interface RegisterAtomRoutesDeps {
   resources: { FIRST_PARTY_ATOMS: Array<{ id: string; taskKinds: string[]; [key: string]: unknown }> };
 }
 
-export interface RegisterStaticResourceRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'resources'> {
-  /** Settled, TTL-bounded authority for pure local catalog reads. */
-  verifyWorkspaceReadAuthority?: VerifyWorkspaceRequestAuthority;
-  /** Fresh authority for mutations, materialization, and detail reads. */
-  verifyWorkspaceRequestAuthority?: VerifyWorkspaceRequestAuthority;
+export interface RegisterStaticResourceRoutesDeps extends RouteDeps<'http' | 'paths' | 'resources'> {
   tokenContractRebuild?: {
     maybeStartForImportedDesignSystem?: (
       designSystemId: string,
@@ -96,7 +77,6 @@ export function registerAtomRoutes(app: Express, ctx: RegisterAtomRoutesDeps) {
 }
 
 export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticResourceRoutesDeps) {
-  const { db } = ctx;
   const {
     RUNTIME_DATA_DIR,
     RUNTIME_DATA_DIR_CANONICAL,
@@ -115,7 +95,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     listAllDesignTemplates,
     listAllSkillLikeEntries,
     listAllDesignSystems,
-    resolveWorkspaceScope,
     mimeFor,
   } = ctx.resources;
   const { isLocalSameOrigin, resolvedPortRef, sendApiError } = ctx.http;
@@ -123,40 +102,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     if (isLocalSameOrigin(req, resolvedPortRef.current)) return true;
     sendApiError(res, 403, 'FORBIDDEN', 'local origin required');
     return false;
-  };
-  const sendWorkspaceScopeError = (res: Response, error: unknown): boolean => {
-    if (
-      !error
-      || typeof error !== 'object'
-      || !('status' in error)
-      || (error.status !== 400 && error.status !== 403 && error.status !== 409 && error.status !== 503)
-      || !('code' in error)
-      || typeof error.code !== 'string'
-    ) {
-      return false;
-    }
-    res.status(error.status).json({
-      error: error.code,
-      message: error instanceof Error ? error.message : String(error.code),
-      ...('retryable' in error && error.retryable === true ? { retryable: true } : {}),
-    });
-    return true;
-  };
-  const resolveWorkspaceAuthority = async (
-    req: any,
-    res: Response,
-    options: {
-      verifyAuthority?: VerifyWorkspaceRequestAuthority | undefined;
-    } = {},
-  ): Promise<WorkspaceCollabContext | null | undefined> => {
-    const authority = resolveOptionalLocalWorkspaceRequestAuthority(req);
-    if (!authority.ok) {
-      sendApiError(res, authority.status, authority.code, authority.message, {
-        ...(authority.retryable ? { retryable: true } : {}),
-      });
-      return undefined;
-    }
-    return authority.context;
   };
   const importedDesignSystemResponse = async <T extends { id: string }>(designSystem: T) => {
     let tokenContractRebuild: DesignSystemTokenContractRebuildJobResponse | undefined;
@@ -170,73 +115,8 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       ...(tokenContractRebuild ? { tokenContractRebuild } : {}),
     };
   };
-  const claimImportedDesignSystem = async (
-    dirId: string,
-    context: WorkspaceCollabContext | null,
-  ): Promise<void> => {
-    if (!context) return;
-    const resourceId = userDesignSystemCatalogId(dirId);
-    const conflict = () => Object.assign(
-      new Error('a design system with this id already belongs to a Workspace'),
-      { status: 409, code: 'DESIGN_SYSTEM_ID_CONFLICT' },
-    );
-    try {
-      if (reservedDesignSystemResourceIds().has(resourceId)) throw conflict();
-      await writeUserDesignSystemWorkspaceClaim(
-        USER_DESIGN_SYSTEMS_DIR,
-        dirId,
-        context.workspaceId,
-      );
-      // Re-check after the async metadata write. Another request may have
-      // claimed the logical id while this import was materializing bytes.
-      if (reservedDesignSystemResourceIds().has(resourceId)) throw conflict();
-      const binding = ensureWorkspaceResource(
-        db,
-        'design_system',
-        context.workspaceId,
-        resourceId,
-        {
-          visibility: 'personal',
-          resourceState: 'active',
-          createdByWorkspaceMemberId: context.workspaceMemberId,
-          updatedByWorkspaceMemberId: context.workspaceMemberId,
-        },
-      );
-      if (
-        binding?.workspaceId !== context.workspaceId
-        || binding.visibility === 'team'
-        || binding.createdByWorkspaceMemberId !== context.workspaceMemberId
-      ) {
-        throw conflict();
-      }
-    } catch (error) {
-      await fs.promises.rm(path.join(USER_DESIGN_SYSTEMS_DIR, dirId), {
-        recursive: true,
-        force: true,
-      });
-      throw error;
-    }
-  };
-  const reservedDesignSystemResourceIds = (): Set<string> => {
-    const ids = new Set<string>();
-    const bindings = db.prepare(
-      `SELECT resource_id AS resourceId
-         FROM workspace_resources
-        WHERE resource_type = 'design_system'`,
-    ).all() as Array<{ resourceId?: string }>;
-    for (const binding of bindings) {
-      const resourceId = binding.resourceId?.trim();
-      if (!resourceId) continue;
-      ids.add(resourceId);
-    }
-    return ids;
-  };
   const reservedDesignSystemDirIds = (systems: Array<{ id: string }>): string[] => {
-    const ids = new Set(designSystemDirIdsFromCatalog(systems));
-    for (const resourceId of reservedDesignSystemResourceIds()) {
-      ids.add(resourceId.startsWith('user:') ? resourceId.slice('user:'.length) : resourceId);
-    }
-    return [...ids];
+    return designSystemDirIdsFromCatalog(systems);
   };
 
   app.get('/api/agents', async (req, res) => {
@@ -517,46 +397,12 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     }
   });
 
-  app.get('/api/design-systems', async (req, res) => {
+  app.get('/api/design-systems', async (_req, res) => {
     try {
-      // The library CATALOG is workspace-scoped (#145): user design systems all
-      // share one directory on disk, so without this the systems authored in
-      // one workspace also filled a brand-new one. Every other caller of
-      // `listAllDesignSystems` resolves a system by id and stays unscoped.
-      const catalogAuthority =
-        ctx.verifyWorkspaceReadAuthority
-        ?? ctx.verifyWorkspaceRequestAuthority;
-      const workspaceContext = catalogAuthority
-        ? await resolveWorkspaceAuthority(req, res, {
-            verifyAuthority: catalogAuthority,
-          })
-        : null;
-      if (workspaceContext === undefined) return;
-      const workspaceId = workspaceContext?.workspaceId
-        ?? (catalogAuthority ? null : (await resolveWorkspaceScope?.(req)) ?? null);
-      const workspaceMemberId = workspaceContext?.workspaceMemberId ?? null;
-      const catalog = await listAllDesignSystems({
-        workspaceId,
-        workspaceMemberId,
-      });
-      const visibleSystems = workspaceId && workspaceMemberId
-        ? catalog.filter((system) => {
-            if (system.source !== 'user') return true;
-            const personalBinding = getWorkspaceResourceByResourceId(
-              db,
-              'design_system',
-              system.id,
-            );
-            return personalBinding?.workspaceId === workspaceId
-              && personalBinding.visibility !== 'team'
-              && personalBinding.resourceState !== 'deleted'
-              && personalBinding.createdByWorkspaceMemberId === workspaceMemberId;
-          })
-        : catalog;
-      const designSystems = visibleSystems.map(({ body, ...rest }) => rest);
+      const catalog = await listAllDesignSystems();
+      const designSystems = catalog.map(({ body, ...rest }) => rest);
       res.json({ designSystems });
     } catch (err: any) {
-      if (sendWorkspaceScopeError(res, err)) return;
       res.status(500).json({ error: String(err) });
     }
   });
@@ -845,32 +691,13 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
   app.post('/api/design-systems/install', async (req, res) => {
     if (!requireLocalOrigin(req, res)) return;
     try {
-      const workspaceContext = await resolveWorkspaceAuthority(req, res);
-      if (workspaceContext === undefined) return;
       const installTarget = req.body && typeof req.body === 'object' ? req.body : {};
-      const candidateId = installTarget.source === 'github' && typeof installTarget.url === 'string'
-        ? sanitizeRepoName(installTarget.url)
-        : installTarget.source === 'local' && typeof installTarget.path === 'string'
-          ? path.basename(installTarget.path.replace(/[\\/]+$/, ''))
-          : '';
-      if (
-        candidateId
-        && reservedDesignSystemResourceIds().has(userDesignSystemCatalogId(candidateId))
-      ) {
-        return sendApiError(
-          res,
-          409,
-          'DESIGN_SYSTEM_ID_CONFLICT',
-          'a design system with this id already belongs to a Workspace',
-        );
-      }
       const result = await installFromTarget(req.body, USER_DESIGN_SYSTEMS_DIR, 'design-system');
       if (!result.ok) return res.status(400).json({ error: result.error });
       if (typeof result.dir !== 'string' || !result.dir) {
         return res.status(500).json({ error: 'design system install did not return an installation directory' });
       }
       const designSystemId = path.basename(fs.realpathSync.native(result.dir));
-      await claimImportedDesignSystem(designSystemId, workspaceContext);
       const systems = await listAllDesignSystems();
       const designSystem = findUserDesignSystemInCatalog(systems, designSystemId);
       if (!designSystem) {
@@ -878,7 +705,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       }
       res.json({ designSystem });
     } catch (err: any) {
-      if (sendWorkspaceScopeError(res, err)) return;
       res.status(500).json({ error: String(err) });
     }
   });
@@ -886,8 +712,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
   app.post('/api/design-systems/import/local', async (req, res) => {
     if (!requireLocalOrigin(req, res)) return;
     try {
-      const workspaceContext = await resolveWorkspaceAuthority(req, res);
-      if (workspaceContext === undefined) return;
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const inputPath =
         typeof body.baseDir === 'string'
@@ -933,7 +757,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
         ...(craftApplies ? { craftApplies } : {}),
         reservedIds: reservedDesignSystemDirIds(before),
       });
-      await claimImportedDesignSystem(result.id, workspaceContext);
       const systems = await listAllDesignSystems();
       const designSystem = findUserDesignSystemInCatalog(systems, result.id);
       if (!designSystem) {
@@ -946,7 +769,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       }
       res.status(201).json(await importedDesignSystemResponse(designSystem));
     } catch (err: any) {
-      if (sendWorkspaceScopeError(res, err)) return;
       if (err instanceof LocalDesignSystemImportError) {
         return sendApiError(res, err.code === 'BAD_REQUEST' ? 400 : 500, err.code, err.message);
       }
@@ -957,8 +779,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
   app.post('/api/design-systems/import/github', async (req, res) => {
     if (!requireLocalOrigin(req, res)) return;
     try {
-      const workspaceContext = await resolveWorkspaceAuthority(req, res);
-      if (workspaceContext === undefined) return;
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const githubUrl =
         typeof body.githubUrl === 'string'
@@ -981,7 +801,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
           reservedIds: reservedDesignSystemDirIds(before),
         },
       );
-      await claimImportedDesignSystem(result.id, workspaceContext);
       const systems = await listAllDesignSystems();
       const designSystem = findUserDesignSystemInCatalog(systems, result.id);
       if (!designSystem) {
@@ -994,7 +813,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       }
       res.status(201).json(await importedDesignSystemResponse(designSystem));
     } catch (err: any) {
-      if (sendWorkspaceScopeError(res, err)) return;
       if (err instanceof LocalDesignSystemImportError) {
         return sendApiError(res, err.code === 'BAD_REQUEST' ? 400 : 500, err.code, err.message);
       }
@@ -1005,8 +823,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
   app.post('/api/design-systems/import/shadcn', async (req, res) => {
     if (!requireLocalOrigin(req, res)) return;
     try {
-      const workspaceContext = await resolveWorkspaceAuthority(req, res);
-      if (workspaceContext === undefined) return;
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const reference =
         typeof body.reference === 'string'
@@ -1031,7 +847,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
           reservedIds: reservedDesignSystemDirIds(before),
         },
       );
-      await claimImportedDesignSystem(result.id, workspaceContext);
       const systems = await listAllDesignSystems();
       const designSystem = findUserDesignSystemInCatalog(systems, result.id);
       if (!designSystem) {
@@ -1044,7 +859,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       }
       res.status(201).json(await importedDesignSystemResponse(designSystem));
     } catch (err: any) {
-      if (sendWorkspaceScopeError(res, err)) return;
       if (err instanceof LocalDesignSystemImportError) {
         return sendApiError(res, err.code === 'BAD_REQUEST' ? 400 : 500, err.code, err.message);
       }
