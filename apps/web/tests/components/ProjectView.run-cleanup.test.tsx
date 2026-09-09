@@ -2385,7 +2385,7 @@ describe('ProjectView daemon cleanup', () => {
     );
 
     await waitFor(() =>
-      expect(fetchChatRunStatus).toHaveBeenCalledWith('run-legacy-replay', null),
+      expect(fetchChatRunStatus).toHaveBeenCalledWith('run-legacy-replay'),
     );
     await waitFor(() => {
       expect(saveMessage).toHaveBeenCalledWith(

@@ -19,7 +19,7 @@ import type {
   ChatCommentAttachment,
   ChatMessage,
 } from '../../types';
-import type { ChatSessionMode, WorkspaceCollabContext } from '@open-design/contracts';
+import type { ChatSessionMode } from '@open-design/contracts';
 
 // ---------------------------------------------------------------------------
 // useConversationChat — drives a secondary ChatPane bound to a single
@@ -54,15 +54,6 @@ export interface ConversationChatContext {
   /** UI locale forwarded to the daemon so prompts compose in-language. */
   locale: string;
   sessionMode: ChatSessionMode;
-  /**
-   * The caller's current workspace identity, forwarded to `streamViaDaemon`
-   * so POST /api/runs carries the same `x-od-workspace-*` headers the
-   * primary ProjectView chat loop sends. Without this a side-chat send
-   * against a team-bound project would 401 against the daemon's workspace
-   * mutation gate even for a fully authorized member. Null/omitted for
-   * signed-out / personal usage.
-   */
-  workspaceContext?: WorkspaceCollabContext | null;
 }
 
 export interface UseConversationChatResult {
@@ -179,7 +170,6 @@ export function useConversationChat(
         agentsById: agents,
         locale: loc,
         sessionMode,
-        workspaceContext,
       } = ctxRef.current;
       if (messagesReadyScopeKeyRef.current !== messageScopeKey) return;
       if (cfg.mode !== 'daemon') {
@@ -323,7 +313,6 @@ export function useConversationChat(
         skillId: null,
         skillIds: [],
         designSystemId: cfg.designSystemId ?? null,
-        workspaceContext,
         attachments: (userMsg.attachments ?? []).map((a) => a.path),
         commentAttachments: userMsg.commentAttachments ?? [],
         model: choice?.model ?? null,

@@ -28,10 +28,8 @@ import type {
   RunContextSelection,
   SseErrorPayload,
   StrategyTaskProjectionV2,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import type { StreamHandlers } from './anthropic';
-import { workspaceProjectHeaders } from '../state/projects';
 
 /**
  * Returns the front-end carrier that's about to send this request:
@@ -334,16 +332,6 @@ export interface DaemonStreamOptions {
   mediaExecution?: MediaExecutionPolicy;
   titleGeneration?: { enabled?: boolean };
   locale?: string;
-  // The caller's current workspace identity, attached as `x-od-workspace-*`
-  // headers on POST /api/runs so the daemon's workspace-resource mutation
-  // gate (see `enforceWorkspaceProjectMutation` in
-  // `apps/daemon/src/routes/runs.ts`) can tell a team member apart from a
-  // headerless caller. Mirrors `workspaceProjectHeaders` usage on every
-  // other project write (rename/delete/duplicate/comments/file writes) —
-  // omitting it here would make POST /api/runs the one write path that
-  // forgets to identify the caller. Null/omitted for signed-out / personal
-  // (non-workspace) usage, matching those other call sites.
-  workspaceContext?: WorkspaceCollabContext | null;
   initialLastEventId?: string | null;
   onRunStatus?: (status: ChatRunStatus) => void;
   /** Authoritative project-relative artifacts created or modified by the run. */
@@ -369,7 +357,6 @@ export interface DaemonReattachOptions {
   runId: string;
   projectId?: string | null;
   conversationId?: string | null;
-  workspaceContext?: WorkspaceCollabContext | null;
   signal: AbortSignal;
   cancelSignal?: AbortSignal;
   handlers: DaemonStreamHandlers;
@@ -691,7 +678,6 @@ export async function streamViaDaemon({
   mediaExecution,
   titleGeneration,
   locale,
-  workspaceContext,
   initialLastEventId,
   onRunCreated,
   onRunStatus,
@@ -751,7 +737,6 @@ export async function streamViaDaemon({
         // The daemon falls back to a User-Agent sniff when this header is
         // absent (e.g. third-party clients), so omitting it in tests is OK.
         'X-OD-Client': detectClientType(),
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body,
     });
@@ -790,7 +775,6 @@ export async function streamViaDaemon({
       onRunEventId,
       projectId,
       conversationId,
-      workspaceContext,
       onRunCreated,
       onStrategyTaskSettled,
     });
@@ -813,14 +797,9 @@ export async function reattachDaemonRun(options: DaemonReattachOptions): Promise
 
 export async function fetchChatRunStatus(
   runId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ChatRunStatusResponse | null> {
   try {
-    const resp = await fetch(`/api/runs/${encodeURIComponent(runId)}`, {
-      ...(workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : {}),
-    });
+    const resp = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
     if (!resp.ok) return null;
     return (await resp.json()) as ChatRunStatusResponse;
   } catch {
@@ -878,14 +857,13 @@ export async function reportChatRunFeedback(req: {
   reasonCodes: string[];
   hasCustomReason: boolean;
   customReason: string;
-}, workspaceContext?: WorkspaceCollabContext | null): Promise<void> {
+}): Promise<void> {
   try {
     const { runId, ...feedback } = req;
     await fetch(`/api/runs/${encodeURIComponent(runId)}/feedback`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(feedback),
     });
@@ -897,15 +875,10 @@ export async function reportChatRunFeedback(req: {
 export async function listActiveChatRuns(
   projectId: string,
   conversationId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ChatRunStatusResponse[]> {
   try {
     const qs = new URLSearchParams({ projectId, conversationId, status: 'active' });
-    const resp = await fetch(`/api/runs?${qs.toString()}`, {
-      ...(workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : {}),
-    });
+    const resp = await fetch(`/api/runs?${qs.toString()}`);
     if (!resp.ok) return [];
     const body = (await resp.json()) as ChatRunListResponse;
     return body.runs ?? [];
@@ -914,15 +887,9 @@ export async function listActiveChatRuns(
   }
 }
 
-export async function listProjectRuns(
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<ChatRunStatusResponse[]> {
+export async function listProjectRuns(): Promise<ChatRunStatusResponse[]> {
   try {
-    const resp = await fetch('/api/runs', {
-      ...(workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : {}),
-    });
+    const resp = await fetch('/api/runs');
     if (!resp.ok) return [];
     const body = (await resp.json()) as ChatRunListResponse;
     return body.runs ?? [];
@@ -934,25 +901,17 @@ export async function listProjectRuns(
 /**
  * One project's runs plus the awaiting-input flag the run bodies cannot carry.
  *
- * Scoped to a single project ON PURPOSE. The catalogue-wide `listProjectRuns`
- * above 400s (`PROJECT_SCOPE_REQUIRED`) the moment any run belongs to a
- * workspace-bound project — which, in a workspace session, is all of them — so
- * it silently returns `[]` there. Asking per project id takes the route's
- * authorized branch instead and actually works.
+ * Scoped to a single project so callers can refresh one Project without
+ * downloading the full run catalog.
  *
  * Returns `null` when the project is unreadable or the daemon is unreachable,
  * so a caller can tell "no runs" apart from "could not ask".
  */
 export async function listRunsForProject(
   projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ runs: ChatRunStatusResponse[]; awaitingInputProjectIds: string[] } | null> {
   try {
-    const resp = await fetch(`/api/runs?projectId=${encodeURIComponent(projectId)}`, {
-      ...(workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : {}),
-    });
+    const resp = await fetch(`/api/runs?projectId=${encodeURIComponent(projectId)}`);
     if (!resp.ok) return null;
     const body = (await resp.json()) as ChatRunListResponse;
     return {
@@ -1022,7 +981,6 @@ async function consumeDaemonPhysicalRun({
   onRunEventId,
   projectId,
   conversationId,
-  workspaceContext,
   onStrategyTaskSettled,
 }: DaemonReattachOptions): Promise<DaemonPhysicalRunResult | void> {
   let acc = '';
@@ -1072,9 +1030,6 @@ async function consumeDaemonPhysicalRun({
     canceled = true;
     void fetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, {
       method: 'POST',
-      ...(workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : {}),
     }).catch(() => {});
   };
 
@@ -1092,9 +1047,6 @@ async function consumeDaemonPhysicalRun({
         resp = await fetch(`/api/runs/${encodeURIComponent(runId)}/events${qs}`, {
           method: 'GET',
           signal,
-          ...(workspaceContext
-            ? { headers: workspaceProjectHeaders(workspaceContext) }
-            : {}),
         });
       } catch (err) {
         if ((err as Error).name === 'AbortError') throw err;
@@ -1229,7 +1181,7 @@ async function consumeDaemonPhysicalRun({
       }
       let shouldResetReconnects = sawStreamProgress;
       if (pendingStructuredError && endStatus === null) {
-        const status = await fetchChatRunStatus(runId, workspaceContext).catch(() => null);
+        const status = await fetchChatRunStatus(runId).catch(() => null);
         if (status && isChatRunStatus(status.status) && status.status !== 'queued' && status.status !== 'running') {
           endStatus = status.status;
           exitCode = status.exitCode ?? null;
@@ -1263,7 +1215,7 @@ async function consumeDaemonPhysicalRun({
     }
 
     if (endStatus === null) {
-      const status = await fetchChatRunStatus(runId, workspaceContext);
+      const status = await fetchChatRunStatus(runId);
       if (status && isChatRunStatus(status.status) && status.status !== 'queued' && status.status !== 'running') {
         endStatus = status.status;
         exitCode = status.exitCode ?? null;
@@ -1319,7 +1271,7 @@ async function consumeDaemonPhysicalRun({
         // Run touched it, kind matches) — never the agent's own assertion — and
         // an unreachable daemon fails closed to the previous behaviour.
         const deliveredDespiteBlock = endStatus === 'succeeded'
-          && (await fetchChatRunStatus(runId, workspaceContext))?.deliverableValid === true;
+          && (await fetchChatRunStatus(runId))?.deliverableValid === true;
         if (!deliveredDespiteBlock) {
           endStatus = 'failed';
           pendingStructuredError ??= new Error('The strategy task could not continue.');

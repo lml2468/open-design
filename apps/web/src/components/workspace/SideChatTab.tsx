@@ -126,7 +126,6 @@ export function SideChatTab({
     agentsById,
     locale,
     sessionMode,
-    workspaceContext,
   });
   const controlledChat =
     activeConversationChat?.conversationId === conversationId

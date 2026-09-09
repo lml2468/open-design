@@ -2491,7 +2491,6 @@ export function DesignSystemDetailView({
         clientRequestId: randomUUID(),
         skillId: null,
         designSystemId: system.id,
-        workspaceContext,
         attachments: attachments.map((attachment) => attachment.path),
         commentAttachments,
         model: selectedModel?.model ?? null,

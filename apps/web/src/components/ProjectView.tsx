@@ -4009,10 +4009,10 @@ export function ProjectView({
           reasonCodes: change.reasonCodes ?? [],
           hasCustomReason: !!change.customReason,
           customReason: normalizeCustomReason(change.customReason),
-        }, projectRunWorkspaceContext);
+        });
       }
     },
-    [updateMessageById, activeConversationId, projectRunWorkspaceContext],
+    [updateMessageById, activeConversationId],
   );
 
   // `code` is the structured API error code (e.g. AGENT_AUTH_REQUIRED); it
@@ -4427,11 +4427,10 @@ export function ProjectView({
         ? await listActiveChatRuns(
             project.id,
             reattachConversationId,
-            projectRunWorkspaceContext,
           )
         : [];
       const historicalRuns = missingRunIdMessages.length > 0
-        ? (await listProjectRuns(projectRunWorkspaceContext)).filter(
+        ? (await listProjectRuns()).filter(
             (run) => run.projectId === project.id && run.conversationId === reattachConversationId,
           )
         : [];
@@ -4534,7 +4533,7 @@ export function ProjectView({
         }
 
         const physicalStatus = fallbackRun
-          ?? await fetchChatRunStatus(runId, projectRunWorkspaceContext);
+          ?? await fetchChatRunStatus(runId);
         if (cancelled) return;
         if (!physicalStatus) {
           // `fetchChatRunStatus` returns null on ANY non-OK response or fetch
@@ -4665,7 +4664,6 @@ export function ProjectView({
           const endedAt = await resolveTerminalEndedAt(
             runId,
             status,
-            projectRunWorkspaceContext,
           );
           updateMessageById(
             message.id,
@@ -4738,7 +4736,6 @@ export function ProjectView({
             const legacyReplayEndedAt = await resolveTerminalEndedAt(
               runId,
               status,
-              projectRunWorkspaceContext,
             );
             updateMessageById(
               message.id,
@@ -5054,7 +5051,6 @@ export function ProjectView({
           runId: reattachRunId,
           projectId: project.id,
           conversationId: reattachConversationId,
-          workspaceContext: projectRunWorkspaceContext,
           signal: controller.signal,
           cancelSignal: cancelController.signal,
           initialLastEventId:
@@ -5165,7 +5161,6 @@ export function ProjectView({
               const endedAt = await resolveTerminalEndedAt(
                 activeReattachRunId,
                 activeReattachRunId === runId ? status : null,
-                projectRunWorkspaceContext,
               );
               updateMessageById(
                 message.id,
@@ -5336,7 +5331,6 @@ export function ProjectView({
                     if (recoveredArtifactMessagesRef.current.has(message.id)) return;
                     const latestRunStatus = await fetchChatRunStatus(
                       runId,
-                      projectRunWorkspaceContext,
                     ).catch(() => null);
                     const artifactToPersist = parsedArtifact?.html
                       ? parsedArtifact
@@ -5458,7 +5452,6 @@ export function ProjectView({
                   }, 3000);
                   const latestRunStatus = await fetchChatRunStatus(
                     runId,
-                    projectRunWorkspaceContext,
                   ).catch(() => null);
                   if (!latestRunStatus || isActiveRunStatus(latestRunStatus.status)) {
                     // If the backoff elapsed while this probe was still in
@@ -5723,7 +5716,6 @@ export function ProjectView({
           if (!artifactToPersist?.html) continue;
           const latestRunStatus = await fetchChatRunStatus(
             runId,
-            projectRunWorkspaceContext,
           ).catch(() => null);
           let nextFiles = await refreshProjectFiles();
           if (cancelled) return;
@@ -5780,7 +5772,6 @@ export function ProjectView({
           const recoveredArtifactEndedAt = await resolveTerminalEndedAt(
             runId,
             latestRunStatus,
-            projectRunWorkspaceContext,
           );
           updateMessageById(
             message.id,
@@ -7020,7 +7011,6 @@ export function ProjectView({
                 }, 3000);
                 const latestRunStatus = await fetchChatRunStatus(
                   runIdForGenericDisconnect,
-                  projectRunWorkspaceContext,
                 ).catch(() => null);
                 if (latestRunStatus?.artifactPaths) {
                   authoritativeArtifactPaths = latestRunStatus.artifactPaths;
@@ -7249,7 +7239,6 @@ export function ProjectView({
           skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
           context: runContext,
           designSystemId: runtimeDesignSystemId ?? null,
-          workspaceContext: projectRunWorkspaceContext,
           attachments: runAttachments.map((a) => a.path),
           commentAttachments: runCommentAttachments,
           sessionMode: runSessionMode,
@@ -7461,7 +7450,6 @@ export function ProjectView({
           skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
           context: runContext,
           designSystemId: runtimeDesignSystemId ?? null,
-          workspaceContext: projectRunWorkspaceContext,
           attachments: runAttachments.map((a) => a.path),
           commentAttachments: runCommentAttachments,
           sessionMode: runSessionMode,
@@ -10358,10 +10346,7 @@ export function ProjectView({
                     ? { persistedTaskExecutionId: sourceAssistant.strategyTaskExecutionId }
                     : {}),
                   ...(sourceAssistant?.runId ? { sourceRunId: sourceAssistant.runId } : {}),
-                  fetchRunStatus: (runId) => fetchChatRunStatus(
-                    runId,
-                    projectRunWorkspaceContext,
-                  ),
+                  fetchRunStatus: (runId) => fetchChatRunStatus(runId),
                 });
                 if (sourceAssistant && strategyTaskExecutionId) {
                   sourceAssistant = {
@@ -11013,12 +10998,11 @@ type RunStatusSnapshot = Awaited<ReturnType<typeof fetchChatRunStatus>>;
 async function resolveTerminalEndedAt(
   runId: string,
   candidate: RunStatusSnapshot | null | undefined,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<number> {
   if (candidate && !isActiveRunStatus(candidate.status)) {
     return candidate.updatedAt;
   }
-  const probed = await fetchChatRunStatus(runId, workspaceContext).catch(() => null);
+  const probed = await fetchChatRunStatus(runId).catch(() => null);
   if (probed && !isActiveRunStatus(probed.status)) {
     return probed.updatedAt;
   }

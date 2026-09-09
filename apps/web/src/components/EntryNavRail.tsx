@@ -228,11 +228,9 @@ function RailRecentSection({
     () => [...projects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RAIL_RECENT_LIMIT),
     [projects],
   );
-  // Run status for the rows' leading glyph. `Project.status` cannot serve it —
-  // it only arrives on the UNSCOPED project list, so it is absent for every
-  // workspace-bound project (see the hook's own note) — and this is the same
-  // feed the workspace tab dropdown reads, which is what keeps the two glyph
-  // columns telling one story.
+  // Run status for the rows' leading glyph. This is the same live runs feed
+  // the workspace tab dropdown reads, which keeps the two glyph columns
+  // telling one story.
   // Only polled while the disclosure is open: it costs one request per listed
   // project (≤ RAIL_RECENT_LIMIT), and a collapsed section shows no glyphs.
   const runStatusProjectIds = useMemo(() => items.map((item) => item.id), [items]);
