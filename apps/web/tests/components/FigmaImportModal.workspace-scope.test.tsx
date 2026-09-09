@@ -5,7 +5,6 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { FigmaImportModal } from '../../src/components/FigmaImportModal';
 import { importProjectFigma } from '../../src/providers/registry';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 vi.mock('../../src/providers/registry', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/providers/registry')>()),
@@ -17,11 +16,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it('imports into the local project without forwarding legacy Workspace authority', async () => {
-  const contextA = workspaceContextFixture({
-    workspaceId: 'workspace-a',
-    workspaceMemberId: 'member-a',
-  });
+it('imports into the local project', async () => {
   const result = {
     snapshotDir: 'figma',
     files: ['figma/DESIGN-context.md'],
@@ -48,7 +43,6 @@ it('imports into the local project without forwarding legacy Workspace authority
     <FigmaImportModal
       onClose={vi.fn()}
       resolveProjectId={async () => 'project-a'}
-      workspaceContext={contextA}
       onImported={vi.fn()}
     />,
   );

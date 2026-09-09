@@ -43,7 +43,6 @@ import {
 } from '../analytics/events';
 import {
   stableAnalyticsRequestErrorCode,
-  workspaceAnalyticsDimensions,
 } from '../analytics/workspace';
 import type { TrackingWorkspaceScope } from '@open-design/contracts/analytics';
 import {
@@ -82,7 +81,6 @@ import { copyToClipboard } from '../lib/copy-to-clipboard';
 import type { PluginUseAction } from './plugins-home/useActions';
 import { AnimatePresence } from 'motion/react';
 import { navigate } from '../router';
-import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 
 type PluginsTab = 'installed' | 'available' | 'sources';
 
@@ -863,9 +861,6 @@ export function ExtensionsMarketplace({
 }: ExtensionsMarketplaceProps) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
-  // My own member id, to keep the Personal tab to resources I actually own.
-  const { context: workspaceContext } = useWorkspaceContext();
-  const workspaceDimensions = workspaceAnalyticsDimensions(workspaceContext);
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
   const catalogStaleRef = useRef(false);
@@ -896,7 +891,6 @@ export function ExtensionsMarketplace({
       extension_kind: input.kind ?? (mode === 'plugins' ? 'expert_plugin' : 'skill'),
       resource_scope: input.scope ?? scope,
       ...(input.id ? { extension_key: input.id } : {}),
-      ...workspaceDimensions,
     });
   }
   function trackResourceResult(input: {
@@ -916,7 +910,6 @@ export function ExtensionsMarketplace({
       result: input.result,
       duration_ms: Math.round(performance.now() - input.startedAt),
       ...(input.errorCode ? { error_code: input.errorCode } : {}),
-      ...workspaceDimensions,
     });
   }
   const [query, setQuery] = useState('');
@@ -1700,7 +1693,6 @@ export function ExtensionsMarketplace({
         {cardDetail?.kind === 'plugin' ? (
           <PluginDetailsModal
             record={cardDetail.record}
-            workspaceContext={workspaceContext}
             onClose={() => setCardDetail(null)}
             onUse={(record, action) => {
               setCardDetail(null);

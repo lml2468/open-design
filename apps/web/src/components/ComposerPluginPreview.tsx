@@ -12,10 +12,7 @@
 // and the localization helpers so the copy follows the active locale.
 
 import { useMemo } from 'react';
-import type {
-  InstalledPluginRecord,
-  WorkspaceCollabContext,
-} from '@open-design/contracts';
+import type { InstalledPluginRecord } from '@open-design/contracts';
 import { useT } from '../i18n';
 import { PreviewSurface } from './plugins-home/cards/PreviewSurface';
 import { extractCategories } from './plugins-home/facets';
@@ -69,16 +66,14 @@ function isDesignSystemRecord(record: InstalledPluginRecord): boolean {
 export function ComposerPluginPreview({
   record,
   locale,
-  workspaceContext = null,
 }: {
   record: InstalledPluginRecord;
   locale: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }) {
   const t = useT();
   const preview = useMemo(
-    () => inferPluginPreview(record, { workspaceContext }),
-    [record, workspaceContext],
+    () => inferPluginPreview(record),
+    [record],
   );
   const title = localizePluginTitle(locale, record);
   const description = localizePluginDescription(locale, record);

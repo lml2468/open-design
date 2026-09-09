@@ -18,10 +18,7 @@
 // stays identical — every variant reaches `usePlugin` through the
 // same callback wiring.
 
-import type {
-  InstalledPluginRecord,
-  WorkspaceCollabContext,
-} from '@open-design/contracts';
+import type { InstalledPluginRecord } from '@open-design/contracts';
 import { createPortal } from 'react-dom';
 import { inferPluginPreview } from './plugins-home/preview';
 import { PluginScenarioDetail } from './plugin-details/PluginScenarioDetail';
@@ -38,8 +35,6 @@ interface Props {
   onDuplicate?: (record: InstalledPluginRecord) => void;
   isApplying?: boolean;
   hideUseAction?: boolean;
-  /** Exact authority for the resource bytes shown by this modal. */
-  workspaceContext?: WorkspaceCollabContext | null;
   // Analytics — fires when the user picks an item inside the PreviewModal
   // share popover (media / html / design variants only; the scenario
   // fallback has no share popover).
@@ -53,10 +48,9 @@ export function PluginDetailsModal({
   onDuplicate,
   isApplying,
   hideUseAction,
-  workspaceContext = null,
   onSharePopoverItemClick,
 }: Props) {
-  const preview = inferPluginPreview(record, { workspaceContext });
+  const preview = inferPluginPreview(record);
   let detail: JSX.Element;
 
   if (preview.kind === 'media') {
@@ -95,7 +89,6 @@ export function PluginDetailsModal({
         onDuplicate={onDuplicate}
         isApplying={isApplying}
         hideUseAction={hideUseAction}
-        workspaceContext={workspaceContext}
         onSharePopoverItemClick={onSharePopoverItemClick}
       />
     );

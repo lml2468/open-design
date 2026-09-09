@@ -2400,7 +2400,7 @@ describe('App project creation routing', () => {
     });
   });
 
-  it('fails closed instead of reopening a project after the Settings workspace changes', async () => {
+  it('returns to the exact local project after Settings despite a legacy Workspace refresh', async () => {
     window.history.replaceState(
       null,
       '',
@@ -2439,8 +2439,10 @@ describe('App project creation routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close settings' }));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe('/');
-      expect(screen.getByTestId('entry-home-surface')).toBeTruthy();
+      expect(window.location.pathname).toBe(
+        '/projects/project-existing/conversations/conv-exact',
+      );
+      expect(screen.getByTestId('project-view')).toBeTruthy();
     });
   });
 

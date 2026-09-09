@@ -102,9 +102,6 @@ import { navigate } from '../router';
 import { setPendingDesignSystemCreateEntry } from '../analytics/ds-create-entry';
 import { workspaceContextLinkedDirs } from './workspace-context';
 import {
-  useWorkspaceContext,
-} from '../collab/useWorkspaceContext';
-import {
   buildHomeMediaComposer,
   homeMediaSurfaceForChipId,
   metadataForHomeMediaComposer,
@@ -482,8 +479,6 @@ export function HomeView({
   // clobbering each other on every keystroke, and a send from either would
   // wipe the other's half-written prompt.
   const ownsComposerDraft = variant === 'page';
-  const workspaceContextState = useWorkspaceContext();
-  const { context: workspaceContext } = workspaceContextState;
   const desiredPluginCatalogKey = 'daemon-local';
   // P0 page_view page_name=home — fire once on mount. ref-keyed to survive
   // re-renders that flip parent state without remounting HomeView.
@@ -541,7 +536,6 @@ export function HomeView({
     useState<ProjectMetadata | null>(null);
   const [active, setActive] = useState<ActivePlugin | null>(null);
   const reconciledPluginCatalogKeyRef = useRef<string | null>(null);
-  const previousWorkspaceNameRef = useRef<string | null>(null);
   // A placeholder-carousel scenario the user submitted on an empty composer.
   // We seed the prompt + bind the template synchronously, then let an effect
   // fire submit() once both have committed (submit() reads state, not args).
@@ -1214,53 +1208,6 @@ export function HomeView({
     [designSystemId, designSystemPickerSystems, t],
   );
 
-  // A preset can bind while one Workspace is selected, then remain mounted as
-  // this tab switches to another Workspace. `usePlugin` seeds workspace_name
-  // at bind time, but that snapshot must not outlive the request-local
-  // Workspace context. Refresh only a missing value or the value previously
-  // supplied by context, preserving an explicit plugin input when one exists.
-  // This reads the exact context selected for this tab; it never consults or
-  // writes daemon account-level active-workspace state. That model cannot
-  // represent two clients of one account open in different Workspaces.
-  useEffect(() => {
-    const nextWorkspaceName = workspaceContext?.workspaceName?.trim() || null;
-    const previousWorkspaceName = previousWorkspaceNameRef.current;
-    previousWorkspaceNameRef.current = nextWorkspaceName;
-
-    setActive((currentActive) => {
-      if (!currentActive) return currentActive;
-      const workspaceField = currentActive.inputFields.find(
-        (field) => field.name === 'workspace_name',
-      );
-      if (!workspaceField || workspaceField.default !== undefined) return currentActive;
-
-      const currentValue = currentActive.inputs.workspace_name;
-      const currentWorkspaceName =
-        currentValue === undefined || currentValue === null
-          ? ''
-          : String(currentValue).trim();
-      const contextOwnsCurrentValue =
-        currentWorkspaceName.length === 0
-        || (previousWorkspaceName !== null
-          && currentWorkspaceName === previousWorkspaceName);
-      if (!contextOwnsCurrentValue || currentWorkspaceName === (nextWorkspaceName ?? '')) {
-        return currentActive;
-      }
-
-      const inputs = { ...currentActive.inputs };
-      if (nextWorkspaceName) inputs.workspace_name = nextWorkspaceName;
-      else delete inputs.workspace_name;
-      return {
-        ...currentActive,
-        inputs,
-        inputsValid: pluginInputsAreValid(currentActive.inputFields, inputs),
-        // The pinned apply snapshot belongs to the old inputs. Force submit to
-        // resolve a new snapshot for the newly selected Workspace.
-        result: null,
-      };
-    });
-  }, [workspaceContext?.workspaceName]);
-
   /* Applying a chip focuses the composer — right for a chip the USER picked,
      wrong for one the HOST bound. The community gallery binds a chip into the
      docked composer on mount and on every type-tab change, and that focus
@@ -1330,11 +1277,10 @@ export function HomeView({
     const inputFields = options?.inputFields ?? record.manifest?.od?.inputs ?? [];
     const optimisticInputs = hydratePluginInputs(
       inputFields,
-      withHomePluginContextDefaults(
+      withHomeDesignSystemDefault(
         options?.inputs,
         inputFields,
         selectedDesignSystemTitle,
-        workspaceContext?.workspaceName,
       ),
     );
     const inputsValid = pluginInputsAreValid(inputFields, optimisticInputs);
@@ -1537,11 +1483,10 @@ export function HomeView({
   ) {
     const inputFields = options?.inputFields ?? record.manifest?.od?.inputs ?? [];
     const replacement = previewPluginReplacement(record, nextPrompt, {
-      inputs: withHomePluginContextDefaults(
+      inputs: withHomeDesignSystemDefault(
         options?.inputs,
         inputFields,
         selectedDesignSystemTitle,
-        workspaceContext?.workspaceName,
       ),
       inputFields: options?.inputFields,
       queryTemplate: options?.queryTemplate,
@@ -2873,7 +2818,6 @@ export function HomeView({
       <HomeHero
         variant={variant}
         collapseSignal={collapseSignal}
-        workspaceContext={workspaceContext}
         ref={inputRef}
         active={isActive}
         firstRunGuide={projectsLoading ? undefined : projects.length === 0}
@@ -3061,7 +3005,6 @@ export function HomeView({
         ) : detailsRecord ? (
           <PluginDetailsModal
             record={detailsRecord}
-            workspaceContext={workspaceContext}
             onClose={() => {
               // Covers the close button, Esc and the backdrop — every
               // variant funnels dismissal through this single onClose.
@@ -3112,7 +3055,6 @@ export function HomeView({
         {figmaModalOpen ? (
           <FigmaImportModal
             onClose={() => setFigmaModalOpen(false)}
-            workspaceContext={workspaceContext}
             resolveProjectId={async () => {
               // The homepage has no project yet; create a bare one to decode
               // the Figma file into, then navigate into it.
@@ -3467,39 +3409,6 @@ function withHomeDesignSystemDefault(
   return {
     ...(provided ?? {}),
     designSystem: defaultDesignSystemTitle,
-  };
-}
-
-// Supply values that are already part of the Home shell's active context for
-// plugin fields that otherwise have no input surface. Explicit request values
-// and manifest defaults remain authoritative.
-function withHomePluginContextDefaults(
-  provided: Record<string, unknown> | undefined,
-  fields: InputFieldSpec[],
-  defaultDesignSystemTitle: string,
-  workspaceName: string | undefined,
-): Record<string, unknown> | undefined {
-  const withDesignSystem = withHomeDesignSystemDefault(
-    provided,
-    fields,
-    defaultDesignSystemTitle,
-  );
-  const workspaceField = fields.find((field) => field.name === 'workspace_name');
-  const normalizedWorkspaceName = workspaceName?.trim();
-  if (
-    !workspaceField
-    || workspaceField.default !== undefined
-    || !normalizedWorkspaceName
-  ) {
-    return withDesignSystem;
-  }
-  const current = withDesignSystem?.workspace_name;
-  if (current !== undefined && current !== null && String(current).trim().length > 0) {
-    return withDesignSystem;
-  }
-  return {
-    ...(withDesignSystem ?? {}),
-    workspace_name: normalizedWorkspaceName,
   };
 }
 

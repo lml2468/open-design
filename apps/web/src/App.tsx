@@ -27,7 +27,6 @@ import type {
   ChatSessionMode,
   CreateProjectExampleReference,
   RunContextSelection,
-  WorkspaceCollabContext,
   ProjectScenarioTaskProfile,
 } from '@open-design/contracts';
 import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@open-design/contracts';
@@ -92,13 +91,6 @@ import {
   RUNS_CHANGED_EVENT,
   listProjectRuns,
 } from './providers/daemon';
-import {
-  beginWorkspaceScopedRead,
-  currentWorkspaceAccountGeneration,
-  useWorkspaceContext,
-  workspaceResourceReadContext,
-} from './collab/useWorkspaceContext';
-import { deriveTabIdentityScope, UNSET_ACCOUNT_BUCKET } from './collab/tab-scope';
 import { CommunityView } from './components/CommunityView';
 import { seedHomeComposerPrompt } from './components/HomeView';
 import {
@@ -427,11 +419,10 @@ export type ProjectRouteSurfaceState =
 
 interface SettingsReturnTarget {
   route: Extract<Route, { kind: 'project' }>;
-  accountGeneration: number;
-  identityScopeKey: string;
 }
 
 const DESIGN_SYSTEM_CATALOG_IDENTITY = 'daemon-local';
+const LOCAL_TAB_IDENTITY_SCOPE = 'local-projects';
 
 /**
  * The project route must never use `!activeProject` as an unbounded loading
@@ -473,16 +464,6 @@ function AppInner() {
   const clientType = useMemo(() => detectClientType(), []);
   const hostPlatform = useMemo(() => getOpenDesignHost()?.client.platform, []);
   useModalWindowDragGuard();
-  const workspaceContextState = useWorkspaceContext();
-  const {
-    context: workspaceContext,
-    loading: workspaceContextLoading,
-  } = workspaceContextState;
-  const workspaceAccountGeneration = currentWorkspaceAccountGeneration();
-  const workspaceContextRef = useRef<WorkspaceCollabContext | null>(null);
-  const workspaceContextStateRef = useRef(workspaceContextState);
-  workspaceContextRef.current = workspaceContext;
-  workspaceContextStateRef.current = workspaceContextState;
   const listLocalProjects = useCallback(
     (options?: { throwOnError?: boolean }) => listProjects(options),
     [],
@@ -867,28 +848,6 @@ function AppInner() {
     if (config.telemetry?.metrics !== true) return;
     analytics.setIdentity(config.installationId ?? null);
   }, [analytics.setIdentity, config.installationId, config.telemetry?.metrics]);
-
-  // Tab scope follows the Workspace authority's own generation and selected
-  // workspace. It no longer derives identity from the removed AMR/Vela login
-  // projection. A generation change is the account boundary; a workspace id
-  // change inside one generation is an ordinary workspace switch.
-  const tabScopeWorkspaceIdRef = useRef<string>('none');
-  const tabScopeAccountIdRef = useRef<string>(UNSET_ACCOUNT_BUCKET);
-  const {
-    scopeKey: identityScopeKey,
-    nextWorkspaceBucket: nextTabScopeWorkspaceId,
-    nextAccountBucket: nextTabScopeAccountId,
-  } = deriveTabIdentityScope({
-    accountGeneration: workspaceAccountGeneration,
-    workspaceContext,
-    workspaceContextLoading,
-    workspaceContextFailure: workspaceContextState.failure,
-    identityChangePending: workspaceContextState.identityChangePending === true,
-    previousWorkspaceBucket: tabScopeWorkspaceIdRef.current,
-    previousAccountBucket: tabScopeAccountIdRef.current,
-  });
-  tabScopeWorkspaceIdRef.current = nextTabScopeWorkspaceId;
-  tabScopeAccountIdRef.current = nextTabScopeAccountId;
 
   // v2 analytics requires every event to carry the configure-state
   // triplet (has_available_configure_cli / configure_type /
@@ -2575,7 +2534,6 @@ function AppInner() {
   // Never mount ProjectView around a synthetic placeholder. Project-owned
   // reads start only after the real local row or route bootstrap has landed.
   const activeProject = loadedActiveProject;
-  const workspaceTabsIdentityScopeKey = identityScopeKey;
   const activeProjectAuthorizationKey =
     route.kind === 'project'
       ? route.projectId
@@ -2681,32 +2639,28 @@ function AppInner() {
     }
     const currentRoute = routeRef.current;
     settingsReturnTargetRef.current =
-      currentRoute.kind === 'project' && identityScopeKey !== null
+      currentRoute.kind === 'project'
         ? {
             route: { ...currentRoute },
-            accountGeneration: currentWorkspaceAccountGeneration(),
-            identityScopeKey,
           }
         : null;
     setSettingsWelcome(false);
     setSettingsInitialSection(section);
     navigate({ kind: 'home', view: 'settings' });
-  }, [identityScopeKey]);
+  }, []);
 
   const openPetSettings = useCallback(() => {
     const currentRoute = routeRef.current;
     settingsReturnTargetRef.current =
-      currentRoute.kind === 'project' && identityScopeKey !== null
+      currentRoute.kind === 'project'
         ? {
             route: { ...currentRoute },
-            accountGeneration: currentWorkspaceAccountGeneration(),
-            identityScopeKey,
           }
         : null;
     setSettingsWelcome(false);
     setSettingsInitialSection('pet');
     navigate({ kind: 'home', view: 'settings' });
-  }, [identityScopeKey]);
+  }, []);
 
   const openMcpSettings = useCallback(() => {
     setIntegrationInitialTab('mcp');
@@ -2873,13 +2827,8 @@ function AppInner() {
     if (route.kind === 'home' && route.view === 'settings') {
       const returnTarget = settingsReturnTargetRef.current;
       settingsReturnTargetRef.current = null;
-      const returnIdentityStillMatches = Boolean(
-        returnTarget
-        && returnTarget.accountGeneration === currentWorkspaceAccountGeneration()
-        && returnTarget.identityScopeKey === identityScopeKey
-      );
       navigate(
-        returnIdentityStillMatches && returnTarget
+        returnTarget
           ? returnTarget.route
           : { kind: 'home', view: 'home' },
       );
@@ -3257,7 +3206,7 @@ function AppInner() {
               : undefined
           }
           onboardingCompleted={config.onboardingCompleted === true}
-          identityScopeKey={workspaceTabsIdentityScopeKey}
+          identityScopeKey={LOCAL_TAB_IDENTITY_SCOPE}
         />
         {/* EntryShell is unmounted while a project is open, so the project route
             mounts the shared GitHub and updater controls into the tabs chrome. */}

@@ -14,10 +14,7 @@
 // tabs collapse and the modal renders the spec sidebar by default.
 
 import { useCallback, useEffect, useState } from 'react';
-import type {
-  InstalledPluginRecord,
-  WorkspaceCollabContext,
-} from '@open-design/contracts';
+import type { InstalledPluginRecord } from '@open-design/contracts';
 import { useI18n } from '../../i18n';
 import { localizePluginChrome } from '../../i18n/plugin-content';
 import { localizePluginDescription, localizePluginTitle } from '../plugins-home/localization';
@@ -44,7 +41,6 @@ interface Props {
   onDuplicate?: (record: InstalledPluginRecord) => void;
   isApplying?: boolean;
   hideUseAction?: boolean;
-  workspaceContext?: WorkspaceCollabContext | null;
   // Analytics — forwarded to PreviewModal's share popover.
   onSharePopoverItemClick?: (item: PreviewSharePopoverItem) => void;
 }
@@ -81,7 +77,6 @@ export function PluginDesignSystemDetail({
   onDuplicate,
   isApplying,
   hideUseAction,
-  workspaceContext = null,
   onSharePopoverItemClick,
 }: Props) {
   const { t, locale } = useI18n();
@@ -114,7 +109,7 @@ export function PluginDesignSystemDetail({
         void fetchDesignSystemPreview(dsRef).then((html) => setTokensHtml(html));
       }
     },
-    [dsRef, showcaseHtml, tokensHtml, workspaceContext],
+    [dsRef, showcaseHtml, tokensHtml],
   );
 
   const handleSidebarToggle = useCallback(

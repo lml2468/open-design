@@ -3318,7 +3318,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         {detailsRecord ? (
           <PluginDetailsModal
             record={detailsRecord}
-            workspaceContext={workspaceContext}
             onClose={() => setDetailsRecord(null)}
             onUse={async (record) => {
               inlineBackedPluginRef.current = null;
@@ -3346,7 +3345,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           <FigmaImportModal
             onClose={() => setFigmaModalOpen(false)}
             resolveProjectId={async () => projectId}
-            workspaceContext={workspaceContext}
             onImported={(result) => {
               // Prefill the composer with the reshape prompt; the user reviews
               // and sends to build the page from the decoded snapshot.
@@ -4136,7 +4134,6 @@ function StandalonePluginsPane({
         <ComposerPluginPreview
           record={hoveredPlugin}
           locale={locale}
-          workspaceContext={workspaceContext}
         />
       ) : null}
     </div>
@@ -4594,7 +4591,6 @@ function DesignToolboxPanel({
                     <ComposerPluginPreview
                       record={resource.plugin}
                       locale={locale}
-                      workspaceContext={workspaceContext}
                     />
                   ) : (
                     <>

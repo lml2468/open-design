@@ -16,10 +16,7 @@
 // branch on a single discriminator and lets the unit tests assert
 // classification without touching React.
 
-import type {
-  InstalledPluginRecord,
-  WorkspaceCollabContext,
-} from '@open-design/contracts';
+import type { InstalledPluginRecord } from '@open-design/contracts';
 
 export type PluginPreviewKind = 'media' | 'html' | 'design' | 'text';
 
@@ -67,7 +64,6 @@ export interface DesignPreviewSpec {
   brand: string;
   designSystemId: string | null;
   swatches: string[];
-  workspaceContext?: WorkspaceCollabContext | null;
 }
 
 export interface TextPreviewSpec {
@@ -188,7 +184,6 @@ export function inferPluginPreview(
   record: InstalledPluginRecord,
   opts?: {
     preferBaked?: boolean;
-    workspaceContext?: WorkspaceCollabContext | null;
   },
 ): PluginPreviewSpec {
   // Gallery tiles opt in to a pre-baked hover-pan clip (cheap thumbnail) when
@@ -283,9 +278,6 @@ export function inferPluginPreview(
       brand: brandLabel(record),
       designSystemId: designSystemRef(record),
       swatches: deriveSwatches(record),
-      ...(opts?.workspaceContext
-        ? { workspaceContext: opts.workspaceContext }
-        : {}),
     };
   }
 

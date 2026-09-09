@@ -106,11 +106,6 @@ import {
 } from './agentModelSelection';
 import { AgentIcon } from './AgentIcon';
 import { CommunityView } from './CommunityView';
-import {
-  notifyWorkspaceContextRefresh,
-  useWorkspaceContext,
-  workspaceResourceReadContext,
-} from '../collab/useWorkspaceContext';
 import type { ModelCapabilityTag } from './modelCapabilityTags';
 import { LanguageMenu } from './LanguageMenu';
 import { IntegrationsView, type IntegrationTab } from './IntegrationsView';
@@ -515,11 +510,6 @@ export function EntryShell({
   // view from the route rather than keeping it in component state.
   const route = useRoute();
   const view: EntryViewKind = route.kind === 'home' ? route.view : 'home';
-  // Keep the current context for the remaining plugin/design-system catalogue
-  // and project-create APIs until those resource scopes are migrated in the
-  // following removal batches. Project discovery itself is local-only here.
-  const workspaceContextState = useWorkspaceContext();
-  const { context: workspaceContext } = workspaceContextState;
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   // The entry nav rail is collapsed by default (Manus-style) so the entry
   // view opens clean and full-width; the panel toggle in the topbar opens it
@@ -835,25 +825,8 @@ export function EntryShell({
     return Promise.resolve(onCreateProject(createInput));
   }
 
-  /**
-   * Re-read every workspace surface because onboarding just ended.
-   *
-   * Onboarding can change the active account, so the workspace context the
-   * shell resolved before it is stale by definition. Without this the rail
-   * can come back in its signed-out shape until a focus or the 30s poll causes
-   * another read.
-   *
-   * EVERY exit from onboarding must call this. It used to live inline in
-   * `finishOnboarding` only, so the "go build a design system" door left the
-   * shell on the stale signed-out context.
-   */
-  function refreshWorkspaceSurfacesAfterOnboarding() {
-    notifyWorkspaceContextRefresh();
-  }
-
   function finishOnboarding() {
     onCompleteOnboarding();
-    refreshWorkspaceSurfacesAfterOnboarding();
     changeView('home');
   }
 
