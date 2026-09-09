@@ -143,11 +143,9 @@ Linux x64 的结果仅保留在 GitHub Actions job summary 和上传报告中。
 
 ### 8. 长耗时 media run 生命周期
 
-AMR run 的 tool token TTL 现在至少覆盖完整 inactivity timeout，并保留
-15 分钟收尾窗口；30 分钟 media run 因此会获得 45 分钟 token，且 agent 活动会
-同步刷新 token。终态 media task 每 60 分钟执行一次清理检查；只要所属 run token
-仍有效就继续保留，run 结束后再由下一次检查清理。daemon 单测锁定这个滑动生命周期，
-AMR 系统 E2E 还会校验真实 run start 事件暴露的 token deadline。
+长耗时 Run 的 tool token TTL 至少覆盖完整 inactivity timeout，并保留收尾窗口；
+agent 活动会同步刷新 token。终态 media task 定期执行清理检查；只要所属 run token
+仍有效就继续保留，run 结束后再由下一次检查清理。daemon 单测锁定这个通用生命周期。
 
 ### 9. Prerelease UI 缺口收敛
 
@@ -197,24 +195,16 @@ AMR 系统 E2E 还会校验真实 run start 事件暴露的 token deadline。
   共 3 条 P1 为 expected failure。
 - updater ready popup 在紧凑窗口中仍会落到 Home composer / agent picker 的 stacking
   context 下方，保留 1 条 P1 expected failure。
-- account menu 当前不展示 Personal / Team credit balance，双窗口 billing scope 的
-  可视化隔离保留 1 条 P1 expected failure；workspace authority / billing API 的 P0
-  覆盖仍正常。
-- 上述 14 条 UI 修复曾在本分支验证通过，但远端提交 `762dc6aa5` 明确将它们作为
+- 上述 13 条 UI 修复曾在本分支验证通过，但远端提交 `762dc6aa5` 明确将它们作为
   “unrelated UI changes” 移出当前 release-gate PR；本轮复验确认这些 expected failure
   仍会触发，而不是过期标记。后续应在单独 UI fix PR 中恢复实现并移除标记。
 
-- Signed-out 产品契约已统一为 Cloud 登录门禁：Home、Community、Projects、
-  Design Systems、Plugins、Integrations 和 Settings 深链都会收敛到
-  `/onboarding`，登录前不展示 Local Agent/BYOK。`amr-onboarding.test.ts` 已将旧的
-  8 条 expected failure 迁移为正向 P0 认证边界用例，`visual-entry.test.ts` 也直接验证
-  当前登录页。
+- Onboarding 的 Local Agent/BYOK 入口和运行时选择由
+  `onboarding-runtime.test.ts` 覆盖，`visual-entry.test.ts` 验证当前入口页面。
 - Anonymous message center 不再是可达产品面；旧 anonymous case 已删除。
   `message-center.test.ts` 保留 signed-in account API 的已读同步、Escape 关闭和
   zh-CN 日期格式覆盖。
-- Settings 在 definitive signed-out 状态下已不可达；两条旧的 Settings
-  `AmrLoginPill` 登录测试依赖不存在的入口，已删除。当前 Cloud 登录主路径由
-  `amr-onboarding.test.ts` 覆盖。
+- 旧的云账号登录控件及其依赖不存在入口的测试已删除。
 - #5517 删除的 Home Starters Gallery 不再作为当前产品能力统计；相关动态
   skip 用例已删除，现行 Community 页面由
   `community-template-modal-mapping.test.ts` 覆盖浏览、分类过滤、详情和 Use handoff。
@@ -223,14 +213,10 @@ AMR 系统 E2E 还会校验真实 run start 事件暴露的 token deadline。
   `/api/runs` line-protocol、真实 PostHog dot-path 查询和新旧字段样本对账；详见
   [`../../../specs/current/run-analytics-v4-test-plan.md`](../../../specs/current/run-analytics-v4-test-plan.md)。
 - Media 长任务已覆盖 token/task 生命周期边界，但仍缺一条从 UI 发起 run、
-  agent 调用 media tool、daemon 调用 fake Vela、轮询终态并校验产物文件的完整
+  本地 fake agent 调用 media tool、轮询终态并校验产物文件的完整
   跨层自动化闭环。
 - Functional UI 只覆盖 Chromium desktop；安装器交互和历史版本升级的人工边界见
   [`../updater-lifecycle.md`](../updater-lifecycle.md)。
-
-默认 Playwright worker 会把 `AMR_HOME` 指向 worker-local 空目录，避免开发者真实
-`~/.amr/config.json` 将普通 signed-out 用例意外切换为 Workspace scope。真正测试
-Workspace authority 的场景必须显式提供 fake runtime 和 workspace headers。
 
 ## 验证命令
 
@@ -261,9 +247,9 @@ pnpm --filter @open-design/e2e exec playwright test -c playwright.config.ts ui/a
 后面最有价值的继续方式是：
 
 - 在 `extended` 里继续给 UI-only 断言补低成本 persisted-state 校验
-- 用单独 UI fix PR 收敛 Provider 6、Context 3、resize 3、Updater 1、billing 1，避免
+- 用单独 UI fix PR 收敛 Provider 6、Context 3、resize 3、Updater 1，避免
   再次与 release-gate PR 的作用域清理互相覆盖
-- 补一条 fake Vela 驱动的 UI → run → media tool → task 终态 → artifact 跨层闭环
+- 补一条本地 fake agent 驱动的 UI → run → media tool → task 终态 → artifact 跨层闭环
 - 补齐 run analytics v4 的本地 receiver、真实 PostHog 查询与样本对账
 - 为 Community 搜索提供真实产品行为后再补搜索 E2E
 - 每补完一批，就做一次 grouped validation

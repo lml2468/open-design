@@ -114,16 +114,6 @@ The API keys you configure for coding agents and model providers are stored
 locally and used by the local app/daemon to call the provider you selected.
 They are not telemetry fields and are never sent to the OpenDesign team.
 
-## OpenDesign AMR
-
-“OpenDesign AMR” is OpenDesign’s official, first-party model service. Because
-the two are part of the same product family operated by the same team, we may
-share information between them as needed to provide, connect, and improve the
-combined experience — for example, to recognize that you arrived from Open
-Design, to help you get set up, and to keep the products working well together.
-This sharing is between our own products, not with unrelated third parties, and
-any data involved still follows the controls described on this page.
-
 ## Changes to this page
 
 This document tracks the data handling of the shipped app. When the telemetry

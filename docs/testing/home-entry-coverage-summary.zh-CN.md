@@ -100,8 +100,8 @@ pnpm exec playwright test -c playwright.config.ts \
 
 ## 备注
 
-- 这批用例已经从 AMR helper 依赖中拆出来，适合单独跟首页改动一起 review。
+- 这批用例只依赖本地测试 helper，适合单独跟首页改动一起 review。
 - `home-hero-rail.test.ts` 运行依赖首页真实 fixture：
   - bundled scenario plugins
   - prompt templates
-- 因此这条测试不是最轻量的 smoke，但已经收敛到首页交互本身，不再混入 AMR 登录态语义。
+- 因此这条测试不是最轻量的 smoke，但已经收敛到首页交互本身，不再混入旧云登录态语义。
