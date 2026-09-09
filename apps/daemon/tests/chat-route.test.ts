@@ -3322,7 +3322,7 @@ process.stdin.on('end', () => {
     );
   });
 
-  it('does not compose another member Personal design system from a persisted project id', async () => {
+  it('ignores stale Workspace resource rows when composing a daemon-local design system', async () => {
     if (!process.env.OD_DATA_DIR) {
       throw new Error('OD_DATA_DIR is required for Workspace design-system prompt tests');
     }
@@ -3359,7 +3359,7 @@ process.stdin.on('end', () => {
         designSystemId,
         {
           visibility: 'personal',
-          resourceState: 'active',
+          resourceState: 'deleted',
           createdByWorkspaceMemberId: foreignMemberId,
           updatedByWorkspaceMemberId: foreignMemberId,
         },
@@ -3379,8 +3379,8 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { prompt += chunk; });
 process.stdin.on('end', () => {
   const result = prompt.includes(${JSON.stringify(secretMarker)})
-    ? 'foreign-personal-design-system-leaked'
-    : 'foreign-personal-design-system-blocked';
+    ? 'daemon-local-design-system-visible'
+    : 'daemon-local-design-system-missing';
   console.log(JSON.stringify({ type: 'step_start' }));
   console.log(JSON.stringify({ type: 'text', part: { text: result } }));
   console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
@@ -3397,14 +3397,14 @@ process.stdin.on('end', () => {
             body: JSON.stringify({
               agentId: 'opencode',
               projectId: workspaceFixture.projectId,
-              message: 'draft without reading another member private brand',
+              message: 'draft with the selected local brand',
             }),
           });
           const body = await response.text();
 
           expect(response.ok).toBe(true);
-          expect(body).toContain('foreign-personal-design-system-blocked');
-          expect(body).not.toContain('foreign-personal-design-system-leaked');
+          expect(body).toContain('daemon-local-design-system-visible');
+          expect(body).not.toContain('daemon-local-design-system-missing');
         },
       );
     } finally {

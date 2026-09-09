@@ -656,7 +656,6 @@ import {
   getTemplate,
   ensureWorkspaceProject,
   ensureWorkspaceResource,
-  getWorkspaceResource,
   getWorkspaceResourceByResourceId,
   insertConversation,
   insertProject,
@@ -4581,48 +4580,7 @@ export async function startServer({
       typeof projectId === 'string' && projectId
         ? getProject(db, projectId)
         : null;
-    const projectWorkspaceBinding =
-      typeof projectId === 'string' && projectId
-        ? getWorkspaceProjectByProjectId(db, projectId)
-        : null;
-    const projectWorkspaceId =
-      typeof projectWorkspaceBinding?.workspaceId === 'string'
-        ? projectWorkspaceBinding.workspaceId.trim()
-        : '';
-    const projectCreatorMemberId =
-      typeof projectWorkspaceBinding?.createdByWorkspaceMemberId === 'string'
-        ? projectWorkspaceBinding.createdByWorkspaceMemberId.trim()
-        : '';
     const metadata = project?.metadata;
-    const projectDesignSystemBinding = (summary) => {
-      if (!projectWorkspaceId || summary?.source === 'built-in') return null;
-      const logicalResourceId =
-        typeof summary?.id === 'string' ? summary.id.trim() : '';
-      if (!logicalResourceId) return null;
-      return getWorkspaceResource(
-        db,
-        'design_system',
-        projectWorkspaceId,
-        logicalResourceId,
-      ) ?? null;
-    };
-    const designSystemVisibleToRun = (summary) => {
-      if (summary?.source === 'built-in') return true;
-      // A truly unbound local project is the legacy CLI/BYOK lane. Bound
-      // projects must resolve resources from their persisted project scope;
-      // shell/current Workspace state never participates.
-      if (!projectWorkspaceId) return true;
-      const binding = projectDesignSystemBinding(summary);
-      if (
-        !binding
-        || binding.resourceState === 'deleted'
-      ) {
-        return false;
-      }
-      return binding.visibility === 'personal'
-        && Boolean(projectCreatorMemberId)
-        && binding.createdByWorkspaceMemberId?.trim() === projectCreatorMemberId;
-    };
     let appConfigForPrompt = null;
     try {
       appConfigForPrompt = await readAppConfig(RUNTIME_DATA_DIR);
@@ -4930,26 +4888,12 @@ export async function startServer({
     let activeDesignSystemId = null;
     let designSystemDigest = null;
     if (effectiveDesignSystemId) {
-      const designSystemListOptions = projectWorkspaceId
-        ? {
-            workspaceId: projectWorkspaceId,
-            workspaceMemberId: projectCreatorMemberId || null,
-          }
-        : {};
-      let systems = await listAllDesignSystems(designSystemListOptions);
-      let summary = systems.find(
-        (system) =>
-          system.id === effectiveDesignSystemId
-          && designSystemVisibleToRun(system),
-      );
+      let systems = await listAllDesignSystems();
+      let summary = systems.find((system) => system.id === effectiveDesignSystemId);
       if (summary?.source === 'user') {
         await ensureUserDesignSystemWorkspaceProject(db, effectiveDesignSystemId);
-        systems = await listAllDesignSystems(designSystemListOptions);
-        summary = systems.find(
-          (system) =>
-            system.id === effectiveDesignSystemId
-            && designSystemVisibleToRun(system),
-        );
+        systems = await listAllDesignSystems();
+        summary = systems.find((system) => system.id === effectiveDesignSystemId);
       }
       const editingOwnDraftDesignSystem =
         project?.metadata?.importedFrom === 'design-system'
@@ -4963,7 +4907,6 @@ export async function startServer({
         );
         const registryBody = await readAvailableDesignSystem(
           effectiveDesignSystemId,
-          designSystemListOptions,
         );
         designSystemBody = (workspaceBody ?? registryBody) ?? undefined;
         // Single seam: env gate + built-in→user-installed fallback chain
