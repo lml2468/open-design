@@ -47,7 +47,7 @@ describe('chat run service shutdown', () => {
     const run = runs.create({
       projectId: 'project-1',
       conversationId: 'conv-1',
-      agentId: 'amr',
+      agentId: 'opencode',
     }) as any;
     run.model = 'qwen3.8-max';
     run.resolvedModelId = 'qwen3.8-max';
@@ -61,12 +61,12 @@ describe('chat run service shutdown', () => {
     runs.emit(run, 'agent', {
       type: 'diagnostic',
       name: 'assistant_message_lifecycle',
-      source: 'amr-opencode',
+      source: 'opencode-runtime',
       phase: 'start',
       status: 'running',
       assistantMessageIndex: 1,
       startedAtMs: Date.now(),
-      provider: 'amr',
+      provider: 'opencode',
       model: 'qwen3.8-max',
     });
     for (let stepIndex = 1; stepIndex <= 10; stepIndex += 1) {
@@ -74,7 +74,7 @@ describe('chat run service shutdown', () => {
       runs.emit(run, 'agent', {
         type: 'diagnostic',
         name: 'model_step_lifecycle',
-        source: 'amr-opencode',
+        source: 'opencode-runtime',
         phase: 'start',
         status: 'running',
         assistantMessageIndex: 1,
@@ -84,7 +84,7 @@ describe('chat run service shutdown', () => {
       runs.emit(run, 'agent', {
         type: 'diagnostic',
         name: 'model_step_lifecycle',
-        source: 'amr-opencode',
+        source: 'opencode-runtime',
         phase: 'end',
         status: 'completed',
         assistantMessageIndex: 1,
@@ -102,7 +102,7 @@ describe('chat run service shutdown', () => {
     runs.emit(run, 'agent', {
       type: 'diagnostic',
       name: 'model_retry',
-      source: 'amr-opencode',
+      source: 'opencode-runtime',
       attempt: 1,
       errorClass: 'rate_limited',
     });
@@ -110,14 +110,14 @@ describe('chat run service shutdown', () => {
     runs.emit(run, 'agent', {
       type: 'diagnostic',
       name: 'assistant_message_lifecycle',
-      source: 'amr-opencode',
+      source: 'opencode-runtime',
       phase: 'end',
       status: 'completed',
       assistantMessageIndex: 1,
       startedAtMs: Date.now() - 500,
       endedAtMs: Date.now(),
       durationMs: 500,
-      provider: 'amr',
+      provider: 'opencode',
       model: 'qwen3.8-max',
     });
     runs.finish(run, 'succeeded', 0, null);
@@ -165,7 +165,7 @@ describe('chat run service shutdown', () => {
         upstreamErrorCount: { state: 'available', value: 0 },
       },
       environment: {
-        provider: { state: 'available', value: 'amr' },
+        provider: { state: 'available', value: 'opencode' },
         resolvedModel: { state: 'available', value: 'qwen3.8-max' },
         agentCliVersion: { state: 'available', value: '1.2.3' },
       },
@@ -219,7 +219,7 @@ describe('chat run service shutdown', () => {
     const run = runs.create({
       projectId: 'project-1',
       conversationId: 'conv-1',
-      agentId: 'amr',
+      agentId: 'opencode',
     }) as any;
     runs.emit(run, 'agent', {
       type: 'usage',
@@ -246,7 +246,7 @@ describe('chat run service shutdown', () => {
 
   it('keeps model-step percentiles unavailable until the documented sample minimum', () => {
     const runs = createRuns();
-    const run = runs.create({ projectId: 'project-1', conversationId: 'conv-1', agentId: 'amr' }) as any;
+    const run = runs.create({ projectId: 'project-1', conversationId: 'conv-1', agentId: 'opencode' }) as any;
     for (let stepIndex = 1; stepIndex <= 2; stepIndex += 1) {
       runs.emit(run, 'agent', {
         type: 'diagnostic',
@@ -273,7 +273,7 @@ describe('chat run service shutdown', () => {
 
   it('keeps model steps missing for historical runtimes without lifecycle events', () => {
     const runs = createRuns();
-    const run = runs.create({ projectId: 'project-1', conversationId: 'conv-1', agentId: 'amr' }) as any;
+    const run = runs.create({ projectId: 'project-1', conversationId: 'conv-1', agentId: 'opencode' }) as any;
     runs.finish(run, 'succeeded', 0, null);
     expect(runs.statusBody(run).executionDiagnostics?.modelSteps.count).toMatchObject({
       state: 'not_collected',
@@ -283,7 +283,7 @@ describe('chat run service shutdown', () => {
 
   it('keeps retry anomalies available without assistant-message lifecycle events', () => {
     const runs = createRuns();
-    const run = runs.create({ projectId: 'project-1', conversationId: 'conv-1', agentId: 'amr' }) as any;
+    const run = runs.create({ projectId: 'project-1', conversationId: 'conv-1', agentId: 'opencode' }) as any;
     runs.emit(run, 'agent', {
       type: 'diagnostic',
       name: 'model_retry',
@@ -307,7 +307,7 @@ describe('chat run service shutdown', () => {
 
   it('keeps classified terminal anomalies available without assistant-message lifecycle events', () => {
     const runs = createRuns();
-    const run = runs.create({ projectId: 'project-1', conversationId: 'conv-1', agentId: 'amr' }) as any;
+    const run = runs.create({ projectId: 'project-1', conversationId: 'conv-1', agentId: 'opencode' }) as any;
     runs.emit(run, 'error', {
       error: {
         code: 'AGENT_EXECUTION_FAILED',
@@ -327,7 +327,7 @@ describe('chat run service shutdown', () => {
 
   it('does not treat first-output fallback timing as a precise model-step duration', () => {
     const runs = createRuns();
-    const run = runs.create({ projectId: 'project-1', conversationId: 'conv-1', agentId: 'amr' }) as any;
+    const run = runs.create({ projectId: 'project-1', conversationId: 'conv-1', agentId: 'opencode' }) as any;
     runs.emit(run, 'agent', {
       type: 'diagnostic',
       name: 'model_step_lifecycle',
@@ -419,7 +419,7 @@ describe('chat run service shutdown', () => {
       conversationId: 'conv-1',
       clientRequestId: 'logical-request-1',
       requestFingerprint: 'same-logical-request',
-      agentId: 'amr',
+      agentId: 'opencode',
       analyticsHints: {
         entrySurface: 'external_mcp',
         hostProduct: 'codex_cli',
@@ -1420,7 +1420,7 @@ describe('run event log persistence', () => {
           ? { ok: false, errorType: 'storage_full' }
           : { ok: true },
     });
-    const run = runs.create({ projectId: 'p1', agentId: 'amr' });
+    const run = runs.create({ projectId: 'p1', agentId: 'opencode' });
 
     runs.finish(run, 'failed', 1, null);
 
@@ -1464,7 +1464,7 @@ describe('run event log persistence', () => {
           : terminalWrites[writeCount - 2] ?? { ok: true as const };
       },
     });
-    const run = runs.create({ projectId: 'p1', agentId: 'amr' });
+    const run = runs.create({ projectId: 'p1', agentId: 'opencode' });
 
     runs.finish(run, 'failed', 1, null);
 
@@ -1485,7 +1485,7 @@ describe('run event log persistence', () => {
       ttlMs: 60_000,
       runsLogDir: null,
     });
-    const run = runs.create({ projectId: 'p1', agentId: 'amr' });
+    const run = runs.create({ projectId: 'p1', agentId: 'opencode' });
 
     runs.finish(run, 'succeeded', 0, null);
 
@@ -1500,7 +1500,7 @@ describe('run event log persistence', () => {
 
   it('persists failed PostHog queueing as recoverable terminal delivery state', () => {
     const runs = createRunsWithLog(tmpDir);
-    const run = runs.create({ projectId: 'p1', agentId: 'amr' });
+    const run = runs.create({ projectId: 'p1', agentId: 'opencode' });
     runs.finish(run, 'failed', 1, null);
 
     runs.beginAnalyticsDelivery(run);
@@ -1527,7 +1527,7 @@ describe('run event log persistence', () => {
 
   it('keeps the first terminal verdict and records duplicate or late terminal claims', () => {
     const runs = createRunsWithLog(tmpDir);
-    const run = runs.create({ projectId: 'p1', agentId: 'amr' });
+    const run = runs.create({ projectId: 'p1', agentId: 'opencode' });
 
     runs.finish(run, 'failed', 1, null);
     runs.finish(run, 'failed', 1, null);
@@ -1561,7 +1561,7 @@ describe('run event log persistence', () => {
       conversationId: 'c1',
       clientRequestId: '018f6f2e-5555-7555-8555-555555555555',
       requestFingerprint: 'same-logical-request',
-      agentId: 'amr',
+      agentId: 'opencode',
       analyticsHints: {
         entrySurface: 'external_mcp',
         hostProduct: 'codex_unknown',
@@ -1611,7 +1611,7 @@ describe('run event log persistence', () => {
     const requestFingerprint = 'same-cloud-request';
     const beforeRestart = createRunsWithLog(tmpDir);
     const original = beforeRestart.create({
-      agentId: 'amr',
+      agentId: 'opencode',
       clientRequestId,
       projectId: 'p1',
       requestFingerprint,
@@ -1626,7 +1626,7 @@ describe('run event log persistence', () => {
 
     const afterRestart = createRunsWithLog(tmpDir);
     const reused = afterRestart.createOrReuse({
-      agentId: 'amr',
+      agentId: 'opencode',
       clientRequestId,
       projectId: 'p1',
       requestFingerprint,
@@ -1660,7 +1660,7 @@ describe('run event log persistence', () => {
     runs.emit(run, 'diagnostic', {
       type: 'native_session_recovery',
       nativeSessionRecovery: {
-        agentId: 'amr',
+        agentId: 'opencode',
         state: 'resumed',
         acquisition: 'acp-session-load',
         continuation: 'acp-session-load',
@@ -1694,7 +1694,7 @@ describe('run event log persistence', () => {
       data: {
         type: 'native_session_recovery',
         nativeSessionRecovery: {
-          agentId: 'amr',
+          agentId: 'opencode',
           state: 'resumed',
           handle: { display: null, redacted: true },
         },

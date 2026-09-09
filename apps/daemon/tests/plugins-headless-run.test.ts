@@ -330,7 +330,7 @@ describe('Plan §8 e2e-3 (entry slice) — headless install → project → run'
     expect(createBody.appliedPluginSnapshotId).toBeTruthy();
 
     await withHeadlessOpencode(async () => {
-      // 3. Start a non-AMR run that re-uses the same applied snapshot id.
+      // 3. Start a local-agent run that re-uses the same applied snapshot id.
       // This plugin contract test intentionally has no Workspace headers.
       const runResp = await fetch(`${baseUrl}/api/runs`, {
         method:  'POST',

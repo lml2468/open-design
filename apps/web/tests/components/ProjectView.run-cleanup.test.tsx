@@ -2072,7 +2072,7 @@ describe('ProjectView daemon cleanup', () => {
     expect(phantomSave).toBeUndefined();
   });
 
-  it('persists a daemon assistant row as failed after an AMR auth error returns post-run creation', async () => {
+  it('persists a daemon assistant row as failed after an agent auth error returns post-run creation', async () => {
     listConversations.mockResolvedValue([{ id: 'conv-1', title: 'Conversation' }]);
     listMessages.mockResolvedValue([]);
     fetchPreviewComments.mockResolvedValue([]);

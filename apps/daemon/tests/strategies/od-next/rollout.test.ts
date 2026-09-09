@@ -433,7 +433,7 @@ describe('OD Next controlled rollout', () => {
   it('never turns unverifiable Children into the daemon-wide stop', () => {
     // The other two signals mean OD Next's own contract broke, which is true
     // whichever agent hit it. Unverifiable Children are a property of ONE
-    // runtime — Vela ships no child-lifecycle producer, so an AMR complex Run
+    // runtime — a runtime without a child-lifecycle producer cannot certify a complex Run
     // cannot be certified at all — and that task is already fail-closed with
     // its reason codes persisted. Latching took OD Next away from Codex,
     // Claude and OpenCode because a fourth runtime lacks a capability, and only

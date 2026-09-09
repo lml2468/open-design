@@ -599,7 +599,7 @@ describe('ChatPane streaming state', () => {
         id: 'assistant-1',
         role: 'assistant',
         content: 'Generation failed',
-        agentId: 'amr',
+        agentId: 'opencode',
         createdAt: 1,
         runId: 'run-trace-123',
         runStatus: 'failed',
@@ -657,7 +657,7 @@ describe('ChatPane streaming state', () => {
       projectId: 'project-1',
       conversationId: 'conv-1',
       assistantMessageId: 'assistant-1',
-      agentId: 'amr',
+      agentId: 'opencode',
     });
 
     expect(text).toMatch(/^json-rpc id 4: Connection reset by server\n\nOpenDesign run error diagnostics/);
@@ -675,7 +675,7 @@ describe('ChatPane streaming state', () => {
       projectId: 'project-1',
       conversationId: 'conv-1',
       assistantMessageId: 'assistant-1',
-      agentId: 'amr',
+      agentId: 'opencode',
     });
 
     expect(text).toMatch(/^Connection dropped\. Try again\.\n\nOpenDesign run error diagnostics/);

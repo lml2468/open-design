@@ -52,7 +52,7 @@ function failureStage(events: RunEventForDiagnostics[]) {
     result: 'failed',
     status: { status: 'failed', error: error?.message ?? 'ACP response timed out', exitCode: 1, signal: null },
     errorCode: 'AGENT_EXIT_1',
-    agentId: 'amr',
+    agentId: 'opencode',
     events,
   })?.failure_stage;
 }

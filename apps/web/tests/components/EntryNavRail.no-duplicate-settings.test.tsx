@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // Settings has one stable local destination. It no longer moves between the
-// rail and a Vela account menu based on cloud identity.
+// rail and a legacy cloud account menu based on remote identity.
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';

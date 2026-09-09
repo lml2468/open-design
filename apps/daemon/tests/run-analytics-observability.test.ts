@@ -216,7 +216,7 @@ describe('scanRunEventsForUsageAnalytics', () => {
           },
         },
       ],
-      'amr-model',
+      'fixture-model',
       0,
     );
 
@@ -274,7 +274,7 @@ describe('scanRunEventsForUsageAnalytics', () => {
           },
         },
       ],
-      'amr-model',
+      'fixture-model',
       0,
     );
 
@@ -392,7 +392,7 @@ describe('scanRunEventsForUsageAnalytics', () => {
           },
         },
       ],
-      'amr-model',
+      'fixture-model',
       0,
     );
 
@@ -437,11 +437,11 @@ describe('scanRunEventsForUsageAnalytics', () => {
   });
 
   it('normalizes additive Responses-API / ACP usage where cache_read exceeds input_tokens', () => {
-    // Real AMR/vela follow-up shape: the stream reports input_tokens as the
+    // Real additive-usage follow-up shape: the stream reports input_tokens as the
     // UNCACHED remainder with cached_input_tokens reported separately ON TOP, so
     // cache_read > input. Treating it as inclusive (cache_read ⊆ input) made the
     // denominator far too small and produced cache_hit_ratio ≫ 1 (the corrupt
-    // ~78% of AMR follow-up runs). It must resolve to a sane <=1 ratio with the
+    // affected follow-up runs). It must resolve to a sane <=1 ratio with the
     // cache-read folded into the effective input.
     const result = scanRunEventsForUsageAnalytics(
       [
@@ -627,7 +627,7 @@ describe('scanRunEventsForUsageAnalytics', () => {
       },
     },
     {
-      name: 'amr vela usage without cache',
+      name: 'additive usage without cache',
       usage: {
         input_tokens: 12,
         output_tokens: 7,

@@ -2,7 +2,6 @@ import { execFile, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +40,6 @@ const rendererStylesheetPath = 'styles/export.css';
 const rendererImagePath = 'assets/hero.png';
 
 describe('od export run-scoped project authority', () => {
-  let authorityServer: http.Server;
   let daemonShutdown: () => Promise<void> | void;
   let daemonUrl = '';
   let lastRendererAssetUrl = '';
@@ -111,39 +109,6 @@ describe('od export run-scoped project authority', () => {
       }
     }
 
-    authorityServer = http.createServer((_req, res) => {
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({
-        items: [
-          {
-            workspaceId: 'unrelated-workspace',
-            workspaceName: 'Unrelated workspace',
-            workspaceType: 'personal',
-            workspaceMemberId: 'unrelated-member',
-            role: 'owner',
-            memberStatus: 'active',
-            lifecycleState: 'active',
-          },
-          {
-            workspaceId,
-            workspaceName: 'Exact project workspace',
-            workspaceType: 'team',
-            workspaceMemberId: memberId,
-            role: 'owner',
-            memberStatus: 'active',
-            lifecycleState: 'active',
-          },
-        ],
-      }));
-    });
-    await new Promise<void>((resolve) => authorityServer.listen(0, '127.0.0.1', resolve));
-    const authorityAddress = authorityServer.address();
-    if (!authorityAddress || typeof authorityAddress === 'string') {
-      throw new Error('authority server did not bind');
-    }
-    vi.stubEnv('OD_WORKSPACE_CONTEXT_SOURCE', 'vela');
-    vi.stubEnv('VELA_CONTROL_KEY', 'test-control-key');
-    vi.stubEnv('VELA_API_URL', `http://127.0.0.1:${authorityAddress.port}`);
     vi.stubEnv('OD_API_TOKEN', daemonApiToken);
 
     const renderer = (input: DesktopRenderSlidesInput): Promise<DesktopRenderSlidesResult> => {
@@ -190,7 +155,6 @@ describe('od export run-scoped project authority', () => {
 
   afterAll(async () => {
     await daemonShutdown?.();
-    await new Promise<void>((resolve) => authorityServer.close(() => resolve()));
     toolTokenRegistry.clear();
     closeDatabase();
     vi.unstubAllEnvs();

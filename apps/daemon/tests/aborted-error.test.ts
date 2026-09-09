@@ -7,7 +7,7 @@ import { isAbortedOperationError } from '../src/integrations/aborted-error.js';
 // errors. This predicate must preserve that distinction for every caller.
 describe('isAbortedOperationError', () => {
   it('recognizes a deliberately aborted command', () => {
-    const error = new Error('vela command aborted', {
+    const error = new Error('agent command aborted', {
       cause: 'This operation was aborted',
     });
     error.name = 'AbortError';
@@ -26,13 +26,13 @@ describe('isAbortedOperationError', () => {
   it('does NOT treat a timeout as a cancellation', () => {
     // A command runner's other termination reason. This is a real failure and
     // must keep reaching the failure logging + retry accounting.
-    const error = new Error('vela command timed out after 30000ms');
+    const error = new Error('agent command timed out after 30000ms');
     error.name = 'TimeoutError';
     expect(isAbortedOperationError(error)).toBe(false);
   });
 
   it('does NOT treat a transport failure as a cancellation', () => {
-    // The shape seen from the vela CLI itself when the API is unreachable.
+    // The shape seen from a CLI when its upstream API is unreachable.
     const error = new Error(
       'list team projects: context deadline exceeded (Client.Timeout exceeded while awaiting headers)',
     );

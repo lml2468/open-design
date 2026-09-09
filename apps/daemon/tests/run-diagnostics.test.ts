@@ -28,7 +28,7 @@ describe('run diagnostics', () => {
   it('flags resume_auto_reseeded when an agent_resume_auto_reseed event is present', () => {
     const result = summarizeRunDiagnosticsForAnalytics({
       events: [
-        { event: 'diagnostic', data: { type: 'agent_resume_auto_reseed', agent_id: 'amr', reason: 'resume_failed' } },
+        { event: 'diagnostic', data: { type: 'agent_resume_auto_reseed', agent_id: 'opencode', reason: 'resume_failed' } },
         { event: 'diagnostic', data: { type: 'runtime_close', rpc_close_reason: 'exit_0' } },
       ],
       exitCode: 0,

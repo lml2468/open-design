@@ -84,7 +84,7 @@ describe('od media generate repeated --image', () => {
     expect(body.images).toEqual(images);
   });
 
-  it('does not impose the removed Vela five-image limit', async () => {
+  it('does not impose the removed provider-specific five-image limit', async () => {
     const images = Array.from({ length: 6 }, (_, index) => `ref-${index}.png`);
     const result = await runCli(images);
 

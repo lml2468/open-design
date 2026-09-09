@@ -392,7 +392,7 @@ describe('OD Next complex production enforcement', () => {
     // Ownership rides on Claude's `--agents` / `subagent_type` transport, so
     // `buildPackageId` is best-effort — most runtimes cannot produce it at all.
     // Demanding it from everyone refused every complex run on Codex, native
-    // OpenCode and AMR at the completion turn, after a full production Run had
+    // OpenCode and another runtime at the completion turn, after a full production Run had
     // been spent, and the blocked verdict then latched OD Next off daemon-wide.
     const plan = planContract(snapshot, capabilitySnapshot());
     const unowned = successfulEvidence().map((item) => (

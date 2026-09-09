@@ -85,9 +85,8 @@ const AGENT_BIN = 'kimi';
 /** `kimiAgentDef.name` — the display name the guidance copy must lead with. */
 const AGENT_DISPLAY_NAME = 'Kimi CLI';
 /**
- * What an ACP CLI says when a runtime IT manages failed to come up, verbatim
- * from vela's `acp_runtime.go` (`start opencode server: %v` wrapping
- * `opencode exited before readiness: %w`). Reported from inside `session/new`,
+ * What an ACP CLI says when a runtime it manages failed to come up. The
+ * `start opencode server` wrapper reaches the daemon from inside `session/new`,
  * so it reaches the daemon handshake-numbered — while saying nothing at all
  * about the agent CLI's own build.
  */
@@ -371,9 +370,8 @@ describe('ACP handshake rejection — server wiring', () => {
     }
   });
 
-  // AMR is the largest population running this path, and what it runs
-  // underneath is OpenCode. When vela's bundled OpenCode child fails to come up
-  // — a port collision, an OOM kill, a half-written config — vela reports that
+  // When an ACP wrapper's managed OpenCode child fails to come up — a port
+  // collision, an OOM kill, a half-written config — it reports that
   // from inside `session/new`, so the failure arrives handshake-numbered even
   // though the agent CLI refused nothing at all.
   //
@@ -389,7 +387,7 @@ describe('ACP handshake rejection — server wiring', () => {
       logPath,
       cliVersion: '0.38.0',
       errorMessage: RUNTIME_NEVER_READY,
-      // vela marks its own startup failure transient. Unlike a handshake
+      // The wrapper marks its own startup failure transient. Unlike a handshake
       // refusal — where a CLI claiming retryability is claiming something the
       // daemon can disprove — here the CLI is right, and the daemon must not
       // overrule it.

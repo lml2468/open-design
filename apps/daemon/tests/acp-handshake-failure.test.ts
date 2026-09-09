@@ -555,7 +555,7 @@ describe('handshake failures the run classifier already has a remedy for', () =>
   // A handshake-numbered frame carrying an OS-level crash banner reports a
   // child that DIED; the JSON-RPC envelope is only how the corpse arrived. The
   // remedy is the crash's (ship a compatible runtime), never "change your CLI
-  // version". Sampled from a real AMR failure on Windows.
+  // version". Sampled from a real ACP wrapper failure on Windows.
   it('leaves a crashed child to the crash reading, not the refusal reading', () => {
     const CRASHED =
       'json-rpc id 2: start opencode server: opencode exited before readiness: exit status 0xc0000409';
@@ -569,9 +569,9 @@ describe('handshake failures the run classifier already has a remedy for', () =>
     expect(withAcpHandshakeFailureGuidance({ message: CRASHED })).toEqual({ message: CRASHED });
   });
 
-  // The same AMR wrapper text WITHOUT a crash banner, which is the common case:
-  // vela's bundled OpenCode simply exited before it answered a health check (a
-  // port collision, an OOM kill, a half-written config). vela reports that from
+  // The same wrapper text WITHOUT a crash banner, which is the common case: a
+  // managed OpenCode child simply exited before it answered a health check (a
+  // port collision, an OOM kill, a half-written config). The wrapper reports it from
   // inside `session/new`, so the frame is handshake-numbered — but the agent CLI
   // refused nothing, and its build is not the variable. This shape was a
   // retryable `fatal_rpc_error` before the refusal guidance existed, and both
@@ -593,8 +593,8 @@ describe('handshake failures the run classifier already has a remedy for', () =>
     });
   });
 
-  // The wrapper's other startup shapes, from the same two vela call sites
-  // (`acp_runtime.go` newSession/loadSession). None of them is a statement
+  // The wrapper's other startup shapes, from the same new/load session paths.
+  // None of them is a statement
   // about the agent CLI's own build, and none is deterministic — so the
   // invariant asserted here is the one that matters to the user, not the
   // bucket: keep the retry, never prescribe a CLI change. Which bucket each

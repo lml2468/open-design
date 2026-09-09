@@ -1647,8 +1647,8 @@ describe('OD Next production completion inference', () => {
     // deliverable. A complex plan additionally owes verified native Child
     // lifecycle — the property that makes it complex — which no deliverable
     // check substitutes for. Accepting complex here certified Children nobody
-    // observed: an AMR complex Run whose Vela build ships no child-lifecycle
-    // producer reported `knownChildCount: 0` and still landed `completed`,
+    // observed: a complex Run whose runtime ships no child-lifecycle producer
+    // reported `knownChildCount: 0` and still landed `completed`,
     // walking past `evaluateOdNextComplexChildEvidence` entirely.
     const parsed = protocol('Built all three pages and wired the navigation.').finish();
 

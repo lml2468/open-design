@@ -95,7 +95,7 @@ describe('/api/chat', () => {
 
   async function createPersonalWorkspaceBoundProjectFixture(label: string) {
     if (!process.env.OD_DATA_DIR) {
-      throw new Error('OD_DATA_DIR is required for AMR Workspace scope tests');
+      throw new Error('OD_DATA_DIR is required for chat route tests');
     }
     const projectId = `proj-${randomUUID()}`;
     const workspaceId = `personal-ws-${randomUUID()}`;

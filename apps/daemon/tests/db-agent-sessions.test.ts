@@ -67,12 +67,12 @@ describe('agent_sessions persistence', () => {
     const db = seed();
     upsertAgentSession(db, {
       conversationId: 'conv-1',
-      agentId: 'amr',
+      agentId: 'opencode',
       sessionId: 'sess-A',
       lastInputTokens: 123_456,
     });
 
-    expect(getAgentSessionRecord(db, 'conv-1', 'amr')).toMatchObject({
+    expect(getAgentSessionRecord(db, 'conv-1', 'opencode')).toMatchObject({
       sessionId: 'sess-A',
       lastInputTokens: 123_456,
     });

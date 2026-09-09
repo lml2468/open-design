@@ -607,7 +607,7 @@ describe('langfuse-bridge.reportRunCompletedFromDaemon', () => {
         }),
         dataDir,
         run: makeRun({
-          agentId: 'amr',
+          agentId: 'opencode',
           events: Array.from({ length: 2_001 }, (_, index) => ({
             id: index + 2,
             event: 'agent',
@@ -675,7 +675,7 @@ describe('langfuse-bridge.reportRunCompletedFromDaemon', () => {
         }),
         dataDir,
         run: makeRun({
-          agentId: 'amr',
+          agentId: 'opencode',
           events: [
             {
               id: 1,

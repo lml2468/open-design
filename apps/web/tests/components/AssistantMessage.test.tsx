@@ -487,7 +487,7 @@ describe('AssistantMessage status badge updates (Bug A)', () => {
               kind: 'status',
               label: 'error',
               detail:
-                'AMR Cloud reported insufficient balance. Top up at https://open-design.ai/amr/dashboard, then retry.',
+                'The provider reported insufficient balance. Top up at https://provider.example/billing, then retry.',
             } as ChatMessage['events'][number],
           ],
         })}
@@ -497,8 +497,8 @@ describe('AssistantMessage status badge updates (Bug A)', () => {
       />,
     );
 
-    const link = screen.getByRole('link', { name: 'https://open-design.ai/amr/dashboard' });
-    expect(link.getAttribute('href')).toBe('https://open-design.ai/amr/dashboard');
+    const link = screen.getByRole('link', { name: 'https://provider.example/billing' });
+    expect(link.getAttribute('href')).toBe('https://provider.example/billing');
     expect(link.classList.contains('md-link')).toBe(true);
   });
 

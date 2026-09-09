@@ -1736,7 +1736,7 @@ describe('buildTracePayload', () => {
             id: 'diagnostic-acp_artifact_text_suppression-0',
             name: 'agent-diagnostic:acp_artifact_text_suppression',
             timestamp: 1_700_000_003_000,
-            input: { source: 'amr', event_type: 'diagnostic' },
+            input: { source: 'local-agent', event_type: 'diagnostic' },
             output: {
               name: 'acp_artifact_text_suppression',
               source: 'acp-json-rpc',
@@ -1758,7 +1758,7 @@ describe('buildTracePayload', () => {
     ).toMatchObject({
       parentObservationId: 'run-agent-diagnostics-phase-agent-call',
       input: {
-        source: 'amr',
+        source: 'local-agent',
         event_type: 'diagnostic',
       },
       output: {

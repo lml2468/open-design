@@ -274,7 +274,7 @@ describe('classifyChatRunCloseStatus (#1451 close-handler classification)', () =
     ).toBe('succeeded');
   });
 
-  it('returns succeeded on Vela ACP code 130 after clean ACP completion', () => {
+  it('returns succeeded on ACP code 130 after clean ACP completion', () => {
     expect(
       classifyChatRunCloseStatus({
         ...base,
@@ -285,7 +285,7 @@ describe('classifyChatRunCloseStatus (#1451 close-handler classification)', () =
     ).toBe('succeeded');
   });
 
-  it('returns failed on Vela ACP code 130 before clean ACP completion', () => {
+  it('returns failed on ACP code 130 before clean ACP completion', () => {
     expect(
       classifyChatRunCloseStatus({
         ...base,

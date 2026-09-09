@@ -400,7 +400,7 @@ describe('durable run terminal reconciliation', () => {
       projectId: 'p1',
       conversationId: 'c1',
       assistantMessageId: null,
-      agentId: 'amr',
+      agentId: 'opencode',
       status: 'failed',
       createdAt: 1_000,
       updatedAt: 2_000,
