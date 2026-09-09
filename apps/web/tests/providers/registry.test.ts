@@ -1137,24 +1137,20 @@ describe('resource read authority', () => {
     vi.unstubAllGlobals();
   });
 
-  it('scopes skills to Workspace while plugin files remain daemon-local', async () => {
-    const context = personalWorkspaceContext();
+  it('loads skill and plugin preview bytes from daemon-local catalogs', async () => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response('<html>ok</html>', { status: 200 }),
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await fetchSkillExample('skill-a', 'html', context);
+    await fetchSkillExample('skill-a', 'html');
     await fetchPluginPreviewHtml('plugin-a');
     await fetchPluginExampleHtml('plugin-a', 'example-a');
     await fetchPluginAssetText('plugin-a', './DESIGN.md');
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    const skillHeaders = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
-    expect(skillHeaders.get('x-od-workspace-id')).toBe(context.workspaceId);
-    expect(skillHeaders.get('x-od-workspace-member-id')).toBe(context.workspaceMemberId);
-    for (const [, init] of fetchMock.mock.calls.slice(1)) {
+    for (const [, init] of fetchMock.mock.calls) {
       expect(init).toBeUndefined();
     }
   });

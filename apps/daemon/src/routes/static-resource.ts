@@ -12,20 +12,15 @@ import {
   deleteUserSkill,
   findSkillById,
   importUserSkill,
-  listSkills,
   listSkillFiles,
   splitDerivedSkillId,
   updateUserSkill,
 } from '../skills.js';
-import { parseFrontmatter } from '../design-systems/frontmatter.js';
 import {
-  deleteWorkspaceResourceByResourceId,
   ensureWorkspaceResource,
-  getWorkspaceResource,
   getWorkspaceResourceByResourceId,
 } from '../db.js';
 import {
-  enforceVerifiedWorkspaceResourceMutation,
   resolveOptionalLocalWorkspaceRequestAuthority,
   type VerifyWorkspaceRequestAuthority,
 } from '../collab/workspace-resource-mutation.js';
@@ -147,129 +142,14 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     });
     return true;
   };
-  // Stamp a freshly imported/installed skill with the caller's workspace, the
-  // same moment plugin install does (`installOrUpgradePlugin` in server.ts).
-  // A caller with no workspace headers (`od skill import`, a not-logged-in
-  // web session) leaves the skill unbound — visible everywhere, same as
-  // every skill imported before this shipped ("no retroactive tagging").
-  const bindImportedSkillToWorkspace = (
-    authority: WorkspaceCollabContext | null,
-    skillId: string,
-  ): void => {
-    if (!authority) return;
-    ensureWorkspaceResource(db, 'skill', authority.workspaceId, skillId, {
-      visibility: 'personal',
-      resourceState: 'active',
-      createdByWorkspaceMemberId: authority.workspaceMemberId,
-      updatedByWorkspaceMemberId: authority.workspaceMemberId,
-    });
-  };
-  const readSkillIdFromDirectory = (directory: string): string | null => {
-    try {
-      const raw = fs.readFileSync(path.join(directory, 'SKILL.md'), 'utf8');
-      const parsed = parseFrontmatter(raw) as { data?: { name?: unknown } };
-      return typeof parsed.data?.name === 'string' && parsed.data.name.trim()
-        ? parsed.data.name.trim()
-        : null;
-    } catch {
-      return null;
-    }
-  };
-  const skillIdentityConflict = async (
-    authority: WorkspaceCollabContext | null,
-    skillId: string,
-    preexistingUserSkillIds?: ReadonlySet<string>,
-  ): Promise<boolean> => {
-    if (!authority) return false;
-    const binding = getWorkspaceResourceByResourceId(db, 'skill', skillId);
-    if (binding) {
-      return !(
-        binding.workspaceId === authority.workspaceId
-        && binding.visibility === 'personal'
-        && binding.resourceState !== 'deleted'
-        && binding.createdByWorkspaceMemberId === authority.workspaceMemberId
-      );
-    }
-    // An explicit Workspace may create a shadow of a bundled skill, but it
-    // must not adopt an existing unbound user skill from the shared daemon
-    // registry merely by installing another folder with the same manifest id.
-    return preexistingUserSkillIds
-      ? preexistingUserSkillIds.has(skillId)
-      : (await listSkills(USER_SKILLS_DIR)).some((skill) => skill.id === skillId);
-  };
-  const rejectSkillIdentityConflict = async (
-    res: Response,
-    authority: WorkspaceCollabContext | null,
-    skillId: string,
-  ): Promise<boolean> => {
-    if (!await skillIdentityConflict(authority, skillId)) return false;
-    sendApiError(
-      res,
-      409,
-      'WORKSPACE_RESOURCE_ID_CONFLICT',
-      'a Personal skill with this id belongs to another workspace member',
-    );
-    return true;
-  };
-  const removeFreshSkillInstall = (directory: string): void => {
-    try {
-      const stat = fs.lstatSync(directory);
-      if (stat.isSymbolicLink()) fs.unlinkSync(directory);
-      else fs.rmSync(directory, { recursive: true, force: true });
-    } catch {}
-  };
-  const requestWithNavigationScope = (req: any): any | 'conflict' => {
-    const workspaceId = typeof req.query?.workspaceId === 'string'
-      ? req.query.workspaceId.trim()
-      : '';
-    const workspaceMemberId = typeof req.query?.workspaceMemberId === 'string'
-      ? req.query.workspaceMemberId.trim()
-      : '';
-    if (!workspaceId && !workspaceMemberId) return req;
-    const headerWorkspaceId = req.get('x-od-workspace-id')?.trim() ?? '';
-    const headerWorkspaceMemberId =
-      req.get('x-od-workspace-member-id')?.trim() ?? '';
-    if (
-      (headerWorkspaceId || headerWorkspaceMemberId)
-      && (
-        headerWorkspaceId !== workspaceId
-        || headerWorkspaceMemberId !== workspaceMemberId
-      )
-    ) {
-      return 'conflict';
-    }
-    return {
-      get(name: string) {
-        const normalized = name.toLowerCase();
-        if (normalized === 'x-od-workspace-id') return workspaceId || undefined;
-        if (normalized === 'x-od-workspace-member-id') {
-          return workspaceMemberId || undefined;
-        }
-        return req.get(name);
-      },
-    };
-  };
   const resolveWorkspaceAuthority = async (
     req: any,
     res: Response,
     options: {
-      allowNavigationQuery?: boolean;
       verifyAuthority?: VerifyWorkspaceRequestAuthority | undefined;
     } = {},
   ): Promise<WorkspaceCollabContext | null | undefined> => {
-    const scopedRequest = options.allowNavigationQuery
-      ? requestWithNavigationScope(req)
-      : req;
-    if (scopedRequest === 'conflict') {
-      sendApiError(
-        res,
-        400,
-        'WORKSPACE_CONTEXT_CONFLICT',
-        'workspace header and navigation scope must match',
-      );
-      return undefined;
-    }
-    const authority = resolveOptionalLocalWorkspaceRequestAuthority(scopedRequest);
+    const authority = resolveOptionalLocalWorkspaceRequestAuthority(req);
     if (!authority.ok) {
       sendApiError(res, authority.status, authority.code, authority.message, {
         ...(authority.retryable ? { retryable: true } : {}),
@@ -277,44 +157,6 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       return undefined;
     }
     return authority.context;
-  };
-  // Gate a mutation route for a skill bound into `workspace_resources`. Only
-  // applies when the skill actually carries a binding row (installed/imported
-  // through the workspace-aware routes above after this shipped) — an unbound
-  // legacy skill stays outside the isolation regime, mirroring the plugin
-  // uninstall route's same conditional gate.
-  const enforceSkillWorkspaceMutation = async (
-    req: any,
-    res: any,
-    skillId: string,
-    capability: 'delete' | 'writeFiles',
-  ): Promise<boolean> => {
-    const binding = getWorkspaceResourceByResourceId(db, 'skill', skillId);
-    if (!binding) return true;
-    const localAuthority = resolveOptionalLocalWorkspaceRequestAuthority(req);
-    if (!localAuthority.ok) {
-      sendApiError(
-        res,
-        localAuthority.status,
-        localAuthority.code,
-        localAuthority.message,
-      );
-      return false;
-    }
-    return enforceVerifiedWorkspaceResourceMutation(
-      'skill',
-      req,
-      res,
-      sendApiError,
-      (dbArg, workspaceId, resourceId) => getWorkspaceResource(dbArg as typeof db, 'skill', workspaceId, resourceId),
-      (dbArg, resourceId) => getWorkspaceResourceByResourceId(dbArg as typeof db, 'skill', resourceId),
-      db,
-      skillId,
-      capability,
-      localAuthority.context
-        ? async () => ({ ok: true as const, context: localAuthority.context! })
-        : undefined,
-    );
   };
   const importedDesignSystemResponse = async <T extends { id: string }>(designSystem: T) => {
     let tokenContractRebuild: DesignSystemTokenContractRebuildJobResponse | undefined;
@@ -450,22 +292,9 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     }
   });
 
-  app.get('/api/skills', async (req, res) => {
+  app.get('/api/skills', async (_req, res) => {
     try {
-      // Workspace-scoped (see `skillVisibleFromWorkspace` in skills.ts): a
-      // skill imported into a different workspace than the caller's is
-      // hidden, same one-way rule `GET /api/plugins` already applies.
-      const authority = await resolveWorkspaceAuthority(req, res, {
-        verifyAuthority:
-          ctx.verifyWorkspaceReadAuthority
-          ?? ctx.verifyWorkspaceRequestAuthority,
-      });
-      if (authority === undefined) return;
-      const workspaceId = authority?.workspaceId ?? null;
-      const skills = await listAllSkills({
-        workspaceId,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
+      const skills = await listAllSkills();
       // Strip full body + on-disk dir from the listing — frontend fetches the
       // body via /api/skills/:id when needed (keeps the listing payload small).
       res.json({
@@ -481,13 +310,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
 
   app.get('/api/skills/:id', async (req, res) => {
     try {
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
-      const workspaceId = authority?.workspaceId ?? null;
-      const skills = await listAllSkills({
-        workspaceId,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
+      const skills = await listAllSkills();
       const skill = findSkillById(skills, req.params.id);
       if (!skill) return res.status(404).json({ error: 'skill not found' });
       const { dir: _dir, ...serializable } = skill;
@@ -532,18 +355,8 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
   // automatically because listSkills walks USER_SKILLS_DIR first.
   app.post('/api/skills/import', async (req, res) => {
     try {
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
-      const requestedSkillId = typeof req.body?.name === 'string'
-        ? req.body.name.trim()
-        : '';
-      if (requestedSkillId && await rejectSkillIdentityConflict(res, authority, requestedSkillId)) return;
       const result = await importUserSkill(USER_SKILLS_DIR, req.body || {});
-      bindImportedSkillToWorkspace(authority, result.id);
-      const skills = await listAllSkills({
-        workspaceId: authority?.workspaceId ?? null,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
+      const skills = await listAllSkills();
       const skill = findSkillById(skills, result.id);
       if (!skill) {
         return sendApiError(
@@ -576,44 +389,17 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
   // the bundled assets/references/scripts/examples). See PR #955 review.
   app.put('/api/skills/:id', async (req, res) => {
     try {
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
-      const skills = await listAllSkills({
-        workspaceId: authority?.workspaceId ?? null,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
+      const skills = await listAllSkills();
       const skill = findSkillById(skills, req.params.id);
       if (!skill) {
         return sendApiError(res, 404, 'NOT_FOUND', 'skill not found');
       }
-      const existingBinding = getWorkspaceResourceByResourceId(db, 'skill', skill.id);
-      if (
-        authority
-        && existingBinding
-        && !(
-          existingBinding.workspaceId === authority.workspaceId
-          && existingBinding.visibility === 'personal'
-          && existingBinding.createdByWorkspaceMemberId === authority.workspaceMemberId
-        )
-      ) {
-        return sendApiError(
-          res,
-          409,
-          'WORKSPACE_RESOURCE_ID_CONFLICT',
-          'a Personal skill with this id belongs to another workspace member',
-        );
-      }
-      if (!await enforceSkillWorkspaceMutation(req, res, skill.id, 'writeFiles')) return;
       const result = await updateUserSkill(USER_SKILLS_DIR, {
         ...(req.body || {}),
         id: skill.id,
         sourceDir: skill.dir,
       });
-      bindImportedSkillToWorkspace(authority, result.id);
-      const next = await listAllSkills({
-        workspaceId: authority?.workspaceId ?? null,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
+      const next = await listAllSkills();
       const updated = findSkillById(next, result.id);
       if (!updated) {
         return sendApiError(
@@ -644,13 +430,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
   // file tree (capped server-side to keep payload bounded).
   app.get('/api/skills/:id/files', async (req, res) => {
     try {
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
-      const workspaceId = authority?.workspaceId ?? null;
-      const skills = await listAllSkills({
-        workspaceId,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
+      const skills = await listAllSkills();
       const skill = findSkillById(skills, req.params.id);
       if (!skill) {
         return sendApiError(res, 404, 'NOT_FOUND', 'skill not found');
@@ -840,18 +620,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       // HTML rewrites assets to /api/skills/<id>/... and we want those URLs
       // to keep resolving regardless of which root owns the backing folder
       // after the skills/design-templates split.
-      const authority = await resolveWorkspaceAuthority(req, res, {
-        allowNavigationQuery: true,
-      });
-      if (authority === undefined) return;
-      const workspaceId = authority?.workspaceId ?? null;
-      const skills = await listAllSkillLikeEntries({
-        workspaceId,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
-      const workspaceQuery = authority
-        ? `?workspaceId=${encodeURIComponent(authority.workspaceId)}&workspaceMemberId=${encodeURIComponent(authority.workspaceMemberId)}`
-        : '';
+      const skills = await listAllSkillLikeEntries();
 
       // 1. Derived `<parent>:<child>` id — resolve straight to the matching
       // file under <parentDir>/examples/. Done before findSkillById so the
@@ -872,7 +641,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
           const html = await fs.promises.readFile(candidate, 'utf8');
           return res
             .type('text/html')
-            .send(rewriteSkillAssetUrls(html, parent.id, workspaceQuery));
+            .send(rewriteSkillAssetUrls(html, parent.id));
         }
         return res
           .status(404)
@@ -890,7 +659,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
         const html = await fs.promises.readFile(baked, 'utf8');
         return res
           .type('text/html')
-          .send(rewriteSkillAssetUrls(html, skill.id, workspaceQuery));
+          .send(rewriteSkillAssetUrls(html, skill.id));
       }
 
       const tpl = path.join(skill.dir, 'assets', 'template.html');
@@ -902,7 +671,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
           const assembled = assembleExample(tplHtml, slidesHtml, skill.name);
           return res
             .type('text/html')
-            .send(rewriteSkillAssetUrls(assembled, skill.id, workspaceQuery));
+            .send(rewriteSkillAssetUrls(assembled, skill.id));
         } catch {
           // Fall through to raw template on read failure.
         }
@@ -911,14 +680,14 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
         const html = await fs.promises.readFile(tpl, 'utf8');
         return res
           .type('text/html')
-          .send(rewriteSkillAssetUrls(html, skill.id, workspaceQuery));
+          .send(rewriteSkillAssetUrls(html, skill.id));
       }
       const idx = path.join(skill.dir, 'assets', 'index.html');
       if (fs.existsSync(idx)) {
         const html = await fs.promises.readFile(idx, 'utf8');
         return res
           .type('text/html')
-          .send(rewriteSkillAssetUrls(html, skill.id, workspaceQuery));
+          .send(rewriteSkillAssetUrls(html, skill.id));
       }
 
       // Friendly fallback for skills that aggregate examples in a sibling
@@ -946,7 +715,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
             const html = await fs.promises.readFile(direct, 'utf8');
             return res
               .type('text/html')
-              .send(rewriteSkillAssetUrls(html, skill.id, workspaceQuery));
+              .send(rewriteSkillAssetUrls(html, skill.id));
           } catch {
             continue;
           }
@@ -975,15 +744,7 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     try {
       // Same rationale as /example above — assets need to resolve whether
       // the owning skill folder lives under skills/ or design-templates/.
-      const authority = await resolveWorkspaceAuthority(req, res, {
-        allowNavigationQuery: true,
-      });
-      if (authority === undefined) return;
-      const workspaceId = authority?.workspaceId ?? null;
-      const skills = await listAllSkillLikeEntries({
-        workspaceId,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
+      const skills = await listAllSkillLikeEntries();
       const skill = findSkillById(skills, req.params.id);
       if (!skill) {
         return res.status(404).type('text/plain').send('skill not found');
@@ -1013,28 +774,15 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
   app.post('/api/skills/install', async (req, res) => {
     if (!requireLocalOrigin(req, res)) return;
     try {
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
       const body = req.body && typeof req.body === 'object' ? req.body : {};
-      const preexistingUserSkillIds = new Set(
-        (await listSkills(USER_SKILLS_DIR)).map((skill) => skill.id),
-      );
       const isLegacyTarget =
         (body.source === 'github' && typeof body.url === 'string') ||
         (body.source === 'local' && typeof body.path === 'string');
-      if (body.source === 'local' && typeof body.path === 'string') {
-        const localSkillId = readSkillIdFromDirectory(body.path);
-        if (localSkillId && await rejectSkillIdentityConflict(res, authority, localSkillId)) return;
-      }
       const result = isLegacyTarget
         ? await installFromTarget(body, USER_SKILLS_DIR, 'skill')
         : await installSkillFromRemoteSource(
             USER_SKILLS_DIR,
             typeof body.source === 'string' ? body.source : '',
-            {
-              allowInstallIdentity: async ({ id }) =>
-                !await skillIdentityConflict(authority, id),
-            },
           );
       if (!result.ok) {
         const statusByCode: Partial<Record<SkillInstallErrorCode, number>> = {
@@ -1053,45 +801,17 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
       if (typeof result.dir !== 'string' || !result.dir) {
         return res.status(500).json({ error: 'skill install did not return an installation directory' });
       }
-      const installedSkillId = 'id' in result && typeof result.id === 'string'
-        ? result.id
-        : readSkillIdFromDirectory(result.dir);
-      if (
-        installedSkillId
-        && await skillIdentityConflict(
-          authority,
-          installedSkillId,
-          preexistingUserSkillIds,
-        )
-      ) {
-        // Legacy GitHub installs only reveal their manifest identity after
-        // cloning. Compensate before binding so a same-id install cannot
-        // reassign another member's Personal skill; the original folder and
-        // binding are never touched.
-        removeFreshSkillInstall(result.dir);
-        return sendApiError(
-          res,
-          409,
-          'WORKSPACE_RESOURCE_ID_CONFLICT',
-          'a Personal skill with this id belongs to another workspace member',
-        );
-      }
       const installedDir = fs.realpathSync.native(result.dir);
-      const unscopedSkills = await listAllSkills();
-      const installed = unscopedSkills.find(
+      const installedSkills = await listAllSkills();
+      const installed = installedSkills.find(
         (candidate) => fs.realpathSync.native(candidate.dir) === installedDir,
       );
       if (!installed) {
         return res.status(500).json({ error: `installed skill was not found in catalog: ${result.dir}` });
       }
-      bindImportedSkillToWorkspace(authority, installed.id);
-      const scopedSkills = await listAllSkills({
-        workspaceId: authority?.workspaceId ?? null,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
-      const skill = findSkillById(scopedSkills, installed.id);
+      const skill = findSkillById(installedSkills, installed.id);
       if (!skill) {
-        return res.status(500).json({ error: 'installed skill was not found in scoped catalog' });
+        return res.status(500).json({ error: 'installed skill was not found in local catalog' });
       }
       res.json({
         skill: {
@@ -1106,35 +826,16 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     }
   });
 
-  // This route used to carry NO permission check at all: any caller (any
-  // workspace, any role) could delete any skill, including one installed by
-  // someone else. It is now gated the same way
-  // `POST /api/plugins/:id/uninstall` is, via the shared
-  // `enforceWorkspaceResourceMutation` — see `enforceSkillWorkspaceMutation`
-  // above for the "only when a binding row exists" conditional.
   app.delete('/api/skills/:id', async (req, res) => {
     if (!requireLocalOrigin(req, res)) return;
     try {
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
-      const skills = await listAllSkills({
-        workspaceId: authority?.workspaceId ?? null,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
+      const skills = await listAllSkills();
       const skill = findSkillById(skills, req.params.id);
       if (!skill) {
         return sendApiError(res, 404, 'NOT_FOUND', 'skill not found');
       }
-      if (!await enforceSkillWorkspaceMutation(req, res, req.params.id, 'delete')) return;
       const result = await uninstallById(req.params.id, USER_SKILLS_DIR, SKILLS_DIR, 'skill');
       if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
-      // Clean up the binding row too — `workspace_resources` has no
-      // FOREIGN KEY ... ON DELETE CASCADE (see db.ts's doc comment on the
-      // table), so skipping this would leave an orphan binding that
-      // re-importing the same skill id would find and silently reuse (stale
-      // workspace/visibility). A DELETE against a row that never existed is a
-      // no-op.
-      deleteWorkspaceResourceByResourceId(db, 'skill', req.params.id);
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: String(err) });
@@ -1428,7 +1129,6 @@ export function assembleExample(templateHtml: string, slidesHtml: string, title:
 export function rewriteSkillAssetUrls(
   html: string,
   skillId: string,
-  workspaceQuery = '',
 ) {
   if (typeof html !== 'string' || html.length === 0) return html;
   return html.replace(
@@ -1436,7 +1136,7 @@ export function rewriteSkillAssetUrls(
     (_match, attr, openQuote, _fullPath, siblingSkillId, relPath, closeQuote) => {
       const resolvedSkillId = siblingSkillId || skillId;
       const prefix = `/api/skills/${encodeURIComponent(resolvedSkillId)}/assets/`;
-      return `${attr}${openQuote}${prefix}${relPath}${workspaceQuery}${closeQuote}`;
+      return `${attr}${openQuote}${prefix}${relPath}${closeQuote}`;
     },
   );
 }

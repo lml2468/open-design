@@ -4121,11 +4121,8 @@ describe('SettingsDialog pets interactions', () => {
 
 describe('IntegrationsView skills tab', () => {
   beforeEach(() => {
-    // SkillsSection deliberately waits for an authoritative Workspace answer
-    // before reading a catalog. These filter tests exercise the legal
-    // signed-out/headerless path, so terminate that boundary explicitly rather
-    // than letting jsdom's relative fetch fail into `unavailable` (which must
-    // remain fail-closed).
+    // IntegrationsView still resolves Workspace state for neighboring
+    // collaboration-aware sections. The Skill catalog itself is daemon-local.
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/workspace/directory')) {
@@ -4247,7 +4244,7 @@ describe('IntegrationsView skills tab', () => {
 
     fireEvent.click(screen.getByText('blog-post'));
     await waitFor(() => {
-      expect(fetchSkillMock).toHaveBeenCalledWith('blog-post', null);
+      expect(fetchSkillMock).toHaveBeenCalledWith('blog-post');
       expect(screen.getByText('skill body for blog-post')).toBeTruthy();
     });
 

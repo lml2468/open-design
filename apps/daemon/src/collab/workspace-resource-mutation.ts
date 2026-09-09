@@ -1,6 +1,5 @@
-// Workspace-resource mutation gate for resources that still bind into the
-// generic `workspace_resources` table (see `db.ts`): plugin, and (later)
-// skill / design system.
+// Workspace-resource mutation gate for Design Systems, which still bind into
+// the generic `workspace_resources` table (see `db.ts`).
 //
 // This module is an EXTRACTION, not a new design. It used to live entirely
 // inside `apps/daemon/src/routes/project/index.ts`, hard-coded to "project".
@@ -64,8 +63,8 @@ const REQUEST_AUTHORITY_CACHE = Symbol('open-design.workspace-request-authority'
 
 /**
  * One mutation request can pass through more than one independent resource
- * gate (for example, a project gate followed by a plugin gate when starting a
- * run). Those gates must agree on one fresh directory witness without turning
+ * gate (for example, a project gate followed by a Design System gate). Those
+ * gates must agree on one fresh directory witness without turning
  * that witness into a process-wide or cross-request membership cache.
  *
  * The cache lives on the Express request itself, is partitioned by verifier
@@ -502,9 +501,7 @@ function workspaceResourceMutationAllowed(
   const strictPersonalCreator =
     row.visibility === 'personal'
     && (
-      resourceType === 'plugin'
-      || resourceType === 'skill'
-      || resourceType === 'design_system'
+      resourceType === 'design_system'
       || (resourceType === 'project' && row.createdByWorkspaceMemberId != null)
     );
   // `comment` is the one capability the product grants MORE WIDELY than
@@ -553,7 +550,7 @@ function workspaceResourceMutationAllowed(
 /**
  * Deprecated synchronous mutation gate retained for direct legacy tests.
  *
- * `resourceType` ('project' | 'plugin' | 'skill' | 'design_system') feeds
+ * `resourceType` ('project' | 'design_system') feeds
  * both the lookup callbacks' semantics and the permission-denied error code
  * (`WORKSPACE_<RESOURCE_TYPE>_PERMISSION_DENIED`) — for `resourceType:
  * 'project'` that reproduces the exact `WORKSPACE_PROJECT_PERMISSION_DENIED`
@@ -561,7 +558,7 @@ function workspaceResourceMutationAllowed(
  *
  * `getWorkspaceResource`/`getWorkspaceResourceByResourceId` are caller-bound
  * closures over the specific resource's storage (e.g. `workspace_projects` or
- * `workspace_resources` filtered to `resource_type = 'plugin'`) so this
+ * `workspace_resources` filtered to `resource_type = 'design_system'`) so this
  * module never has to know which table backs which resource type.
  *
  * No production route calls this function. New code must use
@@ -815,9 +812,7 @@ export async function enforceVerifiedWorkspaceResourceRead(
   const strictPersonalCreator =
     row?.visibility === 'personal'
     && (
-      resourceType === 'plugin'
-      || resourceType === 'skill'
-      || resourceType === 'design_system'
+      resourceType === 'design_system'
       || (resourceType === 'project' && row.createdByWorkspaceMemberId != null)
     );
   if (
@@ -960,10 +955,8 @@ export function enforceWorkspaceResourceMutation(
   // "No row in MY workspace" is two different facts, and only one of them is a
   // refusal. A resource NO workspace has claimed is outside the isolation regime
   // altogether — the design's "no retroactive tagging" rule, which
-  // `routes/plugins/index.ts` already applies by skipping this gate entirely for
-  // an unbound plugin so it cannot become "permanently un-uninstallable the
-  // moment a caller happens to carry workspace headers", and which design
-  // systems' `designSystemVisibleFromWorkspace` follows too.
+  // Design System routes already apply this by skipping the gate for an
+  // unbound local resource so Workspace headers cannot retroactively claim it.
   //
   // Treating it as a refusal made the gate ASYMMETRIC: `headerlessMutationAllowed`
   // short-circuits on "no row anywhere" before it even asks for an identity, so

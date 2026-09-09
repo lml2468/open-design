@@ -46,7 +46,6 @@ import {
   getFirstProjectConversation,
   getConversation,
   getProject,
-  getWorkspaceProjectByProjectId,
   listProjectsAwaitingInput,
   normalizeConversationSessionMode,
   updateProject,
@@ -2232,9 +2231,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       // restart/continuation identity deterministic.
       const runProjectMetadata =
         runProject?.metadata as ContractProjectMetadata | null | undefined;
-      const runProjectWorkspace = typeof meta.projectId === 'string' && meta.projectId
-        ? getWorkspaceProjectByProjectId(db, meta.projectId)
-        : null;
       frozenSkillPackage = await captureOdNextSessionSkillPackage({
         metadata: runProjectMetadata,
         getLocalPluginBySource: ctx.plugins.getLocalPluginBySource,
@@ -2247,14 +2243,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
             : runProject?.skillId,
           skillIds: requestBody.skillIds,
         },
-        listSkillCatalog: () => ctx.resources.listAllSkillLikeEntries(
-          runProjectWorkspace?.workspaceId
-            ? {
-                workspaceId: runProjectWorkspace.workspaceId,
-                workspaceMemberId: runProjectWorkspace.createdByWorkspaceMemberId ?? null,
-              }
-            : undefined,
-        ),
+        listSkillCatalog: () => ctx.resources.listAllSkillLikeEntries(),
       });
     }
     const fingerprintSnapshot = clarificationTask

@@ -26,7 +26,7 @@ describe('static resource mutation routes', () => {
         registerStaticResourceRoutes(app, {
           // Never reached by any subtest in this file — every request either
           // 403s on the cross-origin guard or hits a design-system-only route
-          // before touching the skill workspace-mutation gate that reads it.
+          // before touching daemon-local skill mutation paths that read it.
           db: {} as any,
           http: {
             createSseResponse: () => undefined,
@@ -198,7 +198,7 @@ describe('design system import catalog lookup', () => {
         registerStaticResourceRoutes(app, {
           // Never reached by any subtest in this file — every request either
           // 403s on the cross-origin guard or hits a design-system-only route
-          // before touching the skill workspace-mutation gate that reads it.
+          // before touching daemon-local skill mutation paths that read it.
           db,
           http: {
             createSseResponse: () => undefined,

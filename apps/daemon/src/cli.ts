@@ -212,6 +212,7 @@ const DAEMON_BOOLEAN_FLAGS = new Set([
 const LIBRARY_STRING_FLAGS = new Set([
   'daemon-url', 'query', 'tag', 'workspace', 'workspace-member',
 ]);
+const SKILL_STRING_FLAGS = new Set(['daemon-url', 'query', 'tag']);
 const LIBRARY_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 // `od library …` (OD Library asset registry). Hoisted so the dispatcher can
 // parse flags without hitting a temporal-dead-zone on these sets.
@@ -9133,9 +9134,10 @@ async function runLibraryList(name, args) {
   }
   const sub = args[0];
   const rest = args.slice(1);
-  const flags = parseFlags(rest, { string: LIBRARY_STRING_FLAGS, boolean: LIBRARY_BOOLEAN_FLAGS });
-  const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
   const apiPath = name === 'design-systems' ? '/api/design-systems' : `/api/${name}`;
+  const stringFlags = name === 'skills' ? SKILL_STRING_FLAGS : LIBRARY_STRING_FLAGS;
+  const flags = parseFlags(rest, { string: stringFlags, boolean: LIBRARY_BOOLEAN_FLAGS });
+  const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
   const designSystemWorkspaceHeaders = name === 'design-systems'
     ? workspaceHeadersFromExplicitFlags(flags) ?? {}
     : undefined;
@@ -9201,10 +9203,10 @@ async function runSkills(args) {
 
 async function runSkillInstall(rest) {
   const flags = parseFlags(rest, {
-    string: LIBRARY_STRING_FLAGS,
+    string: SKILL_STRING_FLAGS,
     boolean: LIBRARY_BOOLEAN_FLAGS,
   });
-  const source = positionalArgs(rest, LIBRARY_STRING_FLAGS)[0];
+  const source = positionalArgs(rest, SKILL_STRING_FLAGS)[0];
   if (!source) {
     console.error(
       'Usage: od skill install <https://github.com/owner/repo|github:owner/repo|https://…tar.gz|https://…tgz> [--json] [--daemon-url <url>]',
@@ -9212,11 +9214,10 @@ async function runSkillInstall(rest) {
     process.exit(2);
   }
   const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
-  const workspaceHeaders = workspaceHeadersFromExplicitFlags(flags) ?? {};
   try {
     const resp = await fetch(`${base}/api/skills/install`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...workspaceHeaders },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ source }),
     });
     const body = await resp.json().catch(() => ({}));
@@ -9243,17 +9244,15 @@ async function runSkillInstall(rest) {
 }
 
 async function runSkillUninstall(rest) {
-  const flags = parseFlags(rest, { string: LIBRARY_STRING_FLAGS, boolean: LIBRARY_BOOLEAN_FLAGS });
-  const id = positionalArgs(rest, LIBRARY_STRING_FLAGS)[0];
+  const flags = parseFlags(rest, { string: SKILL_STRING_FLAGS, boolean: LIBRARY_BOOLEAN_FLAGS });
+  const id = positionalArgs(rest, SKILL_STRING_FLAGS)[0];
   if (!id) {
     console.error('Usage: od skills uninstall <id> [--json] [--daemon-url <url>]');
     process.exit(2);
   }
   const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
-  const workspaceHeaders = workspaceHeadersFromExplicitFlags(flags) ?? {};
   const resp = await fetch(`${base}/api/skills/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    headers: workspaceHeaders,
   });
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok) {

@@ -83,12 +83,7 @@ import { copyToClipboard } from '../lib/copy-to-clipboard';
 import type { PluginUseAction } from './plugins-home/useActions';
 import { AnimatePresence } from 'motion/react';
 import { navigate } from '../router';
-import {
-  beginWorkspaceScopedRead,
-  currentWorkspaceAccountGeneration,
-  useWorkspaceContext,
-  workspaceIdentityCacheKey,
-} from '../collab/useWorkspaceContext';
+import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 
 type PluginsTab = 'installed' | 'available' | 'sources';
 
@@ -870,18 +865,8 @@ export function ExtensionsMarketplace({
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
   // My own member id, to keep the Personal tab to resources I actually own.
-  const {
-    context: workspaceContext,
-    loading: workspaceContextLoading,
-    failure: workspaceContextFailure,
-  } = useWorkspaceContext();
+  const { context: workspaceContext } = useWorkspaceContext();
   const workspaceDimensions = workspaceAnalyticsDimensions(workspaceContext);
-  // The LATEST context, for `refresh()`'s commit guard. `refresh` is recreated
-  // every render, but the mount effect below captures one closure — so the guard
-  // must compare against a ref, not the captured prop, or it compares the
-  // identity the read was issued for against itself and never fires.
-  const emContextRef = useRef(workspaceContext);
-  emContextRef.current = workspaceContext;
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
   const catalogStaleRef = useRef(false);
@@ -1043,14 +1028,14 @@ export function ExtensionsMarketplace({
 
   async function handleCreateImportUrl() {
     const url = createUrl.trim();
-    if (!url || createBusy || (createKind === 'skill' && workspaceContextLoading)) return;
+    if (!url || createBusy) return;
     const startedAt = performance.now();
     const trackingKind = createKind === 'skill' ? 'skill' : 'expert_plugin';
     trackExtension('add', { kind: trackingKind, scope: 'personal' });
     if (createKind === 'skill') {
       setCreateBusy('import');
       try {
-        const result = await installSkill({ source: url }, workspaceContext);
+        const result = await installSkill({ source: url });
         if ('error' in result) {
           trackResourceResult({
             kind: 'skill', scope: 'personal', action: 'add', result: 'failed',
@@ -1105,7 +1090,6 @@ export function ExtensionsMarketplace({
     if (
       createFolderFiles.length === 0
       || createBusy
-      || (createKind === 'skill' && workspaceContextLoading)
     ) return;
     const startedAt = performance.now();
     const trackingKind = createKind === 'skill' ? 'skill' : 'expert_plugin';
@@ -1144,8 +1128,7 @@ export function ExtensionsMarketplace({
         setToast({ message: input.error.message, tone: 'error' });
         return;
       }
-      // Skills still use the acting Workspace until their catalog is localized.
-      const result = await importSkill(input, workspaceContext);
+      const result = await importSkill(input);
       if ('error' in result) {
         trackResourceResult({
           kind: 'skill', scope: 'personal', action: 'add', result: 'failed',
@@ -1172,56 +1155,23 @@ export function ExtensionsMarketplace({
 
   async function refresh() {
     const requestGeneration = ++marketplaceCatalogRequestGenerationRef.current;
-    const issuedReadMode = marketplaceReadModeRef.current;
-    const read = issuedReadMode === 'pending' || issuedReadMode === 'blocked'
-      ? null
-      : beginWorkspaceScopedRead(emContextRef.current);
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    const issuedIdentity = marketplaceIdentityRef.current;
     setLoading(true);
     const [rows, allRows, catalogs, skillRows] = await Promise.all([
       listPlugins(),
       listPlugins({ includeHidden: true }),
       listPluginMarketplaces(),
-      read ? fetchSkills(read.context) : Promise.resolve([]),
+      fetchSkills(),
     ]);
-    // Discard an answer for an identity the user has left. `setLoading(false)` is
-    // deliberately skipped too: a stale response is not evidence that the CURRENT
-    // identity's catalog has arrived, and the successor read the effect below
-    // guarantees for every identity change owns clearing it.
-    if (
-      marketplaceCatalogRequestGenerationRef.current !== requestGeneration
-      || currentWorkspaceAccountGeneration() !== accountGeneration
-      || marketplaceIdentityRef.current !== issuedIdentity
-      || (read !== null && !read.isStillCurrent(emContextRef.current))
-    ) return;
+    if (marketplaceCatalogRequestGenerationRef.current !== requestGeneration) return;
     setPlugins(rows);
     setAllInstalledPlugins(allRows);
     setMarketplaces(catalogs);
     setSkills(skillRows);
-    setLoadedMarketplaceIdentity(issuedIdentity);
+    setLoadedMarketplaceIdentity('daemon-local');
     setLoading(false);
   }
 
-  // `open-design:plugins-changed` re-reads on mutation. Re-registered per
-  // identity so the handler always closes over a current `refresh`.
-  const marketplaceAccountGeneration = currentWorkspaceAccountGeneration();
-  const marketplaceReadMode = workspaceContext
-    ? 'scoped'
-    : workspaceContextLoading
-      ? 'pending'
-      : workspaceContextFailure === 'unavailable'
-        ? 'blocked'
-        : 'headerless';
-  const marketplaceIdentity = JSON.stringify([
-    marketplaceAccountGeneration,
-    workspaceIdentityCacheKey(workspaceContext),
-    marketplaceReadMode,
-  ]);
-  const marketplaceIdentityRef = useRef(marketplaceIdentity);
-  marketplaceIdentityRef.current = marketplaceIdentity;
-  const marketplaceReadModeRef = useRef(marketplaceReadMode);
-  marketplaceReadModeRef.current = marketplaceReadMode;
+  const marketplaceIdentity = 'daemon-local';
   useEffect(() => {
     const onPluginsChanged = () => {
       if (isActiveRef.current) void refresh();
@@ -1230,19 +1180,8 @@ export function ExtensionsMarketplace({
     window.addEventListener('open-design:plugins-changed', onPluginsChanged);
     return () => window.removeEventListener('open-design:plugins-changed', onPluginsChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [marketplaceIdentity]);
+  }, []);
 
-  // The initial read waits for the workspace context to SETTLE. This effect used
-  // to have `[]` deps, which meant the mount closure ran with whatever context
-  // existed on the first render — `null` on a cold open, since
-  // `useWorkspaceContext` seeds from a module cache that a fresh load has not
-  // filled yet. So the marketplace asked `GET /api/skills` headerless and the
-  // daemon answered fail-closed, hiding every workspace-claimed skill; and
-  // because the deps were empty, nothing ever re-read it for the real identity.
-  //
-  // Keyed on the identity digest and guarded by a ref, so a cold mount spends
-  // exactly ONE read (once the context lands) rather than one per render, and a
-  // later workspace switch spends exactly one more.
   const refreshedIdentityRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isActive) return;
@@ -1254,7 +1193,7 @@ export function ExtensionsMarketplace({
     refreshedIdentityRef.current = marketplaceIdentity;
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, workspaceContextLoading, marketplaceIdentity, marketplaceReadMode]);
+  }, [isActive, marketplaceIdentity]);
 
   const userPlugins = useMemo(
     () => plugins.filter(isPersonalPluginRecord),
@@ -1271,13 +1210,13 @@ export function ExtensionsMarketplace({
   );
 
   async function uninstallResource(kind: MarketMode, id: string, title: string) {
-    if (uninstallingId || (kind === 'skills' && workspaceContextLoading)) return;
+    if (uninstallingId) return;
     setUninstallingId(id);
     try {
       const ok =
         kind === 'plugins'
           ? await uninstallPlugin(id)
-          : 'ok' in (await uninstallSkill(id, workspaceContext));
+          : 'ok' in (await uninstallSkill(id));
       if (!ok) {
         setToast({ message: t('pluginsView.uninstallFailed', { title }), tone: 'error' });
         return;
@@ -1728,7 +1667,6 @@ export function ExtensionsMarketplace({
                               role="menuitem"
                               disabled={
                                 uninstalling
-                                || (card.uninstall.kind === 'skills' && workspaceContextLoading)
                               }
                               onClick={() => {
                                 if (confirmUninstallId !== card.id) {
@@ -1887,8 +1825,7 @@ export function ExtensionsMarketplace({
                       type="button"
                       data-testid="plugin-create-import-url"
                       disabled={
-                        (createKind === 'skill' && workspaceContextLoading)
-                        || createBusy !== null
+                        createBusy !== null
                         || createUrl.trim().length === 0
                       }
                       onClick={() => void handleCreateImportUrl()}
@@ -1938,8 +1875,7 @@ export function ExtensionsMarketplace({
                       type="button"
                       data-testid="plugin-create-upload-folder"
                       disabled={
-                        (createKind === 'skill' && workspaceContextLoading)
-                        || createBusy !== null
+                        createBusy !== null
                         || createFolderFiles.length === 0
                       }
                       onClick={() => void handleCreateUploadFolder()}

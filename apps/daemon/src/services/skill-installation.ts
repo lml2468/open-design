@@ -49,9 +49,6 @@ export type SkillArchiveFetcher = (url: string) => Promise<{
 export interface SkillRemoteInstallOptions {
   fetcher?: SkillArchiveFetcher;
   maxBytes?: number;
-  /** Called after the archive identity is verified but before any bytes are
-   * committed under the user's skills root. */
-  allowInstallIdentity?: (identity: { id: string; slug: string }) => boolean | Promise<boolean>;
 }
 
 interface SkillSourceCandidate {
@@ -473,10 +470,6 @@ async function installSkillSourceCandidate(
     if (typeof skillRoot !== 'string') return skillRoot;
     const identity = await readSkillIdentity(skillRoot);
     if ('ok' in identity) return identity;
-    if (options.allowInstallIdentity && !await options.allowInstallIdentity(identity)) {
-      return error('CONFLICT', `A skill named "${identity.id}" belongs to another workspace member`);
-    }
-
     await mkdir(userSkillsRoot, { recursive: true });
     const installedSkills = await listSkills(userSkillsRoot);
     if (findSkillById(installedSkills, identity.id)) {

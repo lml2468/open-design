@@ -936,16 +936,12 @@ export async function _listMcpResources(
     'list_resources',
     {},
     async (baseUrl) => {
-      // Resource listings (`/api/skills`, `/api/design-systems`) are scoped
-      // the same way project/run tools are (#6569): a headerless caller reads
-      // the NO-SCOPE catalog, so claimed Personal design systems are filtered
-      // out. Resolve the signed-in workspace once and forward the headers on
-      // both listing calls so the MCP resource catalog matches what the user
-      // sees in the app. See #6770.
+      // Skills are daemon-local; Design Systems still use the active Workspace
+      // during their migration batch.
       const workspaceContext = await resolveMcpWorkspaceContext(baseUrl);
       const headers = workspaceContext?.headers;
       const [skillsData, dsData] = await Promise.all([
-        getJson<SkillsPayload>(`${baseUrl}/api/skills`, headers).catch((): SkillsPayload => ({ skills: [] })),
+        getJson<SkillsPayload>(`${baseUrl}/api/skills`).catch((): SkillsPayload => ({ skills: [] })),
         getJson<DesignSystemsPayload>(`${baseUrl}/api/design-systems`, headers).catch((): DesignSystemsPayload => ({ designSystems: [] })),
       ]);
       return ok({ skillsData, dsData });

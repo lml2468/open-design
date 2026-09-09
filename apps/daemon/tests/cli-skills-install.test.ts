@@ -129,7 +129,7 @@ describe('od skill install CLI', () => {
   it.each([
     ['install', ['install', 'github:owner/skill-repo']],
     ['uninstall', ['uninstall', 'remote-skill']],
-  ])('sends the exact workspace pair for skill %s', async (_label, command) => {
+  ])('rejects removed Workspace flags for skill %s', async (_label, command) => {
     const result = await runCli([
       'skill',
       ...command,
@@ -142,30 +142,8 @@ describe('od skill install CLI', () => {
       '--json',
     ]);
 
-    expect(result.code).toBe(0);
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.headers).toMatchObject({
-      'x-od-workspace-id': 'workspace-a',
-      'x-od-workspace-member-id': 'member-a',
-    });
-  });
-
-  it.each([
-    ['install', ['install', 'github:owner/skill-repo']],
-    ['uninstall', ['uninstall', 'remote-skill']],
-  ])('rejects an incomplete workspace pair before skill %s', async (_label, command) => {
-    const result = await runCli([
-      'skill',
-      ...command,
-      '--workspace',
-      'workspace-a',
-      '--daemon-url',
-      baseUrl,
-      '--json',
-    ]);
-
     expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain('--workspace-member');
+    expect(result.stderr).toContain('unknown flag: --workspace');
     expect(requests).toHaveLength(0);
   });
 });

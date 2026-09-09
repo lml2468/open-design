@@ -149,7 +149,7 @@ describe('POST /api/import/folder', () => {
     expect(projects.projects.map((item) => item.id)).toContain(body.project.id);
   });
 
-  it('validates an imported project skill inside the exact request workspace before inserting rows', async () => {
+  it('validates an imported project skill against the daemon-local catalog before inserting rows', async () => {
     const folder = makeFolder();
     await writeFile(path.join(folder, 'index.html'), '<!doctype html>');
     const headers = workspaceHeaders('workspace-folder-skill', 'member-folder-skill');

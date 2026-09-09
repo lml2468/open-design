@@ -488,7 +488,7 @@ describe('bootstrap route regressions', () => {
     });
     registerStaticResourceRoutes(app, {
       // Not exercised: this smoke test only hits GET example/asset routes,
-      // none of which touch the skill workspace-mutation gate that reads it.
+      // none of which touch daemon-local skill mutation paths that read it.
       db: {} as any,
       http: httpDeps,
       paths,

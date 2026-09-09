@@ -144,11 +144,9 @@ export function createDesignSystemServerServices({
   projects,
   bindProjectToWorkspace,
 }: {
-  // Only consulted by `listAllSkills` below for its optional workspace scope
-  // filter — every other service in this factory stays filesystem-only. A
-  // getter (not the db value itself) because this factory runs BEFORE
-  // server.ts opens its database connection; the closure defers the read
-  // until a request actually needs it, long after `openDatabase()` has run.
+  // Used by the Design System catalog's remaining Workspace visibility rules.
+  // A getter (not the db value itself) is required because this factory runs
+  // before server.ts opens its database connection.
   getDb?: () => Database.Database;
   roots: {
     SKILL_ROOTS: string[];
@@ -223,59 +221,17 @@ export function createDesignSystemServerServices({
     designSystem: DesignSystemSummary,
   ) => void;
 }) {
-  /**
-   * The functional-skills catalog. `workspaceId` narrows it to the
-   * user-imported skills that workspace may see (mirrors
-   * `listAllDesignSystems` below). Request and project-bound consumers pass
-   * their exact persisted scope; only true legacy/internal callers omit it.
-   *
-   * Checking `options.workspaceId === undefined` (not just falsy) matters:
-   * `GET /api/skills` always passes the key, with `null` whenever the request
-   * carries no `x-od-workspace-id` header (headerValue never returns
-   * `undefined`) — that request DID ask to be scoped, just with no identity,
-   * and must still reach `listSkills`'s workspace filter so a claimed skill is
-   * hidden from it (spec 04 §10), not silently fall through to the unscoped
-   * branch the way a plain `options.workspaceId ? … : …` truthiness check
-   * would.
-   */
-  async function listAllSkills(options: {
-    workspaceId?: string | null;
-    workspaceMemberId?: string | null;
-  } = {}) {
-    const db = getDb?.();
-    if (!db || options.workspaceId === undefined) {
-      return skills.listSkills(roots.SKILL_ROOTS);
-    }
-    const personalAndBuiltIn = await skills.listSkills(roots.SKILL_ROOTS, {
-      db,
-      workspaceId: options.workspaceId,
-      workspaceMemberId: options.workspaceMemberId ?? null,
-    });
-    return personalAndBuiltIn;
+  /** Functional skills are resolved from the daemon-local on-disk catalog. */
+  async function listAllSkills() {
+    return skills.listSkills(roots.SKILL_ROOTS);
   }
 
   async function listAllDesignTemplates() {
     return skills.listSkills(roots.DESIGN_TEMPLATE_ROOTS);
   }
 
-  async function listAllSkillLikeEntries(
-    options: {
-      workspaceId?: string | null;
-      workspaceMemberId?: string | null;
-    } = {},
-  ) {
-    if (options.workspaceId === undefined) {
-      return skills.listSkills(roots.ALL_SKILL_LIKE_ROOTS);
-    }
-    const [functional, templates] = await Promise.all([
-      listAllSkills(options),
-      listAllDesignTemplates(),
-    ]);
-    const functionalIds = new Set(functional.map((entry) => entry.id));
-    return [
-      ...functional,
-      ...templates.filter((entry) => !functionalIds.has(entry.id)),
-    ];
+  async function listAllSkillLikeEntries() {
+    return skills.listSkills(roots.ALL_SKILL_LIKE_ROOTS);
   }
 
   /**
@@ -451,10 +407,7 @@ export function createDesignSystemServerServices({
     return { ok: true, id };
   }
 
-  async function validateProjectSkillId(
-    id: unknown,
-    options: { workspaceId?: string | null } = {},
-  ) {
+  async function validateProjectSkillId(id: unknown) {
     // Same invariant as Design Systems and exact-source plugins: project
     // creation follows locally reconciled content. Team membership is checked
     // by remote install/pull/sync/share operations, not by Send. Eventual
@@ -470,7 +423,7 @@ export function createDesignSystemServerServices({
         message: 'skillId must be a string or null',
       };
     }
-    const allSkills = await listAllSkillLikeEntries(options);
+    const allSkills = await listAllSkillLikeEntries();
     const resolved = skills.findSkillById(allSkills, id);
     if (!resolved) {
       return {

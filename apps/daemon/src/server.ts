@@ -2574,9 +2574,8 @@ export async function startServer({
   }
 
   const designSystemServices = createDesignSystemServerServices({
-    // `db` (below) is not initialized yet at this point in `startServer` —
-    // pass a getter so `listAllSkills`'s workspace filter reads it lazily,
-    // once the first request that needs it actually arrives.
+    // `db` (below) is not initialized yet at this point in `startServer`.
+    // Design-system catalog scoping resolves it lazily after startup.
     getDb: () => db,
     roots: { SKILL_ROOTS, DESIGN_TEMPLATE_ROOTS, ALL_SKILL_LIKE_ROOTS },
     paths: { PROJECTS_DIR, DESIGN_SYSTEMS_DIR, USER_DESIGN_SYSTEMS_DIR },
@@ -3166,10 +3165,8 @@ export async function startServer({
    *
    * Envelope double-write (spec 9.2): `metadata.json` stays the only thing
    * `listDesignSystems`'s filter reads, but a claimed system also gets a row
-   * in the generic `workspace_resources` table — the same table plugin/skill
-   * already bind into — so design systems stop being the one resource type
-   * with zero rows there. Both writes happen from this single call site, so
-   * they can never drift apart.
+   * in the generic `workspace_resources` table. Both writes happen from this
+   * single call site, so they can never drift apart.
    */
   const reservedDesignSystemResourceIds = (): Set<string> => {
     const rows = db.prepare(
@@ -4526,7 +4523,7 @@ export async function startServer({
     workspaceMemberId?: string | null;
   } = {}) {
     const [skills, designSystems] = await Promise.all([
-      listAllSkills(options),
+      listAllSkills(),
       listAllDesignSystems(
         options.workspaceId !== undefined
           ? {
@@ -4813,17 +4810,9 @@ export async function startServer({
           allowAppDefault: project === null,
         });
     const effectiveDesignSystemId = designSystemSelection.id;
-    const skillResourceScope = projectWorkspaceId
-      ? {
-          workspaceId: projectWorkspaceId,
-          workspaceMemberId: projectCreatorMemberId || null,
-        }
-      : null;
     let allSkillsPromise: ReturnType<typeof listAllSkillLikeEntries> | null = null;
     const loadAllSkills = async () => {
-      allSkillsPromise ??= skillResourceScope
-        ? listAllSkillLikeEntries(skillResourceScope)
-        : listAllSkillLikeEntries();
+      allSkillsPromise ??= listAllSkillLikeEntries();
       return await allSkillsPromise;
     };
 
@@ -11159,13 +11148,7 @@ export async function startServer({
     // the split, but earlier projects may still point at functional-skill
     // ids for the same purpose — search both roots so a stored project id
     // keeps resolving through one or the other.
-    // This callback carries no request/project Workspace authority. It may
-    // therefore resolve app-bundled templates only; accepting a user skill
-    // here would turn an unscoped scheduler callback into a cross-member read.
-    const skills = await listAllSkillLikeEntries({
-      workspaceId: null,
-      workspaceMemberId: null,
-    });
+    const skills = await listAllSkillLikeEntries();
     const skill = findSkillById(skills, skillId);
     if (!skill || skill.source !== 'built-in' || skill.scenario !== 'orbit') return null;
     return {

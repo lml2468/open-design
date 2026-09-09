@@ -600,24 +600,8 @@ function AppInner() {
   const [providerModelsCache, setProviderModelsCache] = useState<
     Record<string, ProviderModelOption[]>
   >({});
-  // Functional skills (capabilities the agent invokes mid-task) — stays
-  // small and lives under the Settings → Skills surface.
-  const [workspaceSkills, setWorkspaceSkills] = useState<{
-    identity: string;
-    items: SkillSummary[];
-  }>(() => ({
-    identity: currentWorkspaceCatalogIdentity,
-    items: [],
-  }));
-  // A workspace-scoped response is safe to render only under the exact
-  // identity it was fetched for. The replacement read starts in an effect, so
-  // clearing in that effect would still paint one frame of A's skills under B.
-  // Derive the visible catalog during render instead: an identity mismatch is
-  // a fail-closed empty list until B's own response commits.
-  const skills =
-    workspaceSkills.identity === currentWorkspaceCatalogIdentity
-      ? workspaceSkills.items
-      : [];
+  // Functional skills are installed in one daemon-local catalog.
+  const [skills, setSkills] = useState<SkillSummary[]>([]);
   // Design templates (rendering catalogue: decks, prototypes, image/video/
   // audio templates) — sourced from /api/design-templates and shown in the
   // EntryView Templates tab. See specs/current/skills-and-design-templates.md.
@@ -638,7 +622,7 @@ function AppInner() {
   const designSystems = workspaceDesignSystems.identity === currentWorkspaceCatalogIdentity
     ? workspaceDesignSystems.items
     : [];
-  const skillsRequestGenerationRef = useRef<Map<string, number>>(new Map());
+  const skillsRequestGenerationRef = useRef(0);
   const designSystemsRequestGenerationRef = useRef<Map<string, number>>(new Map());
   const [pendingDesignSystemRevisionJobs, setPendingDesignSystemRevisionJobs] = useState<
     Record<string, DesignSystemGenerationJob>
@@ -701,13 +685,8 @@ function AppInner() {
   // view picks the right flag for whichever tab the user is currently on.
   const [agentsLoading, setAgentsLoading] = useState(true);
   const [skillsLoading, setSkillsLoading] = useState(true);
-  // Functional skills and design templates are two independent registry reads
-  // that gate ONE loader: the EntryView must not stop spinning until both have
-  // answered, or whichever tab the user is on renders an incomplete catalog as
-  // if it were final. They are now read from two different places (the boot pass
-  // reads templates; the workspace-keyed effect reads skills once the caller's
-  // identity is known), so the pair of flags lives here rather than inside one
-  // effect's closure.
+  // Functional skills and design templates are independent daemon-local
+  // registry reads that gate one EntryView loader.
   const skillRegistriesReadyRef = useRef({ functional: false, templates: false });
   const markSkillRegistryReady = useCallback((half: 'functional' | 'templates') => {
     skillRegistriesReadyRef.current[half] = true;
@@ -1407,76 +1386,16 @@ function AppInner() {
   ]);
 
   const refreshSkills = useCallback(async () => {
-    // Always scoped. `GET /api/skills` is fail-closed on a missing
-    // `x-od-workspace-id` (`skills.ts`: `if (!scopeId) return !ownerId;`), so a
-    // headerless read is not the "unfiltered" list — it is the list with every
-    // workspace-claimed skill removed, including the ones claimed by the
-    // workspace the user is actually in.
-    if (workspaceContextStateRef.current.identityChangePending) return;
-    const issuedAccountGeneration = currentWorkspaceAccountGeneration();
-    const read = beginWorkspaceScopedRead(workspaceContextRef.current);
-    const issuedCatalogIdentity = JSON.stringify([
-      'workspace-account',
-      issuedAccountGeneration,
-      workspaceIdentityCacheKey(read.context),
-    ]);
-    const requestGeneration =
-      (skillsRequestGenerationRef.current.get(issuedCatalogIdentity) ?? 0) + 1;
-    skillsRequestGenerationRef.current.set(issuedCatalogIdentity, requestGeneration);
-    const list = await fetchSkills(read.context);
-    // A read for the workspace the user has since LEFT must not restore that
-    // workspace's catalog over the current one — see `beginWorkspaceScopedRead`.
-    // Skipping the gate too is deliberate: this response is not an answer about
-    // the current identity, and the newer read that replaced it will mark it.
-    if (
-      workspaceContextStateRef.current.identityChangePending
-      || skillsRequestGenerationRef.current.get(issuedCatalogIdentity) !== requestGeneration
-      || currentWorkspaceAccountGeneration() !== issuedAccountGeneration
-      || !read.isStillCurrent(workspaceContextRef.current)
-    ) return;
-    setWorkspaceSkills({
-      identity: issuedCatalogIdentity,
-      items: list,
-    });
+    const requestGeneration = ++skillsRequestGenerationRef.current;
+    const list = await fetchSkills();
+    if (skillsRequestGenerationRef.current !== requestGeneration) return;
+    setSkills(list);
     markSkillRegistryReady('functional');
   }, [markSkillRegistryReady]);
 
-  // The skills catalog is workspace-scoped on the daemon exactly like the
-  // design-system catalog above, and needs the same workspace-keyed refresh for
-  // the same reason: the switcher lives ON the home view, so `route.kind` stays
-  // 'home' and no route change fires.
-  //
-  // It additionally waits for `workspaceContextLoading` to settle, because
-  // unlike design systems (whose scope the daemon resolves internally) this
-  // read carries the identity in REQUEST HEADERS — there is
-  // nothing correct to send until the context has resolved. Gating on it also
-  // keeps launch at exactly one `/api/skills` request: the boot pass no longer
-  // reads skills, this effect performs the first read, and a switch performs
-  // one more.
-  // Keyed on the SAME digest the commit guard compares, not just `workspaceId`.
-  // The guard discards a response whenever `workspaceIdentityCacheKey` moves —
-  // which includes member id, role, status, lifecycle and the two permission
-  // bits. A trigger that only watched `workspaceId` would therefore discard a
-  // response without starting its successor: two accounts active in the same
-  // shared team workspace differ only by membership, so A's pending read would
-  // be dropped for B while the workspace id, being unchanged, suppressed B's
-  // replacement read — leaving the functional registry loading forever on
-  // startup, or holding A's list later. "Discarded and never replaced" is a
-  // worse outcome than the staleness it replaced, so every transition that
-  // invalidates a response must also start its successor.
-  const skillsReadIdentity = currentWorkspaceCatalogIdentity;
-  const skillsReadIdentityRef = useRef<string | null>(null);
   useEffect(() => {
-    if (workspaceContextLoading || workspaceContextState.identityChangePending) return;
-    if (skillsReadIdentityRef.current === skillsReadIdentity) return;
-    skillsReadIdentityRef.current = skillsReadIdentity;
     void refreshSkills();
-  }, [
-    workspaceContextLoading,
-    workspaceContextState.identityChangePending,
-    skillsReadIdentity,
-    refreshSkills,
-  ]);
+  }, [refreshSkills]);
 
   const refreshTemplates = useCallback(async () => {
     const list = await listTemplates();
@@ -3367,9 +3286,7 @@ function AppInner() {
         onSkillsRefresh={refreshSkills}
         onSkillsChanged={handleSkillsChanged}
         onRefreshAgents={refreshAgents}
-        skillsLoading={
-          workspaceSkills.identity !== currentWorkspaceCatalogIdentity || skillsLoading
-        }
+        skillsLoading={skillsLoading}
         designSystemsLoading={
           workspaceDesignSystems.identity !== currentWorkspaceCatalogIdentity || dsLoading
         }

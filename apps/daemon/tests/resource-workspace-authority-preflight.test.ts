@@ -62,7 +62,7 @@ describe('Workspace resource mutation authority preflight', () => {
     expect(getInstalledPlugin(db, pluginId)?.id).toBe(pluginId);
   });
 
-  it('rejects a partial Skill import scope before creating its folder or binding', async () => {
+  it('ignores a partial Workspace header when importing a daemon-local Skill', async () => {
     const skillId = `partial-skill-${Date.now()}`;
     const userSkillDir = path.join(process.env.OD_DATA_DIR!, 'skills', skillId);
 
@@ -79,7 +79,7 @@ describe('Workspace resource mutation authority preflight', () => {
       }),
     });
 
-    expect(response.status).toBe(400);
-    expect(existsSync(userSkillDir)).toBe(false);
+    expect(response.status).toBe(201);
+    expect(existsSync(userSkillDir)).toBe(true);
   });
 });

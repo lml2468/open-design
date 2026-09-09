@@ -463,8 +463,8 @@ describe('persisted project Workspace transport scope', () => {
     );
     await checkDeploymentLink('project-1', 'deployment-1', workspaceA);
     await openProjectInEditor('project-1', 'vscode', workspaceA);
-    await fetchSkill('skill-1', workspaceA);
-    await fetchSkillFiles('skill-1', workspaceA);
+    await fetchSkill('skill-1');
+    await fetchSkillFiles('skill-1');
     await fetchDesignSystem('ds-1', workspaceA);
     await fetchDesignSystemFiles('ds-1', workspaceA);
     await fetchDesignSystemFile('ds-1', 'DESIGN.md', workspaceA);
@@ -495,8 +495,13 @@ describe('persisted project Workspace transport scope', () => {
     await deleteDesignSystemDraft('ds-1', workspaceA);
 
     expect(fetchMock).toHaveBeenCalledTimes(27);
-    for (const [, init] of fetchMock.mock.calls) {
-      expect(requestScope(init)).toEqual(['workspace-a', 'member-a']);
+    for (const [input, init] of fetchMock.mock.calls) {
+      const url = String(input);
+      if (url.startsWith('/api/skills/')) {
+        expect(requestScope(init)).toEqual([null, null]);
+      } else {
+        expect(requestScope(init)).toEqual(['workspace-a', 'member-a']);
+      }
     }
   });
 });

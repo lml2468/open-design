@@ -101,8 +101,7 @@ function migrate(db: SqliteDb): void {
       ON workspace_projects(workspace_id, visibility, updated_at DESC);
 
     -- The generic workspace-binding table for resource types that do NOT get
-    -- their own dedicated table (plugin today; skill / design system are
-    -- planned follow-ups — see specs/current for the phased rollout). Same
+    -- their own dedicated table (Design Systems today). Same
     -- "binding envelope" columns as workspace_projects, parameterized by
     -- resource_type so one CRUD layer (see getWorkspaceResource and friends
     -- below) and one mutation gate (collab/workspace-resource-mutation.ts)
@@ -1329,7 +1328,7 @@ const WORKSPACE_RESOURCE_SELECT_COLUMNS = `
 
 /**
  * The generic counterpart of {@link getWorkspaceProject}, parameterized by
- * `resourceType` ('plugin' | 'skill' | 'design_system' — 'project' itself
+ * `resourceType` ('design_system' — 'project' itself
  * stays on the dedicated `workspace_projects` table above). Returns null when
  * the resource is unbound OR bound to a DIFFERENT workspace than the one
  * asked about — same "wrong workspace reads as absent" contract as
@@ -1492,7 +1491,7 @@ export function deleteWorkspaceResource(
 /**
  * Delete a resource's binding row regardless of which workspace it is
  * currently bound to. Callers that delete the resource's underlying record
- * (e.g. plugin uninstall) MUST call this — there is no ON DELETE CASCADE for
+ * (e.g. Design System deletion) MUST call this — there is no ON DELETE CASCADE for
  * this table (see the table's doc comment in `migrate()`), so skipping this
  * leaves an orphan `workspace_resources` row pointing at nothing.
  */

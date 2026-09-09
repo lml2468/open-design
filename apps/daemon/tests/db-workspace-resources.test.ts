@@ -94,9 +94,9 @@ describe('workspace_resources persistence', () => {
   it('keeps two resource types with the same resource id independent', () => {
     const db = seed();
     ensureWorkspaceResource(db, 'plugin', 'ws-1', 'shared-id', { visibility: 'personal' });
-    ensureWorkspaceResource(db, 'skill', 'ws-2', 'shared-id', { visibility: 'team' });
+    ensureWorkspaceResource(db, 'design_system', 'ws-2', 'shared-id', { visibility: 'team' });
     expect(getWorkspaceResourceByResourceId(db, 'plugin', 'shared-id')).toMatchObject({ workspaceId: 'ws-1' });
-    expect(getWorkspaceResourceByResourceId(db, 'skill', 'shared-id')).toMatchObject({ workspaceId: 'ws-2' });
+    expect(getWorkspaceResourceByResourceId(db, 'design_system', 'shared-id')).toMatchObject({ workspaceId: 'ws-2' });
   });
 
   it('updates the mutable fields without disturbing the binding key', () => {

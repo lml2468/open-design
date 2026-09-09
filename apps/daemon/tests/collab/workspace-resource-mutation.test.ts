@@ -14,7 +14,7 @@ import { workspaceContextFromDirectoryItem } from '../../src/collab/vela-workspa
 // routes/project/index.ts is now a one-line delegation to this function, and
 // `tests/routes/workspace-projects.test.ts` covers the end-to-end HTTP
 // behavior for project; this file covers the shared decision logic itself so
-// a future resource type (plugin today) can trust it without re-deriving
+// the remaining Workspace-scoped resource type (design_system) can trust it without re-deriving
 // project's full HTTP suite.
 
 function fakeReq(headers: Record<string, string> = {}): any {
@@ -113,14 +113,14 @@ describe('enforceWorkspaceResourceMutation', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({});
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq(),
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-a',
+      'design_system-a',
       'delete',
     );
     expect(allowed).toBe(true);
@@ -129,18 +129,18 @@ describe('enforceWorkspaceResourceMutation', () => {
 
   it('rejects a headerless caller against a team-visibility resource', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-      'plugin-a': { workspaceId: 'ws-1', visibility: 'team', resourceState: 'active', createdByWorkspaceMemberId: 'member-owner' },
+      'design_system-a': { workspaceId: 'ws-1', visibility: 'team', resourceState: 'active', createdByWorkspaceMemberId: 'member-owner' },
     });
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq(),
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-a',
+      'design_system-a',
       'delete',
     );
     expect(allowed).toBe(false);
@@ -157,18 +157,18 @@ describe('enforceWorkspaceResourceMutation', () => {
   // should pass a headerless caller through.
   it('rejects a headerless caller against a personal-visibility (but bound) resource', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-      'plugin-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-owner' },
+      'design_system-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-owner' },
     });
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq(),
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-a',
+      'design_system-a',
       'delete',
     );
     expect(allowed).toBe(false);
@@ -179,14 +179,14 @@ describe('enforceWorkspaceResourceMutation', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({});
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq({ 'x-od-workspace-id': 'ws-1' }), // no member id
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-a',
+      'design_system-a',
       'delete',
     );
     expect(allowed).toBe(false);
@@ -195,18 +195,18 @@ describe('enforceWorkspaceResourceMutation', () => {
 
   it('allows the member who created the resource to mutate it', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-      'plugin-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
+      'design_system-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
     });
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-a', role: 'member' })),
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-a',
+      'design_system-a',
       'delete',
     );
     expect(allowed).toBe(true);
@@ -215,62 +215,62 @@ describe('enforceWorkspaceResourceMutation', () => {
 
   it('rejects a different, non-privileged member from mutating someone else\'s resource', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-      'plugin-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
+      'design_system-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
     });
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-b', role: 'member' })),
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-a',
+      'design_system-a',
       'delete',
     );
     expect(allowed).toBe(false);
     expect(calls).toEqual([{
       status: 403,
-      code: 'WORKSPACE_PLUGIN_PERMISSION_DENIED',
-      message: 'workspace plugin mutation is not allowed',
+      code: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED',
+      message: 'workspace design_system mutation is not allowed',
     }]);
   });
 
   it('does not let a privileged owner/admin mutate another member\'s Personal resource', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-      'plugin-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
+      'design_system-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
     });
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-owner', role: 'owner' })),
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-a',
+      'design_system-a',
       'delete',
     );
     expect(allowed).toBe(false);
-    expect(calls.at(-1)?.code).toBe('WORKSPACE_PLUGIN_PERMISSION_DENIED');
+    expect(calls.at(-1)?.code).toBe('WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED');
   });
 
   it('keeps the existing Team-resource admin management policy', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-      'plugin-team': { workspaceId: 'ws-1', visibility: 'team', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
+      'design_system-team': { workspaceId: 'ws-1', visibility: 'team', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
     });
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-admin', role: 'admin' })),
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-team',
+      'design_system-team',
       'delete',
     );
     expect(allowed).toBe(true);
@@ -279,49 +279,49 @@ describe('enforceWorkspaceResourceMutation', () => {
 
   it('rejects mutation of a resource bound to a different workspace than the caller\'s', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-      'plugin-a': { workspaceId: 'ws-other', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
+      'design_system-a': { workspaceId: 'ws-other', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
     });
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-a', role: 'owner' })),
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-a',
+      'design_system-a',
       'delete',
     );
     expect(allowed).toBe(false);
     expect(calls).toEqual([{
       status: 403,
-      code: 'WORKSPACE_PLUGIN_PERMISSION_DENIED',
-      message: 'workspace plugin mutation is not allowed',
+      code: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED',
+      message: 'workspace design_system mutation is not allowed',
     }]);
   });
 
   it('rejects mutation of a frozen resource even for a privileged caller', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-      'plugin-a': { workspaceId: 'ws-1', visibility: 'team', resourceState: 'frozen', createdByWorkspaceMemberId: 'member-owner' },
+      'design_system-a': { workspaceId: 'ws-1', visibility: 'team', resourceState: 'frozen', createdByWorkspaceMemberId: 'member-owner' },
     });
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-owner', role: 'owner' })),
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-a',
+      'design_system-a',
       'delete',
     );
     expect(allowed).toBe(false);
     expect(calls).toEqual([{
       status: 403,
-      code: 'WORKSPACE_PLUGIN_PERMISSION_DENIED',
-      message: 'workspace plugin mutation is not allowed',
+      code: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED',
+      message: 'workspace design_system mutation is not allowed',
     }]);
   });
 
@@ -335,18 +335,18 @@ describe('enforceWorkspaceResourceMutation', () => {
       // `getLastKnownMembership` is wired up, so the gate has only the
       // client's own claim to go on — exactly the pre-fix code path.
       const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-        'plugin-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
+        'design_system-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
       });
       const { calls, sendApiError } = spySendApiError();
       const allowed = enforceWorkspaceResourceMutation(
-        'plugin',
+        'design_system',
         fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-a', role: 'member' })),
         fakeRes(),
         sendApiError,
         getWorkspaceResource,
         getWorkspaceResourceByResourceId,
         {},
-        'plugin-a',
+        'design_system-a',
         'delete',
       );
       expect(allowed).toBe(true);
@@ -355,40 +355,40 @@ describe('enforceWorkspaceResourceMutation', () => {
 
     it('rejects the write once the daemon\'s own last-known context says the caller was removed', () => {
       const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-        'plugin-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
+        'design_system-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
       });
       const { calls, sendApiError } = spySendApiError();
       // Client headers still say "active" (stale) — the daemon's own cache
       // says this same workspace's caller has been removed.
       const getLastKnownMembership = () => ({ workspaceId: 'ws-1', memberStatus: 'removed' as const });
       const allowed = enforceWorkspaceResourceMutation(
-        'plugin',
+        'design_system',
         fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-a', role: 'member' })),
         fakeRes(),
         sendApiError,
         getWorkspaceResource,
         getWorkspaceResourceByResourceId,
         {},
-        'plugin-a',
+        'design_system-a',
         'delete',
         getLastKnownMembership,
       );
       expect(allowed).toBe(false);
       expect(calls).toEqual([{
         status: 403,
-        code: 'WORKSPACE_PLUGIN_PERMISSION_DENIED',
-        message: 'workspace plugin mutation is not allowed',
+        code: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED',
+        message: 'workspace design_system mutation is not allowed',
       }]);
     });
 
     it('does not override an already-removed header (redundant agreement)', () => {
       const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-        'plugin-a': { workspaceId: 'ws-1', visibility: 'team', resourceState: 'active', createdByWorkspaceMemberId: 'member-owner' },
+        'design_system-a': { workspaceId: 'ws-1', visibility: 'team', resourceState: 'active', createdByWorkspaceMemberId: 'member-owner' },
       });
       const { calls, sendApiError } = spySendApiError();
       const getLastKnownMembership = () => ({ workspaceId: 'ws-1', memberStatus: 'removed' as const });
       const allowed = enforceWorkspaceResourceMutation(
-        'plugin',
+        'design_system',
         fakeReq({
           ...workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-owner', role: 'owner' }),
           'x-od-workspace-member-status': 'removed',
@@ -398,33 +398,33 @@ describe('enforceWorkspaceResourceMutation', () => {
         getWorkspaceResource,
         getWorkspaceResourceByResourceId,
         {},
-        'plugin-a',
+        'design_system-a',
         'delete',
         getLastKnownMembership,
       );
       expect(allowed).toBe(false);
       expect(calls).toEqual([{
         status: 403,
-        code: 'WORKSPACE_PLUGIN_PERMISSION_DENIED',
-        message: 'workspace plugin mutation is not allowed',
+        code: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED',
+        message: 'workspace design_system mutation is not allowed',
       }]);
     });
 
     it('trusts the header when the cache has no opinion for this workspace (never queried it)', () => {
       const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-        'plugin-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
+        'design_system-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
       });
       const { calls, sendApiError } = spySendApiError();
       const getLastKnownMembership = () => null;
       const allowed = enforceWorkspaceResourceMutation(
-        'plugin',
+        'design_system',
         fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-a', role: 'member' })),
         fakeRes(),
         sendApiError,
         getWorkspaceResource,
         getWorkspaceResourceByResourceId,
         {},
-        'plugin-a',
+        'design_system-a',
         'delete',
         getLastKnownMembership,
       );
@@ -434,21 +434,21 @@ describe('enforceWorkspaceResourceMutation', () => {
 
     it('trusts the header when the cache last resolved a DIFFERENT workspace', () => {
       const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-        'plugin-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
+        'design_system-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
       });
       const { calls, sendApiError } = spySendApiError();
       // Cache holds a real "removed" fact, but for a DIFFERENT workspace than
       // the one this request is scoped to — must not leak across workspaces.
       const getLastKnownMembership = () => ({ workspaceId: 'ws-other', memberStatus: 'removed' as const });
       const allowed = enforceWorkspaceResourceMutation(
-        'plugin',
+        'design_system',
         fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-a', role: 'member' })),
         fakeRes(),
         sendApiError,
         getWorkspaceResource,
         getWorkspaceResourceByResourceId,
         {},
-        'plugin-a',
+        'design_system-a',
         'delete',
         getLastKnownMembership,
       );
@@ -459,25 +459,25 @@ describe('enforceWorkspaceResourceMutation', () => {
 
   it('reports WORKSPACE_LOCKED instead of a permission denial when the workspace itself is locked', () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-      'plugin-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
+      'design_system-a': { workspaceId: 'ws-1', visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: 'member-a' },
     });
     const { calls, sendApiError } = spySendApiError();
     const allowed = enforceWorkspaceResourceMutation(
-      'plugin',
+      'design_system',
       fakeReq(workspaceHeaders({ workspaceId: 'ws-1', memberId: 'member-a', role: 'owner', lifecycleState: 'locked' })),
       fakeRes(),
       sendApiError,
       getWorkspaceResource,
       getWorkspaceResourceByResourceId,
       {},
-      'plugin-a',
+      'design_system-a',
       'delete',
     );
     expect(allowed).toBe(false);
     expect(calls).toEqual([{
       status: 403,
       code: 'WORKSPACE_LOCKED',
-      message: 'workspace plugin mutation is not allowed',
+      message: 'workspace design_system mutation is not allowed',
     }]);
   });
 });
@@ -496,9 +496,9 @@ describe('enforceWorkspaceResourceMutation', () => {
 // client to tiptoe about WHEN it may name itself, which produced a
 // 401 WORKSPACE_CONTEXT_REQUIRED on the Home example-prompt send.
 //
-// `routes/plugins/index.ts` already ships exactly the behavior asserted below,
-// and names the rule: an unbound resource "stays outside the isolation regime
-// rather than becoming permanently un-uninstallable the moment a caller happens
+// Design System routes already ship exactly the behavior asserted below and
+// name the rule: an unbound resource "stays outside the isolation regime
+// rather than becoming permanently unavailable the moment a caller happens
 // to carry workspace headers" (the design's "no retroactive tagging" rule, which
 // design systems' `designSystemVisibleFromWorkspace` also follows). Project was
 // the one resource type that disagreed.
@@ -681,7 +681,7 @@ describe('authoritative Workspace-bound mutation regression', () => {
 
   it('re-verifies every mutation after a prior success and blocks removal or outage with zero new side effects', async () => {
     const { getWorkspaceResource, getWorkspaceResourceByResourceId } = makeLookups({
-      'plugin-a': {
+      'design_system-a': {
         workspaceId: 'workspace-a',
         visibility: 'personal',
         resourceState: 'active',
@@ -720,7 +720,7 @@ describe('authoritative Workspace-bound mutation regression', () => {
     let sideEffects = 0;
     const mutate = async () => {
       const allowed = await enforceVerifiedWorkspaceResourceMutation(
-        'plugin',
+        'design_system',
         fakeReq(workspaceHeaders({
           workspaceId: 'workspace-a',
           memberId: 'member-a',
@@ -730,7 +730,7 @@ describe('authoritative Workspace-bound mutation regression', () => {
         getWorkspaceResource,
         getWorkspaceResourceByResourceId,
         {},
-        'plugin-a',
+        'design_system-a',
         'writeFiles',
         async () => authorityResults[authorityReads++]!,
       );
@@ -793,7 +793,7 @@ describe('authoritative Personal and Team resource visibility', () => {
     const lookups = makeLookups({ resource: row });
     const errors = spySendApiError();
     const allowed = await enforceVerifiedWorkspaceResourceRead(
-      'skill',
+      'design_system',
       fakeReq(workspaceHeaders({ workspaceId: 'workspace-a', memberId, role })),
       fakeRes(),
       errors.sendApiError,
@@ -827,7 +827,7 @@ describe('authoritative Personal and Team resource visibility', () => {
         createdByWorkspaceMemberId: 'member-a',
       }, `member-${role}`, role);
       expect(result.allowed).toBe(false);
-      expect(result.errors.at(-1)?.code).toBe('WORKSPACE_SKILL_PERMISSION_DENIED');
+      expect(result.errors.at(-1)?.code).toBe('WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED');
     },
   );
 

@@ -1825,16 +1825,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
   } = {}) {
     if (ctx.pluginScope) return ctx.pluginScope.loadRegistry(options);
     const [skills, designSystems] = await Promise.all([
-      listSkills(
-        SKILLS_DIR,
-        options.workspaceId !== undefined
-          ? {
-              db,
-              workspaceId: options.workspaceId,
-              workspaceMemberId: options.workspaceMemberId ?? null,
-            }
-          : undefined,
-      ),
+      listSkills(SKILLS_DIR),
       listDesignSystems(DESIGN_SYSTEMS_DIR),
     ]);
     return {

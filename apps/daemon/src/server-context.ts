@@ -54,14 +54,9 @@ export interface ResourceDeps {
   // resolve it from this exact request's explicit Workspace/member identity,
   // never from a daemon-global active/current Workspace.
   resolveWorkspaceScope?: (req: any) => Promise<string | null>;
-  // `workspaceId` scopes user-imported skills to one workspace, same
-  // one-way "unclaimed visible everywhere, claimed elsewhere hidden" rule
-  // as `listAllDesignSystems` above. Omit it to resolve a skill by id (or
-  // compose the system prompt) from anywhere.
-  listAllSkills: (options?: {
-    workspaceId?: string | null;
-    workspaceMemberId?: string | null;
-  }) => Promise<Array<SkillInfo & { source?: string }>>;
+  // Functional skills are installed in one daemon-local catalog. Workspace
+  // membership governs Collaboration Server projects, not local skill files.
+  listAllSkills: () => Promise<Array<SkillInfo & { source?: string }>>;
   // Mirrors listAllSkills but scans DESIGN_TEMPLATE_ROOTS so the Templates
   // surface only sees rendering-catalogue entries.
   listAllDesignTemplates: () => Promise<Array<SkillInfo & { source?: string }>>;
@@ -69,10 +64,7 @@ export interface ResourceDeps {
   // resolvers (chat run system prompt, orbit template resolver,
   // /api/skills/:id/example, /api/skills/:id/assets/*) keep working when
   // a stored project.skillId points at either root.
-  listAllSkillLikeEntries: (options?: {
-    workspaceId?: string | null;
-    workspaceMemberId?: string | null;
-  }) => Promise<Array<SkillInfo & { source?: string }>>;
+  listAllSkillLikeEntries: () => Promise<Array<SkillInfo & { source?: string }>>;
   mimeFor: (filePath: string) => string;
 }
 
