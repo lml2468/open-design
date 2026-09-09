@@ -1679,7 +1679,7 @@ describe('ProjectView daemon cleanup', () => {
     );
 
     await waitFor(() =>
-      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds', null),
+      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds'),
     );
     await waitFor(() => expect(streamViaDaemon).toHaveBeenCalled());
     expect(window.sessionStorage.getItem('od:design-system-audit-auto-repair:project-ds')).toBe('1');
@@ -1771,7 +1771,7 @@ describe('ProjectView daemon cleanup', () => {
     await chatProps.onSend!('Update the design system', [], []);
 
     await waitFor(() =>
-      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds-manual', null),
+      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds-manual'),
     );
     await waitFor(() => {
       expect(saveMessage.mock.calls.some((call) =>
@@ -1854,7 +1854,7 @@ describe('ProjectView daemon cleanup', () => {
     );
 
     await waitFor(() =>
-      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds-pass', null),
+      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds-pass'),
     );
     expect(streamViaDaemon).toHaveBeenCalledTimes(1);
     expect(window.sessionStorage.getItem('od:design-system-audit-auto-repair:project-ds-pass')).toBeNull();
@@ -2306,7 +2306,6 @@ describe('ProjectView daemon cleanup', () => {
     await waitFor(() =>
       expect(fetchProjectFiles).toHaveBeenCalledWith('project-1', {
         requireAuthoritative: true,
-        workspaceContext: null,
       }),
     );
     expect(fetchChatRunStatus).not.toHaveBeenCalled();
@@ -4325,7 +4324,6 @@ describe('ProjectView daemon cleanup', () => {
       expect.objectContaining({
         artifactManifest: expect.objectContaining({ entry: 'theme.css' }),
       }),
-      null,
     );
   });
 
@@ -4424,7 +4422,6 @@ describe('ProjectView daemon cleanup', () => {
       expect.objectContaining({
         artifactManifest: expect.objectContaining({ entry: 'real-daemon-smoke.html' }),
       }),
-      null,
     );
     expect(saveTabs).not.toHaveBeenCalledWith('project-1', expect.objectContaining({ active: 'index.html' }));
   });

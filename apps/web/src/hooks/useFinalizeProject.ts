@@ -18,9 +18,7 @@ import type {
   FinalizeAnthropicRequest,
   FinalizeAnthropicResponse,
   FinalizeProviderProtocol,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
-import { workspaceProjectHeaders } from '../collab/workspace-identity';
 
 // 130 000 ms = daemon timeout (120 s) + 10 s buffer so the daemon's
 // own retry/timeout layer always wins under normal failure modes.
@@ -57,10 +55,7 @@ interface DaemonErrorEnvelope {
   };
 }
 
-export function useFinalizeProject(
-  projectId: string,
-  workspaceContext: WorkspaceCollabContext | null = null,
-): FinalizeProjectState {
+export function useFinalizeProject(projectId: string): FinalizeProjectState {
   const [status, setStatus] = useState<FinalizeStatus>('idle');
   const [error, setError] = useState<FinalizeError | null>(null);
   const [result, setResult] = useState<FinalizeAnthropicResponse | null>(null);
@@ -111,7 +106,6 @@ export function useFinalizeProject(
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
             },
             body: JSON.stringify(req),
             signal: controller.signal,
@@ -176,7 +170,7 @@ export function useFinalizeProject(
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [projectId, workspaceContext],
+    [projectId],
   );
 
   return { status, error, result, trigger, cancel };

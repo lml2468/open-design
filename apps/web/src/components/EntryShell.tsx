@@ -123,7 +123,6 @@ import type { PluginLoopSubmit } from './PluginLoopHome';
 import {
   duplicatePluginAsProject,
   patchProject,
-  resolvedWorkspaceContextForWrite,
   type PluginShareAction,
   type PluginShareProjectOutcome,
 } from '../state/projects';

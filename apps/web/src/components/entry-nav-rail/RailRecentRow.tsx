@@ -235,7 +235,7 @@ export function RailRecentRow({
       return;
     }
     try {
-      const files = await fetchProjectFiles(project.id, { workspaceContext });
+      const files = await fetchProjectFiles(project.id);
       const next = selectProjectFileCover(files);
       setProjectCoverSnapshot(snapshotKey, next);
       if (activeRef.current) setCover(next);

@@ -11,14 +11,9 @@ import type {
   Conversation,
   ProjectFile,
   ProjectFilesResponse,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { parseProvenance } from '../lib/parse-provenance';
 import { listConversations } from '../state/projects';
-import {
-  workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
-} from '../collab/workspace-identity';
 
 const DESIGN_MD = 'DESIGN.md';
 
@@ -75,7 +70,6 @@ const INITIAL: Omit<DesignMdState, 'refresh'> = {
 export function useDesignMdState(
   projectId: string,
   refreshKey: number = 0,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): DesignMdState {
   const [state, setState] = useState<Omit<DesignMdState, 'refresh'>>(INITIAL);
 
@@ -84,12 +78,7 @@ export function useDesignMdState(
       const projectIdEnc = encodeURIComponent(projectId);
       setState((prev) => ({ ...prev, loading: true, error: null }));
       try {
-        const filesResp = await fetch(`/api/projects/${projectIdEnc}/files`, {
-          signal,
-          ...(workspaceContext
-            ? { headers: workspaceProjectHeaders(workspaceContext) }
-            : {}),
-        });
+        const filesResp = await fetch(`/api/projects/${projectIdEnc}/files`, { signal });
         if (!filesResp.ok) {
           throw new Error(`GET files → HTTP ${filesResp.status}`);
         }
@@ -108,12 +97,7 @@ export function useDesignMdState(
 
         const designResp = await fetch(
           `/api/projects/${projectIdEnc}/files/${encodeURIComponent(DESIGN_MD)}`,
-          {
-            signal,
-            ...(workspaceContext
-              ? { headers: workspaceProjectHeaders(workspaceContext) }
-              : {}),
-          },
+          { signal },
         );
         if (!designResp.ok) {
           throw new Error(`GET DESIGN.md → HTTP ${designResp.status}`);
@@ -163,7 +147,7 @@ export function useDesignMdState(
     // (file-changed events, chat-turn completion) re-runs compute without
     // forcing the caller to drill `refresh()` through props. Round 7
     // (mrcfps @ useDesignMdState.ts:131).
-    [projectId, refreshKey, workspaceIdentityCacheKey(workspaceContext)],
+    [projectId, refreshKey],
   );
 
   useEffect(() => {

@@ -428,7 +428,7 @@ function ChatArtifactPreview({
   }
 
   const url = appendResourceQuery(
-    projectRawUrl(projectId, file.name, workspaceContext),
+    projectRawUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}`,
   );
   if (isRenderableSketchJson(file)) {
@@ -4421,7 +4421,7 @@ function UserMessageImpl({
                 </span>
                 {a.kind === 'image' && projectId ? (
                   <img
-                    src={projectRawUrl(projectId, a.path, workspaceContext)}
+                    src={projectRawUrl(projectId, a.path)}
                     alt={a.name}
                   />
                 ) : (

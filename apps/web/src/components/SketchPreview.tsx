@@ -88,7 +88,6 @@ export function SketchPreview({
     setPreview(null);
     void fetchProjectFileText(projectId, file.name, {
       cache: 'no-store',
-      ...(workspaceContext ? { workspaceContext } : {}),
     }).then(async (text) => {
       if (cancelled) return;
       const nextPreview = await buildSketchPreviewState(text);
@@ -99,7 +98,7 @@ export function SketchPreview({
     return () => {
       cancelled = true;
     };
-  }, [file.kind, file.name, file.mtime, projectId, workspaceContext, workspaceIdentity]);
+  }, [file.kind, file.name, file.mtime, projectId, workspaceIdentity]);
 
   const geometry = useMemo(() => {
     const resolvedItems = preview?.items ?? [];

@@ -188,7 +188,7 @@ describe('useCritiqueStream (Phase 7.2)', () => {
     expect(handles[1]!.closed).toBe(false);
   });
 
-  it('keys the live connection by full Workspace identity for the same project id', () => {
+  it('keeps the local Project connection stable when legacy Workspace context changes', () => {
     const workspaceA = teamContext('workspace-a', 'member-a');
     const workspaceB = teamContext('workspace-b', 'member-b');
     const { factory, handles } = makeFactory();
@@ -213,9 +213,8 @@ describe('useCritiqueStream (Phase 7.2)', () => {
         workspaceContext={workspaceB}
       />,
     );
-    expect(handles).toHaveLength(2);
-    expect(handles[0]!.closed).toBe(true);
-    expect(handles[1]!.workspaceContext?.workspaceId).toBe('workspace-b');
+    expect(handles).toHaveLength(1);
+    expect(handles[0]!.closed).toBe(false);
   });
 
   it('resets reducer state to idle when projectId changes (PR #1314 review)', () => {

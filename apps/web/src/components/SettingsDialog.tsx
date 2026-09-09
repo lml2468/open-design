@@ -5939,7 +5939,7 @@ export function orbitLiveArtifactHref(
   artifactId: string,
   workspaceContext: WorkspaceCollabContext | null,
 ): string {
-  return liveArtifactPreviewUrl(projectId, artifactId, 'rendered', workspaceContext);
+  return liveArtifactPreviewUrl(projectId, artifactId, 'rendered');
 }
 
 export async function persistConfigAndRunOrbit(

@@ -218,7 +218,6 @@ export function DesignsTab({
 						projectId,
 						await fetchLiveArtifacts(projectId, {
 							signal: controller.signal,
-							workspaceContext,
 						}),
 					] as const,
 		).then((entries) => {
@@ -276,7 +275,6 @@ export function DesignsTab({
 					try {
 						files = await fetchProjectFiles(project.id, {
 							signal: controller.signal,
-							workspaceContext,
 						});
 					} catch {
 						return [project.id, undefined] as const;
@@ -559,7 +557,7 @@ export function DesignsTab({
 			message: `${t("common.delete")} "${artifact.title}"?`,
 			confirmLabel: t("designs.menuDelete"),
 			onConfirm: async () => {
-				const ok = await deleteLiveArtifact(projectId, artifact.id, workspaceContext);
+				const ok = await deleteLiveArtifact(projectId, artifact.id);
 				if (!ok) return false;
 				setLiveArtifactsByProject((current) => ({
 					...current,
@@ -855,7 +853,6 @@ export function DesignsTab({
 												p.id,
 												artifact.id,
 												"rendered",
-												workspaceContext,
 											)}
 											title=""
 											loading="lazy"

@@ -833,7 +833,6 @@ export function LibrarySection({ active, onOpenProject }: Props) {
             projectId,
             undefined,
             { includeElement: true },
-            null,
           );
           if (res?.relPath) {
             attachments.push({

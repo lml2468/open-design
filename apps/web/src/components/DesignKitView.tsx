@@ -191,7 +191,7 @@ export function useBrandFonts(
         const manifest = await fetchProjectFileText(
           projectId,
           'fonts/manifest.json',
-          { cache: 'no-store', workspaceContext },
+          { cache: 'no-store' },
         );
         if (!manifest) return;
         const data = JSON.parse(manifest) as { files?: BrandFontManifestFile[] };
@@ -199,7 +199,7 @@ export function useBrandFonts(
         if (cancelled || files.length === 0) return;
         const css = files
           .map((f) => {
-            const url = projectRawUrl(projectId, `fonts/${f.file}`, workspaceContext);
+            const url = projectRawUrl(projectId, `fonts/${f.file}`);
             return [
               '@font-face {',
               `  font-family: '${f.family.replace(/'/g, '')}';`,

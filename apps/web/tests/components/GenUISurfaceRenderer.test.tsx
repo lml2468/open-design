@@ -64,7 +64,7 @@ describe('GenUISurfaceRenderer', () => {
     );
   });
 
-  it('keeps a bundled component iframe on the captured Workspace identity', () => {
+  it('keeps a bundled component iframe free of legacy Workspace query authority', () => {
     const surface: GenUISurfaceSpec = {
       id: 'review',
       kind: 'form',
@@ -93,7 +93,7 @@ describe('GenUISurfaceRenderer', () => {
 
     const src = screen.getByTestId('genui-component-iframe').getAttribute('src');
     const parsed = new URL(src ?? '', 'https://od.local');
-    expect(parsed.searchParams.get('workspaceId')).toBe('workspace-a');
-    expect(parsed.searchParams.get('workspaceMemberId')).toBe('member-a');
+    expect(parsed.searchParams.get('workspaceId')).toBeNull();
+    expect(parsed.searchParams.get('workspaceMemberId')).toBeNull();
   });
 });

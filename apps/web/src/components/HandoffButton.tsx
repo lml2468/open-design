@@ -460,7 +460,7 @@ export function HandoffButton({
     setBusy(editor.id);
     writePreferred(editor.id);
     try {
-      await openProjectInEditor(projectId, editor.id, workspaceContext);
+      await openProjectInEditor(projectId, editor.id);
       setOpen(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -613,7 +613,7 @@ export function HandoffButton({
             });
             setError(null);
             setBusy(fallbackId);
-            void openProjectInEditor(projectId, fallbackId, workspaceContext)
+            void openProjectInEditor(projectId, fallbackId)
               .catch((err) => {
                 setError(err instanceof Error ? err.message : String(err));
                 onRequestRevealInFinder?.();

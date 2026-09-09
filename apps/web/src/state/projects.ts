@@ -28,17 +28,8 @@ import type {
   ProjectPluginFolderInstallRequest,
   ProjectScenarioTaskProfile,
   TerminalSession,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { randomUUID } from '../utils/uuid';
-import {
-  workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
-} from '../collab/workspace-identity';
-import {
-  currentWorkspaceContextRequestToken,
-} from '../collab/useWorkspaceContext';
-import type { WorkspaceResourceReadIdentity } from '../collab/workspace-identity';
 import type {
   ChatMessage,
   Conversation,
@@ -56,78 +47,6 @@ export { workspaceProjectHeaders } from '../collab/workspace-identity';
 
 export function invalidateProjectList(): void {
   evictCoalescedGet('local-projects');
-}
-
-export type WorkspaceContextForWrite = {
-  context: WorkspaceCollabContext | null;
-  loading: boolean;
-  identityChangePending?: boolean;
-  failure?: 'unsupported' | 'unavailable' | 'reauth-required';
-  /**
-   * The directory-verified identity the retained `context` was resolved under,
-   * carrying the generation token it belongs to. Present on production state
-   * (`useWorkspaceContext`) whenever a last-good context is held. Used by
-   * {@link resolvedWorkspaceContextForWrite} to decide whether that retained
-   * context still belongs to the CURRENT identity generation.
-   */
-  resourceReadIdentity?: WorkspaceResourceReadIdentity | null;
-};
-
-/**
- * Whether the retained `context` still belongs to the current identity
- * generation — the signal that lets a write proceed on a last-good context
- * during a transient outage without ever letting one account's cached context
- * authorize a write after the identity changed.
- *
- * True only when the state carries a directory-verified `resourceReadIdentity`
- * whose generation matches the LIVE request token AND whose context is the same
- * identity as `state.context`. A snapshot from a retired generation (an account
- * switch bumped the token) fails this check even if `identityChangePending` in
- * the snapshot has not caught up.
- */
-function writeContextBelongsToCurrentGeneration(state: WorkspaceContextForWrite): boolean {
-  const identity = state.resourceReadIdentity;
-  if (!identity || state.context === null) return false;
-  if (identity.generation !== currentWorkspaceContextRequestToken()) return false;
-  return workspaceIdentityCacheKey(identity.context) === workspaceIdentityCacheKey(state.context);
-}
-
-export type WorkspaceContextWriteResolutionOptions = {
-  /**
-   * `unscoped` is reserved for callers whose operation is genuinely local and
-   * does not require the legacy Workspace resource authority. Remaining
-   * Workspace-owned resource writes keep the default `reject` policy.
-   */
-  unavailablePolicy?: 'reject' | 'unscoped';
-};
-
-/**
- * Preserve headerless old-daemon/anonymous compatibility, but never collapse
- * an unresolved or unavailable modern workspace authority into "anonymous".
- *
- * When the read is momentarily blocked (loading, a pending identity change, or
- * a transient `unavailable` outage) but the shell still holds a directory-
- * verified last-good context that belongs to the CURRENT identity generation,
- * that context is honored instead of throwing. Remote mutation routes still
- * re-verify authority at their network boundary. Local Project operations do
- * not use this helper. A context from a RETIRED generation (an account switch
- * bumped the token) still fails closed — that is the cross-account guard.
- */
-export function resolvedWorkspaceContextForWrite(
-  state: WorkspaceContextForWrite,
-  options: WorkspaceContextWriteResolutionOptions = {},
-): WorkspaceCollabContext | null {
-  if (
-    state.loading
-    || state.identityChangePending === true
-    || state.failure === 'unavailable'
-    || state.failure === 'reauth-required'
-  ) {
-    if (writeContextBelongsToCurrentGeneration(state)) return state.context;
-    if (options.unavailablePolicy === 'unscoped') return null;
-    throw new Error('Workspace context is unavailable. Try again when workspace sync finishes.');
-  }
-  return state.context;
 }
 
 /** A refused project delete with the daemon's stable status/code preserved. */
@@ -1508,14 +1427,6 @@ export async function installGeneratedPluginFolder(
   }
 }
 
-export interface PluginShareOutcome {
-  ok: boolean;
-  message: string;
-  url?: string;
-  log?: string[];
-  code?: string;
-}
-
 export interface PluginShareTaskStart {
   taskId: string;
   action: 'publish-github' | 'contribute-open-design';
@@ -1549,37 +1460,10 @@ export interface PluginShareTaskSnapshot {
   error?: PluginShareTaskError;
 }
 
-export async function publishGeneratedPluginToGitHub(
-  projectId: string,
-  relativePath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<PluginShareOutcome> {
-  return postGeneratedPluginShareAction(
-    projectId,
-    relativePath,
-    'publish-github',
-    workspaceContext,
-  );
-}
-
-export async function contributeGeneratedPluginToOpenDesign(
-  projectId: string,
-  relativePath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<PluginShareOutcome> {
-  return postGeneratedPluginShareAction(
-    projectId,
-    relativePath,
-    'contribute-open-design',
-    workspaceContext,
-  );
-}
-
 export async function startGeneratedPluginShareTask(
   projectId: string,
   relativePath: string,
   action: 'publish-github' | 'contribute-open-design',
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<PluginShareTaskStart> {
   const resp = await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/plugins/share-tasks`,
@@ -1587,7 +1471,6 @@ export async function startGeneratedPluginShareTask(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify({ path: relativePath, action }),
     },
@@ -1616,13 +1499,11 @@ export async function waitGeneratedPluginShareTask(
   taskId: string,
   since: number,
   timeoutMs = 25_000,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<PluginShareTaskSnapshot> {
   const resp = await fetch(`/api/plugins/share-tasks/${encodeURIComponent(taskId)}/wait`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
     },
     body: JSON.stringify({ since, timeoutMs }),
   });
@@ -1692,41 +1573,6 @@ export async function createPluginShareProject(
     return {
       ok: false,
       message: (err as Error).message,
-    };
-  }
-}
-
-async function postGeneratedPluginShareAction(
-  projectId: string,
-  relativePath: string,
-  action: 'publish-github' | 'contribute-open-design',
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<PluginShareOutcome> {
-  try {
-    const resp = await fetch(
-      `/api/projects/${encodeURIComponent(projectId)}/plugins/${action}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
-        },
-        body: JSON.stringify({ path: relativePath }),
-      },
-    );
-    const body = (await resp.json().catch(() => null)) as Partial<PluginShareOutcome> | null;
-    return {
-      ok: Boolean(resp.ok && body?.ok),
-      message: body?.message ?? (resp.ok ? 'Action finished.' : 'Plugin share action failed.'),
-      ...(body?.url ? { url: body.url } : {}),
-      ...(body?.log ? { log: body.log } : {}),
-      ...(body?.code ? { code: body.code } : {}),
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      message: (err as Error).message,
-      log: [],
     };
   }
 }

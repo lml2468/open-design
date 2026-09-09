@@ -909,7 +909,6 @@ describe('AssistantMessage question forms', () => {
       expect(deleteProjectFileMock).toHaveBeenCalledWith(
         'proj-1',
         'uploads/mood.png',
-        null,
       );
     });
     expect(send.disabled).toBe(false);
@@ -1003,12 +1002,10 @@ describe('AssistantMessage question forms', () => {
         'proj-1',
         [mood, brief],
         undefined,
-        PROJECT_A_CONTEXT,
       );
       expect(deleteProjectFileMock).toHaveBeenCalledWith(
         'proj-1',
         'uploads/mood.png',
-        PROJECT_A_CONTEXT,
       );
     });
     expect(onSubmitQuestionForm).not.toHaveBeenCalled();

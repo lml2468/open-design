@@ -17,7 +17,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it('imports into the project with its exact persisted Workspace context', async () => {
+it('imports into the local project without forwarding legacy Workspace authority', async () => {
   const contextA = workspaceContextFixture({
     workspaceId: 'workspace-a',
     workspaceMemberId: 'member-a',
@@ -64,7 +64,6 @@ it('imports into the project with its exact persisted Workspace context', async 
       'project-a',
       file,
       undefined,
-      contextA,
     );
   });
 });

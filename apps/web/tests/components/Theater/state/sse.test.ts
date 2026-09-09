@@ -121,12 +121,12 @@ describe('critique SSE connection manager (Phase 7.2)', () => {
     conn.close();
   });
 
-  it('puts the exact Workspace identity in the EventSource URL and preserves unbound compatibility', () => {
+  it('keeps the EventSource URL free of legacy Workspace query authority', () => {
     const workspaceA = teamContext('workspace-a', 'member-a');
     const scoped = critiqueEventsUrl('same-project', workspaceA);
     const parsed = new URL(scoped, 'https://od.local');
-    expect(parsed.searchParams.get('workspaceId')).toBe('workspace-a');
-    expect(parsed.searchParams.get('workspaceMemberId')).toBe('member-a');
+    expect(parsed.searchParams.get('workspaceId')).toBeNull();
+    expect(parsed.searchParams.get('workspaceMemberId')).toBeNull();
     expect(critiqueEventsUrl('same-project', null)).toBe(
       '/api/projects/same-project/events',
     );
@@ -138,7 +138,7 @@ describe('critique SSE connection manager (Phase 7.2)', () => {
     expect(StubEventSource.instances[0]!.url).toBe(scoped);
   });
 
-  it('puts the exact Workspace identity in artifact navigation URLs', () => {
+  it('keeps artifact navigation URLs free of legacy Workspace query authority', () => {
     const workspaceA = teamContext('workspace-a', 'member-a');
     const parsed = new URL(
       critiqueArtifactUrl('project-a', 'run-a', workspaceA),
@@ -147,8 +147,8 @@ describe('critique SSE connection manager (Phase 7.2)', () => {
     expect(parsed.pathname).toBe(
       '/api/projects/project-a/critique/run-a/artifact',
     );
-    expect(parsed.searchParams.get('workspaceId')).toBe('workspace-a');
-    expect(parsed.searchParams.get('workspaceMemberId')).toBe('member-a');
+    expect(parsed.searchParams.get('workspaceId')).toBeNull();
+    expect(parsed.searchParams.get('workspaceMemberId')).toBeNull();
   });
 
   it('subscribes to every CRITIQUE_SSE_EVENT_NAMES channel', () => {

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { planLostAnchorWriteBacks, type CommentAnchorResolution } from '../src/comments.js';
 import { persistCommentAnchor, persistCommentAnchors } from '../src/collab/comment-anchor-client.js';
 import type { PreviewComment } from '../src/types.js';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 const POS = { x: 10, y: 20, width: 30, height: 40 };
 
@@ -66,18 +65,6 @@ describe('persistCommentAnchor', () => {
       conversationId: 'conv',
       writeBack: { commentId: 'c1', anchorState: 'lost', lastGoodPosition: POS },
       fetch: fetchMock as unknown as typeof fetch,
-      workspaceContext: {
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-        workspaceType: 'team',
-        role: 'member',
-        memberStatus: 'active',
-        lifecycleState: 'active',
-        permissions: {
-          canShareProjects: true,
-          canWriteSyncedFiles: true,
-        },
-      } as WorkspaceCollabContext,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;

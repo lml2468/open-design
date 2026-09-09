@@ -363,7 +363,7 @@ export function brandToKit(brand: Brand, opts: BrandKitOptions): DesignKit {
   const showSystem = ready && Boolean(projectId);
   const asset = (rel: string): string | null =>
     projectId
-      ? withCacheBust(projectRawUrl(projectId, rel, opts.workspaceContext), opts.reloadKey)
+      ? withCacheBust(projectRawUrl(projectId, rel), opts.reloadKey)
       : null;
   const host = opts.host || hostnameOf(brand.sourceUrl || '');
   const imagery: KitImagery | undefined = brand.imagery
@@ -415,19 +415,19 @@ export function brandToKit(brand: Brand, opts: BrandKitOptions): DesignKit {
     system: showSystem
       ? {
           kitUrl: withCacheBust(
-            projectRawUrl(projectId!, 'system/kit.html', opts.workspaceContext),
+            projectRawUrl(projectId!, 'system/kit.html'),
             opts.reloadKey,
           ),
           kitDarkUrl: withCacheBust(
-            projectRawUrl(projectId!, 'system/kit.dark.html', opts.workspaceContext),
+            projectRawUrl(projectId!, 'system/kit.dark.html'),
             opts.reloadKey,
           ),
           tokensUrl: withCacheBust(
-            projectRawUrl(projectId!, 'system/tokens.default.json', opts.workspaceContext),
+            projectRawUrl(projectId!, 'system/tokens.default.json'),
             opts.reloadKey,
           ),
           indexUrl: withCacheBust(
-            projectRawUrl(projectId!, 'system/index.html', opts.workspaceContext),
+            projectRawUrl(projectId!, 'system/index.html'),
             opts.reloadKey,
           ),
         }
@@ -677,7 +677,7 @@ function mergeLegacyBrandLogo(
 ): DesignKit {
   if (!logo) return kit;
   const asset = (filePath: string) => withCacheBust(
-    projectRawUrl(options.projectId, filePath, options.workspaceContext),
+    projectRawUrl(options.projectId, filePath),
     options.reloadKey,
   );
   return {
@@ -746,14 +746,12 @@ export function useDesignKit(source: DesignKitSource): { kit: DesignKit | null; 
         fetchProjectFileText(projectId, 'brand.json', {
           cache: 'no-store',
           cacheBustKey: reloadKey,
-          workspaceContext,
         }),
         body != null
           ? Promise.resolve(body)
           : fetchProjectFileText(projectId, 'DESIGN.md', {
               cache: 'no-store',
               cacheBustKey: reloadKey,
-              workspaceContext,
             }),
       ]);
       if (cancelled) return;

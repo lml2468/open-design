@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 const registryMocks = vi.hoisted(() => ({
   deleteProjectFile: vi.fn(),
@@ -54,21 +53,18 @@ describe('kit-edit brand color persistence', () => {
   });
 
   it('keeps accent palette edits and seed primary tokens in sync', async () => {
-    const workspaceContext = {
-      workspaceId: 'workspace-a',
-    } as WorkspaceCollabContext;
     registryMocks.fetchProjectFileText.mockResolvedValue(
       brandJson('accent', { colorPrimary: '#FFA500', colorInfo: '#FFA500' }),
     );
 
     await expect(
-      updateBrandColor('project-1', 0, '#63fe13', workspaceContext),
+      updateBrandColor('project-1', 0, '#63fe13'),
     ).resolves.toBe(true);
 
     expect(registryMocks.fetchProjectFileText).toHaveBeenCalledWith(
       'project-1',
       'brand.json',
-      { cache: 'no-store', workspaceContext },
+      { cache: 'no-store' },
     );
     const written = lastWrittenBrand();
     expect(written.colors).toEqual([
@@ -116,18 +112,15 @@ describe('kit-edit design-system reads', () => {
     registryMocks.fetchProjectFileText.mockReset();
   });
 
-  it('reads DESIGN.md under the pinned project identity', async () => {
-    const workspaceContext = {
-      workspaceId: 'workspace-a',
-    } as WorkspaceCollabContext;
+  it('reads DESIGN.md from the local Project', async () => {
     registryMocks.fetchProjectFileText.mockResolvedValue('# Acme');
 
-    await expect(readDesignMd('project-1', workspaceContext)).resolves.toBe('# Acme');
+    await expect(readDesignMd('project-1')).resolves.toBe('# Acme');
 
     expect(registryMocks.fetchProjectFileText).toHaveBeenCalledWith(
       'project-1',
       'DESIGN.md',
-      { cache: 'no-store', workspaceContext },
+      { cache: 'no-store' },
     );
   });
 });

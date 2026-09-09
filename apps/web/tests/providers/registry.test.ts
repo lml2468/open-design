@@ -576,12 +576,12 @@ describe('fetchProjectFiles', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const initialRead = fetchProjectFiles('project-mutation-race', { workspaceContext });
+    const initialRead = fetchProjectFiles('project-mutation-race');
     await vi.waitFor(() => expect(fileListReads).toBe(1));
 
     const upload = new File(['ok'], 'fresh.html', { type: 'text/html' });
     await expect(
-      uploadProjectFiles('project-mutation-race', [upload], undefined, workspaceContext),
+      uploadProjectFiles('project-mutation-race', [upload], undefined),
     ).resolves.toMatchObject({ uploaded: [{ path: 'fresh.html' }], failed: [] });
 
     resolveStaleRead(new Response(JSON.stringify({ files: staleFiles }), { status: 200 }));
@@ -632,17 +632,17 @@ describe('fetchProjectFiles', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(fetchProjectFiles('project-event-race', { workspaceContext }))
+    await expect(fetchProjectFiles('project-event-race'))
       .resolves.toEqual(firstFiles);
-    await expect(fetchProjectFiles('project-event-race', { workspaceContext }))
+    await expect(fetchProjectFiles('project-event-race'))
       .resolves.toEqual(firstFiles);
     expect(fileListReads).toBe(1);
 
-    invalidateProjectFilesCache('project-event-race', workspaceContext);
-    const invalidatedRead = fetchProjectFiles('project-event-race', { workspaceContext });
+    invalidateProjectFilesCache('project-event-race');
+    const invalidatedRead = fetchProjectFiles('project-event-race');
     await vi.waitFor(() => expect(fileListReads).toBe(2));
 
-    invalidateProjectFilesCache('project-event-race', workspaceContext);
+    invalidateProjectFilesCache('project-event-race');
     resolveStaleRead(new Response(JSON.stringify({ files: staleFiles }), { status: 200 }));
 
     await expect(invalidatedRead).resolves.toEqual(freshFiles);
@@ -719,7 +719,6 @@ describe('writeProjectTextFileDetailed', () => {
       'preview.html',
       '<html></html>',
       undefined,
-      personalWorkspaceContext(),
     );
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -1596,25 +1595,7 @@ describe('uploadProjectFiles', () => {
     expect(result.failed[0]).toMatchObject({ name: 'c.txt' });
   });
 
-  it('ignores legacy Workspace context when uploading to a local Project', async () => {
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
-      files: [{ name: 'hello.txt', path: 'hello.txt', size: 5, originalName: 'hello.txt' }],
-    }), { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await uploadProjectFiles('project-1', [file], undefined, personalWorkspaceContext());
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/project-1/upload',
-      expect.objectContaining({
-        method: 'POST',
-        headers: {},
-      }),
-    );
-  });
-
-  it('omits workspace headers when there is no workspace context (legacy local mode)', async () => {
+  it('uploads to the local Project without authority headers', async () => {
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       files: [{ name: 'hello.txt', path: 'hello.txt', size: 5, originalName: 'hello.txt' }],

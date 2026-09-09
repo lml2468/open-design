@@ -319,7 +319,6 @@ describe('ProjectView shared-project title refresh on project-metadata-changed',
     await waitFor(() => {
       expect(mockedInvalidateProjectFilesCache).toHaveBeenCalledWith(
         project.id,
-        null,
       );
       expect(screen.getByTestId('file-workspace')).toHaveAttribute(
         'data-files-refresh-key',

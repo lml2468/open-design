@@ -1,6 +1,4 @@
 import type { AnchorWriteBack } from '../comments';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
-import { workspaceProjectHeaders } from './workspace-identity';
 
 export interface PersistCommentAnchorArgs {
   projectId: string;
@@ -8,7 +6,6 @@ export interface PersistCommentAnchorArgs {
   writeBack: AnchorWriteBack;
   fetch?: typeof fetch;
   baseUrl?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }
 
 /**
@@ -29,7 +26,6 @@ export async function persistCommentAnchor(args: PersistCommentAnchorArgs): Prom
     method: 'PATCH',
     headers: {
       'content-type': 'application/json',
-      ...(args.workspaceContext ? workspaceProjectHeaders(args.workspaceContext) : {}),
     },
     body: JSON.stringify({
       anchorState: args.writeBack.anchorState,
@@ -45,7 +41,6 @@ export interface PersistCommentAnchorsArgs {
   writeBacks: AnchorWriteBack[];
   fetch?: typeof fetch;
   baseUrl?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
   onError?: (error: unknown, writeBack: AnchorWriteBack) => void;
 }
 
@@ -59,7 +54,6 @@ export async function persistCommentAnchors(args: PersistCommentAnchorsArgs): Pr
         writeBack,
         ...(args.fetch ? { fetch: args.fetch } : {}),
         ...(args.baseUrl !== undefined ? { baseUrl: args.baseUrl } : {}),
-        ...(args.workspaceContext ? { workspaceContext: args.workspaceContext } : {}),
       });
     } catch (error) {
       args.onError?.(error, writeBack);

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildWorkspacePermissions,
@@ -134,7 +134,7 @@ describe('SketchPreview', () => {
     expect(fetchProjectFileText).toHaveBeenCalledTimes(1);
   });
 
-  it('partitions previews by the complete Workspace identity', async () => {
+  it('reuses the local Project preview when legacy Workspace context changes', async () => {
     const workspaceA = teamContext('workspace-a', 'member-a');
     const workspaceB = teamContext('workspace-b', 'member-b');
     mockedFetchProjectFileText.mockResolvedValue(JSON.stringify({
@@ -162,19 +162,15 @@ describe('SketchPreview', () => {
     rerender(
       <SketchPreview projectId="same-project" file={file} workspaceContext={workspaceB} />,
     );
-    await waitFor(() => expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await Promise.resolve();
+    });
 
-    expect(mockedFetchProjectFileText).toHaveBeenNthCalledWith(
-      1,
+    expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(1);
+    expect(mockedFetchProjectFileText).toHaveBeenCalledWith(
       'same-project',
       file.name,
-      { cache: 'no-store', workspaceContext: workspaceA },
-    );
-    expect(mockedFetchProjectFileText).toHaveBeenNthCalledWith(
-      2,
-      'same-project',
-      file.name,
-      { cache: 'no-store', workspaceContext: workspaceB },
+      { cache: 'no-store' },
     );
   });
 });

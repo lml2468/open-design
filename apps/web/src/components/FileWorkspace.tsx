@@ -1634,9 +1634,7 @@ export function FileWorkspace({
     const inFlight = { promise: null as Promise<boolean> | null };
     const promise = (async () => {
       try {
-        const text = workspaceContext
-          ? await fetchProjectFileText(projectId, file.name, { workspaceContext })
-          : await fetchProjectFileText(projectId, file.name);
+        const text = await fetchProjectFileText(projectId, file.name);
         const doc = parseSketchWorkspaceDocument(text);
         if (activeProjectIdRef.current !== projectId) return false;
         setSketches((curr) => {
@@ -1665,7 +1663,7 @@ export function FileWorkspace({
     inFlight.promise = promise;
     sketchPreloadInFlightRef.current.set(sourceKey, promise);
     return promise;
-  }, [projectId, workspaceContext]);
+  }, [projectId]);
 
   const liveArtifactEntries = useMemo(
     () => liveArtifacts.map(liveArtifactSummaryToWorkspaceEntry),
@@ -1673,16 +1671,16 @@ export function FileWorkspace({
   );
 
   const refreshProjectFolders = useCallback(async (): Promise<ProjectFolder[]> => {
-    const next = await fetchProjectFolders(projectId, workspaceContext);
+    const next = await fetchProjectFolders(projectId);
     setProjectFolders(next);
     return next;
-  }, [projectId, workspaceContext]);
+  }, [projectId]);
 
   useEffect(() => {
     let cancelled = false;
     // The synchronous clear happens during render (see projectFoldersProjectIdRef
     // above); here we only fetch the new project's folders.
-    void fetchProjectFolders(projectId, workspaceContext).then((next) => {
+    void fetchProjectFolders(projectId).then((next) => {
       if (!cancelled) setProjectFolders(next);
     });
     return () => {
@@ -2290,7 +2288,7 @@ export function FileWorkspace({
     const cohort = deriveUploadCohort(picked);
     let result: UploadProjectFilesResult;
     try {
-      result = await uploadProjectFiles(projectId, picked, uploadDir, workspaceContext);
+      result = await uploadProjectFiles(projectId, picked, uploadDir);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       setUploadError(`Upload failed for ${picked.length} file(s) (${detail}).`);
@@ -2475,7 +2473,7 @@ export function FileWorkspace({
   async function handleDelete(name: string) {
     if (viewerOnly) return; // read-only viewer of a team-shared project
     if (!confirm(t('workspace.deleteFileConfirm', { name }))) return;
-    const ok = await deleteProjectFile(projectId, name, workspaceContext);
+    const ok = await deleteProjectFile(projectId, name);
     if (ok) {
       await onRefreshFiles();
       const nextTabs = persistedTabs.filter((n) => n !== name);
@@ -2511,7 +2509,7 @@ export function FileWorkspace({
     const deleted: string[] = [];
     const failed: string[] = [];
     for (const name of names) {
-      const ok = await deleteProjectFile(projectId, name, workspaceContext);
+      const ok = await deleteProjectFile(projectId, name);
       if (ok) deleted.push(name);
       else failed.push(name);
     }
@@ -2554,7 +2552,7 @@ export function FileWorkspace({
       );
     }
 
-    const result = await renameProjectFile(projectId, oldName, nextName, workspaceContext);
+    const result = await renameProjectFile(projectId, oldName, nextName);
     const renamed = result.file;
     await onRefreshFiles();
     await refreshProjectFolders();
@@ -2631,7 +2629,6 @@ export function FileWorkspace({
       target,
       initialMarkdownDocument(target, projectKind, t),
       undefined,
-      workspaceContext,
     );
     if (!file) return;
     await onRefreshFiles();
@@ -2654,7 +2651,7 @@ export function FileWorkspace({
       const file = await writeProjectTextFile(projectId, target, content, {
         versionSource: 'manual',
         versionPrompt: pagePresetVersionPrompt(preset, t, locale),
-      }, workspaceContext);
+      });
       if (!file) {
         // Never let a failed create read as a silent no-op click.
         setLauncherToast({ message: t('workspace.pageCreateFailed'), tone: 'error' });
@@ -2810,7 +2807,7 @@ export function FileWorkspace({
     const startedAt = Date.now();
     let result: boolean | undefined;
     try {
-      const file = await writeProjectTextFile(projectId, name, text, undefined, workspaceContext);
+      const file = await writeProjectTextFile(projectId, name, text, undefined);
       const elapsed = Date.now() - startedAt;
       // Ensures saving UI shows so the button does not flicker
       if (showSaving && elapsed < 500) await new Promise((resolve) => setTimeout(resolve, 500 - elapsed));
@@ -2941,7 +2938,7 @@ export function FileWorkspace({
   ): Promise<{ fileName: string } | false> {
     const targetDir = parentDirForProjectFile(sketchName);
     const targetName = targetDir ? `${targetDir}/${imageFileName}` : imageFileName;
-    const file = await writeProjectBase64File(projectId, targetName, base64, workspaceContext);
+    const file = await writeProjectBase64File(projectId, targetName, base64);
     if (!file) {
       setUploadError(t('common.exportImageFailed'));
       return false;
@@ -4401,7 +4398,6 @@ export function FileWorkspace({
                   projectId,
                   dir,
                   { includeElement: true },
-                  workspaceContext,
                 );
                 if (res?.relPath) lastRelPath = res.relPath;
                 if (res?.elementRelPath) lastRelPath = res.elementRelPath;
@@ -4560,7 +4556,7 @@ function DesignSystemProjectPanel({
 
   const refreshKitDependencies = useCallback(async (options?: { finalizeBrand?: boolean }) => {
     if (options?.finalizeBrand && brandId) {
-      const outcome = await finalizeBrandProject(brandId, projectId, workspaceContext);
+      const outcome = await finalizeBrandProject(brandId, projectId);
       if (!outcome.ok) throw new Error(outcome.error);
     }
     setKitReloadKey((k) => k + 1);
@@ -4568,15 +4564,14 @@ function DesignSystemProjectPanel({
       Promise.resolve(onRefreshFiles()),
       Promise.resolve(onDesignSystemsRefresh?.()),
     ]);
-  }, [brandId, onDesignSystemsRefresh, onRefreshFiles, projectId, workspaceContext]);
+  }, [brandId, onDesignSystemsRefresh, onRefreshFiles, projectId]);
 
   useEffect(() => {
     let cancelled = false;
     void Promise.all([
-      readDesignMd(projectId, workspaceContext),
+      readDesignMd(projectId),
       fetchProjectFileText(projectId, 'brand.json', {
         cache: 'no-store',
-        workspaceContext,
       }),
     ]).then(([designMd, brandJson]) => {
       if (cancelled) return;
@@ -4597,7 +4592,6 @@ function DesignSystemProjectPanel({
   const { uploading: kitUploading, uploadModule: kitUploadModule } = useKitModuleUpload({
     projectId,
     title: system.title,
-    workspaceContext,
     onUploaded: (module) => {
       setKitActionBusy(`upload:${module}`);
       notifyKit('loading', t('ds.uploading'));
@@ -4628,7 +4622,7 @@ function DesignSystemProjectPanel({
       { body: nextBody },
     );
     if (!updated) throw new Error(t('ds.actionFailed'));
-    const file = await writeProjectTextFile(projectId, 'DESIGN.md', nextBody, undefined, workspaceContext);
+    const file = await writeProjectTextFile(projectId, 'DESIGN.md', nextBody, undefined);
     if (!file) throw new Error(t('ds.actionFailed'));
     setDesignMdBody(nextBody);
     await refreshKitDependencies();
@@ -4742,7 +4736,7 @@ function DesignSystemProjectPanel({
     setKitActionBusy('color');
     notifyKit('loading', t('ds.saving'));
     try {
-      const ok = await updateBrandColor(projectId, index, nextHex, workspaceContext);
+      const ok = await updateBrandColor(projectId, index, nextHex);
       if (!ok) {
         const nextBody = designMdBodyWithColor(designMdBody, kit?.colors ?? [], index, nextHex);
         await persistDesignMd(nextBody);
@@ -4774,7 +4768,7 @@ function DesignSystemProjectPanel({
     setKitActionBusy(`delete-logo:${index}`);
     notifyKitLoading(t('ds.deleteLogo'));
     try {
-      const ok = await deleteBrandLogo(projectId, index, workspaceContext);
+      const ok = await deleteBrandLogo(projectId, index);
       if (!ok) throw new Error(t('ds.actionFailed'));
       await refreshKitDependencies({ finalizeBrand: true });
       notifyKit('success', t('ds.actionDone'));
@@ -4790,7 +4784,7 @@ function DesignSystemProjectPanel({
     setKitActionBusy(`delete-image:${index}`);
     notifyKitLoading(t('ds.deleteImage', { caption: '' }).trim());
     try {
-      const ok = await deleteBrandImage(projectId, index, workspaceContext);
+      const ok = await deleteBrandImage(projectId, index);
       if (!ok) throw new Error(t('ds.actionFailed'));
       await refreshKitDependencies({ finalizeBrand: true });
       notifyKit('success', t('ds.actionDone'));
@@ -4816,7 +4810,6 @@ function DesignSystemProjectPanel({
     let cancelled = false;
     void fetchProjectFileText(projectId, manifestFileName, {
       cache: 'no-store',
-      workspaceContext,
       cacheBustKey: manifestCacheBustKey,
     }).then((text) => {
       if (cancelled) return;
@@ -7268,7 +7261,7 @@ function DesignSystemInlinePreview({
   file: ProjectFile;
 }) {
   const { workspaceContext } = useProjectCollabContext();
-  const url = projectFileUrl(projectId, file.name, workspaceContext);
+  const url = projectFileUrl(projectId, file.name);
   const [srcDoc, setSrcDoc] = useState<string | null>(null);
   const [srcDocReady, setSrcDocReady] = useState(false);
 
@@ -7280,7 +7273,6 @@ function DesignSystemInlinePreview({
     void fetchProjectFileText(projectId, file.name, {
       cache: 'no-store',
       cacheBustKey: Math.round(file.mtime),
-      workspaceContext,
     }).then(async (html) => {
       if (cancelled) return;
       if (!html) {
@@ -7298,7 +7290,6 @@ function DesignSystemInlinePreview({
         baseHref: projectRawUrl(
           projectId,
           baseDirForDesignSystemPreviewFile(file.name),
-          workspaceContext,
         ),
       }));
       setSrcDocReady(true);
@@ -7337,7 +7328,6 @@ async function inlineDesignSystemPreviewRelativeAssets(
     if (!stylesheetPath) continue;
     replacements.push(fetchProjectFileText(projectId, stylesheetPath, {
       cache: 'no-store',
-      workspaceContext,
     }).then((css) => {
       if (css == null) return null;
       const safeCss = rewriteDesignSystemPreviewCssUrls(
@@ -7414,7 +7404,7 @@ async function fetchDesignSystemPreviewRelativeText(
 ): Promise<string | null> {
   const filePath = resolveDesignSystemPreviewRelativePath(ownerFileName, assetRef);
   if (!filePath) return null;
-  return fetchProjectFileText(projectId, filePath, { cache: 'no-store', workspaceContext });
+  return fetchProjectFileText(projectId, filePath, { cache: 'no-store' });
 }
 
 type DesignSystemPreviewAssetPath = {
@@ -7458,7 +7448,7 @@ function designSystemPreviewAssetUrl(
   assetPath: DesignSystemPreviewAssetPath,
   workspaceContext?: WorkspaceCollabContext | null,
 ): string {
-  const baseUrl = projectRawUrl(projectId, assetPath.filePath, workspaceContext);
+  const baseUrl = projectRawUrl(projectId, assetPath.filePath);
   const hashIndex = assetPath.suffix.indexOf('#');
   const query = (hashIndex >= 0 ? assetPath.suffix.slice(0, hashIndex) : assetPath.suffix)
     .replace(/^\?/, '');

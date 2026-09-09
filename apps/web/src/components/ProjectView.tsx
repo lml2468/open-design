@@ -1842,10 +1842,9 @@ export function ProjectView({
         projectId: project.id,
         conversationId: activeConversationId,
         writeBacks,
-        workspaceContext: projectRunWorkspaceContext,
       });
     },
-    [project.id, activeConversationId, projectRunWorkspaceContext],
+    [project.id, activeConversationId],
   );
   const collabValue = useMemo<CollabContextValue>(
     () => ({
@@ -2030,9 +2029,8 @@ export function ProjectView({
   const designMdState = useDesignMdState(
     project.id,
     designMdRefreshKey,
-    projectRunWorkspaceContext,
   );
-  const finalize = useFinalizeProject(project.id, projectRunWorkspaceContext);
+  const finalize = useFinalizeProject(project.id);
   const terminalLauncher = useTerminalLaunch();
   const [projectActionsToast, setProjectActionsToast] = useState<{
     message: string;
@@ -2897,7 +2895,6 @@ export function ProjectView({
     let next: ProjectFile[];
     try {
       next = await fetchProjectFiles(project.id, {
-        workspaceContext: projectRunWorkspaceContextRef.current,
         requireAuthoritative: true,
         ...(options?.fresh ? { fresh: true } : {}),
       });
@@ -2942,9 +2939,7 @@ export function ProjectView({
       const cached = htmlContentCacheRef.current.get(name);
       if (cached && cached.mtime === mtime) return cached.text;
       try {
-        const text = await fetchProjectFileText(project.id, name, {
-          workspaceContext: projectRunWorkspaceContextRef.current,
-        });
+        const text = await fetchProjectFileText(project.id, name);
         htmlContentCacheRef.current.set(name, { mtime, text });
         return text;
       } catch {
@@ -2956,9 +2951,7 @@ export function ProjectView({
   );
 
   const refreshLiveArtifacts = useCallback(async (): Promise<LiveArtifactSummary[]> => {
-    const next = await fetchLiveArtifacts(project.id, {
-      workspaceContext: projectRunWorkspaceContextRef.current,
-    });
+    const next = await fetchLiveArtifacts(project.id);
     setLiveArtifacts(next);
     return next;
   }, [project.id, projectRunAuthorityKey]);
@@ -3156,7 +3149,7 @@ export function ProjectView({
             });
       const file = await writeProjectTextFile(project.id, fileName, artifactToPersist.html, {
         artifactManifest: manifest ?? undefined,
-      }, projectRunWorkspaceContext);
+      });
       if (file) {
         savedArtifactRef.current = file.name;
         bumpFilesRefresh();
@@ -3273,7 +3266,6 @@ export function ProjectView({
     // the old file snapshot.
     invalidateProjectFilesCache(
       project.id,
-      projectRunWorkspaceContextRef.current,
     );
     bumpFilesRefresh();
     // Round 7 (mrcfps): file mutations are the dominant staleness signal
@@ -3291,7 +3283,6 @@ export function ProjectView({
     const previousFiles = projectFilesRef.current;
     invalidateProjectFilesCache(
       project.id,
-      projectRunWorkspaceContextRef.current,
     );
     const nextFiles = await refreshProjectFiles({ fresh: true });
     if (
@@ -3618,7 +3609,6 @@ export function ProjectView({
       const manifestText = await fetchProjectFileText(project.id, BROWSER_PAGE_ARCHIVE_INDEX_FILE, {
         cache: 'no-store',
         cacheBustKey: Date.now(),
-        workspaceContext: projectRunWorkspaceContext,
       });
       if (!manifestText) {
         return { status: 'unavailable', message: t('chat.brandBrowserLocalSnapshotMissing') };
@@ -3639,12 +3629,10 @@ export function ProjectView({
         fetchProjectFileText(project.id, parsed.htmlFile, {
           cache: 'no-store',
           cacheBustKey: parsed.capturedAt,
-          workspaceContext: projectRunWorkspaceContext,
         }),
         fetchProjectFileText(project.id, parsed.cssFile, {
           cache: 'no-store',
           cacheBustKey: parsed.capturedAt,
-          workspaceContext: projectRunWorkspaceContext,
         }),
       ]);
       if (!html?.trim()) {
@@ -4057,7 +4045,6 @@ export function ProjectView({
           const outcome = await finalizeBrandProject(
             designSystemBrandId,
             project.id,
-            projectRunWorkspaceContext,
           );
           if (outcome.ok) {
             await Promise.all([
@@ -4104,7 +4091,6 @@ export function ProjectView({
         }
         const audit = await fetchProjectDesignSystemPackageAudit(
           project.id,
-          projectRunWorkspaceContext,
         );
         if (!audit) return;
         const auditSummary = summarizeDesignSystemPackageAudit(audit);
@@ -4208,7 +4194,6 @@ export function ProjectView({
           project.id,
           images,
           undefined,
-          projectRunWorkspaceContext,
         );
         if (result.uploaded.length !== images.length) {
           setProjectActionsToast({
@@ -7451,7 +7436,6 @@ export function ProjectView({
           projectFiles,
           {
             omitNativeImageAttachments: usesAnthropicProxy(config),
-            workspaceContext: projectRunWorkspaceContext,
           },
         );
         // Session-dimension hints on the BYOK-OpenCode path too, so
@@ -7946,7 +7930,6 @@ export function ProjectView({
           project.id,
           images,
           undefined,
-          projectRunWorkspaceContext,
         );
         if (result.uploaded.length !== images.length) {
           return { status: 'rejected', commentIds: [] };
@@ -8031,7 +8014,6 @@ export function ProjectView({
   const handlePluginFolderAgentAction = useCallback(
     async (relativePath: string, action: PluginFolderAgentAction) => {
       if (currentConversationActionDisabled || !activeConversationId) return;
-      const pluginWorkflowWorkspaceContext = projectRunWorkspaceContext;
       setHiddenAssistantPluginActionPaths((prev) => new Set(prev).add(relativePath));
       if (action === 'install') {
         setActivePluginActionPaths((prev) => new Set(prev).add(relativePath));
@@ -8065,7 +8047,6 @@ export function ProjectView({
           project.id,
           relativePath,
           shareAction,
-          pluginWorkflowWorkspaceContext,
         );
       } catch (error) {
         setActivePluginActionPaths((prev) => {
@@ -8129,7 +8110,6 @@ export function ProjectView({
             taskStart.taskId,
             since,
             25_000,
-            pluginWorkflowWorkspaceContext,
           );
           since = snapshot.nextSince;
           if (snapshot.progress.length > 0) {
@@ -8283,7 +8263,6 @@ export function ProjectView({
       currentConversationActionDisabled,
       pluginWorkflowAgentName,
       project.id,
-      projectRunWorkspaceContext,
       replaceConversationMessage,
     ],
   );

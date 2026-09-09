@@ -73,7 +73,6 @@ describe('DesignKitView iframe sandboxing', () => {
         '/api/projects/project-team/raw/fonts/manifest.json',
         {
           cache: 'no-store',
-          headers: {},
         },
       );
       expect(document.head.querySelector('style[data-brand-fonts="project-team"]')?.textContent)

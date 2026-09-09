@@ -895,7 +895,7 @@ export function markdownImageSourceUrl(
     ? normalizeMarkdownProjectPath(trimmed.slice(1))
     : normalizeMarkdownProjectPath(`${markdownDirectory(markdownPath)}/${trimmed}`);
   return relativePath
-    ? projectFileUrl(projectId, relativePath, workspaceContext)
+    ? projectFileUrl(projectId, relativePath)
     : null;
 }
 
@@ -2070,13 +2070,12 @@ export function LiveArtifactViewer({
           ? `Live artifact created: ${liveArtifactEvent.title}`
           : `Live artifact updated: ${liveArtifactEvent.title}`,
       );
-      void fetchLiveArtifact(projectId, liveArtifact.artifactId, workspaceContext).then((next) => {
+      void fetchLiveArtifact(projectId, liveArtifact.artifactId).then((next) => {
         if (next) setDetail(next);
       });
       void fetchLiveArtifactRefreshes(
         projectId,
         liveArtifact.artifactId,
-        workspaceContext,
       ).then(setRefreshHistory);
       setReloadKey((n) => n + 1);
       continue;
@@ -2099,13 +2098,12 @@ export function LiveArtifactViewer({
           error: liveArtifactEvent.error ?? undefined,
         }),
       );
-      void fetchLiveArtifact(projectId, liveArtifact.artifactId, workspaceContext).then((next) => {
+      void fetchLiveArtifact(projectId, liveArtifact.artifactId).then((next) => {
         if (next) setDetail(next);
       });
       void fetchLiveArtifactRefreshes(
         projectId,
         liveArtifact.artifactId,
-        workspaceContext,
       ).then(setRefreshHistory);
       continue;
     }
@@ -2123,13 +2121,12 @@ export function LiveArtifactViewer({
     } else {
       setRefreshError(t('liveArtifact.refresh.noSourceTitle'));
     }
-    void fetchLiveArtifact(projectId, liveArtifact.artifactId, workspaceContext).then((next) => {
+    void fetchLiveArtifact(projectId, liveArtifact.artifactId).then((next) => {
       if (next) setDetail(next);
     });
     void fetchLiveArtifactRefreshes(
       projectId,
       liveArtifact.artifactId,
-      workspaceContext,
     ).then(setRefreshHistory);
     setReloadKey((n) => n + 1);
     }
@@ -2139,7 +2136,7 @@ export function LiveArtifactViewer({
     let cancelled = false;
     setLoading(true);
     setDetail(null);
-    void fetchLiveArtifact(projectId, liveArtifact.artifactId, workspaceContext).then((next) => {
+    void fetchLiveArtifact(projectId, liveArtifact.artifactId).then((next) => {
       if (cancelled) return;
       setDetail(next);
       setLoading(false);
@@ -2147,7 +2144,6 @@ export function LiveArtifactViewer({
     void fetchLiveArtifactRefreshes(
       projectId,
       liveArtifact.artifactId,
-      workspaceContext,
     ).then((next) => {
       if (!cancelled) setRefreshHistory(next);
     });
@@ -2158,7 +2154,7 @@ export function LiveArtifactViewer({
 
   const previewUrl = useMemo(
     () => appendResourceQuery(
-      liveArtifactPreviewUrl(projectId, liveArtifact.artifactId, 'rendered', workspaceContext),
+      liveArtifactPreviewUrl(projectId, liveArtifact.artifactId, 'rendered'),
       `v=${reloadKey}`,
     ),
     [projectId, liveArtifact.artifactId, reloadKey, workspaceContext],
@@ -2191,13 +2187,11 @@ export function LiveArtifactViewer({
       const result = await refreshLiveArtifact(
         projectId,
         liveArtifact.artifactId,
-        workspaceContext,
       );
       setDetail(result.artifact);
       void fetchLiveArtifactRefreshes(
         projectId,
         liveArtifact.artifactId,
-        workspaceContext,
       ).then(setRefreshHistory);
       setReloadKey((n) => n + 1);
       setRefreshEvents((prev) =>
@@ -2242,7 +2236,7 @@ export function LiveArtifactViewer({
     setPresentMenuOpen(false);
     if (typeof window === 'undefined') return;
     window.open(
-      liveArtifactPreviewUrl(projectId, liveArtifact.artifactId, 'rendered', workspaceContext),
+      liveArtifactPreviewUrl(projectId, liveArtifact.artifactId, 'rendered'),
       '_blank',
       'noopener,noreferrer',
     );
@@ -2402,7 +2396,6 @@ export function LiveArtifactViewer({
                 projectId,
                 liveArtifact.artifactId,
                 'rendered',
-                workspaceContext,
               )}
               target="_blank"
               rel="noreferrer noopener"
@@ -2579,7 +2572,7 @@ function LiveArtifactCodePanel({
     setLoading(true);
     setFailed(false);
     setCode(null);
-    void fetchLiveArtifactCode(projectId, artifactId, variant, workspaceContext).then((next) => {
+    void fetchLiveArtifactCode(projectId, artifactId, variant).then((next) => {
       if (cancelled) return;
       setCode(next);
       setFailed(next == null);
@@ -3189,14 +3182,14 @@ function FileActions({
     <div className="viewer-toolbar-actions">
       <a
         className="ghost-link"
-        href={projectFileUrl(projectId, file.name, workspaceContext)}
+        href={projectFileUrl(projectId, file.name)}
         download={file.name}
       >
         {t('fileViewer.download')}
       </a>
       <a
         className="ghost-link"
-        href={projectFileUrl(projectId, file.name, workspaceContext)}
+        href={projectFileUrl(projectId, file.name)}
         target="_blank"
         rel="noreferrer noopener"
       >
@@ -3274,7 +3267,7 @@ export function fileVersionPreviewOptions(
 ) {
   return {
     deck: sourceLooksLikeDeckPreview(source),
-    baseHref: projectRawUrl(projectId, baseDirFor(fileName), workspaceContext),
+    baseHref: projectRawUrl(projectId, baseDirFor(fileName)),
   };
 }
 
@@ -3520,7 +3513,6 @@ function FileVersionManagerModal({
       projectId,
       file.name,
       versionId,
-      workspaceContext,
     )
       .then((result) => {
         if (result) contentCacheRef.current.set(versionId, result.content);
@@ -3536,7 +3528,7 @@ function FileVersionManagerModal({
   const loadVersions = useCallback(async (preferredId?: string | null) => {
     setLoading(true);
     setError(null);
-    const result = await fetchProjectFileVersions(projectId, file.name, workspaceContext);
+    const result = await fetchProjectFileVersions(projectId, file.name);
     if (!result) {
       setError(tRef.current('fileViewer.versions.loadFailed'));
       setLoading(false);
@@ -3901,7 +3893,6 @@ function FileVersionManagerModal({
         projectId,
         file.name,
         selectedVersion,
-        workspaceContext,
       );
       if (!result) {
         fireRestoreResult('failed', 'restore_request_failed');
@@ -4753,7 +4744,7 @@ export function CommentSidePanel({
               {projectId && comment.attachments && comment.attachments.length > 0 ? (
                 <div className="comment-side-attachments">
                   {comment.attachments.map((attachment) => {
-                    const url = projectRawUrl(projectId, attachment.path, null);
+                    const url = projectRawUrl(projectId, attachment.path);
                     return (
                       <a
                         key={attachment.path}
@@ -6385,7 +6376,7 @@ function ReactComponentViewer({
   useEffect(() => {
     setSource(null);
     let cancelled = false;
-    void fetchProjectFileText(projectId, file.name, { workspaceContext }).then((text) => {
+    void fetchProjectFileText(projectId, file.name).then((text) => {
       if (!cancelled) setSource(text ?? '');
     });
     return () => {
@@ -6401,16 +6392,14 @@ function ReactComponentViewer({
     let cancelled = false;
     void (async () => {
       try {
-        const files = await fetchProjectFiles(projectId, { workspaceContext });
+        const files = await fetchProjectFiles(projectId);
         const htmlNames = files
           .filter((entry) => /\.html?$/i.test(entry.name))
           .map((entry) => entry.name);
         const htmlSources = new Map<string, string>();
         await Promise.all(
           htmlNames.map(async (name) => {
-            const text = await fetchProjectFileText(projectId, name, {
-              workspaceContext,
-            }).catch(() => null);
+            const text = await fetchProjectFileText(projectId, name).catch(() => null);
             if (text != null) htmlSources.set(name, text);
           }),
         );
@@ -6676,7 +6665,7 @@ function DocumentPreviewViewer({
     let cancelled = false;
     setLoading(true);
     setPreview(null);
-    void fetchProjectFilePreview(projectId, file.name, workspaceContext).then((next) => {
+    void fetchProjectFilePreview(projectId, file.name).then((next) => {
       if (!cancelled) {
         setPreview(next);
         setLoading(false);
@@ -8474,7 +8463,7 @@ function HtmlViewer({
   ) {
     const requestSeq = ++deployProviderLoadSeqRef.current;
     setDeployProviderId(providerId);
-    const deployments = await fetchProjectDeployments(projectId, workspaceContext);
+    const deployments = await fetchProjectDeployments(projectId);
     const nextDeploymentsByProvider = deploymentMapForCurrentFile(deployments);
     const exactDeployment = nextDeploymentsByProvider[providerId] ?? null;
     const fallbackDeployment = options?.fallbackToExisting
@@ -8709,14 +8698,12 @@ function HtmlViewer({
         ? fetchProjectFileTextPreview(projectId, file.name, {
           limit: HTML_ROUTING_TEXT_PREVIEW_LIMIT,
           cacheBustKey,
-          workspaceContext,
         }).then(async (preview) => {
           const previewText = preview?.text ?? null;
           if (previewTextNeedsFullSourceForSafeInline(previewText)) {
             const fullText = await fetchProjectFileText(projectId, file.name, {
               cache: 'no-store',
               cacheBustKey,
-              workspaceContext,
             });
             if (fullText !== null) {
               return {
@@ -8735,7 +8722,6 @@ function HtmlViewer({
       : fetchProjectFileText(projectId, file.name, {
           cache: 'no-store',
           cacheBustKey,
-          workspaceContext,
         }).then((text) => ({
         text,
         poweredPreviewRequired: false,
@@ -8842,7 +8828,7 @@ function HtmlViewer({
     setDeployError(null);
     setCopiedDeployLink(null);
     setDeployPhase('idle');
-    void fetchProjectDeployments(projectId, workspaceContext).then((items) => {
+    void fetchProjectDeployments(projectId).then((items) => {
       if (cancelled || deploymentsLoadSeqRef.current !== requestSeq) return;
       const nextDeploymentsByProvider = deploymentMapForCurrentFile(items);
       const current = nextDeploymentsByProvider[deployProviderId] ?? null;
@@ -8864,7 +8850,7 @@ function HtmlViewer({
     if (!deployMenuOpen) return;
     const requestSeq = ++deploymentsLoadSeqRef.current;
     let cancelled = false;
-    void fetchProjectDeployments(projectId, workspaceContext).then((items) => {
+    void fetchProjectDeployments(projectId).then((items) => {
       if (cancelled || deploymentsLoadSeqRef.current !== requestSeq) return;
       const nextDeploymentsByProvider = deploymentMapForCurrentFile(items);
       const current = nextDeploymentsByProvider[deployProviderId] ?? null;
@@ -9157,7 +9143,7 @@ function HtmlViewer({
     // project. Aborting on cleanup lets a fresh mount issue a fresh read.
     const controller = new AbortController();
     setProjectFilePathSet(null);
-    void fetchProjectFiles(projectId, { workspaceContext, signal: controller.signal })
+    void fetchProjectFiles(projectId, { signal: controller.signal })
       .then((files) => {
         if (!controller.signal.aborted) {
           setProjectFilePathSet(new Set(files.map((entry) => entry.name)));
@@ -9203,7 +9189,7 @@ function HtmlViewer({
         try {
           const resp = await fetch(
             appendResourceQuery(
-              projectRawUrl(projectId, assetPath, workspaceContext),
+              projectRawUrl(projectId, assetPath),
               `previewAssetCheck=${encodeURIComponent(cacheBust)}`,
             ),
             workspaceContext
@@ -9502,7 +9488,7 @@ function HtmlViewer({
   ]);
   const basePreviewSrcUrl = useMemo(
     () => appendResourceQuery(
-      projectRawUrl(projectId, file.name, workspaceContext),
+      projectRawUrl(projectId, file.name),
       `v=${Math.round(file.mtime)}&r=${reloadKey}&${previewBridgeQuery}`,
     ),
     [projectId, file.name, file.mtime, previewBridgeQuery, reloadKey, workspaceContext],
@@ -9853,7 +9839,7 @@ function HtmlViewer({
   ]);
 
   const srcDocBaseSeedHref = effectiveScopedSrcDocPreviewBase?.href
-    ?? previewRuntimeUrl(projectRawUrl(projectId, baseDirFor(file.name), workspaceContext));
+    ?? previewRuntimeUrl(projectRawUrl(projectId, baseDirFor(file.name)));
   const srcDocBaseSelectionIdentity = [
     srcDocPreviewBaseIdentity,
     sourceSnapshotRefreshKey,
@@ -12393,7 +12379,7 @@ function HtmlViewer({
         versionSource: 'manual',
         versionLabel: label,
         ...(parentVersionId ? { parentVersionId } : {}),
-      }, workspaceContext);
+      });
       if (!saved.ok) {
         const status = 'status' in saved ? saved.status : undefined;
         const code = 'code' in saved ? saved.code : undefined;
@@ -12485,7 +12471,6 @@ function HtmlViewer({
     const persisted = await fetchProjectFileText(projectId, file.name, {
       cache: 'no-store',
       cacheBustKey: Date.now(),
-      workspaceContext,
     });
     if (persisted == null || persisted === expectedSource) return true;
     setSource(persisted);
@@ -12541,7 +12526,7 @@ function HtmlViewer({
         versionSource: 'manual',
         versionLabel: `Undo ${latest.label}`,
         ...(parentVersionId ? { parentVersionId } : {}),
-      }, workspaceContext);
+      });
       if (!saved.ok) {
         setManualEditError(describeManualEditSaveFailure('Could not save the undo result', saved));
         finish('failed', 'save_failed');
@@ -12605,7 +12590,7 @@ function HtmlViewer({
         versionSource: 'manual',
         versionLabel: `Redo ${latest.label}`,
         ...(parentVersionId ? { parentVersionId } : {}),
-      }, workspaceContext);
+      });
       if (!saved.ok) {
         setManualEditError(describeManualEditSaveFailure('Could not save the redo result', saved));
         finish('failed', 'save_failed');
@@ -12762,7 +12747,7 @@ function HtmlViewer({
     try {
       const saved = await writeProjectTextFile(projectId, file.name, nextSource, {
         artifactManifest: file.artifactManifest,
-      }, workspaceContext);
+      });
       if (!saved) throw new Error('speaker_notes_save_failed');
       setSource(nextSource);
       sourceRef.current = nextSource;
@@ -12917,7 +12902,7 @@ function HtmlViewer({
       const saved = await writeProjectTextFileDetailed(projectId, file.name, next, {
         versionSource: 'manual',
         versionLabel: t('fileViewer.edit'),
-      }, workspaceContext);
+      });
       if (!saved.ok) {
         throw new Error(saved.message || `Save failed (${saved.status ?? ''})`);
       }
@@ -13493,7 +13478,6 @@ function HtmlViewer({
         deployProviderId,
         cloudflarePagesSelection,
         deployProviderId === CLOUDFLARE_PAGES_PROVIDER_ID ? deployTarget : undefined,
-        workspaceContext,
       );
       setDeploymentsByProvider((current) => ({
         ...current,
@@ -13542,7 +13526,7 @@ function HtmlViewer({
     setDeployError(null);
     setDeployPhase('preparing-link');
     try {
-      const next = await checkDeploymentLink(projectId, current.id, workspaceContext);
+      const next = await checkDeploymentLink(projectId, current.id);
       setDeploymentsByProvider((items) => ({
         ...items,
         [next.providerId]: next,
@@ -15012,7 +14996,7 @@ function HtmlViewer({
         : { top: 12, right: 12, width: 320 }}
       onFloatingPositionChange={selectedManualEditTarget ? setManualEditPanelPosition : undefined}
       onPickImage={async (pickedFile) => {
-        const result = await uploadProjectFiles(projectId, [pickedFile], undefined, workspaceContext);
+        const result = await uploadProjectFiles(projectId, [pickedFile], undefined);
         const uploaded = result.uploaded[0];
         if (!uploaded?.path) {
           setManualEditError(result.error ?? t('manualEdit.uploadImageFailed'));
@@ -15098,7 +15082,7 @@ function HtmlViewer({
       images={boardImagePreviews}
       existingImages={
         activeComposerAttachments.map((attachment) => ({
-          url: projectRawUrl(projectId, attachment.path, workspaceContext),
+          url: projectRawUrl(projectId, attachment.path),
           name: attachment.name,
         }))
       }
@@ -17491,7 +17475,7 @@ async function inlineRelativeAssets(
   workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string> {
   const toRawUrl = (projectPath: string) =>
-    projectRawUrl(projectId, projectPath, workspaceContext);
+    projectRawUrl(projectId, projectPath);
   // Root-relative project asset refs (confirmed against the real file list)
   // become owner-relative first, so the stylesheet/script inlining below and
   // the srcDoc <base href> rebasing treat them like any other relative ref.
@@ -17565,7 +17549,7 @@ async function fetchProjectRelativeText(
   if (!filePath) return null;
   try {
     const resp = await fetch(
-      projectRawUrl(projectId, filePath, workspaceContext),
+      projectRawUrl(projectId, filePath),
       workspaceContext
         ? { headers: workspaceProjectHeaders(workspaceContext) }
         : undefined,
@@ -17615,7 +17599,7 @@ function ImageViewer({
   const t = useT();
   const { workspaceContext } = useProjectCollabContext();
   const url = appendResourceQuery(
-    projectFileUrl(projectId, file.name, workspaceContext),
+    projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}`,
   );
   return (
@@ -17631,14 +17615,14 @@ function ImageViewer({
         <div className="viewer-toolbar-actions">
           <a
             className="ghost-link"
-            href={projectFileUrl(projectId, file.name, workspaceContext)}
+            href={projectFileUrl(projectId, file.name)}
             download={file.name}
           >
             {t('fileViewer.download')}
           </a>
           <a
             className="ghost-link"
-            href={projectFileUrl(projectId, file.name, workspaceContext)}
+            href={projectFileUrl(projectId, file.name)}
             target="_blank"
             rel="noreferrer noopener"
           >
@@ -17694,7 +17678,7 @@ function VideoViewer({
   const t = useT();
   const { workspaceContext } = useProjectCollabContext();
   const url = appendResourceQuery(
-    projectFileUrl(projectId, file.name, workspaceContext),
+    projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}`,
   );
   return (
@@ -17724,7 +17708,7 @@ function AudioViewer({
   const t = useT();
   const { workspaceContext } = useProjectCollabContext();
   const url = appendResourceQuery(
-    projectFileUrl(projectId, file.name, workspaceContext),
+    projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}`,
   );
   return (
@@ -17771,7 +17755,7 @@ export function SvgViewer({
   const [sourceError, setSourceError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const url = appendResourceQuery(
-    projectFileUrl(projectId, file.name, workspaceContext),
+    projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}&r=${reloadKey}`,
   );
 
@@ -17784,7 +17768,6 @@ export function SvgViewer({
     void fetchProjectFileText(projectId, file.name, {
       cache: 'no-store',
       cacheBustKey: `${Math.round(file.mtime)}-${reloadKey}`,
-      workspaceContext,
     }).then((next) => {
       if (cancelled) return;
       if (next === null) {
@@ -17847,14 +17830,14 @@ export function SvgViewer({
           </button>
           <a
             className="ghost-link"
-            href={projectFileUrl(projectId, file.name, workspaceContext)}
+            href={projectFileUrl(projectId, file.name)}
             download={file.name}
           >
             {t('fileViewer.download')}
           </a>
           <a
             className="ghost-link"
-            href={projectFileUrl(projectId, file.name, workspaceContext)}
+            href={projectFileUrl(projectId, file.name)}
             target="_blank"
             rel="noreferrer noopener"
           >
@@ -17900,7 +17883,7 @@ function TextViewer({
   useEffect(() => {
     setText(null);
     let cancelled = false;
-    void fetchProjectFileText(projectId, file.name, { workspaceContext }).then((t) => {
+    void fetchProjectFileText(projectId, file.name).then((t) => {
       if (!cancelled) setText(t ?? '');
     });
     return () => {
@@ -18179,7 +18162,7 @@ function MarkdownViewer({
       copyBlockTimerRef.current = null;
     }
     let cancelled = false;
-    void fetchProjectFileText(projectId, file.name, { workspaceContext }).then((next) => {
+    void fetchProjectFileText(projectId, file.name).then((next) => {
       if (cancelled) return;
       if (
         loadedFileKeyRef.current === markdownFileKey &&
@@ -18257,7 +18240,7 @@ function MarkdownViewer({
         const showSaving = saveOptions.showSaving !== false;
         if (showSaving) setSaveState('saving');
         try {
-          const saved = await writeProjectTextFile(projectId, file.name, nextValue, undefined, workspaceContext);
+          const saved = await writeProjectTextFile(projectId, file.name, nextValue, undefined);
           if (!saved) throw new Error('write failed');
           lastSavedTextRef.current = nextValue;
           bumpSavedRevision((n) => n + 1);
@@ -18376,7 +18359,7 @@ function MarkdownViewer({
       const images = files.filter((item) => isMarkdownImageFile(item));
       if (images.length === 0) return false;
       const targetDir = markdownDirectory(file.name);
-      const result = await uploadProjectFiles(projectId, images, targetDir, workspaceContext);
+      const result = await uploadProjectFiles(projectId, images, targetDir);
       if (result.uploaded.length > 0) {
         await onFileSaved?.();
         const snippet = result.uploaded

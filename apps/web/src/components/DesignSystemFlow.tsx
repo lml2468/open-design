@@ -2092,7 +2092,7 @@ export function DesignSystemDetailView({
     const nextBody = body;
     const updated = await savePatch({ body: nextBody });
     if (updated && workspaceProjectId) {
-      await writeProjectTextFile(workspaceProjectId, 'DESIGN.md', nextBody, undefined, workspaceContext);
+      await writeProjectTextFile(workspaceProjectId, 'DESIGN.md', nextBody, undefined);
       try {
         await refreshWorkspaceProjectFiles(workspaceProjectId);
       } catch {
@@ -2220,7 +2220,6 @@ export function DesignSystemDetailView({
     try {
       next = workspaceContext
         ? await fetchProjectFiles(projectId, {
-            workspaceContext,
             fresh: options?.fresh,
             requireAuthoritative: true,
           })
@@ -2578,7 +2577,6 @@ export function DesignSystemDetailView({
               void syncDesignSystemAssetsFromWorkspace();
               const audit = await fetchProjectDesignSystemPackageAudit(
                 projectId,
-                workspaceContext,
               );
               const auditSummary = audit ? summarizeDesignSystemPackageAudit(audit) : null;
               if (auditSummary) {
@@ -4500,7 +4498,6 @@ async function prepareCreatedDesignSystemProject({
         stagedAssets,
       }),
       undefined,
-      workspaceContext,
     );
     const metadata = mergeLinkedCodeFolders(project.metadata, state.codeFolders);
     const prompt = buildCreationAgentPrompt(
@@ -5277,7 +5274,7 @@ async function stageLocalCodeFiles(
   const uploadedPaths: string[] = [];
   for (const file of selected) {
     const desiredName = `${LOCAL_CODE_UPLOAD_ROOT}/${localCodeRelativePath(file)}`;
-    const uploaded = await uploadProjectFile(projectId, file, desiredName, workspaceContext);
+    const uploaded = await uploadProjectFile(projectId, file, desiredName);
     if (uploaded) {
       uploadedPaths.push(uploaded.name);
     }
@@ -5308,7 +5305,6 @@ async function stageFigmaFiles(
       projectId,
       file,
       selected.length > 1 ? { subdir: `figma-${base}` } : undefined,
-      workspaceContext,
     );
     if (outcome.ok) {
       summaryPaths.push(outcome.result.contextPath);
@@ -5333,7 +5329,7 @@ async function stageAssetFiles(
   const uploadedPaths: string[] = [];
   for (const file of selected) {
     const desiredName = `${ASSET_UPLOAD_ROOT}/${resourceRelativePath(file)}`;
-    const uploaded = await uploadProjectFile(projectId, file, desiredName, workspaceContext);
+    const uploaded = await uploadProjectFile(projectId, file, desiredName);
     if (uploaded) {
       uploadedPaths.push(uploaded.name);
     }

@@ -143,7 +143,6 @@ describe('DesignSystemPreviewModal layering', () => {
       expect(projectRawUrlMock).toHaveBeenCalledWith(
         'project-clay',
         'logos/mark.svg',
-        PROJECT_WORKSPACE_CONTEXT,
       );
     });
   });

@@ -396,7 +396,6 @@ describe('FileWorkspace design-system project surface', () => {
       'DESIGN.md',
       expect.stringContaining('`#FF6A3D`'),
       undefined,
-      null,
     ));
 
     await flushKit();
@@ -420,7 +419,6 @@ describe('FileWorkspace design-system project surface', () => {
       'DESIGN.md',
       expect.stringContaining('`#10B981`'),
       undefined,
-      null,
     ));
   });
 
@@ -524,7 +522,6 @@ describe('FileWorkspace design-system project surface', () => {
       'brand.json',
       expect.stringContaining('"hex": "#FF6A3D"'),
       undefined,
-      null,
     ));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       '/api/brands/brand-acme/finalize',
@@ -632,12 +629,10 @@ describe('FileWorkspace design-system project surface', () => {
       'brand.json',
       expect.not.stringContaining('imagery/hero.png'),
       undefined,
-      null,
     ));
     expect(registryMocks.deleteProjectFile).toHaveBeenCalledWith(
       'ds-acme',
       'imagery/hero.png',
-      null,
     );
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/brands/brand-acme/finalize',

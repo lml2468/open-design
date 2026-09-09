@@ -181,22 +181,22 @@ describe('FileViewer markdown code block copy', () => {
     });
   });
 
-  it('partitions source snapshots by every Workspace authority field', () => {
+  it('uses one local Project source snapshot scope', () => {
     const initial = fileViewerSourceAuthorizationScopeKey(false, teamWorkspaceContext());
 
     expect(fileViewerSourceAuthorizationScopeKey(false, teamWorkspaceContext({
       role: 'admin',
-    }))).not.toBe(initial);
+    }))).toBe(initial);
     expect(fileViewerSourceAuthorizationScopeKey(false, teamWorkspaceContext({
       memberStatus: 'removed',
-    }))).not.toBe(initial);
+    }))).toBe(initial);
     expect(fileViewerSourceAuthorizationScopeKey(false, teamWorkspaceContext({
       permissions: {
         ...teamWorkspaceContext().permissions,
         canShareProjects: true,
         canWriteSyncedFiles: false,
       },
-    }))).not.toBe(initial);
+    }))).toBe(initial);
     expect(fileViewerSourceAuthorizationScopeKey(true, teamWorkspaceContext())).toBeNull();
     expect(fileViewerSourceAuthorizationScopeKey(false, null)).toBe('local');
   });
@@ -251,7 +251,6 @@ describe('FileViewer markdown code block copy', () => {
         'notes.md',
         'changed before close',
         undefined,
-        null,
       );
     });
   });
@@ -309,7 +308,6 @@ describe('FileViewer markdown code block copy', () => {
       'notes.md',
       'initial draft',
       undefined,
-      null,
     );
     expect(onFileSaved).not.toHaveBeenCalled();
     expect(screen.queryByText('Saving...')).toBeNull();
@@ -357,7 +355,6 @@ describe('FileViewer markdown code block copy', () => {
       'document.md',
       '# Document\n\nDraft',
       undefined,
-      null,
     );
     expect(onFileSaved).not.toHaveBeenCalled();
     expect(screen.getByRole('textbox')).toBe(editor);
@@ -389,7 +386,6 @@ describe('FileViewer markdown code block copy', () => {
       'notes.md',
       'initial draft',
       undefined,
-      null,
     );
 
     await act(async () => {

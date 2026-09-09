@@ -1893,7 +1893,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       const cohort = deriveUploadCohort(files);
       const orderStart = reserveAttachmentOrders(files.length);
       try {
-        const result = await uploadProjectFiles(id, files, undefined, workspaceContext);
+        const result = await uploadProjectFiles(id, files, undefined);
         if (result.uploaded.length > 0) {
           const orderedUploaded = assignChatAttachmentOrders(result.uploaded, orderStart);
           appendOrderedStagedAttachments(orderedUploaded);
@@ -1959,7 +1959,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
             id,
             undefined,
             undefined,
-            workspaceContext,
           );
           if (!res?.relPath) {
             failed += 1;
@@ -2051,7 +2050,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 return;
               }
               setUploading(true);
-              const result = await uploadProjectFiles(id, annotationFiles, undefined, workspaceContext);
+              const result = await uploadProjectFiles(id, annotationFiles, undefined);
               if (result.uploaded.length > 0) {
                 uploaded = assignChatAttachmentOrders(result.uploaded, orderStart);
               }
@@ -3777,7 +3776,7 @@ function StagedRunContexts({
   // new line only when the row fills) instead of forcing a separate row below.
   const [preview, setPreview] = useState<ChatAttachment | null>(null);
   const previewUrl = preview && projectId
-    ? projectRawUrl(projectId, preview.path, workspaceContext)
+    ? projectRawUrl(projectId, preview.path)
     : null;
   useEffect(() => {
     if (!preview) return;
@@ -3936,7 +3935,7 @@ function StagedRunContexts({
       {attachments.map((a, index) => {
         const canPreview = a.kind === 'image' && Boolean(projectId);
         const imageUrl = canPreview
-          ? projectRawUrl(projectId!, a.path, workspaceContext)
+          ? projectRawUrl(projectId!, a.path)
           : null;
         return (
           <div

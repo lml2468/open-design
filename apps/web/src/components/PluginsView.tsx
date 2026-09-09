@@ -55,7 +55,6 @@ import {
   listPlugins,
   refreshPluginMarketplace,
   removePluginMarketplace,
-  resolvedWorkspaceContextForWrite,
   setPluginMarketplaceTrust,
   uninstallPlugin,
   type PluginInstallOutcome,

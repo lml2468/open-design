@@ -91,7 +91,6 @@ export function FigmaImportModal({
       projectId,
       file,
       notes ? { notes } : undefined,
-      workspaceContext,
     );
     if (!outcome.ok) {
       setStatus('error');

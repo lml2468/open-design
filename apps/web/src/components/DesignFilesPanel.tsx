@@ -1135,7 +1135,7 @@ export function DesignFilesPanel({
     const isSelected = selected.has(f.name);
     const openLabel = `${t('designFiles.previewOpen')} ${f.name}`;
     const src = appendResourceQuery(
-      projectRawUrl(projectId, f.name, workspaceContext),
+      projectRawUrl(projectId, f.name),
       `v=${Math.round(f.mtime)}`,
     );
     return (
@@ -1820,7 +1820,7 @@ export function DesignFilesPanel({
               : t('designFiles.copyLocalPath')}
           </button>
           <a
-            href={projectFileUrl(projectId, menuPos.name, workspaceContext)}
+            href={projectFileUrl(projectId, menuPos.name)}
             download={menuPos.name}
             style={{ textDecoration: 'none' }}
           >
@@ -1928,7 +1928,7 @@ function HtmlCardThumbnail({
     workspaceContextLoading,
   } = useProjectCollabContext();
   const tooLargeForThumbnail = file.size > HTML_THUMBNAIL_INLINE_MAX_BYTES;
-  const url = projectFileUrl(projectId, file.name, workspaceContext);
+  const url = projectFileUrl(projectId, file.name);
   const authorizationScopeKey = workspaceContextLoading
     ? null
     : workspaceContext
@@ -1946,7 +1946,6 @@ function HtmlCardThumbnail({
   const baseHref = projectRawUrl(
     projectId,
     baseDirForFile(file.name),
-    workspaceContext,
   );
   const [srcDoc, setSrcDoc] = useState<string | null>(() => {
     if (!thumbnailIdentity) return null;

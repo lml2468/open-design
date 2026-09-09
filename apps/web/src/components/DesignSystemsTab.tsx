@@ -946,7 +946,6 @@ function useProjectLogoSrc(
     setSrc(undefined);
     void fetchProjectFileText(projectId, 'brand.json', {
       cache: 'no-store',
-      workspaceContext: read.context,
     }).then((raw) => {
       if (cancelled || !read.isStillCurrent(resourceReadIdentityRef.current)) return;
       let primary: string | null = null;
@@ -959,7 +958,7 @@ function useProjectLogoSrc(
           // Not a valid brand.json (e.g. a non-brand "Create"d system) — no logo.
         }
       }
-      setSrc(primary ? projectRawUrl(projectId, primary, read.context) : null);
+      setSrc(primary ? projectRawUrl(projectId, primary) : null);
     });
     return () => {
       cancelled = true;

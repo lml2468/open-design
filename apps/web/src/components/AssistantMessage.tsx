@@ -2285,7 +2285,7 @@ function ProducedFiles({
               ) : null}
               <a
                 className="ghost-link"
-                href={projectFileUrl(projectId, f.name, workspaceContext)}
+                href={projectFileUrl(projectId, f.name)}
                 download={f.name}
                 onClick={(event) => event.stopPropagation()}
               >
@@ -2941,7 +2941,7 @@ function FormBlock({
     if (!projectId) return false;
     const deleted = await Promise.all(
       pending.map((attachment) =>
-        deleteProjectFile(projectId, attachment.path, workspaceContext),
+        deleteProjectFile(projectId, attachment.path),
       ),
     );
     pendingUploadCleanupRef.current = pending.filter((_, index) => !deleted[index]);
@@ -3004,7 +3004,6 @@ function FormBlock({
           projectId,
           flatFiles.map((entry) => entry.file),
           undefined,
-          workspaceContext,
         ).catch((error) => ({
           uploaded: [],
           failed: flatFiles.map((entry) => ({

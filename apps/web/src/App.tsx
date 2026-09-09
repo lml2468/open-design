@@ -145,7 +145,6 @@ import {
   deleteTemplate,
   duplicatePluginAsProject,
   patchProject,
-  resolvedWorkspaceContextForWrite,
 } from './state/projects';
 import { useModalWindowDragGuard } from './hooks/useModalWindowDragGuard';
 import { resumeThumbnailLoads, suspendThumbnailLoads } from './lib/thumbnail-load-gate';

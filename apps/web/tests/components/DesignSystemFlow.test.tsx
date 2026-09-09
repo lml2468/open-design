@@ -1459,21 +1459,18 @@ describe('DesignSystemCreationFlow', () => {
       'context/source-context.md',
       expect.stringContaining('/Users/qingyu/work/comfyui'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('## Local Folder Intake Runbook'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('tools connectors local-design-context --path'),
       undefined,
-      null,
     );
   });
 
@@ -1534,7 +1531,6 @@ describe('DesignSystemCreationFlow', () => {
       project.id,
       tokenFile,
       'context/local-code/comfyui/src/tokens.css',
-      null,
     );
     expect(mocks.patchProject).toHaveBeenCalledWith(
       project.id,
@@ -1547,7 +1543,6 @@ describe('DesignSystemCreationFlow', () => {
       'context/source-context.md',
       expect.stringContaining('context/local-code/comfyui/src/tokens.css'),
       undefined,
-      null,
     );
     expect(window.sessionStorage.getItem(`od:auto-send-first:${project.id}`)).toBe('1');
     expect(window.sessionStorage.getItem(`od:auto-send-prompt:${project.id}`)).toContain(
@@ -1822,20 +1817,17 @@ describe('DesignSystemCreationFlow', () => {
       project.id,
       tokenFile,
       'context/local-code/comfyui/src/tokens.css',
-      null,
     );
     expect(mocks.uploadProjectFile).toHaveBeenCalledWith(
       project.id,
       buttonFile,
       'context/local-code/comfyui/src/Button.tsx',
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('context/local-code/comfyui/src/Button.tsx'),
       undefined,
-      null,
     );
   });
 
@@ -1902,7 +1894,6 @@ describe('DesignSystemCreationFlow', () => {
       'context/source-context.md',
       expect.stringContaining('figma/DESIGN-context.md'),
       undefined,
-      null,
     );
     expect(mocks.patchProject).toHaveBeenCalledWith(
       project.id,
@@ -1968,14 +1959,13 @@ describe('DesignSystemCreationFlow', () => {
     confirmExtraction();
 
     await waitFor(() => expect(mocks.uploadProjectFile).toHaveBeenCalledTimes(2));
-    expect(mocks.uploadProjectFile).toHaveBeenCalledWith(project.id, logoFile, 'assets/logo.svg', null);
-    expect(mocks.uploadProjectFile).toHaveBeenCalledWith(project.id, fontFile, 'assets/brand.woff2', null);
+    expect(mocks.uploadProjectFile).toHaveBeenCalledWith(project.id, logoFile, 'assets/logo.svg');
+    expect(mocks.uploadProjectFile).toHaveBeenCalledWith(project.id, fontFile, 'assets/brand.woff2');
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('assets/logo.svg'),
       undefined,
-      null,
     );
     expect(mocks.patchProject).toHaveBeenCalledWith(
       project.id,
@@ -2424,28 +2414,24 @@ describe('DesignSystemCreationFlow', () => {
       'context/source-context.md',
       expect.stringContaining('Connector status: connected as qiongyu1999.'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('https://github.com/nexu-io/open-design'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('GitHub Connector Intake Runbook'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('"$OD_NODE_BIN" "$OD_BIN" tools connectors github-design-context --repo \'https://github.com/nexu-io/open-design\' --output context/github/nexu-io-open-design.md'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).not.toHaveBeenCalledWith(
       project.id,
@@ -2475,7 +2461,6 @@ describe('DesignSystemCreationFlow', () => {
       'context/source-context.md',
       expect.stringContaining('GitHub evidence must come from the bounded `github-design-context` command'),
       undefined,
-      null,
     );
     expect(mocks.patchProject).toHaveBeenCalledWith(
       project.id,
@@ -2500,42 +2485,36 @@ describe('DesignSystemCreationFlow', () => {
       'context/source-context.md',
       expect.stringContaining('assets/, build/, fonts/, and context/ should preserve logos'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('Claude-style build asset contract:'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('copy representative runtime assets there with their original filenames'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('Copy those runtime assets byte-for-byte from the captured `context/.../files/...` snapshots.'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('Do not satisfy build/runtime icon evidence by only renaming those files into `assets/`'),
       undefined,
-      null,
     );
     expect(mocks.writeProjectTextFile).toHaveBeenCalledWith(
       project.id,
       'context/source-context.md',
       expect.stringContaining('preview/brand-assets.html should visibly reference preserved files'),
       undefined,
-      null,
     );
   });
 
@@ -3057,7 +3036,7 @@ describe('DesignSystemDetailView', () => {
     fireEvent.click(screen.getByTestId('design-system-chat-send'));
 
     await waitFor(() =>
-      expect(mocks.fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith(project.id, null),
+      expect(mocks.fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith(project.id),
     );
     await waitFor(() =>
       expect(screen.getAllByText(/Package audit found 1 error/).length).toBeGreaterThan(0),

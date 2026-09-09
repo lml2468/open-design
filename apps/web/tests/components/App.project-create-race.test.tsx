@@ -1645,7 +1645,6 @@ describe('App project creation routing', () => {
     // Both target the same project id, and the working-dir handoff is ordered
     // strictly before the upload so the files land in the final tree.
     expect(mockedUploadProjectFiles.mock.calls[0]?.[0]).toBe('project-new');
-    expect(mockedUploadProjectFiles.mock.calls[0]?.[3]).toBeUndefined();
     const replaceOrder = mockedReplaceProjectWorkingDir.mock.invocationCallOrder[0]!;
     const uploadOrder = mockedUploadProjectFiles.mock.invocationCallOrder[0]!;
     expect(replaceOrder).toBeLessThan(uploadOrder);

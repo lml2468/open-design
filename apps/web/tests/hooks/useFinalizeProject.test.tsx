@@ -2,7 +2,6 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 import {
   messageForCode,
@@ -34,19 +33,6 @@ const SUCCESS_BODY = {
   transcriptMessageCount: 12,
   designSystemId: 'alphatrace',
 };
-
-const WORKSPACE_CONTEXT = {
-  workspaceId: 'workspace-team',
-  workspaceType: 'team',
-  workspaceMemberId: 'member-owner',
-  role: 'owner',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  permissions: {
-    canShareProjects: true,
-    canWriteSyncedFiles: true,
-  },
-} as WorkspaceCollabContext;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -83,21 +69,6 @@ describe('useFinalizeProject', () => {
     expect((init as RequestInit).headers).toMatchObject({
       'Content-Type': 'application/json',
     });
-  });
-
-  it('keeps finalize requests local when a legacy Workspace context is supplied', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(SUCCESS_BODY));
-    const { result } = renderHook(() => useFinalizeProject('p1', WORKSPACE_CONTEXT));
-
-    await act(async () => {
-      await result.current.trigger(REQUEST);
-    });
-
-    const [, init] = fetchSpy.mock.calls[0]!;
-    const headers = new Headers(init?.headers);
-    expect(headers.get('content-type')).toBe('application/json');
-    expect(headers.has('x-od-workspace-id')).toBe(false);
-    expect(headers.has('x-od-workspace-member-id')).toBe(false);
   });
 
   it('routes provider-aware requests to the matching finalize endpoint', async () => {

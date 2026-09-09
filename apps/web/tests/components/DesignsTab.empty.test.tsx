@@ -120,7 +120,7 @@ describe('DesignsTab empty state', () => {
     expect(screen.queryByRole('button', { name: 'New project' })).toBeNull();
   });
 
-  it('scopes browser-owned project cover URLs to the exact Workspace identity', () => {
+  it('keeps browser-owned project cover URLs local', () => {
     const { container } = render(
       <DesignsTab
         projects={[
@@ -145,8 +145,10 @@ describe('DesignsTab empty state', () => {
     );
 
     const src = container.querySelector('.design-card-thumb img')?.getAttribute('src');
-    expect(src).toContain('workspaceId=workspace-designs');
-    expect(src).toContain('workspaceMemberId=member-designs');
+    expect(src).toContain('/api/projects/project-cover/files/cover.png');
+    expect(src).toContain('v=2');
+    expect(src).not.toContain('workspaceId');
+    expect(src).not.toContain('workspaceMemberId');
   });
 
   it('renders No projects match your search when projects exist but query filters them out', () => {
@@ -228,10 +230,7 @@ describe('DesignsTab empty state', () => {
     expect(fetchProjectFiles).toHaveBeenCalledWith(
       'project-reopen',
       expect.objectContaining({
-        workspaceContext: expect.objectContaining({
-          workspaceId: 'workspace-designs',
-          workspaceMemberId: 'member-designs',
-        }),
+        signal: expect.any(AbortSignal),
       }),
     );
     expect(liveSignal).toBeDefined();
