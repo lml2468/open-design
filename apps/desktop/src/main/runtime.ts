@@ -555,22 +555,6 @@ export async function pickAndImportFolder(
         headers: {
           "Content-Type": "application/json",
           [DESKTOP_IMPORT_TOKEN_HEADER]: headerValue,
-          ...(deps.init?.workspaceContext
-            ? {
-                "x-od-workspace-id": deps.init.workspaceContext.workspaceId,
-                "x-od-workspace-type": deps.init.workspaceContext.workspaceType,
-                "x-od-workspace-member-id": deps.init.workspaceContext.workspaceMemberId,
-                "x-od-workspace-role": deps.init.workspaceContext.role,
-                "x-od-workspace-lifecycle-state": deps.init.workspaceContext.lifecycleState,
-                "x-od-workspace-member-status": deps.init.workspaceContext.memberStatus,
-                "x-od-workspace-can-share-projects": String(
-                  deps.init.workspaceContext.permissions.canShareProjects,
-                ),
-                "x-od-workspace-can-write-synced-files": String(
-                  deps.init.workspaceContext.permissions.canWriteSyncedFiles,
-                ),
-              }
-            : {}),
         },
         method: "POST",
       });

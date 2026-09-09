@@ -8,14 +8,6 @@ vi.mock('@open-design/host', () => ({
   pickAndImportHostProject: vi.fn(),
 }));
 
-vi.mock('../../src/collab/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => ({
-    context: null,
-    failure: 'unavailable',
-    loading: false,
-  }),
-}));
-
 import { pickAndImportHostProject } from '@open-design/host';
 import { useOpenFolderImport } from '../../src/components/useOpenFolderImport';
 
@@ -25,19 +17,29 @@ afterEach(() => {
 });
 
 describe('useOpenFolderImport', () => {
-  it('surfaces an unavailable workspace authority through the existing import error state', async () => {
+  it('imports through the host without subscribing to Workspace authority', async () => {
+    const response = {
+      conversationId: 'conversation-host',
+      entryFile: 'index.html',
+      ok: true,
+      projectId: 'project-host',
+    } as const;
+    vi.mocked(pickAndImportHostProject).mockResolvedValue(response);
+    const onImportFolderResponse = vi.fn();
     const hook = renderHook(() => useOpenFolderImport({
-      onImportFolderResponse: vi.fn(),
+      skillId: 'prototype-skill',
+      onImportFolderResponse,
     }));
 
     await act(async () => {
       await hook.result.current.openFolder();
     });
 
-    expect(pickAndImportHostProject).not.toHaveBeenCalled();
-    expect(hook.result.current.error).toEqual({
-      message: 'Workspace context is unavailable. Try again when workspace sync finishes.',
+    expect(pickAndImportHostProject).toHaveBeenCalledWith({
+      skillId: 'prototype-skill',
     });
+    expect(onImportFolderResponse).toHaveBeenCalledWith(response);
+    expect(hook.result.current.error).toBeNull();
     expect(hook.result.current.importing).toBe(false);
   });
 });
