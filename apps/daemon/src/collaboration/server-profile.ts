@@ -10,10 +10,10 @@ import {
   type CollaborationServerState,
 } from '@open-design/contracts';
 
-type StoredSession = CollaborationRemoteSession & { accessExpiresAt: number };
-type StoredState = {
+export type CollaborationStoredSession = CollaborationRemoteSession & { accessExpiresAt: number };
+export type CollaborationStoredState = {
   profile?: CollaborationServerProfile;
-  session?: StoredSession;
+  session?: CollaborationStoredSession;
 };
 
 const writeLocks = new Map<string, Promise<unknown>>();
@@ -33,7 +33,7 @@ async function withLock<T>(dataDir: string, operation: () => Promise<T>): Promis
   }
 }
 
-async function readStoredState(dataDir: string): Promise<StoredState> {
+async function readStoredState(dataDir: string): Promise<CollaborationStoredState> {
   try {
     return sanitizeStoredState(JSON.parse(await readFile(stateFile(dataDir), 'utf8')));
   } catch (error) {
@@ -43,12 +43,12 @@ async function readStoredState(dataDir: string): Promise<StoredState> {
   }
 }
 
-function sanitizeStoredState(raw: unknown): StoredState {
+function sanitizeStoredState(raw: unknown): CollaborationStoredState {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const source = raw as Record<string, unknown>;
   const profile = CollaborationServerProfileSchema.safeParse(source.profile);
   const sessionSource = source.session;
-  let session: StoredSession | undefined;
+  let session: CollaborationStoredSession | undefined;
   if (sessionSource && typeof sessionSource === 'object' && !Array.isArray(sessionSource)) {
     const { accessExpiresAt, ...remoteSessionSource } = sessionSource as Record<string, unknown>;
     const remoteSession = CollaborationRemoteSessionSchema.safeParse(remoteSessionSource);
@@ -67,7 +67,7 @@ function sanitizeStoredState(raw: unknown): StoredState {
   };
 }
 
-async function writeStoredState(dataDir: string, state: StoredState): Promise<void> {
+async function writeStoredState(dataDir: string, state: CollaborationStoredState): Promise<void> {
   await mkdir(dataDir, { recursive: true });
   const file = stateFile(dataDir);
   const temporary = `${file}.${randomBytes(4).toString('hex')}.tmp`;
@@ -84,7 +84,7 @@ async function writeStoredState(dataDir: string, state: StoredState): Promise<vo
   }
 }
 
-function publicState(state: StoredState): CollaborationServerState {
+function publicState(state: CollaborationStoredState): CollaborationServerState {
   return {
     profile: state.profile ?? null,
     session: state.session
@@ -100,7 +100,7 @@ export class CollaborationServerProfileStore {
     return publicState(await readStoredState(this.dataDir));
   }
 
-  async readCredentials(): Promise<StoredState> {
+  async readCredentials(): Promise<CollaborationStoredState> {
     return readStoredState(this.dataDir);
   }
 
@@ -117,7 +117,7 @@ export class CollaborationServerProfileStore {
         capabilities: CollaborationServerCapabilitiesSchema.parse(input.capabilities),
         checkedAt: input.checkedAt,
       });
-      const next: StoredState = {
+      const next: CollaborationStoredState = {
         profile,
         ...(current.profile?.origin === profile.origin && current.session
           ? { session: current.session }
@@ -132,7 +132,7 @@ export class CollaborationServerProfileStore {
     return withLock(this.dataDir, async () => {
       const current = await readStoredState(this.dataDir);
       if (!current.profile) throw new Error('Collaboration Server is not configured');
-      const next: StoredState = {
+      const next: CollaborationStoredState = {
         profile: current.profile,
         session: {
           ...session,
@@ -147,9 +147,27 @@ export class CollaborationServerProfileStore {
   async clearSession(): Promise<CollaborationServerState> {
     return withLock(this.dataDir, async () => {
       const current = await readStoredState(this.dataDir);
-      const next: StoredState = current.profile ? { profile: current.profile } : {};
+      const next: CollaborationStoredState = current.profile ? { profile: current.profile } : {};
       await writeStoredState(this.dataDir, next);
       return publicState(next);
+    });
+  }
+
+  async clearSessionIfMatches(input: {
+    sessionId: string;
+    refreshToken: string;
+  }): Promise<boolean> {
+    return withLock(this.dataDir, async () => {
+      const current = await readStoredState(this.dataDir);
+      if (
+        current.session?.sessionId !== input.sessionId
+        || current.session.refreshToken !== input.refreshToken
+      ) {
+        return false;
+      }
+      const next: CollaborationStoredState = current.profile ? { profile: current.profile } : {};
+      await writeStoredState(this.dataDir, next);
+      return true;
     });
   }
 }

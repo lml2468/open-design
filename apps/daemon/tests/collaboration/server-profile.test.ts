@@ -52,6 +52,30 @@ describe('CollaborationServerProfileStore', () => {
     });
     expect((await store.readPublicState()).session).toBeNull();
   });
+
+  it('clears a revoked session only when both session and refresh token still match', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'od-collaboration-profile-'));
+    roots.push(root);
+    const store = new CollaborationServerProfileStore(root);
+    await store.setProfile({
+      origin: 'https://design.example.test',
+      capabilities: capabilities(),
+      checkedAt: '2026-09-06T10:00:00.000Z',
+    });
+    await store.setSession(session());
+
+    expect(await store.clearSessionIfMatches({
+      sessionId: 'ses_1',
+      refreshToken: 'stale-refresh-token',
+    })).toBe(false);
+    expect((await store.readPublicState()).session?.sessionId).toBe('ses_1');
+
+    expect(await store.clearSessionIfMatches({
+      sessionId: 'ses_1',
+      refreshToken: session().refreshToken,
+    })).toBe(true);
+    expect((await store.readPublicState()).session).toBeNull();
+  });
 });
 
 function capabilities() {

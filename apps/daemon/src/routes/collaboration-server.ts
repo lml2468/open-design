@@ -41,7 +41,16 @@ import {
   CollaborationServerRequestError,
   normalizeCollaborationServerOrigin,
 } from '../collaboration/server-client.js';
-import { CollaborationServerProfileStore } from '../collaboration/server-profile.js';
+import {
+  CollaborationServerProfileStore,
+  type CollaborationStoredSession,
+  type CollaborationStoredState,
+} from '../collaboration/server-profile.js';
+
+type AuthenticatedStoredState = {
+  profile: NonNullable<CollaborationStoredState['profile']>;
+  session: CollaborationStoredSession;
+};
 
 export interface RegisterCollaborationServerRoutesDeps {
   runtimeDataDir: string;
@@ -85,6 +94,17 @@ export function registerCollaborationServerRoutes(
   const now = deps.now ?? (() => new Date());
   const clientFor = (origin: string) =>
     new CollaborationServerClient(origin, deps.fetchImpl);
+  const sessionRefreshes = new Map<string, Promise<CollaborationStoredSession>>();
+  const withAuthenticatedSession = <T>(
+    operation: (client: CollaborationServerClient, accessToken: string) => Promise<T>,
+  ) => withAuthenticatedClient(
+    profiles,
+    reviewCommentBatches,
+    sessionRefreshes,
+    clientFor,
+    now,
+    operation,
+  );
 
   app.get('/api/collaboration/server', deps.requireLocalDaemonRequest, async (_req, res) => {
     try {
@@ -231,7 +251,7 @@ export function registerCollaborationServerRoutes(
 
   app.get('/api/collaboration/projects', deps.requireLocalDaemonRequest, async (_req, res) => {
     try {
-      const result = await withAuthenticatedClient(profiles, clientFor, now, (client, accessToken) =>
+      const result = await withAuthenticatedSession((client, accessToken) =>
         client.listProjects(accessToken),
       );
       res.setHeader('Cache-Control', 'no-store');
@@ -248,7 +268,7 @@ export function registerCollaborationServerRoutes(
     deps.requireLocalDaemonRequest,
     async (req, res) => {
       try {
-        const result = await withAuthenticatedClient(profiles, clientFor, now, (client, accessToken) =>
+        const result = await withAuthenticatedSession((client, accessToken) =>
           client.listVersions(accessToken, remoteProjectIdParam(req)),
         );
         res.setHeader('Cache-Control', 'no-store');
@@ -281,7 +301,7 @@ export function registerCollaborationServerRoutes(
                 'Configured Collaboration Server does not support review comments',
               );
             }
-            return withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+            return withAuthenticatedSession(async (client, accessToken) => {
               const project = await client.getProject(accessToken, remoteProjectId);
               const version = parsed.data.versionId
                 ? await client.getVersion(accessToken, remoteProjectId, parsed.data.versionId)
@@ -359,7 +379,7 @@ export function registerCollaborationServerRoutes(
     async (req, res) => {
       const versionId = typeof req.query.versionId === 'string' ? req.query.versionId : undefined;
       try {
-        const result = await withAuthenticatedClient(profiles, clientFor, now, (client, accessToken) =>
+        const result = await withAuthenticatedSession((client, accessToken) =>
           client.listComments(accessToken, remoteProjectIdParam(req), versionId),
         );
         res.setHeader('Cache-Control', 'no-store');
@@ -388,7 +408,7 @@ export function registerCollaborationServerRoutes(
       }
       try {
         const idempotencyKey = randomUUID();
-        const result = await withAuthenticatedClient(profiles, clientFor, now, (client, accessToken) =>
+        const result = await withAuthenticatedSession((client, accessToken) =>
           client.createComment(
             accessToken,
             remoteProjectIdParam(req),
@@ -481,7 +501,7 @@ export function registerCollaborationServerRoutes(
             if (batch.status === 'confirmed') {
               return batch.comments.map(({ result: comment }) => comment!);
             }
-            await withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+            await withAuthenticatedSession(async (client, accessToken) => {
               for (const [index, pendingComment] of batch.comments.entries()) {
                 if (pendingComment.result) continue;
                 const comment = await client.createComment(
@@ -553,7 +573,7 @@ export function registerCollaborationServerRoutes(
         return deps.sendApiError(res, 400, 'BAD_REQUEST', 'Review comment transition is invalid');
       }
       try {
-        const comment = await withAuthenticatedClient(profiles, clientFor, now, (client, accessToken) =>
+        const comment = await withAuthenticatedSession((client, accessToken) =>
           client.transitionComment(
             accessToken,
             remoteProjectIdParam(req),
@@ -609,7 +629,7 @@ export function registerCollaborationServerRoutes(
         'Switch to the Collaboration Server used by this Project binding',
       );
     }
-    return withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+    return withAuthenticatedSession(async (client, accessToken) => {
       const remoteProject = await client.getProject(accessToken, binding.remoteProjectId);
       validateRemoteBindingProject(remoteProject, localProjectId);
       const version = versionId
@@ -663,10 +683,7 @@ export function registerCollaborationServerRoutes(
             }
             return existing;
           }
-          const remote = await withAuthenticatedClient(
-            profiles,
-            clientFor,
-            now,
+          const remote = await withAuthenticatedSession(
             (client, accessToken) => parsed.data.mode === 'create'
               ? client.createProject(
                   accessToken,
@@ -712,7 +729,7 @@ export function registerCollaborationServerRoutes(
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
       try {
         const { binding } = await loadOwnerBinding(project.id);
-        const result = await withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+        const result = await withAuthenticatedSession(async (client, accessToken) => {
           const remote = await client.getProject(accessToken, binding.remoteProjectId);
           validateRemoteBindingProject(remote, project.id);
           return client.listProjectMembers(accessToken, binding.remoteProjectId);
@@ -733,7 +750,7 @@ export function registerCollaborationServerRoutes(
       if (!project) return deps.sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'Project not found');
       try {
         const { binding } = await loadOwnerBinding(project.id);
-        const result = await withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+        const result = await withAuthenticatedSession(async (client, accessToken) => {
           const remote = await client.getProject(accessToken, binding.remoteProjectId);
           validateRemoteBindingProject(remote, project.id);
           return client.listProjectInvitations(accessToken, binding.remoteProjectId);
@@ -759,7 +776,7 @@ export function registerCollaborationServerRoutes(
       try {
         const result = await withProjectOperation(projectOperations, project.id, async () => {
           const { binding } = await loadOwnerBinding(project.id);
-          return withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+          return withAuthenticatedSession(async (client, accessToken) => {
             const remote = await client.getProject(accessToken, binding.remoteProjectId);
             validateRemoteBindingProject(remote, project.id);
             const invitation = await client.createProjectInvitation(accessToken, {
@@ -797,7 +814,7 @@ export function registerCollaborationServerRoutes(
       try {
         const binding = await withProjectOperation(projectOperations, project.id, async () => {
           const current = await loadOwnerBinding(project.id);
-          return withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+          return withAuthenticatedSession(async (client, accessToken) => {
             const remote = await client.getProject(accessToken, current.binding.remoteProjectId);
             validateRemoteBindingProject(remote, project.id);
             await client.revokeProjectInvitation(accessToken, {
@@ -833,7 +850,7 @@ export function registerCollaborationServerRoutes(
       try {
         const binding = await withProjectOperation(projectOperations, project.id, async () => {
           const current = await loadOwnerBinding(project.id);
-          return withAuthenticatedClient(profiles, clientFor, now, async (client, accessToken) => {
+          return withAuthenticatedSession(async (client, accessToken) => {
             const remote = await client.getProject(accessToken, current.binding.remoteProjectId);
             validateRemoteBindingProject(remote, project.id);
             await client.removeProjectReviewer(accessToken, {
@@ -994,10 +1011,7 @@ export function registerCollaborationServerRoutes(
             confirmedPaths: parsed.data.confirmedPaths,
             createdAt: now().toISOString(),
           });
-          const published = await withAuthenticatedClient(
-            profiles,
-            clientFor,
-            now,
+          const published = await withAuthenticatedSession(
             async (client, accessToken) => {
               const remote = await client.getProject(accessToken, binding.remoteProjectId);
               validateRemoteBindingProject(remote, project.id);
@@ -1145,6 +1159,8 @@ function reviewBatchScope(stored: {
 
 async function withAuthenticatedClient<T>(
   profiles: CollaborationServerProfileStore,
+  reviewCommentBatches: CollaborationReviewCommentBatchStore,
+  sessionRefreshes: Map<string, Promise<CollaborationStoredSession>>,
   clientFor: (origin: string) => CollaborationServerClient,
   now: () => Date,
   operation: (client: CollaborationServerClient, accessToken: string) => Promise<T>,
@@ -1165,23 +1181,108 @@ async function withAuthenticatedClient<T>(
     );
   }
 
-  const client = clientFor(stored.profile.origin);
-  let session = stored.session;
+  const authenticatedStored: AuthenticatedStoredState = {
+    profile: stored.profile,
+    session: stored.session,
+  };
+  const client = clientFor(authenticatedStored.profile.origin);
+  let session = authenticatedStored.session;
   if (session.accessExpiresAt <= now().getTime() + 30_000) {
-    const refreshedAt = now().getTime();
-    const refreshed = await client.refresh(session.refreshToken);
-    await profiles.setSession(refreshed, refreshedAt);
-    session = { ...refreshed, accessExpiresAt: refreshedAt + refreshed.expiresIn * 1_000 };
+    session = await refreshAuthenticatedSession(
+      profiles,
+      reviewCommentBatches,
+      sessionRefreshes,
+      client,
+      authenticatedStored,
+      now,
+    );
   }
 
   try {
     return await operation(client, session.accessToken);
   } catch (error) {
-    if (!(error instanceof CollaborationServerRequestError) || error.status !== 401) throw error;
-    const refreshed = await client.refresh(session.refreshToken);
-    await profiles.setSession(refreshed, now().getTime());
-    return operation(client, refreshed.accessToken);
+    if (!isRemoteAuthenticationError(error)) throw error;
+    session = await refreshAuthenticatedSession(
+      profiles,
+      reviewCommentBatches,
+      sessionRefreshes,
+      client,
+      { ...authenticatedStored, session },
+      now,
+    );
+    try {
+      return await operation(client, session.accessToken);
+    } catch (retryError) {
+      if (isRemoteAuthenticationError(retryError)) {
+        await clearRejectedSession(profiles, reviewCommentBatches, { ...authenticatedStored, session });
+      }
+      throw retryError;
+    }
   }
+}
+
+async function refreshAuthenticatedSession(
+  profiles: CollaborationServerProfileStore,
+  reviewCommentBatches: CollaborationReviewCommentBatchStore,
+  sessionRefreshes: Map<string, Promise<CollaborationStoredSession>>,
+  client: CollaborationServerClient,
+  stored: AuthenticatedStoredState,
+  now: () => Date,
+): Promise<CollaborationStoredSession> {
+  const key = `${stored.profile.origin}\0${stored.session.sessionId}`;
+  const active = sessionRefreshes.get(key);
+  if (active) return active;
+
+  const refresh = (async () => {
+    const current = await profiles.readCredentials();
+    if (!current.profile || current.profile.origin !== stored.profile.origin || !current.session) {
+      throw new CollaborationServerRequestError(
+        401,
+        'COLLABORATION_AUTH_REQUIRED',
+        'Sign in to the Collaboration Server again',
+      );
+    }
+    const authenticatedCurrent: AuthenticatedStoredState = {
+      profile: current.profile,
+      session: current.session,
+    };
+    if (authenticatedCurrent.session.refreshToken !== stored.session.refreshToken) {
+      return authenticatedCurrent.session;
+    }
+    try {
+      const refreshedAt = now().getTime();
+      const refreshed = await client.refresh(authenticatedCurrent.session.refreshToken);
+      await profiles.setSession(refreshed, refreshedAt);
+      return { ...refreshed, accessExpiresAt: refreshedAt + refreshed.expiresIn * 1_000 };
+    } catch (error) {
+      if (isRemoteAuthenticationError(error)) {
+        await clearRejectedSession(profiles, reviewCommentBatches, authenticatedCurrent);
+      }
+      throw error;
+    }
+  })();
+  sessionRefreshes.set(key, refresh);
+  try {
+    return await refresh;
+  } finally {
+    if (sessionRefreshes.get(key) === refresh) sessionRefreshes.delete(key);
+  }
+}
+
+async function clearRejectedSession(
+  profiles: CollaborationServerProfileStore,
+  reviewCommentBatches: CollaborationReviewCommentBatchStore,
+  stored: AuthenticatedStoredState,
+): Promise<void> {
+  const cleared = await profiles.clearSessionIfMatches({
+    sessionId: stored.session.sessionId,
+    refreshToken: stored.session.refreshToken,
+  });
+  if (cleared) await reviewCommentBatches.clearSession(reviewBatchScope(stored));
+}
+
+function isRemoteAuthenticationError(error: unknown): error is CollaborationServerRequestError {
+  return error instanceof CollaborationServerRequestError && error.status === 401;
 }
 
 function sendCollaborationError(

@@ -270,6 +270,98 @@ describe('Collaboration Server routes', () => {
     ]);
   });
 
+  it('clears the local session when a revoked refresh token cannot recover a 401', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/v1/capabilities')) return Response.json(capabilities);
+      if (url.endsWith('/api/v1/auth/session') && method === 'POST') return Response.json(session);
+      if (url.endsWith('/api/v1/projects')) {
+        return Response.json(remoteAuthProblem('access-revoked'), { status: 401 });
+      }
+      if (url.endsWith('/api/v1/auth/session/refresh')) {
+        return Response.json(remoteAuthProblem('refresh-revoked'), { status: 401 });
+      }
+      return Response.json({ title: 'Not found' }, { status: 404 });
+    });
+    const baseUrl = await startRoutes(fetchImpl);
+    await jsonRequest(baseUrl, '/api/collaboration/server', {
+      method: 'PUT',
+      body: JSON.stringify({ origin: 'https://design.example.test' }),
+    });
+    await jsonRequest(baseUrl, '/api/collaboration/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: 'owner@example.test',
+        password: 'a-long-secret-password',
+        deviceName: 'Owner Mac',
+      }),
+    });
+
+    const denied = await jsonRequest(baseUrl, '/api/collaboration/projects');
+    expect(denied).toMatchObject({
+      status: 401,
+      body: { error: { code: 'COLLABORATION_AUTH_REQUIRED' } },
+    });
+    expect(await jsonRequest(baseUrl, '/api/collaboration/server')).toMatchObject({
+      status: 200,
+      body: { profile: { origin: 'https://design.example.test' }, session: null },
+    });
+  });
+
+  it('single-flights concurrent refreshes for one Desktop session', async () => {
+    let nowMs = Date.parse('2026-09-06T00:00:00.000Z');
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    let refreshCalls = 0;
+    const rotated = {
+      ...session,
+      accessToken: 'rotated-access-token-00000000000000001',
+      refreshToken: 'rotated-refresh-token-0000000000000001',
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/v1/capabilities')) return Response.json(capabilities);
+      if (url.endsWith('/api/v1/auth/session') && method === 'POST') return Response.json(session);
+      if (url.endsWith('/api/v1/auth/session/refresh')) {
+        refreshCalls += 1;
+        await refreshGate;
+        return Response.json(rotated);
+      }
+      if (url.endsWith('/api/v1/projects')) {
+        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${rotated.accessToken}`);
+        return Response.json({ projects: [project] });
+      }
+      return Response.json({ title: 'Not found' }, { status: 404 });
+    });
+    const baseUrl = await startRoutes(fetchImpl, () => new Date(nowMs));
+    await jsonRequest(baseUrl, '/api/collaboration/server', {
+      method: 'PUT',
+      body: JSON.stringify({ origin: 'https://design.example.test' }),
+    });
+    await jsonRequest(baseUrl, '/api/collaboration/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: 'owner@example.test',
+        password: 'a-long-secret-password',
+        deviceName: 'Owner Mac',
+      }),
+    });
+
+    nowMs += 31_000;
+    const first = jsonRequest(baseUrl, '/api/collaboration/projects');
+    const second = jsonRequest(baseUrl, '/api/collaboration/projects');
+    await vi.waitFor(() => expect(refreshCalls).toBe(1));
+    releaseRefresh();
+
+    expect((await first).status).toBe(200);
+    expect((await second).status).toBe(200);
+    expect(refreshCalls).toBe(1);
+  });
+
   it('creates a local binding and publishes only after a confirmed candidate', async () => {
     const projectRoot = await mkdtemp(path.join(tmpdir(), 'od-collaboration-project-'));
     cleanupTasks.push(() => rm(projectRoot, { recursive: true, force: true }));
@@ -853,3 +945,14 @@ describe('Collaboration Server routes', () => {
     }));
   });
 });
+
+function remoteAuthProblem(requestId: string) {
+  return {
+    type: 'urn:open-design:problem:authentication_required',
+    title: 'Authentication required',
+    status: 401,
+    code: 'authentication_required',
+    requestId,
+    retryable: false,
+  };
+}
