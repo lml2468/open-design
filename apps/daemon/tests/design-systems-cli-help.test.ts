@@ -28,7 +28,6 @@ describe('od design-systems help surface', () => {
     expect(DESIGN_SYSTEMS_USAGE).toContain('import-github');
     expect(DESIGN_SYSTEMS_USAGE).toContain('import-shadcn');
     expect(DESIGN_SYSTEMS_USAGE).toContain('rebuild-token-contract');
-    expect(DESIGN_SYSTEMS_USAGE).toContain('--workspace <id>');
-    expect(DESIGN_SYSTEMS_USAGE).toContain('--workspace-member <id>');
+    expect(DESIGN_SYSTEMS_USAGE).not.toContain('--workspace');
   });
 });

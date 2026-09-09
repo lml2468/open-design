@@ -264,7 +264,7 @@ describe('od run CLI', () => {
     ]);
   });
 
-  it('forwards explicit Workspace scope through continue status and creation requests', async () => {
+  it('rejects retired Workspace authority flags before continuing a run', async () => {
     stub = await startRunStubServer(true);
 
     const result = await runCli([
@@ -273,19 +273,13 @@ describe('od run CLI', () => {
       'run-1',
       '--workspace',
       'team-workspace',
-      '--workspace-member',
-      'creator-member',
       '--daemon-url',
       stub.baseUrl,
     ]);
 
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
-    expect(stub.requests).toHaveLength(2);
-    for (const request of stub.requests) {
-      expect(request.headers['x-od-workspace-id']).toBe('team-workspace');
-      expect(request.headers['x-od-workspace-member-id']).toBe('creator-member');
-    }
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain('unknown flag: --workspace');
+    expect(stub.requests).toHaveLength(0);
   });
 
   it.each([
@@ -334,25 +328,20 @@ describe('od run CLI', () => {
       args: ['run', 'watch', 'run-1'],
       requests: ['GET /api/runs/run-1/events'],
     },
-  ])('forwards explicit Workspace scope for $label requests', async ({ args, requests }) => {
+  ])('rejects retired Workspace authority flags for $label requests', async ({ args }) => {
     stub = await startRunStubServer(true);
 
     const result = await runCli([
       ...args,
       '--workspace',
       'team-workspace',
-      '--workspace-member',
-      'creator-member',
       '--daemon-url',
       stub.baseUrl,
     ]);
 
-    expect(result.code, result.stderr).toBe(0);
-    expect(stub.requests.map((request) => `${request.method} ${request.url}`)).toEqual(requests);
-    for (const request of stub.requests) {
-      expect(request.headers['x-od-workspace-id']).toBe('team-workspace');
-      expect(request.headers['x-od-workspace-member-id']).toBe('creator-member');
-    }
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain('unknown flag: --workspace');
+    expect(stub.requests).toHaveLength(0);
   });
 
   it('keeps no-scope run creation and streaming requests headerless', async () => {

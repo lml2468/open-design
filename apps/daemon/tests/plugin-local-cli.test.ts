@@ -18,7 +18,7 @@ interface CapturedRequest {
   headers: http.IncomingHttpHeaders;
 }
 
-describe('od plugin exact workspace transport', () => {
+describe('od plugin local transport', () => {
   const requests: CapturedRequest[] = [];
   let server: http.Server;
   let baseUrl: string;
@@ -98,30 +98,10 @@ describe('od plugin exact workspace transport', () => {
       'export',
       ['export', 'project-a', '--as', 'od', '--out', '/tmp/exported-plugin', '--json'],
     ],
-  ])('sends exact workspace headers for %s', async (_label, command) => {
+  ])('rejects removed Workspace flags for %s', async (_label, command) => {
     const result = await runCli([
       'plugin',
       ...command,
-      '--workspace',
-      'workspace-a',
-      '--workspace-member',
-      'member-a',
-      '--daemon-url',
-      baseUrl,
-    ]);
-
-    expect(result.code).toBe(0);
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.headers).toMatchObject({
-      'x-od-workspace-id': 'workspace-a',
-      'x-od-workspace-member-id': 'member-a',
-    });
-  });
-
-  it('rejects an incomplete plugin scope before making a request', async () => {
-    const result = await runCli([
-      'plugin',
-      'list',
       '--workspace',
       'workspace-a',
       '--daemon-url',
@@ -129,11 +109,11 @@ describe('od plugin exact workspace transport', () => {
     ]);
 
     expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain('--workspace-member');
+    expect(result.stderr).toContain('unknown flag: --workspace');
     expect(requests).toHaveLength(0);
   });
 
-  it('keeps headerless local CLI compatibility when both flags are absent', async () => {
+  it('keeps the local CLI available without legacy authority flags', async () => {
     const result = await runCli([
       'plugin',
       'list',
@@ -144,7 +124,5 @@ describe('od plugin exact workspace transport', () => {
 
     expect(result.code).toBe(0);
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.headers['x-od-workspace-id']).toBeUndefined();
-    expect(requests[0]?.headers['x-od-workspace-member-id']).toBeUndefined();
   });
 });

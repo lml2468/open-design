@@ -129,8 +129,6 @@ describe('od design-systems daemon-local transport', () => {
     expect(result.code).toBe(0);
     expect(result.stderr).toBe('');
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.headers['x-od-workspace-id']).toBeUndefined();
-    expect(requests[0]!.headers['x-od-workspace-member-id']).toBeUndefined();
   });
 
   it('rejects the retired Workspace flags before making a request', async () => {
@@ -163,7 +161,5 @@ describe('od design-systems daemon-local transport', () => {
 
     expect(result.code).toBe(0);
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.headers['x-od-workspace-id']).toBeUndefined();
-    expect(requests[0]!.headers['x-od-workspace-member-id']).toBeUndefined();
   });
 });

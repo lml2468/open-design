@@ -158,41 +158,33 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
 }
 
 describe('od project CLI', () => {
-  it('documents exact workspace identity for bound project and file commands', async () => {
+  it('does not advertise retired Workspace authority flags', async () => {
     const projectHelp = await runCli(['project', 'help']);
     const filesHelp = await runCli(['files', 'help']);
 
     expect(projectHelp.code).toBe(0);
     expect(filesHelp.code).toBe(0);
-    expect(projectHelp.stdout).toContain('--workspace <id>');
-    expect(projectHelp.stdout).toContain('--workspace-member <id>');
-    expect(filesHelp.stdout).toContain('--workspace <id>');
-    expect(filesHelp.stdout).toContain('--workspace-member <id>');
+    expect(projectHelp.stdout).not.toContain('--workspace');
+    expect(filesHelp.stdout).not.toContain('--workspace');
   });
 
   it.each([
     ['project detail', ['project', 'info', 'project-1', '--json']],
     ['project files', ['files', 'list', 'project-1', '--json']],
-  ])('sends exact workspace identity for bound %s', async (_label, command) => {
+  ])('rejects retired Workspace authority flags for %s', async (_label, command) => {
     stub = await startProjectStubServer();
 
     const result = await runCli([
       ...command,
       '--workspace',
       'ws-1',
-      '--workspace-member',
-      'member-1',
       '--daemon-url',
       stub.baseUrl,
     ]);
 
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
-    expect(stub.requests).toHaveLength(1);
-    expect(stub.requests[0]!.headers).toMatchObject({
-      'x-od-workspace-id': 'ws-1',
-      'x-od-workspace-member-id': 'member-1',
-    });
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain('unknown flag: --workspace');
+    expect(stub.requests).toHaveLength(0);
   });
 
   it('creates a design-system project with prompt-file content and JSON output', async () => {
@@ -277,7 +269,7 @@ describe('od project CLI', () => {
     });
   });
 
-  it('od project list ignores legacy Workspace flags for catalog selection', async () => {
+  it('od project list rejects legacy Workspace flags', async () => {
     stub = await startProjectStubServer();
 
     const result = await runCli([
@@ -285,20 +277,14 @@ describe('od project CLI', () => {
       'list',
       '--workspace',
       'ws-1',
-      '--workspace-member',
-      'member-1',
       '--json',
       '--daemon-url',
       stub.baseUrl,
     ]);
 
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
-    expect(stub.requests).toHaveLength(1);
-    expect(stub.requests[0]).toMatchObject({
-      method: 'GET',
-      url: '/api/projects',
-    });
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain('unknown flag: --workspace');
+    expect(stub.requests).toHaveLength(0);
   });
 
   it('od project list remains independent of Workspace directory availability', async () => {

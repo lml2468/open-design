@@ -246,22 +246,20 @@ describe('od export run-scoped project authority', () => {
     expect(existsSync(outputPath)).toBe(true);
   });
 
-  it('accepts legacy workspace flags as ignored compatibility inputs', async () => {
-    // Given: an older caller still supplies stale Workspace flags.
+  it('rejects retired Workspace flags instead of silently ignoring authority input', async () => {
+    // Given: an older caller still supplies a stale Workspace flag.
     const outputPath = path.join(outputDir, 'legacy-workspace-flags.png');
 
-    // When: it exports after the CLI contract has moved to project-id-only addressing.
+    // When: the project-id-only CLI contract parses the command.
     const result = await runExportCli(projectId, outputPath, undefined, [
       '--workspace',
       'stale-workspace',
-      '--workspace-member',
-      'stale-member',
     ]);
 
-    // Then: parsing remains backwards compatible and the stale values do not
-    // override the project's persisted binding.
-    expect(result.code, result.stderr).toBe(0);
-    expect(existsSync(outputPath)).toBe(true);
+    // Then: the removed authority surface fails before an export can run.
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain('unknown flag: --workspace');
+    expect(existsSync(outputPath)).toBe(false);
   });
 
   it('loads relative renderer assets for a bound project whose HTML already declares a base', async () => {
