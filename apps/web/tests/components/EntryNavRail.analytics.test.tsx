@@ -66,7 +66,7 @@ describe('EntryNavRail analytics', () => {
       target: 'search',
     }), undefined);
     expect(analytics.track).toHaveBeenCalledWith('ui_click', expect.objectContaining({
-      area: 'account_menu',
+      area: 'entry_utility',
       element: 'settings',
     }), undefined);
   });

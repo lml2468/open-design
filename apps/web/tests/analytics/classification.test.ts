@@ -4,7 +4,7 @@ import {
   countBucket,
   stableAnalyticsErrorCode,
   stableAnalyticsRequestErrorCode,
-} from '../../src/analytics/workspace';
+} from '../../src/analytics/classification';
 
 describe('analytics helpers', () => {
   it('uses bounded buckets and stable error classes', () => {
@@ -29,5 +29,4 @@ describe('analytics helpers', () => {
     expect(stableAnalyticsRequestErrorCode({ code: 'UPSTREAM_abc123', status: 503 }))
       .toBe('server_error');
   });
-
 });

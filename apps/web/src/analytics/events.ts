@@ -159,17 +159,12 @@ import type {
   WhatsNewPopupSurfaceViewProps,
   WhatsNewPopupClickProps,
   EntryNavigationClickProps,
-  AccountMenuClickProps,
-  WorkspaceSwitcherClickProps,
+  EntryUtilityClickProps,
   ProjectCollectionClickProps,
   CommunityTemplateClickProps,
   ExtensionMarketplaceClickProps,
-  WorkspaceSurfaceViewProps,
-  WorkspaceSwitchResultProps,
-  WorkspaceProjectActionResultProps,
-  WorkspaceSharedProjectOpenResultProps,
-  WorkspaceResourceActionResultProps,
-  ProjectCommentCreateResultProps,
+  ProjectActionResultProps,
+  CatalogResourceActionResultProps,
 } from '@open-design/contracts/analytics';
 
 type TrackOptions = { requestId?: string; insertId?: string };
@@ -205,17 +200,13 @@ export function trackPageView(track: Track, props: PageViewProps): void {
   send(track, 'page_view', props);
 }
 
-// ---- Workspace redesign -------------------------------------------------
+// ---- Entry navigation and local catalog ---------------------------------
 
 export function trackEntryNavigationClick(track: Track, props: EntryNavigationClickProps): void {
   send(track, 'ui_click', props);
 }
 
-export function trackAccountMenuClick(track: Track, props: AccountMenuClickProps): void {
-  send(track, 'ui_click', props);
-}
-
-export function trackWorkspaceSwitcherClick(track: Track, props: WorkspaceSwitcherClickProps): void {
+export function trackEntryUtilityClick(track: Track, props: EntryUtilityClickProps): void {
   send(track, 'ui_click', props);
 }
 
@@ -231,28 +222,12 @@ export function trackExtensionMarketplaceClick(track: Track, props: ExtensionMar
   send(track, 'ui_click', props);
 }
 
-export function trackWorkspaceSurfaceView(track: Track, props: WorkspaceSurfaceViewProps): void {
-  send(track, 'surface_view', props);
+export function trackProjectActionResult(track: Track, props: ProjectActionResultProps, options?: TrackOptions): void {
+  send(track, 'project_action_result', props, options);
 }
 
-export function trackWorkspaceSwitchResult(track: Track, props: WorkspaceSwitchResultProps, options?: TrackOptions): void {
-  send(track, 'workspace_switch_result', props, options);
-}
-
-export function trackWorkspaceProjectActionResult(track: Track, props: WorkspaceProjectActionResultProps, options?: TrackOptions): void {
-  send(track, 'workspace_project_action_result', props, options);
-}
-
-export function trackWorkspaceSharedProjectOpenResult(track: Track, props: WorkspaceSharedProjectOpenResultProps, options?: TrackOptions): void {
-  send(track, 'workspace_shared_project_open_result', props, options);
-}
-
-export function trackWorkspaceResourceActionResult(track: Track, props: WorkspaceResourceActionResultProps, options?: TrackOptions): void {
-  send(track, 'workspace_resource_action_result', props, options);
-}
-
-export function trackProjectCommentCreateResult(track: Track, props: ProjectCommentCreateResultProps): void {
-  send(track, 'project_comment_create_result', props);
+export function trackCatalogResourceActionResult(track: Track, props: CatalogResourceActionResultProps, options?: TrackOptions): void {
+  send(track, 'catalog_resource_action_result', props, options);
 }
 
 // ---- surface_view --------------------------------------------------------

@@ -42,12 +42,12 @@ import { useInView } from './plugins-home/useInView';
 import { useAnalytics } from '../analytics/provider';
 import {
   trackProjectCollectionClick,
-  trackWorkspaceProjectActionResult,
+  trackProjectActionResult,
 } from '../analytics/events';
 import {
   countBucket,
   stableAnalyticsRequestErrorCode,
-} from '../analytics/workspace';
+} from '../analytics/classification';
 import type { ProjectCollectionClickProps } from '@open-design/contracts/analytics';
 
 /** Whether this is the compact Home strip or the full local project grid. */
@@ -277,7 +277,7 @@ export function RecentProjectsStrip({
 }: Props) {
   const t = useT();
   const analytics = useAnalytics();
-  const analyticsPage = space === 'projects' ? 'all_projects' : 'home';
+  const analyticsPage = space === 'projects' ? 'projects' : 'home';
   const rowRef = useRef<HTMLDivElement | null>(null);
   function trackCollection(
     element: ProjectCollectionClickProps['element'],
@@ -703,7 +703,6 @@ export function RecentProjectsStrip({
   function startRename(project: Project) {
     trackCollection('rename', {
       project_key: project.id,
-      project_relation: 'self',
     });
     setMenuOpenId(null);
     setRenameTarget({ id: project.id, original: project.name });
@@ -727,7 +726,6 @@ export function RecentProjectsStrip({
   function requestDelete(project: Project) {
     trackCollection('delete', {
       project_key: project.id,
-      project_relation: 'self',
     });
     setMenuOpenId(null);
     setDeleteFailed(false);
@@ -738,12 +736,11 @@ export function RecentProjectsStrip({
     if (!onDuplicate) return;
     trackCollection('duplicate', {
       project_key: project.id,
-      project_relation: 'self',
     });
     setMenuOpenId(null);
     const startedAt = performance.now();
     void Promise.resolve(onDuplicate(project.id)).then(() => {
-      trackWorkspaceProjectActionResult(analytics.track, {
+      trackProjectActionResult(analytics.track, {
         page_name: analyticsPage,
         area: 'project_collection',
         action: 'duplicate',
@@ -755,7 +752,7 @@ export function RecentProjectsStrip({
       });
     }).catch((err) => {
       console.warn('[RecentProjectsStrip] duplicate project failed:', err);
-      trackWorkspaceProjectActionResult(analytics.track, {
+      trackProjectActionResult(analytics.track, {
         page_name: analyticsPage,
         area: 'project_collection',
         action: 'duplicate',
@@ -782,7 +779,7 @@ export function RecentProjectsStrip({
       // keep the dialog open with a visible reason instead of closing it as
       // if the project were gone (recvqbh189zBY6).
       if (result === false) {
-        trackWorkspaceProjectActionResult(analytics.track, {
+        trackProjectActionResult(analytics.track, {
           page_name: analyticsPage,
           area: 'project_collection',
           action: 'delete',
@@ -797,7 +794,7 @@ export function RecentProjectsStrip({
         return;
       }
       setConfirmTarget(null);
-      trackWorkspaceProjectActionResult(analytics.track, {
+      trackProjectActionResult(analytics.track, {
         page_name: analyticsPage,
         area: 'project_collection',
         action: 'delete',
@@ -810,7 +807,7 @@ export function RecentProjectsStrip({
     } catch (err) {
       console.warn('[RecentProjectsStrip] delete project failed:', err);
       setDeleteFailed(true);
-      trackWorkspaceProjectActionResult(analytics.track, {
+      trackProjectActionResult(analytics.track, {
         page_name: analyticsPage,
         area: 'project_collection',
         action: 'delete',
@@ -862,7 +859,7 @@ export function RecentProjectsStrip({
     );
     const succeededCount = deleted.filter((id): id is string => id !== null).length;
     const failedCount = ids.length - succeededCount;
-    trackWorkspaceProjectActionResult(analytics.track, {
+    trackProjectActionResult(analytics.track, {
       page_name: analyticsPage,
       area: 'project_collection',
       action: 'bulk_delete',
@@ -1140,7 +1137,6 @@ export function RecentProjectsStrip({
                   }
                   trackCollection('project_open', {
                     project_key: project.id,
-                    project_relation: 'self',
                   });
                   // Release every background cover slot before the project view
                   // starts its foreground files/content reads. Waiting for the
@@ -1239,7 +1235,6 @@ export function RecentProjectsStrip({
                       event.stopPropagation();
                       trackCollection('more_menu', {
                         project_key: project.id,
-                        project_relation: 'self',
                       });
                       setMenuOpenId((current) => current === project.id ? null : project.id);
                     }}

@@ -15,7 +15,10 @@ import type {
   McpToolFinishedProps,
   McpToolStartedProps,
 } from './mcp.js';
-import type { ProjectCommentCreateResultProps, WorkspaceProjectActionResultProps, WorkspaceResourceActionResultProps, WorkspaceSharedProjectOpenResultProps, WorkspaceSwitchResultProps } from './workspace.js';
+import type {
+  CatalogResourceActionResultProps,
+  ProjectActionResultProps,
+} from './product-surfaces.js';
 // ---- Discriminated union of all event payloads ---------------------------
 
 export type AnalyticsEventPayload =
@@ -47,11 +50,8 @@ export type AnalyticsEventPayload =
   | { event: 'sketch_save_result'; props: SketchSaveResultProps }
   | { event: 'sketch_export_result'; props: SketchExportResultProps }
   | { event: 'file_version_restore_result'; props: FileVersionRestoreResultProps }
-  | { event: 'workspace_switch_result'; props: WorkspaceSwitchResultProps }
-  | { event: 'workspace_project_action_result'; props: WorkspaceProjectActionResultProps }
-  | { event: 'workspace_shared_project_open_result'; props: WorkspaceSharedProjectOpenResultProps }
-  | { event: 'workspace_resource_action_result'; props: WorkspaceResourceActionResultProps }
-  | { event: 'project_comment_create_result'; props: ProjectCommentCreateResultProps }
+  | { event: 'project_action_result'; props: ProjectActionResultProps }
+  | { event: 'catalog_resource_action_result'; props: CatalogResourceActionResultProps }
   | { event: 'conversation_fork_result'; props: ConversationForkResultProps }
   | { event: 'feedback_submit_result'; props: FeedbackSubmitResultProps }
   | { event: 'assistant_feedback_click'; props: AssistantFeedbackClickProps }

@@ -377,7 +377,7 @@ describe('ExtensionsMarketplace import', () => {
 
     await waitFor(() => {
       expect(analyticsTrack).toHaveBeenCalledWith(
-        'workspace_resource_action_result',
+        'catalog_resource_action_result',
         expect.objectContaining({
           action: 'add',
           resource_kind: 'expert_plugin',

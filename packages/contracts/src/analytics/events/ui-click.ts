@@ -7,7 +7,14 @@ import type { TrackingPageName, TrackingSettingsPage } from './event-names.js';
 import type { OnboardingClickProps, TrackingOnboardingFirstLoopStep, TrackingOnboardingProductType, TrackingOnboardingRole, TrackingOnboardingUseCase } from './onboarding.js';
 import type { TrackingRunRecoveryActionType } from './result-events.js';
 import type { TrackingArtifactKind, TrackingByokProviderId, TrackingCliProviderId, TrackingExecutionMode, TrackingExportFormat, TrackingFeedbackProviderId, TrackingNewProjectTab, TrackingProjectKind, TrackingProjectSource } from './shared-enums.js';
-import type { AccountMenuClickProps, CommunityTemplateClickProps, EntryNavigationClickProps, ExtensionMarketplaceClickProps, ProjectCollectionClickProps, TrackingWorkspaceScope, WorkspaceSwitcherClickProps } from './workspace.js';
+import type {
+  CommunityTemplateClickProps,
+  EntryNavigationClickProps,
+  EntryUtilityClickProps,
+  ExtensionMarketplaceClickProps,
+  ProjectCollectionClickProps,
+  TrackingResourceScope,
+} from './product-surfaces.js';
 // ---- ui_click ------------------------------------------------------------
 //
 // Each surface lives in its own `*ClickProps` interface so call sites stay
@@ -558,7 +565,7 @@ export interface DesignSystemsTopClickProps {
   area: 'design_systems';
   element: 'search_input' | 'search_dropdown' | 'filter_chip' | 'create';
   filter_name?: string;
-  resource_scope?: TrackingWorkspaceScope;
+  resource_scope?: TrackingResourceScope;
 }
 
 export interface DesignSystemsTemplateCardClickProps {
@@ -567,7 +574,7 @@ export interface DesignSystemsTemplateCardClickProps {
   element: 'templates_card';
   templates_id?: string;
   templates_type?: string;
-  resource_scope?: TrackingWorkspaceScope;
+  resource_scope?: TrackingResourceScope;
 }
 
 export interface DesignSystemsTemplatesModalClickProps {
@@ -680,7 +687,7 @@ export interface DesignSystemEditClickProps {
   artifact_kind?: 'design_system';
   design_system_id?: string;
   project_id?: string;
-  resource_scope?: TrackingWorkspaceScope;
+  resource_scope?: TrackingResourceScope;
 }
 
 // INTEGRATIONS
@@ -1579,8 +1586,7 @@ export interface SettingsExternalMcpClickProps {
 // Discriminated union of every supported ui_click payload.
 export type UiClickProps =
   | EntryNavigationClickProps
-  | AccountMenuClickProps
-  | WorkspaceSwitcherClickProps
+  | EntryUtilityClickProps
   | ProjectCollectionClickProps
   | CommunityTemplateClickProps
   | ExtensionMarketplaceClickProps

@@ -1,9 +1,7 @@
-import {
-  API_ERROR_CODES,
-} from '@open-design/contracts';
+import { API_ERROR_CODES } from '@open-design/contracts';
 import type {
   TrackingCountBucket,
-  TrackingWorkspacePage,
+  TrackingEntryPage,
 } from '@open-design/contracts/analytics';
 
 export function countBucket(count: number): TrackingCountBucket {
@@ -14,18 +12,18 @@ export function countBucket(count: number): TrackingCountBucket {
   return '11_plus';
 }
 
-export function entryViewToTracking(view: string): TrackingWorkspacePage {
+export function entryViewToTracking(view: string): TrackingEntryPage {
   switch (view) {
     case 'community':
       return 'community';
-    case 'drafts':
-      return 'drafts';
-    case 'all-projects':
-      return 'all_projects';
+    case 'projects':
+      return 'projects';
     case 'design-systems':
       return 'design_systems';
     case 'plugins':
       return 'plugins';
+    case 'settings':
+      return 'settings';
     default:
       return 'home';
   }

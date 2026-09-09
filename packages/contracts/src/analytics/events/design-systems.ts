@@ -3,7 +3,7 @@
  * Design-system analytics enums and lifecycle result prop types.
  */
 import type { TrackingProjectKind } from './shared-enums.js';
-import type { TrackingWorkspaceScope } from './workspace.js';
+import type { TrackingResourceScope } from './product-surfaces.js';
 // --- Design systems page_view (multi-surface) ---
 //
 // Single shape covering the dedicated DS list / create / preview pages plus
@@ -351,7 +351,7 @@ export interface DesignSystemStatusResultProps {
   is_default_after: boolean;
   error_code?: string;
   duration_ms: number;
-  resource_scope?: TrackingWorkspaceScope;
+  resource_scope?: TrackingResourceScope;
 }
 
 export interface DesignSystemApplyResultProps {

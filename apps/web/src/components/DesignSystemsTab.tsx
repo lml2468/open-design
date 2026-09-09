@@ -7,7 +7,7 @@ import {
   trackDesignSystemStatusResult,
   trackDesignSystemEditClick,
   trackPageView,
-  trackWorkspaceResourceActionResult,
+  trackCatalogResourceActionResult,
 } from '../analytics/events';
 import type { DesignSystemEditClickProps } from '@open-design/contracts/analytics';
 import type {
@@ -37,7 +37,7 @@ import { Icon } from './Icon';
 import { Toast } from './Toast';
 import type { DesignSystemDetail, DesignSystemSummary, ProjectTemplate, Surface } from '../types';
 import styles from './DesignSystemsTab.module.css';
-import type { TrackingWorkspaceScope } from '@open-design/contracts/analytics';
+import type { TrackingResourceScope } from '@open-design/contracts/analytics';
 
 interface Props {
   /** EntryShell parks this mounted tab while another nav surface is visible. */
@@ -168,7 +168,7 @@ export function DesignSystemsTab({
     notifyAction('loading', message);
   };
   const [designSystemCollection, setDesignSystemCollection] = useState<DesignSystemCollection>('mine');
-  const resourceScopeForSystem = (system: DesignSystemSummary): TrackingWorkspaceScope =>
+  const resourceScopeForSystem = (system: DesignSystemSummary): TrackingResourceScope =>
     isUserSystem(system) ? 'personal' : 'official';
   const [surfaceFilter, setSurfaceFilter] = useState<SurfaceFilter>('all');
   const [category, setCategory] = useState<string>('All');
@@ -1064,7 +1064,7 @@ function DesignSystemDetail({
 }: DetailProps) {
   const analytics = useAnalytics();
   const isUser = isUserSystem(system);
-  const detailResourceScope: TrackingWorkspaceScope = isUser ? 'personal' : 'official';
+  const detailResourceScope: TrackingResourceScope = isUser ? 'personal' : 'official';
   const status = system.status ?? 'draft';
   const published = status === 'published';
   // A built-in preset can always be picked as the global default; a user
@@ -1170,18 +1170,18 @@ function DesignSystemDetail({
           : false);
       setDownloadFailed(!ok);
       onActionFeedback(ok ? 'success' : 'error', ok ? t('ds.actionDone') : t('dsManager.downloadFailed'));
-      trackWorkspaceResourceActionResult(analytics.track, {
-        page_name: 'design_systems', area: 'workspace_resource', resource_kind: 'design_system',
-        resource_scope: detailResourceScope, action: 'download_plugin',
+      trackCatalogResourceActionResult(analytics.track, {
+        page_name: 'design_systems', area: 'catalog_resource', resource_kind: 'design_system',
+        resource_scope: detailResourceScope, action: 'download',
         result: ok ? 'success' : 'failed', duration_ms: Math.round(performance.now() - startedAt),
         ...(!ok ? { error_code: 'download_failed' } : {}),
       });
     } catch {
       setDownloadFailed(true);
       onActionFeedback('error', t('dsManager.downloadFailed'));
-      trackWorkspaceResourceActionResult(analytics.track, {
-        page_name: 'design_systems', area: 'workspace_resource', resource_kind: 'design_system',
-        resource_scope: detailResourceScope, action: 'download_plugin', result: 'failed',
+      trackCatalogResourceActionResult(analytics.track, {
+        page_name: 'design_systems', area: 'catalog_resource', resource_kind: 'design_system',
+        resource_scope: detailResourceScope, action: 'download', result: 'failed',
         duration_ms: Math.round(performance.now() - startedAt), error_code: 'download_failed',
       });
     } finally {

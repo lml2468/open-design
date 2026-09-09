@@ -39,12 +39,12 @@ import {
   trackPluginsTemplatesDropdownClick,
   trackPluginsTopClick,
   trackExtensionMarketplaceClick,
-  trackWorkspaceResourceActionResult,
+  trackCatalogResourceActionResult,
 } from '../analytics/events';
 import {
   stableAnalyticsRequestErrorCode,
-} from '../analytics/workspace';
-import type { TrackingWorkspaceScope } from '@open-design/contracts/analytics';
+} from '../analytics/classification';
+import type { TrackingResourceScope } from '@open-design/contracts/analytics';
 import {
   addPluginMarketplace,
   applyPlugin,
@@ -873,15 +873,15 @@ export function ExtensionsMarketplace({
   }, [analytics.track, isActive]);
 
   const [mode, setMode] = useState<MarketMode>('plugins');
-  // #5517 lands on the official catalog first — a new workspace's personal
-  // scope is empty, and the official list is the marketplace's front door.
+  // #5517 lands on the official catalog first — the local installed scope is
+  // initially empty, and the official list is the marketplace's front door.
   const [scope, setScope] = useState<MarketScope>('official');
   function trackExtension(
     element: 'details' | 'use' | 'add' | 'create' | 'filter',
     input: {
       id?: string;
       kind?: 'expert_plugin' | 'skill';
-      scope?: TrackingWorkspaceScope;
+      scope?: TrackingResourceScope;
     } = {},
   ) {
     trackExtensionMarketplaceClick(analytics.track, {
@@ -895,15 +895,15 @@ export function ExtensionsMarketplace({
   }
   function trackResourceResult(input: {
     kind: 'expert_plugin' | 'skill';
-    scope: TrackingWorkspaceScope;
-    action: 'share_to_team' | 'sync_to_team' | 'remove_from_team' | 'add';
+    scope: TrackingResourceScope;
+    action: 'add';
     result: 'success' | 'failed';
     startedAt: number;
     errorCode?: string;
   }) {
-    trackWorkspaceResourceActionResult(analytics.track, {
+    trackCatalogResourceActionResult(analytics.track, {
       page_name: 'plugins',
-      area: 'workspace_resource',
+      area: 'catalog_resource',
       resource_kind: input.kind,
       resource_scope: input.scope,
       action: input.action,

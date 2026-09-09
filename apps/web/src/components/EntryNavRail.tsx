@@ -22,15 +22,15 @@ import { isRtlLocale, useI18n } from '../i18n';
 import { ENTRY_RAIL_TOGGLE_EVENT } from './entryRailBridge';
 import type { EntryHomeView } from '../router';
 import type {
-  AccountMenuClickProps,
-  TrackingWorkspacePage,
+  EntryUtilityClickProps,
+  TrackingEntryPage,
 } from '@open-design/contracts/analytics';
 import { useAnalytics } from '../analytics/provider';
 import {
-  trackAccountMenuClick,
+  trackEntryUtilityClick,
   trackEntryNavigationClick,
 } from '../analytics/events';
-import { entryViewToTracking } from '../analytics/workspace';
+import { entryViewToTracking } from '../analytics/classification';
 import { workspaceChromeAccountActionsHost } from './workspaceChromeActions';
 
 const REPO_URL = 'https://github.com/nexu-io/open-design';
@@ -329,7 +329,7 @@ function RailRecentSection({
 
 interface TopRightControlsProps {
   /** Analytics page the controls report from. */
-  page: TrackingWorkspacePage;
+  page: TrackingEntryPage;
   /** Extra content rendered before the shared controls. */
   leadingSlot?: ReactNode;
   /** Stable host for the update-ready control. */
@@ -394,9 +394,9 @@ function TopRightControls({
             title={`GitHub · ${githubStars == null ? GITHUB_STARS_FALLBACK_LABEL : formatStars(githubStars)} stars`}
             data-testid="entry-top-right-github"
             onClick={() => {
-              trackAccountMenuClick(analytics.track, {
+              trackEntryUtilityClick(analytics.track, {
                 page_name: page,
-                area: 'account_menu',
+                area: 'entry_utility',
                 element: 'github',
               });
             }}
@@ -434,14 +434,13 @@ export function ProjectTopRightControls({
  * The row's first slot is the Discord invite for every locale (the Chinese
  * Feishu group entry was retired so there is one community to point at).
  * All three labels are translated and surface through the shared
- * `.od-tooltip` layer. Analytics keeps reporting these
- * under `area: 'account_menu'` so the existing funnel stays comparable across
- * the move out of that menu.
+ * `.od-tooltip` layer. Analytics reports these under the shell-level
+ * `entry_utility` area.
  */
 function RailSocialRow({
   page,
 }: {
-  page: TrackingWorkspacePage;
+  page: TrackingEntryPage;
 }) {
   const { t, locale } = useI18n();
   const analytics = useAnalytics();
@@ -458,10 +457,10 @@ function RailSocialRow({
   const xLabel = t('entry.xAria');
   const mailLabel = t('entry.mailAria');
 
-  function track(element: AccountMenuClickProps['element']) {
-    trackAccountMenuClick(analytics.track, {
+  function track(element: EntryUtilityClickProps['element']) {
+    trackEntryUtilityClick(analytics.track, {
       page_name: page,
-      area: 'account_menu',
+      area: 'entry_utility',
       element,
     });
   }
@@ -651,9 +650,9 @@ export function EntryNavRail({
           ariaLabel={t('entry.accountSettings')}
           label={t('entry.accountSettings')}
           onClick={() => {
-            trackAccountMenuClick(analytics.track, {
+            trackEntryUtilityClick(analytics.track, {
               page_name: analyticsPage,
-              area: 'account_menu',
+              area: 'entry_utility',
               element: 'settings',
             });
             onOpenSettings?.();

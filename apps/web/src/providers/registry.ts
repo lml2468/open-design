@@ -1,4 +1,4 @@
-import { boundedRequestErrorCode } from '../analytics/workspace';
+import { boundedRequestErrorCode } from '../analytics/classification';
 import type {
   ConnectorAuthConfigPrepareResponse,
   ConnectorDetail,

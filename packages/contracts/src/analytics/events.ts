@@ -13,7 +13,7 @@ export * from './events/event-names.js';
 export * from './events/shared-enums.js';
 export * from './events/onboarding.js';
 export * from './events/design-systems.js';
-export * from './events/workspace.js';
+export * from './events/product-surfaces.js';
 export * from './events/mcp.js';
 export * from './events/page-view.js';
 export * from './events/ui-click.js';

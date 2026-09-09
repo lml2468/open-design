@@ -6,7 +6,6 @@ import type { TrackingOnboardingFirstLoopStep, TrackingOnboardingProductType, Tr
 import type { TrackingRunRecoveryActionType } from './result-events.js';
 import type { TrackingArtifactKind, TrackingNewProjectTab, TrackingProjectKind } from './shared-enums.js';
 import type { DesignSystemsPresetBrandPickerSurfaceViewProps } from './ui-click.js';
-import type { WorkspaceSurfaceViewProps } from './workspace.js';
 // ---- surface_view --------------------------------------------------------
 
 export interface HelpPopoverSurfaceViewProps {
@@ -241,7 +240,6 @@ export interface StudioOnboardingHintSurfaceViewProps {
 }
 
 export type SurfaceViewProps =
-  | WorkspaceSurfaceViewProps
   | RunFailedToastSurfaceViewProps
   | RunRecoveryActionSurfaceViewProps
   | RunStartBlockedSurfaceViewProps
