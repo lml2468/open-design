@@ -85,7 +85,7 @@ describe('useFinalizeProject', () => {
     });
   });
 
-  it('pins the exact Workspace authority on bound-project finalize requests', async () => {
+  it('keeps finalize requests local when a legacy Workspace context is supplied', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(SUCCESS_BODY));
     const { result } = renderHook(() => useFinalizeProject('p1', WORKSPACE_CONTEXT));
 
@@ -95,10 +95,9 @@ describe('useFinalizeProject', () => {
 
     const [, init] = fetchSpy.mock.calls[0]!;
     const headers = new Headers(init?.headers);
-    expect(headers.get('x-od-workspace-id')).toBe('workspace-team');
-    expect(headers.get('x-od-workspace-member-id')).toBe('member-owner');
-    expect(headers.get('x-od-workspace-role')).toBe('owner');
-    expect(headers.get('x-od-workspace-can-write-synced-files')).toBe('true');
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.has('x-od-workspace-id')).toBe(false);
+    expect(headers.has('x-od-workspace-member-id')).toBe(false);
   });
 
   it('routes provider-aware requests to the matching finalize endpoint', async () => {

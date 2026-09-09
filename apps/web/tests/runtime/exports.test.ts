@@ -772,7 +772,7 @@ describe('binary project/design-system downloads', () => {
     expect(await capturedBlob!.text()).toBe('PK-fake-pptx');
   });
 
-  it('carries the project-pinned Workspace identity across every project export transport', async () => {
+  it('keeps every local Project export transport free of legacy Workspace headers', async () => {
     const workspaceContext = workspaceContextFixture({
       workspaceId: 'workspace-a',
       workspaceMemberId: 'member-a',
@@ -841,8 +841,8 @@ describe('binary project/design-system downloads', () => {
     expect(fetchMock).toHaveBeenCalledTimes(6);
     for (const [, init] of fetchMock.mock.calls) {
       const headers = new Headers(init?.headers);
-      expect(headers.get('x-od-workspace-id')).toBe('workspace-a');
-      expect(headers.get('x-od-workspace-member-id')).toBe('member-a');
+      expect(headers.has('x-od-workspace-id')).toBe(false);
+      expect(headers.has('x-od-workspace-member-id')).toBe(false);
     }
   });
 

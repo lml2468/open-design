@@ -124,7 +124,7 @@ describe('useCritiqueReplay (Phase 7.3)', () => {
     expect(sink.state.rounds).toHaveLength(1);
   });
 
-  it('fetches a project transcript with its exact persisted Workspace headers', async () => {
+  it('fetches a local Project transcript without legacy Workspace headers', async () => {
     const sink: Sink = { state: { phase: 'idle' }, status: 'idle', error: null };
     const workspaceA = teamContext('workspace-a', 'member-a');
     let transcriptInit: RequestInit | undefined;
@@ -145,8 +145,8 @@ describe('useCritiqueReplay (Phase 7.3)', () => {
       expect(sink.status).toBe('done');
     });
     const headers = new Headers(transcriptInit?.headers);
-    expect(headers.get('x-od-workspace-id')).toBe('workspace-a');
-    expect(headers.get('x-od-workspace-member-id')).toBe('member-a');
+    expect(headers.has('x-od-workspace-id')).toBe(false);
+    expect(headers.has('x-od-workspace-member-id')).toBe(false);
   });
 
   it('paces events with intervalMs and reaches done after the last tick', async () => {

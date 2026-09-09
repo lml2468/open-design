@@ -353,7 +353,7 @@ describe("DesignFilesPanel selection", () => {
     expect(onDeleteFiles).toHaveBeenCalledWith(["file-1.html", "file-2.png"]);
   });
 
-  it("sends the project-pinned Workspace identity on batch archive download", async () => {
+  it("keeps batch archive downloads local when legacy Workspace context is present", async () => {
     const workspaceContext = workspaceContextFixture({
       workspaceId: "workspace-a",
       workspaceMemberId: "member-a",
@@ -425,8 +425,8 @@ describe("DesignFilesPanel selection", () => {
     expect(archiveCall).toBeTruthy();
     const [, init] = archiveCall!;
     const headers = new Headers(init?.headers);
-    expect(headers.get("x-od-workspace-id")).toBe("workspace-a");
-    expect(headers.get("x-od-workspace-member-id")).toBe("member-a");
+    expect(headers.has("x-od-workspace-id")).toBe(false);
+    expect(headers.has("x-od-workspace-member-id")).toBe(false);
   });
 
   it("does not open files from card controls", () => {

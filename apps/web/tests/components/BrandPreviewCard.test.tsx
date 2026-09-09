@@ -194,13 +194,10 @@ describe('BrandPreviewCard', () => {
     fireEvent.click(screen.getByTestId('brand-preview-delete'));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/brands/brand-ramp', expect.objectContaining({
+      expect(fetchMock).toHaveBeenCalledWith('/api/brands/brand-ramp', {
         method: 'DELETE',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'workspace-delete',
-          'x-od-workspace-member-id': 'member-delete',
-        }),
-      }));
+        headers: {},
+      });
       expect(onChanged).not.toHaveBeenCalled();
       expect(window.location.pathname).toBe('/brands/brand-ramp');
       expect((screen.getByTestId('brand-preview-delete') as HTMLButtonElement).disabled).toBe(false);

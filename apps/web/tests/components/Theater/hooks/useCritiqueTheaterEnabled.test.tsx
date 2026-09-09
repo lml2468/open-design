@@ -363,7 +363,7 @@ describe('useCritiqueTheaterEnabled (Phase 15.3)', () => {
     expect(body).toEqual({ metadata: { critiqueTheaterEnabled: true } });
   });
 
-  it('sends the persisted project exact scope on both settings requests', async () => {
+  it('keeps both local Project settings requests free of legacy Workspace headers', async () => {
     const fetchCalls: RequestInit[] = [];
     const fetchProjectSettings = (_url: string, init: RequestInit) => {
       fetchCalls.push(init);
@@ -386,8 +386,8 @@ describe('useCritiqueTheaterEnabled (Phase 15.3)', () => {
     expect(fetchCalls).toHaveLength(2);
     for (const init of fetchCalls) {
       const headers = new Headers(init.headers);
-      expect(headers.get('x-od-workspace-id')).toBe('workspace-a');
-      expect(headers.get('x-od-workspace-member-id')).toBe('member-a');
+      expect(headers.has('x-od-workspace-id')).toBe(false);
+      expect(headers.has('x-od-workspace-member-id')).toBe(false);
     }
   });
 

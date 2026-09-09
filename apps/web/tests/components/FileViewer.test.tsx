@@ -666,7 +666,7 @@ describe('FileViewer preview scale', () => {
     );
   });
 
-  it('waits for exact Team authority before loading initial raw source', async () => {
+  it('loads the local raw source without legacy Workspace headers once authority resolves', async () => {
     const file = baseFile({
       name: 'first-open.html',
       path: 'first-open.html',
@@ -738,10 +738,9 @@ describe('FileViewer preview scale', () => {
     });
     expect(rawReads[0]?.url).not.toContain('workspaceId=');
     expect(rawReads[0]?.url).not.toContain('workspaceMemberId=');
-    expect(rawReads[0]?.init?.headers).toMatchObject({
-      'x-od-workspace-id': 'ws-1',
-      'x-od-workspace-member-id': 'wm-1',
-    });
+    const headers = new Headers(rawReads[0]?.init?.headers);
+    expect(headers.has('x-od-workspace-id')).toBe(false);
+    expect(headers.has('x-od-workspace-member-id')).toBe(false);
   });
 
   it('recovers the same preview mount when pending authority settles as local', async () => {
@@ -1629,7 +1628,7 @@ describe('FileViewer SVG artifacts', () => {
         <Shell version={file.mtime + 1} />
       </CollabProvider>,
     );
-    await waitFor(() => expect(sourceReads).toHaveLength(3));
+    await waitFor(() => expect(sourceReads).toHaveLength(2));
   });
 
   it('promotes large HTML files to the srcDoc path when the routing preview shows sandbox-unsafe scripts', async () => {
@@ -7523,10 +7522,10 @@ describe('FileViewer SVG artifacts', () => {
       const versionRead = fetchMock.mock.calls.find(
         ([input]) => String(input) === '/api/projects/project-1/files/index.html/versions/v1',
       );
-      expect(new Headers(versionRead?.[1]?.headers).get('x-od-workspace-id'))
-        .toBe(workspaceContext.workspaceId);
-      expect(new Headers(versionRead?.[1]?.headers).get('x-od-workspace-member-id'))
-        .toBe(workspaceContext.workspaceMemberId);
+      expect(new Headers(versionRead?.[1]?.headers).has('x-od-workspace-id'))
+        .toBe(false);
+      expect(new Headers(versionRead?.[1]?.headers).has('x-od-workspace-member-id'))
+        .toBe(false);
       const exportCall = fetchMock.mock.calls.find(
         ([input]) => String(input) === '/api/projects/project-1/export/html',
       );

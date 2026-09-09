@@ -1264,10 +1264,7 @@ describe('generated plugin share actions', () => {
       '/api/projects/project-1/plugins/publish-github',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'workspace-share',
-          'x-od-workspace-member-id': 'member-share',
-        }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'generated-plugin' }),
       }),
     );
@@ -1276,10 +1273,7 @@ describe('generated plugin share actions', () => {
       '/api/projects/project-1/plugins/contribute-open-design',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'workspace-share',
-          'x-od-workspace-member-id': 'member-share',
-        }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'generated-plugin' }),
       }),
     );
@@ -1291,7 +1285,7 @@ describe('generated plugin share tasks', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps the initiating Workspace identity on both start and long-poll requests', async () => {
+  it('keeps start and long-poll requests free of legacy Workspace headers', async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(
         JSON.stringify({
@@ -1333,8 +1327,8 @@ describe('generated plugin share tasks', () => {
 
     for (const call of fetchMock.mock.calls) {
       const headers = new Headers(call[1]?.headers);
-      expect(headers.get('x-od-workspace-id')).toBe('workspace-start');
-      expect(headers.get('x-od-workspace-member-id')).toBe('member-start');
+      expect(headers.has('x-od-workspace-id')).toBe(false);
+      expect(headers.has('x-od-workspace-member-id')).toBe(false);
     }
   });
 });

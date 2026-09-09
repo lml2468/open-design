@@ -34,8 +34,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('GenUIInbox Workspace transport', () => {
-  it('sends exact Workspace authority for list and revoke', async () => {
+describe('GenUIInbox local Project transport', () => {
+  it('does not send retired Workspace authority for list and revoke', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
       if (url.endsWith('/revoke')) return Response.json({ ok: true });
@@ -49,9 +49,9 @@ describe('GenUIInbox Workspace transport', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     for (const [, init] of fetchMock.mock.calls) {
       const headers = new Headers(init?.headers);
-      expect(headers.get('x-od-workspace-id')).toBe('workspace-team');
-      expect(headers.get('x-od-workspace-member-id')).toBe('member-1');
-      expect(headers.get('x-od-workspace-can-write-synced-files')).toBe('true');
+      expect(headers.has('x-od-workspace-id')).toBe(false);
+      expect(headers.has('x-od-workspace-member-id')).toBe(false);
+      expect(headers.has('x-od-workspace-can-write-synced-files')).toBe(false);
     }
   });
 

@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 describe('DesignKitView iframe sandboxing', () => {
-  it('keeps fetch headers while browser font URLs use server-derived project authority', async () => {
+  it('keeps local Project font requests free of legacy Workspace authority', async () => {
     const context = {
       workspaceId: 'workspace-team',
       workspaceType: 'team',
@@ -73,10 +73,7 @@ describe('DesignKitView iframe sandboxing', () => {
         '/api/projects/project-team/raw/fonts/manifest.json',
         {
           cache: 'no-store',
-          headers: expect.objectContaining({
-            'x-od-workspace-id': 'workspace-team',
-            'x-od-workspace-member-id': 'member-1',
-          }),
+          headers: {},
         },
       );
       expect(document.head.querySelector('style[data-brand-fonts="project-team"]')?.textContent)

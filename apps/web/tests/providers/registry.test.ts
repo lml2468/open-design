@@ -707,7 +707,7 @@ describe('writeProjectTextFileDetailed', () => {
     });
   });
 
-  it('attaches workspace identity headers when a workspace context is passed', async () => {
+  it('ignores legacy Workspace context when writing a local Project file', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({ file: { name: 'preview.html', path: 'preview.html', size: 0, mtime: 0 } }),
       { status: 200 },
@@ -726,11 +726,7 @@ describe('writeProjectTextFileDetailed', () => {
       '/api/projects/project-1/files',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
+        headers: { 'Content-Type': 'application/json' },
       }),
     );
   });
@@ -1600,7 +1596,7 @@ describe('uploadProjectFiles', () => {
     expect(result.failed[0]).toMatchObject({ name: 'c.txt' });
   });
 
-  it('attaches workspace identity headers when a workspace context is passed', async () => {
+  it('ignores legacy Workspace context when uploading to a local Project', async () => {
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       files: [{ name: 'hello.txt', path: 'hello.txt', size: 5, originalName: 'hello.txt' }],
@@ -1613,10 +1609,7 @@ describe('uploadProjectFiles', () => {
       '/api/projects/project-1/upload',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
+        headers: {},
       }),
     );
   });

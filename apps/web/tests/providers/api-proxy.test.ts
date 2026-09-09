@@ -60,7 +60,7 @@ describe('buildProxyMessages', () => {
     ]);
   });
 
-  it('reads Anthropic image attachments with the captured exact Workspace scope', async () => {
+  it('reads Anthropic image attachments from the local Project without legacy scope headers', async () => {
     const workspaceContext: WorkspaceCollabContext = {
       workspaceId: 'workspace-a',
       workspaceType: 'team',
@@ -98,8 +98,8 @@ describe('buildProxyMessages', () => {
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toBe('/api/projects/project-1/raw/references/logo.png');
     const headers = new Headers((init as RequestInit).headers);
-    expect(headers.get('x-od-workspace-id')).toBe('workspace-a');
-    expect(headers.get('x-od-workspace-member-id')).toBe('member-a');
+    expect(headers.has('x-od-workspace-id')).toBe(false);
+    expect(headers.has('x-od-workspace-member-id')).toBe(false);
   });
 
   it('serializes Anthropic image blocks in user-visible attachment order', async () => {
@@ -219,10 +219,10 @@ describe('buildProxyMessages', () => {
 
     const proxyInit = fetchMock.mock.calls[1]?.[1] as RequestInit;
     const proxyHeaders = new Headers(proxyInit.headers);
-    expect(proxyHeaders.get('x-od-workspace-id')).toBe('workspace-a');
-    expect(proxyHeaders.get('x-od-workspace-member-id')).toBe('member-a');
-    expect(proxyHeaders.get('x-od-workspace-type')).toBe('team');
-    expect(proxyHeaders.get('x-od-workspace-role')).toBe('member');
+    expect(proxyHeaders.has('x-od-workspace-id')).toBe(false);
+    expect(proxyHeaders.has('x-od-workspace-member-id')).toBe(false);
+    expect(proxyHeaders.has('x-od-workspace-type')).toBe(false);
+    expect(proxyHeaders.has('x-od-workspace-role')).toBe(false);
     expect(JSON.parse(String(proxyInit.body))).toMatchObject({
       messages: [
         {
